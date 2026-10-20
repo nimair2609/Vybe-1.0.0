@@ -34,7 +34,20 @@ data class AdminReport(
 )
 
 enum class NotificationType {
-  LIKE, COMMENT, FOLLOW, MENTION, TIME_CAPSULE_UNLOCK, DOUBLE_TAKE_REVEAL, CROSSED_PATHS_REQUEST, SHOP_REVIEW, SYSTEM_SAFETY
+  LIKE,
+  COMMENT_OR_REPLY,
+  FOLLOW,
+  DIRECT_MESSAGE,
+  GROUP_MESSAGE,
+  ROOM_INVITATION,
+  TIME_CAPSULE_INVITATION,
+  TIME_CAPSULE_UNLOCK,
+  DOUBLE_TAKE_RESPONSE,
+  CROSSED_PATHS_INTERACTION,
+  BUSINESS_VERIFICATION_UPDATE,
+  LIVE_STREAM_ALERT,
+  SECURITY_ACCOUNT_UPDATE,
+  SHOP_REVIEW
 }
 
 data class NotificationItem(
@@ -44,5 +57,7 @@ data class NotificationItem(
   val message: String,
   val timestamp: String,
   val isRead: Boolean = false,
-  val actorUser: User? = null
+  val actorUser: User? = null,
+  val destinationScreen: String? = null,
+  val targetEntityId: String? = null
 )

@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 enum class MainTab {
-  FEED, VYBES, MOOD_ZONES, EXPLORE, INBOX, CROSSED_PATHS
+  FEED, EXPLORE, CREATE, INBOX, PROFILE, VYBES, MOOD_ZONES, CROSSED_PATHS
 }
 
 enum class Screen {
@@ -33,7 +33,8 @@ enum class Screen {
   DOUBLE_TAKE_VIEW,
   UNLOAD_VIEW,
   UNFILTERED_VIEW,
-  WHAT_NEXT_VIEW
+  WHAT_NEXT_VIEW,
+  SPIRITUAL_MODE
 }
 
 class VybeViewModel : ViewModel() {
@@ -84,9 +85,22 @@ class VybeViewModel : ViewModel() {
   val selectedMoodFilter = repository.selectedMoodFilter
   val supportTickets = repository.supportTickets
   val timeManagementStats = repository.timeManagementStats
-  val activeDeviceSessions = repository.activeDeviceSessions
   val notificationPreferences = repository.notificationPreferences
   val userActivity = repository.userActivity
+  val isSpiritualMode = repository.isSpiritualMode
+  val spiritualReflections = repository.spiritualReflections
+  val spiritualGratitudes = repository.spiritualGratitudes
+  val spiritualIntentions = repository.spiritualIntentions
+
+  fun markNotificationAsRead(id: String) = repository.markNotificationAsRead(id)
+  fun markAllNotificationsAsRead() = repository.markAllNotificationsAsRead()
+  fun addNotification(item: NotificationItem) = repository.addNotification(item)
+
+  fun setSpiritualMode(enabled: Boolean) = repository.setSpiritualMode(enabled)
+  fun toggleSpiritualMode() = repository.toggleSpiritualMode()
+  fun addGratitudeEntry(entry: String) = repository.addGratitudeEntry(entry)
+  fun addIntention(text: String) = repository.addIntention(text)
+  fun toggleIntentionFulfilled(id: String) = repository.toggleIntentionFulfilled(id)
 
   init {
     viewModelScope.launch {

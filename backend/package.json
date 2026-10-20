@@ -1,0 +1,26 @@
+{
+  "name": "vybe-backend-server",
+  "version": "3.0.0",
+  "description": "VYBE 3.0 Production Backend API for Render and Supabase Integration",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "ts-node src/server.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.13.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  }
+}

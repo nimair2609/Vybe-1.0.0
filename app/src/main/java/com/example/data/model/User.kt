@@ -45,5 +45,6 @@ data class User(
   val livePulse: LivePulseStatus = LivePulseStatus.NONE,
   val joinedDate: String = "2024",
   val isDeactivated: Boolean = false,
-  val isOnboardingCompleted: Boolean = false
+  val isOnboardingCompleted: Boolean = false,
+  val isSpiritualMode: Boolean = false
 )

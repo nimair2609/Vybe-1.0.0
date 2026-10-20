@@ -7,7 +7,9 @@ data class DirectMessage(
   val timestamp: String,
   val isMe: Boolean,
   val mediaUrl: String? = null,
-  val isRead: Boolean = true
+  val isRead: Boolean = true,
+  val replyToText: String? = null,
+  val reactions: List<String> = emptyList() // Reactions: ❤️, 🔥, ⚡, 😂, 👏
 )
 
 data class Conversation(
@@ -19,7 +21,8 @@ data class Conversation(
   val isGroup: Boolean = false,
   val groupName: String? = null,
   val messages: List<DirectMessage> = emptyList(),
-  val isMessageRequest: Boolean = false
+  val isMessageRequest: Boolean = false,
+  val isHidden: Boolean = false // Protected behind user PIN lock (Part O)
 )
 
 enum class CallState {

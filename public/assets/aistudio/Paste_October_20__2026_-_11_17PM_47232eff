@@ -1,0 +1,801 @@
+VYBE 3.0 MASTER PROMPT
+
+Complete Product Upgrade + Backend + Database + Production Integration
+
+Product of NR Next | NR Group
+
+Act as a senior full-stack engineer, backend architect, PostgreSQL database engineer, Android application engineer, UI/UX designer, security specialist, real-time communications engineer, and QA engineer.
+
+I already have an existing VYBE application built using Google AI Studio. The basic UI exists and the project has previously been uploaded to GitHub.
+
+Upgrade the existing application into a fully functional, responsive, secure, database-connected social platform.
+
+Do not rebuild from scratch. Do not remove existing features. Do not deliver only a design prototype. Implement actual working functionality wherever credentials and external services permit.
+
+My initial budget is ₹0. Prefer free-tier services, open-source solutions, and minimal infrastructure.
+
+If an external account, credential, or dashboard configuration is necessary, complete all possible code work first and then give me exact beginner-friendly instructions for the remaining steps.
+
+---
+
+PART A — FIRST AUDIT THE EXISTING PROJECT
+
+Before modifying code:
+
+1. Inspect every relevant source file and existing feature.
+2. Identify the frontend framework, language, package manager, routes, and build process.
+3. Identify existing authentication and data-storage mechanisms.
+4. Identify existing Netlify, Render, GitHub, and Supabase configuration, if any.
+5. Identify existing Android/PWA support and camera implementation.
+6. Find all mock data, hardcoded responses, browser LocalStorage dependencies, nonfunctional buttons, and incomplete features.
+7. Identify current bugs and missing integrations.
+8. Preserve the current official VYBE logo, NR Next branding, visual identity, and working functionality.
+
+Produce a concise implementation plan, then continue with the implementation. Do not stop after providing the plan.
+
+Do not overwrite existing project configuration blindly. Reuse compatible dependencies and existing services.
+
+PART B — REQUIRED BACKEND ARCHITECTURE
+
+Implement a real backend using this architecture.
+
+Primary services
+
+- Database: PostgreSQL through Supabase.
+- Authentication: Supabase Auth.
+- Media storage: Supabase Storage.
+- Realtime updates: Supabase Realtime where suitable.
+- Custom backend: existing Render server, if required for privileged business logic.
+- Frontend hosting: preserve the existing hosting configuration, including Netlify where applicable.
+- Source control: preserve the existing GitHub project.
+
+Use a custom Node.js/TypeScript backend if required by the existing application. Prefer a maintained, compatible framework such as Express or Fastify instead of introducing unnecessary complexity.
+
+Do not add a custom server for every operation if Supabase can safely perform the task directly.
+
+Never assume Supabase or Render is already connected merely because configuration files exist.
+
+Backend responsibilities
+
+Implement secure server-side handling for:
+
+- User and role authorization.
+- Admin actions.
+- Room moderation.
+- Subscription entitlement verification.
+- Business verification decisions.
+- Time Capsule access and expiry.
+- Notifications requiring trusted server-side actions.
+- Media authorization.
+- Live-stream authorization and provider integration.
+- Any privileged operations that must not be trusted to the client.
+
+Use validated API requests, structured errors, safe logging, and appropriate rate limiting.
+
+PART C — DATABASE AND MIGRATIONS
+
+Create version-controlled, repeatable database migrations.
+
+Design appropriate relational tables, foreign keys, indexes, unique constraints, timestamps, and deletion policies.
+
+Include tables or equivalent structures for:
+
+- profiles
+- posts
+- post_media
+- comments
+- stories
+- follows
+- user_settings
+- notifications
+- notification_preferences
+- conversations
+- conversation_members
+- messages
+- message_attachments
+- message_reactions
+- message_receipts
+- message_nicknames
+- chat_settings
+- blocks
+- reports
+- moderation_actions
+- admin_roles
+- user_permissions
+- rooms
+- room_members
+- room_terms_acceptances
+- room_messages
+- room_sessions
+- room_reports
+- mood_categories
+- post_moods
+- audience_pools
+- audience_pool_options
+- audience_pool_votes
+- time_capsules
+- time_capsule_members
+- time_capsule_invitations
+- double_takes
+- double_take_answers
+- crossed_paths
+- business_profiles
+- business_verification_requests
+- business_shops
+- business_products
+- business_reviews
+- business_review_media
+- creator_profiles
+- live_streams
+- live_stream_participants
+- subscriptions
+- subscription_entitlements
+- audit_logs
+
+Add additional tables when the implementation requires them.
+
+Do not create redundant tables when an existing structure already supports the same purpose.
+
+All persistent social data must be shared across authenticated devices through the backend.
+
+LocalStorage may be used for harmless preferences or temporary UI state, but never as the source of truth for shared posts, user permissions, messages, subscriptions, or administrative records.
+
+PART D — AUTHENTICATION AND SECURITY
+
+Implement:
+
+- Signup and login.
+- Email verification.
+- Password reset.
+- Session persistence.
+- Secure logout.
+- Account profile initialization.
+- Protected routes.
+- Secure Android and browser token handling.
+- Authentication error messages.
+- Appropriate session refresh behaviour.
+
+Enable Row Level Security on every relevant user-facing table.
+
+Write and test explicit policies for read, insert, update, and delete operations.
+
+Ensure that users cannot:
+
+- Read private messages without authorization.
+- Edit or delete another user's posts.
+- Change their own admin privileges.
+- Grant themselves premium access.
+- Access private capsules without authorization.
+- Access restricted rooms without permission.
+- Modify another user's profile settings.
+- Delete another user's uploads.
+- Approve their own business verification request.
+
+Never put a Supabase service-role key, database password, payment secret, or private server credential into frontend code, a public repository, or an Android APK.
+
+Use publishable client credentials only with appropriate security policies.
+
+Create the first administrator using a documented, secure provisioning process.
+
+PART E — SIMPLE AND RESPONSIVE UI
+
+Simplify the existing interface without changing VYBE's established identity.
+
+Use a five-item mobile navigation system:
+
+1. Home
+2. Search
+3. Create
+4. Inbox
+5. Profile
+
+Place the notification bell in the Home header.
+
+Place secondary features in organized sections or a Discover page rather than overcrowding the bottom navigation.
+
+Ensure:
+
+- Proper Android safe-area handling.
+- Responsive mobile layouts.
+- No header positioned incorrectly.
+- No unwanted horizontal scrolling.
+- Consistent spacing and typography.
+- Functional back navigation.
+- Accessible touch targets.
+- Real loading, empty, error, and success states.
+
+PART F — SPIRITUAL MODE
+
+Create a dedicated Spiritual Mode that users can enable or disable.
+
+Include:
+
+- Peaceful visual styling.
+- Spiritual reflections and inspirational messages.
+- Gratitude journaling.
+- Personal intentions.
+- Guided breathing exercises.
+- Meditation timers.
+- Optional spiritual discussion rooms.
+- Spiritual content discovery.
+- User-controlled daily reminders.
+
+Respect different religions, spiritual traditions, and non-religious beliefs.
+
+Do not assume the user's religion.
+
+Keep the experience optional and allow users to return to the normal VYBE feed immediately.
+
+PART G — HOME NOTIFICATION CENTER
+
+Create a working notification center accessible from the Home header.
+
+Include notifications for:
+
+- Comments and replies.
+- Follows.
+- Direct messages.
+- Group messages.
+- Room invitations and schedule changes.
+- Time Capsule invitations and responses.
+- Double Take responses.
+- Crossed Paths interactions.
+- Business verification updates.
+- Live-stream notifications.
+- Security and account updates.
+
+Support:
+
+- Unread badge.
+- Mark as read.
+- Mark all as read.
+- Relevant destination navigation.
+- Pagination.
+- Realtime updates.
+- Notification preferences.
+- Push notifications where supported.
+
+Store notification records in the backend. Do not use hardcoded sample notifications in production.
+
+PART H — VYBE UNLOAD
+
+Implement complete room creation and participation functionality.
+
+Room creation fields:
+
+- Room name.
+- Description.
+- Conversation type.
+- Voice-only, text-only, or voice-and-text.
+- Scheduled date and time.
+- End time and time zone.
+- Capacity.
+- Public or private access.
+- Optional join approval.
+- Room rules.
+- Additional message for joiners.
+- Optional image.
+- Required terms-and-conditions agreement.
+
+Users must be able to create, edit, publish, close, and delete their own rooms.
+
+Participants must be able to browse, search, join, leave, and request access where applicable.
+
+Record terms version and acceptance timestamp on the server.
+
+Implement:
+
+- Realtime text rooms.
+- Genuine live voice communication.
+- Host and moderator controls.
+- Participant management.
+- Notifications.
+- Report and block functionality.
+- Capacity and scheduling enforcement.
+- Room expiry.
+
+Do not simulate voice calls with database messages. Use appropriate WebRTC or a compatible real-time voice service, and document any required credentials or costs.
+
+PART I — VYBE UNFILTERED / RAW CAPTURE
+
+Create a camera-first publishing flow.
+
+When the user opens Raw Capture:
+
+- Request camera permission.
+- Open the actual device camera or camera preview.
+- Allow photo capture.
+- Allow video recording.
+- Support front/rear camera switching where available.
+- Preview, retake, or discard media.
+- Add a caption.
+- Select a mood.
+- Choose visibility.
+- Publish to the backend.
+
+Allow photo and video uploads from the device gallery when appropriate.
+
+Use supported browser camera APIs or native Android capabilities according to the existing platform.
+
+Never substitute a fake camera interface for real camera functionality.
+
+Implement upload progress, error handling, media validation, and secure storage.
+
+Support optional moods such as Happy, Sad, Peaceful, Hopeful, Reflective, Lonely, Motivated, Grateful, and Excited.
+
+Create opt-in mood-based discovery that helps users find relevant content and conversations. Do not publicly expose private mood information without consent.
+
+PART J — WHAT NEXT / AUDIENCE POOLS
+
+Implement audience polls.
+
+Users must be able to:
+
+- Create a question.
+- Add answer options.
+- Edit eligible polls.
+- Delete eligible polls.
+- Publish a poll.
+- Choose the audience.
+- Set a closing time.
+- Submit responses.
+- View accurate results.
+
+Support relevant audience options such as followers, selected users, groups, and public audiences.
+
+Validate votes server-side. Prevent duplicate voting where the poll rules require one vote per user.
+
+Use database-backed counts and percentages.
+
+PART K — FUTURE TIME CAPSULE
+
+Allow users to create capsules addressed to themselves or selected friends.
+
+Support:
+
+- Title and message.
+- Existing photos from the phone.
+- Existing videos from the phone.
+- Uploaded new media.
+- Friend tagging and invitations.
+- Accept or refuse invitations.
+- Notifications for invitation responses.
+- Authorized capsule membership.
+- Scheduled release time.
+- Expiration time.
+- Private capsule access.
+
+The default capsule expiration must follow the requested 24-hour disappearance rule.
+
+Separate scheduled release time from expiration time.
+
+Once expired, capsule content must no longer be accessible through normal API requests, application routes, or storage access.
+
+Implement server-side expiry enforcement and reliable cleanup.
+
+Do not expose unreleased content to recipients.
+
+If invitations are refused, do not grant access. If accepted, add the user as an authorized participant.
+
+PART L — VYBE DOUBLE TAKE
+
+Implement a functional question-and-answer matching feature.
+
+Users can:
+
+- Create, edit, delete, and publish eligible Double Takes.
+- Answer Yes or No.
+- Receive notifications for answers.
+- View permitted responses.
+- Accept an answer as correct or matched.
+- Start a conversation when the configured matching rules are satisfied and the necessary consent is present.
+
+Prevent unauthorized edits and duplicate answers.
+
+Do not expose private answers or automatically create conversations without the required permission.
+
+Include expiry, blocking, reporting, and visibility controls.
+
+PART M — CROSSED PATHS
+
+Fix the existing Crossed Paths back button.
+
+Audit:
+
+- Application routing.
+- Navigation history.
+- Browser back behaviour.
+- Android back behaviour.
+- Modal dismissal.
+- Direct URL navigation.
+
+Users must be able to create and edit appropriate missed-connection posts.
+
+Allow users to attach:
+
+- A photo.
+- A location selected through Google Maps or a supported map interface.
+- A description and relevant time information.
+
+Implement a consent-based location picker and store only the necessary location information.
+
+Do not publish a user's live or precise location automatically.
+
+Use a supported Google Maps integration only if its configuration and API requirements are satisfied. Otherwise provide a working map-picker alternative and explain the difference.
+
+Add reporting, blocking, expiry, and visibility controls.
+
+PART N — VERIFIED BUSINESS SHOPS
+
+Create a business onboarding system.
+
+Businesses can:
+
+- Create a business profile.
+- Submit shop information.
+- Upload a logo and supporting documents.
+- Submit a verification request.
+- Track verification status.
+- Contact the Help Center.
+
+Use statuses such as Pending, Under Review, Approved, Rejected, and More Information Required.
+
+Only the authorized backend team or administrator can approve verification.
+
+After approval, notify the business through in-app notification and email when email delivery is configured.
+
+Only approved businesses may use features that require verified status.
+
+Implement:
+
+- Shop profiles.
+- Products or services.
+- Business descriptions and contact information.
+- Customer reviews.
+- Customer-uploaded review photos.
+- Review moderation.
+- Business responses where appropriate.
+- Report and dispute mechanisms.
+
+Prevent business owners from approving their own verification requests or arbitrarily changing review records.
+
+PART O — ADVANCED INBOX AND MESSAGING
+
+Upgrade Inbox into a complete messaging experience.
+
+Message types
+
+Support applicable:
+
+- Text.
+- Photos.
+- Videos.
+- Location sharing.
+- GIFs.
+- Other supported attachments.
+
+Use secure media uploads and authorized message attachments.
+
+Message interactions
+
+Implement:
+
+- Drag or swipe to reply to a specific message.
+- Message reactions.
+- Edit messages within a documented eligibility window.
+- Delete for me.
+- Delete for everyone, with proper server-side authorization and clear deletion semantics.
+- Reply previews.
+- Message timestamps.
+- Typing indicators.
+- Read receipts.
+- Delivery indicators where supported.
+- Realtime message updates.
+- Message history and pagination.
+- Reconnection and error handling.
+
+Hidden chats
+
+Allow a user to hide a conversation using a private password or PIN chosen by that user.
+
+Requirements:
+
+- Do not store the password or PIN in plaintext.
+- Use an appropriate secure verification mechanism.
+- Do not expose hidden-chat contents through notifications or ordinary conversation lists.
+- Do not imply that a local lock alone encrypts messages on the server.
+- Explain what happens if the user forgets their password or loses access to the device.
+- Ensure hiding a chat does not secretly delete the other participant's messages.
+
+Profiles and chat controls
+
+When the user opens the other participant's profile from Inbox, show the relevant options:
+
+- View profile.
+- Block.
+- Report.
+- Restrict.
+- Set nickname.
+- Mute conversation.
+- View shared media.
+- Create a group where permitted.
+
+Implement proper authorization for every operation.
+
+Groups
+
+Support:
+
+- Group creation.
+- Group name and optional image.
+- Member invitations.
+- Join and leave behaviour.
+- Member and admin roles.
+- Authorized member removal.
+- Group notifications.
+- Group message history.
+- Reporting and blocking controls.
+
+Chat customization
+
+Include:
+
+- Chat themes.
+- Nicknames.
+- Mute settings.
+- Typing indicators.
+- Read receipts.
+- Shared media gallery.
+- User-controlled notification preferences.
+
+Voice and video calls
+
+Implement separate calling options:
+
+- Audio-only call.
+- Video call.
+
+Audio-only calls must not activate video.
+
+Video calls should request camera permission and activate video only after the user initiates or accepts a video call.
+
+Use a suitable real-time communication solution with signalling, connection management, and appropriate STUN/TURN configuration.
+
+Do not fake a connected call. Document any external service requirements or potential costs.
+
+PART P — USER SEARCH
+
+Add search by:
+
+- Unique VYBE user ID.
+- Username.
+- Display name, where appropriate.
+
+User IDs must be generated or assigned through a trusted backend process.
+
+Make IDs searchable and unambiguous.
+
+Display the relevant profile with appropriate privacy restrictions.
+
+Add safe empty, invalid-ID, loading, and error states.
+
+PART Q — PROFILE AND VIDEO BANNER
+
+Keep the profile picture restricted to a still photo.
+
+Allow the profile owner to set a profile banner that can be either:
+
+- A still photo.
+- A video with a maximum duration of five seconds.
+
+Validate video duration and file type before publishing.
+
+Use a compatible video format and graceful fallback when autoplay is unsupported.
+
+The banner video must not autoplay with sound.
+
+Do not turn the profile picture into a video.
+
+PART R — GO LIVE / NAME SHARE VYBE
+
+Implement a feature named Go Live, using the VYBE branding.
+
+Allow authorized users to:
+
+- Start a live stream.
+- Add a stream title.
+- Choose an audience and visibility.
+- Preview the camera and microphone.
+- Go live and end the session.
+- See live status and permitted viewer counts.
+- Allow viewers to join and leave.
+- Receive notifications from followed creators where enabled.
+- Report a live stream.
+- Allow authorized moderators to end a stream.
+
+Use a genuine real-time streaming service or a suitable WebRTC/live-streaming architecture.
+
+If using an external provider, document the required account, credentials, configuration, free-tier limitations, and costs.
+
+Never expose stream-provider secrets in the frontend.
+
+Do not show a stream as Live unless a real streaming session has been established.
+
+PART S — MODERATION, PRIVACY AND SAFETY
+
+Implement:
+
+- User blocking and restrictions.
+- Content reporting.
+- Room reporting.
+- Business review reporting.
+- Live-stream reporting.
+- Moderator review queues.
+- Authorized moderation actions.
+- Audit logs.
+- Rate limits.
+- Appropriate upload validation.
+- Spam and abuse protections.
+- Privacy controls.
+- Account deletion and appropriate data-cleanup procedures.
+
+Use consent-based location sharing.
+
+Protect private conversations, capsules, and restricted content.
+
+Ensure features involving potentially sensitive personal information have appropriate visibility controls.
+
+PART T — BACKEND CONFIGURATION AND DEPLOYMENT
+
+Generate all required backend and deployment files.
+
+Supabase
+
+Provide:
+
+- SQL migrations.
+- Required indexes and constraints.
+- Row Level Security policies.
+- Storage bucket configuration.
+- Storage access policies.
+- Authentication configuration.
+- Realtime configuration where needed.
+- Safe initial admin provisioning.
+- Database setup and verification steps.
+
+Render
+
+If a custom backend is necessary, integrate the existing Render service or prepare the server for deployment.
+
+Provide:
+
+- Server entry point.
+- API routes.
+- Request validation.
+- Authentication middleware.
+- Authorization middleware.
+- CORS configuration.
+- Rate limiting.
+- Health-check endpoint.
+- Environment-variable documentation.
+- Deployment start command.
+- Logging and error handling.
+
+Do not introduce unnecessary infrastructure if Supabase can safely handle the required functionality.
+
+Frontend hosting
+
+Preserve the current hosting setup, including Netlify if used.
+
+Configure the correct API base URL and Supabase project URL.
+
+Support separate development and production environments.
+
+Do not hardcode local development URLs into production code.
+
+Environment variables
+
+Create a safe ".env.example" containing placeholders only.
+
+Document every required variable.
+
+Do not generate fake credentials or claim external configuration is complete when it is not.
+
+Android
+
+Ensure the application can use the same production backend when packaged as an Android APK.
+
+Respect camera, microphone, gallery, and notification permissions.
+
+Document any native Android configuration required for features that cannot be implemented reliably through the existing web layer.
+
+PART U — TESTING AND ACCEPTANCE CRITERIA
+
+Run the existing test suite and add tests where necessary.
+
+Test:
+
+1. Signup and login.
+2. Email verification and password reset.
+3. Session persistence.
+4. Profile updates.
+5. Post creation, editing, and deletion.
+6. Camera access and gallery uploads.
+7. Captions and mood selection.
+8. Comments.
+9. Notification creation and navigation.
+10. Room creation, joining, and terms acceptance.
+11. Audience pool voting and results.
+12. Time Capsule invitations, permissions, release, and expiry.
+13. Double Take answers and matching.
+14. Crossed Paths back navigation and map selection.
+15. Business verification and review submission.
+16. Message attachments, reactions, and reply gestures.
+17. Hidden-chat locking.
+18. Block, report, restrict, and mute operations.
+19. Audio and video call permission separation.
+20. User search by unique ID.
+21. Five-second profile banner validation.
+22. Live-stream session creation and termination.
+23. Admin authorization.
+24. Row Level Security and unauthorized access attempts.
+25. Mobile responsiveness.
+26. Network failures and reconnection.
+27. Production build and deployment configuration.
+
+Use automated tests and real integration checks wherever practical.
+
+Do not mark a feature as working merely because a button is visible.
+
+Use the following implementation statuses:
+
+- COMPLETE: implemented and verified.
+- PARTIAL: some functionality is implemented.
+- BLOCKED: requires missing credentials, an external account, or unavailable configuration.
+- NOT IMPLEMENTED: not yet functional.
+
+Do not claim successful testing unless it was actually performed.
+
+PART V — FINAL DELIVERABLES
+
+At completion, provide:
+
+1. Existing architecture audit.
+2. Updated project files.
+3. Summary of the changes made.
+4. Database schema and SQL migrations.
+5. Authentication and security configuration.
+6. Required environment-variable names.
+7. Supabase setup instructions.
+8. Render setup instructions, if required.
+9. Storage and media setup instructions.
+10. Real-time voice/video/live-stream configuration.
+11. Admin setup instructions.
+12. Deployment steps.
+13. Android APK integration steps.
+14. Actual test results.
+15. A list of blocked features and their precise requirements.
+16. Free-tier limitations and potential operating costs.
+17. Instructions for safely updating the existing GitHub repository.
+
+EXECUTION RULES
+
+Work directly in the existing VYBE project.
+
+Do not return only a prompt, plan, schema example, or tutorial.
+
+Implement the changes in the project files wherever possible.
+
+Do not remove working functionality to simplify the code.
+
+Do not replace real backend operations with mock data.
+
+Do not weaken security policies to make tests pass.
+
+Do not add a paid service without identifying the cost and a possible free alternative.
+
+If the entire application is too large to implement in one pass, complete it in logical phases, preserving a working build after each phase. Keep a clear record of unfinished features and continue from the existing code.
+
+Start with the project audit. Then implement the shared backend and database foundation, authentication, and core social features before the advanced real-time modules. Finish by testing the actual implementation and providing the exact manual setup steps still required.
+
+The final objective is a secure, maintainable, production-oriented VYBE application that works across devices, preserves its existing identity, and uses a real shared backend and database.

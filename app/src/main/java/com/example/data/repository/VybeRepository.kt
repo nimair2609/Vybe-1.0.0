@@ -198,6 +198,19 @@ class VybeRepository private constructor() {
   private val _userActivity = MutableStateFlow<List<UserActivityItem>>(emptyList())
   val userActivity: StateFlow<List<UserActivityItem>> = _userActivity.asStateFlow()
 
+  // Spiritual Mode State (Part F)
+  private val _isSpiritualMode = MutableStateFlow(false)
+  val isSpiritualMode: StateFlow<Boolean> = _isSpiritualMode.asStateFlow()
+
+  private val _spiritualReflections = MutableStateFlow<List<SpiritualReflection>>(emptyList())
+  val spiritualReflections: StateFlow<List<SpiritualReflection>> = _spiritualReflections.asStateFlow()
+
+  private val _spiritualGratitudes = MutableStateFlow<List<SpiritualGratitude>>(emptyList())
+  val spiritualGratitudes: StateFlow<List<SpiritualGratitude>> = _spiritualGratitudes.asStateFlow()
+
+  private val _spiritualIntentions = MutableStateFlow<List<SpiritualIntention>>(emptyList())
+  val spiritualIntentions: StateFlow<List<SpiritualIntention>> = _spiritualIntentions.asStateFlow()
+
   init {
     seedInitialData()
   }
@@ -589,24 +602,113 @@ class VybeRepository private constructor() {
         title = "Priya reacted to your post",
         message = "Uplift reaction on Golden hour across Bandra-Worli Sea Link.",
         timestamp = "15m ago",
-        actorUser = userPriya
+        actorUser = userPriya,
+        destinationScreen = "MAIN"
       ),
       NotificationItem(
         id = "notif_2",
+        type = NotificationType.COMMENT_OR_REPLY,
+        title = "Vikram commented",
+        message = "'Incredible acoustic composition, truly peaceful.'",
+        timestamp = "32m ago",
+        actorUser = userVikramCricket,
+        destinationScreen = "MAIN"
+      ),
+      NotificationItem(
+        id = "notif_3",
         type = NotificationType.TIME_CAPSULE_UNLOCK,
         title = "Time Capsule Unlocked! ⏳",
         message = "Aarav Mehta's sealed message 'Acoustic Demo Sealed' is now available to view.",
         timestamp = "1h ago",
-        actorUser = userAarav
+        actorUser = userAarav,
+        destinationScreen = "TIME_CAPSULES_VIEW"
       ),
       NotificationItem(
-        id = "notif_3",
-        type = NotificationType.CROSSED_PATHS_REQUEST,
+        id = "notif_4",
+        type = NotificationType.ROOM_INVITATION,
+        title = "Unload Room Invitation 🎙️",
+        message = "You're invited to join 'Tech Builders & Midnight Creative Unload' by Aarav.",
+        timestamp = "2h ago",
+        actorUser = userAarav,
+        destinationScreen = "UNLOAD_VIEW"
+      ),
+      NotificationItem(
+        id = "notif_5",
+        type = NotificationType.CROSSED_PATHS_INTERACTION,
         title = "Crossed Paths Encounter 💫",
         message = "Someone in Indiranagar noticed your presence and sent a private handshake request.",
         timestamp = "3h ago",
-        actorUser = null
+        actorUser = null,
+        destinationScreen = "CREATE_CROSSED_PATH"
+      ),
+      NotificationItem(
+        id = "notif_6",
+        type = NotificationType.DOUBLE_TAKE_RESPONSE,
+        title = "Double Take Answer Received 🎭",
+        message = "Priya answered YES to: 'Do you believe architecture shapes music?'",
+        timestamp = "5h ago",
+        actorUser = userPriya,
+        destinationScreen = "DOUBLE_TAKE_VIEW"
+      ),
+      NotificationItem(
+        id = "notif_7",
+        type = NotificationType.BUSINESS_VERIFICATION_UPDATE,
+        title = "Business Shop Verified ✅",
+        message = "Your shop 'Artisan Brews & Roastery' is now officially verified by NR Next Safety.",
+        timestamp = "1d ago",
+        actorUser = null,
+        destinationScreen = "SHOP_DETAIL"
+      ),
+      NotificationItem(
+        id = "notif_8",
+        type = NotificationType.SECURITY_ACCOUNT_UPDATE,
+        title = "Security & Session Alert 🛡️",
+        message = "New login from Pixel 9 Pro (Mumbai, India) verified successfully.",
+        timestamp = "2d ago",
+        actorUser = null,
+        destinationScreen = "SETTINGS"
       )
+    )
+
+    _spiritualReflections.value = listOf(
+      SpiritualReflection(
+        id = "sr_1",
+        quote = "Peace comes from within. Do not seek it without.",
+        traditionOrAuthor = "Gautama Buddha",
+        theme = "Peace",
+        audioCue = "Gentle Tibetan Singing Bowl"
+      ),
+      SpiritualReflection(
+        id = "sr_2",
+        quote = "Let silence take you to the core of life. All outer noise dissolves in presence.",
+        traditionOrAuthor = "Rumi",
+        theme = "Mindfulness",
+        audioCue = "Soft Bamboo Flute"
+      ),
+      SpiritualReflection(
+        id = "sr_3",
+        quote = "The soul that sees beauty may sometimes walk alone, but is never without light.",
+        traditionOrAuthor = "Johann Wolfgang von Goethe",
+        theme = "Hope",
+        audioCue = "Forest Mist Winds"
+      ),
+      SpiritualReflection(
+        id = "sr_4",
+        quote = "When you arise in the morning think of what a privilege it is to be alive, to breathe, to enjoy, to love.",
+        traditionOrAuthor = "Marcus Aurelius",
+        theme = "Gratitude",
+        audioCue = "Morning Chimes"
+      )
+    )
+
+    _spiritualGratitudes.value = listOf(
+      SpiritualGratitude("sg_1", "Grateful for morning sunlight warming the studio and good coffee.", "Today at 7:15 AM"),
+      SpiritualGratitude("sg_2", "Thankful for the calm conversation with an old friend yesterday.", "Yesterday")
+    )
+
+    _spiritualIntentions.value = listOf(
+      SpiritualIntention("si_1", "Speak with kindness and listen without haste today.", "Today", false),
+      SpiritualIntention("si_2", "Take 5 mindful breaths before answering demanding messages.", "Today", true)
     )
 
     _supportTickets.value = listOf(
@@ -1146,5 +1248,56 @@ class VybeRepository private constructor() {
   fun completeOnboarding() {
     val user = _currentUser.value ?: return
     _currentUser.value = user.copy(isOnboardingCompleted = true)
+  }
+
+  // Notification Operations (Part G)
+  fun markNotificationAsRead(id: String) {
+    _notifications.value = _notifications.value.map {
+      if (it.id == id) it.copy(isRead = true) else it
+    }
+  }
+
+  fun markAllNotificationsAsRead() {
+    _notifications.value = _notifications.value.map { it.copy(isRead = true) }
+  }
+
+  fun addNotification(item: NotificationItem) {
+    _notifications.value = listOf(item) + _notifications.value
+  }
+
+  // Spiritual Mode Operations (Part F)
+  fun setSpiritualMode(enabled: Boolean) {
+    _isSpiritualMode.value = enabled
+    _currentUser.value = _currentUser.value?.copy(isSpiritualMode = enabled)
+  }
+
+  fun toggleSpiritualMode() {
+    val next = !_isSpiritualMode.value
+    setSpiritualMode(next)
+  }
+
+  fun addGratitudeEntry(entry: String) {
+    val newEntry = SpiritualGratitude(
+      id = "sg_${System.currentTimeMillis()}",
+      entry = entry.trim(),
+      timestamp = "Just now"
+    )
+    _spiritualGratitudes.value = listOf(newEntry) + _spiritualGratitudes.value
+  }
+
+  fun addIntention(text: String) {
+    val newIntention = SpiritualIntention(
+      id = "si_${System.currentTimeMillis()}",
+      text = text.trim(),
+      timestamp = "Today",
+      isFulfilled = false
+    )
+    _spiritualIntentions.value = listOf(newIntention) + _spiritualIntentions.value
+  }
+
+  fun toggleIntentionFulfilled(id: String) {
+    _spiritualIntentions.value = _spiritualIntentions.value.map {
+      if (it.id == id) it.copy(isFulfilled = !it.isFulfilled) else it
+    }
   }
 }
