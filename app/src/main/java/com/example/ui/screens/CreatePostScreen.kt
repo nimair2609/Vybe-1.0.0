@@ -6,7 +6,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -27,7 +29,12 @@ import com.example.data.model.MoodType
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VybeAvatar
 import com.example.ui.components.VybeGradientButton
+import com.example.ui.theme.VybeMagenta
 import com.example.ui.theme.VybeViolet
+
+enum class PublishDestination {
+  FEED_POST, VYBES_REEL
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,6 +44,8 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
   }
 
   val currentUser by viewModel.currentUser.collectAsState()
+  var publishDestination by remember { mutableStateOf(PublishDestination.FEED_POST) }
+  var postType by remember { mutableStateOf("Text & Photo") }
   var caption by remember { mutableStateOf("") }
   var selectedMood by remember { mutableStateOf<MoodType?>(null) }
   var selectedImage by remember { mutableStateOf<String?>(null) }
@@ -60,7 +69,10 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
           }
         },
         title = {
-          Text("Create Post", fontWeight = FontWeight.Bold)
+          Text(
+            if (publishDestination == PublishDestination.FEED_POST) "Create Feed Post" else "Create VYBES Reel",
+            fontWeight = FontWeight.Bold
+          )
         },
         actions = {
           TextButton(
@@ -69,7 +81,8 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
                 viewModel.createPost(
                   caption = caption,
                   mood = selectedMood,
-                  imageUrl = selectedImage
+                  imageUrl = selectedImage,
+                  mediaType = if (publishDestination == PublishDestination.VYBES_REEL) MediaType.REEL else MediaType.IMAGE
                 )
               }
             },
@@ -90,6 +103,7 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
         .fillMaxSize()
         .padding(paddingValues)
         .padding(16.dp)
+        .verticalScroll(rememberScrollState())
     ) {
       if (currentUser != null) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -97,7 +111,65 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
           Spacer(modifier = Modifier.width(10.dp))
           Column {
             Text(currentUser!!.displayName, fontWeight = FontWeight.Bold)
-            Text("Public to VYBE Community", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+              if (publishDestination == PublishDestination.FEED_POST) "Visible in Main Community Feed" else "Visible in VYBES Short-Video Stream",
+              fontSize = 11.sp,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+          }
+        }
+      }
+
+      Spacer(modifier = Modifier.height(14.dp))
+
+      // Section 9: Clear Publishing Choice (Post vs VYBES)
+      Text(
+        text = "Publishing Destination:",
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.SemiBold
+      )
+      Spacer(modifier = Modifier.height(6.dp))
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+      ) {
+        // Option 1: Post (Regular Feed)
+        Surface(
+          color = if (publishDestination == PublishDestination.FEED_POST) VybeViolet.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+          shape = RoundedCornerShape(12.dp),
+          border = if (publishDestination == PublishDestination.FEED_POST) androidx.compose.foundation.BorderStroke(1.5.dp, VybeViolet) else null,
+          modifier = Modifier
+            .weight(1f)
+            .clickable { publishDestination = PublishDestination.FEED_POST }
+        ) {
+          Column(modifier = Modifier.padding(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Icon(Icons.Default.DynamicFeed, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(18.dp))
+              Spacer(modifier = Modifier.width(6.dp))
+              Text("Post", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Text("Publish to regular feed", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          }
+        }
+
+        // Option 2: VYBES (Short-Video section)
+        Surface(
+          color = if (publishDestination == PublishDestination.VYBES_REEL) VybeMagenta.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+          shape = RoundedCornerShape(12.dp),
+          border = if (publishDestination == PublishDestination.VYBES_REEL) androidx.compose.foundation.BorderStroke(1.5.dp, VybeMagenta) else null,
+          modifier = Modifier
+            .weight(1f)
+            .clickable { publishDestination = PublishDestination.VYBES_REEL }
+        ) {
+          Column(modifier = Modifier.padding(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Icon(Icons.Default.PlayCircle, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(18.dp))
+              Spacer(modifier = Modifier.width(6.dp))
+              Text("VYBES", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Text("Publish to short-video stream", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
           }
         }
       }
@@ -107,8 +179,10 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
       OutlinedTextField(
         value = caption,
         onValueChange = { caption = it },
-        placeholder = { Text("What's on your mind? Share your energy...") },
-        minLines = 4,
+        placeholder = {
+          Text(if (publishDestination == PublishDestination.FEED_POST) "What's on your mind? Share your energy..." else "Add a punchy title and #hashtags for this VYBE clip...")
+        },
+        minLines = 3,
         modifier = Modifier
           .fillMaxWidth()
           .testTag("create_post_caption_input")
@@ -153,9 +227,9 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
 
       Spacer(modifier = Modifier.height(16.dp))
 
-      // Attach Photo
+      // Attach Photo/Media
       Text(
-        text = "Add Photo Asset:",
+        text = if (publishDestination == PublishDestination.FEED_POST) "Add Photo or Visual Asset:" else "Select VYBE Video Thumbnail / Clip:",
         style = MaterialTheme.typography.labelMedium,
         fontWeight = FontWeight.SemiBold
       )
@@ -190,16 +264,17 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
         }
       }
 
-      Spacer(modifier = Modifier.weight(1f))
+      Spacer(modifier = Modifier.height(28.dp))
 
       VybeGradientButton(
-        text = "Post to VYBE Feed",
+        text = if (publishDestination == PublishDestination.FEED_POST) "Post to VYBE Feed" else "Upload to VYBES Reels",
         onClick = {
           if (caption.isNotBlank() || selectedImage != null) {
             viewModel.createPost(
               caption = caption,
               mood = selectedMood,
-              imageUrl = selectedImage
+              imageUrl = selectedImage,
+              mediaType = if (publishDestination == PublishDestination.VYBES_REEL) MediaType.REEL else MediaType.IMAGE
             )
           }
         },

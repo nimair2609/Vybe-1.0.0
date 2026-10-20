@@ -44,6 +44,9 @@ class MainActivity : ComponentActivity() {
             Screen.SETTINGS -> SettingsScreen(viewModel)
             Screen.REELS_VIEWER -> ReelsViewerScreen(viewModel)
             Screen.CREATE_CROSSED_PATH -> CrossedPathsScreen(viewModel)
+            Screen.UNLOAD_VIEW -> UnloadScreen(viewModel)
+            Screen.UNFILTERED_VIEW -> UnfilteredScreen(viewModel)
+            Screen.WHAT_NEXT_VIEW -> WhatNextScreen(viewModel)
           }
         }
       }

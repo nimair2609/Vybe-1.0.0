@@ -6,17 +6,18 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import com.example.data.model.AppThemeMode
 
 private val DarkColorScheme = darkColorScheme(
-  primary = VybeViolet,
+  primary = VybeBrandViolet,
   onPrimary = Color.White,
   primaryContainer = VybeVioletDark,
   onPrimaryContainer = Color.White,
-  secondary = VybeMagenta,
+  secondary = VybeBrandMagenta,
   onSecondary = Color.White,
   secondaryContainer = Color(0xFF831843),
   onSecondaryContainer = Color.White,
-  tertiary = VybeCyan,
+  tertiary = VybeBrandCyan,
   onTertiary = Color.Black,
   background = ObsidianBackground,
   onBackground = ObsidianTextPrimary,
@@ -33,11 +34,11 @@ private val LightColorScheme = lightColorScheme(
   onPrimary = Color.White,
   primaryContainer = Color(0xFFDDD6FE),
   onPrimaryContainer = Color(0xFF2E1065),
-  secondary = VybeMagenta,
+  secondary = VybeBrandMagenta,
   onSecondary = Color.White,
   secondaryContainer = Color(0xFFFCE7F3),
   onSecondaryContainer = Color(0xFF831843),
-  tertiary = VybeCyan,
+  tertiary = VybeBrandCyan,
   onTertiary = Color.Black,
   background = LightBackground,
   onBackground = LightTextPrimary,
@@ -51,10 +52,16 @@ private val LightColorScheme = lightColorScheme(
 
 @Composable
 fun VybeTheme(
-  darkTheme: Boolean = isSystemInDarkTheme(),
+  themeMode: AppThemeMode = AppThemeMode.DARK,
+  darkTheme: Boolean = when (themeMode) {
+    AppThemeMode.DARK -> true
+    AppThemeMode.LIGHT -> false
+    AppThemeMode.SYSTEM -> isSystemInDarkTheme()
+  },
   content: @Composable () -> Unit
 ) {
-  val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+  val isDark = darkTheme
+  val colorScheme = if (isDark) DarkColorScheme else LightColorScheme
 
   MaterialTheme(
     colorScheme = colorScheme,

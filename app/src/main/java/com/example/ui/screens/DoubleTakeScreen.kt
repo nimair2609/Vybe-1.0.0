@@ -77,7 +77,7 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
             modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
           ) {
-            Icon(Icons.Default.CompareArrows, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(32.dp))
+            Icon(Icons.Default.SwapHoriz, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(32.dp))
             Spacer(modifier = Modifier.width(12.dp))
             Column {
               Text("Zero Spoilers & No Peeking", fontWeight = FontWeight.Bold, fontSize = 13.sp)

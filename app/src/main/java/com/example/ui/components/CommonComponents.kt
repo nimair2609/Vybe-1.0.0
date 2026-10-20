@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -7,9 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Store
-import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -19,11 +18,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.example.R
 import com.example.data.model.LivePulseStatus
 import com.example.data.model.User
 import com.example.ui.theme.*
@@ -36,9 +37,9 @@ fun VybeAvatar(
   onClick: (() -> Unit)? = null
 ) {
   val borderBrush = if (user.currentMood != null) {
-    Brush.sweepGradient(listOf(user.currentMood.accentColor, VybeViolet, user.currentMood.accentColor))
+    Brush.sweepGradient(listOf(user.currentMood.accentColor, VybeBrandViolet, user.currentMood.accentColor))
   } else {
-    Brush.linearGradient(listOf(VybeViolet, VybeMagenta))
+    Brush.linearGradient(listOf(VybeBrandCyan, VybeBrandViolet, VybeBrandMagenta))
   }
 
   Box(
@@ -67,7 +68,7 @@ fun VybeAvatar(
         Box(
           modifier = Modifier
             .fillMaxSize()
-            .background(Brush.linearGradient(listOf(VybeViolet, VybeMagenta))),
+            .background(Brush.linearGradient(listOf(VybeBrandViolet, VybeBrandMagenta))),
           contentAlignment = Alignment.Center
         ) {
           Text(
@@ -77,6 +78,23 @@ fun VybeAvatar(
             fontSize = (size.value * 0.4).sp
           )
         }
+      }
+    }
+
+    // 5-second Profile Video Indicator
+    if (!user.profileVideoUrl.isNullOrEmpty()) {
+      Box(
+        modifier = Modifier
+          .size(size * 0.35f)
+          .align(Alignment.TopEnd)
+          .clip(CircleShape)
+          .background(MaterialTheme.colorScheme.surface)
+          .padding(1.dp)
+          .clip(CircleShape)
+          .background(VybeBrandMagenta),
+        contentAlignment = Alignment.Center
+      ) {
+        Text("▶", fontSize = (size.value * 0.16).sp, color = Color.White)
       }
     }
 
@@ -95,18 +113,59 @@ fun VybeAvatar(
   }
 }
 
+/**
+ * Official VYBE 2.0 Distinctive Circular Badges
+ * Featuring the official folded ribbon "V" logo inside a precision circular ring
+ */
 @Composable
 fun VerificationBadge(user: User) {
-  if (user.isVerifiedPublicFigure) {
-    Icon(
-      imageVector = Icons.Default.CheckCircle,
-      contentDescription = "Verified Public Figure",
-      tint = VybeVerifiedBlue,
+  // Official VIP Badge
+  if (user.isVip) {
+    Spacer(modifier = Modifier.width(3.dp))
+    Box(
       modifier = Modifier
-        .size(16.dp)
-        .testTag("verified_badge")
-    )
-  } else if (user.isVerifiedBusiness) {
+        .size(17.dp)
+        .clip(CircleShape)
+        .background(Brush.linearGradient(listOf(Color(0xFFFFD700), Color(0xFFFFA500))))
+        .padding(1.2.dp)
+        .clip(CircleShape)
+        .background(Color(0xFF0F121E))
+        .testTag("vip_badge"),
+      contentAlignment = Alignment.Center
+    ) {
+      Image(
+        painter = painterResource(id = R.drawable.vybe_app_icon_clean),
+        contentDescription = "VYBE Authorized VIP Badge",
+        modifier = Modifier.size(13.dp)
+      )
+    }
+  }
+
+  // Official Verified Badge
+  if (user.isVerified || user.isVerifiedPublicFigure) {
+    Spacer(modifier = Modifier.width(3.dp))
+    Box(
+      modifier = Modifier
+        .size(17.dp)
+        .clip(CircleShape)
+        .background(Brush.linearGradient(listOf(VybeBrandCyan, VybeBrandBlue)))
+        .padding(1.2.dp)
+        .clip(CircleShape)
+        .background(Color(0xFF060714))
+        .testTag("verified_badge"),
+      contentAlignment = Alignment.Center
+    ) {
+      Image(
+        painter = painterResource(id = R.drawable.vybe_app_icon_clean),
+        contentDescription = "VYBE Authorized Verified Badge",
+        modifier = Modifier.size(13.dp)
+      )
+    }
+  }
+
+  // Verified Business Shop Badge
+  if (user.isVerifiedBusiness) {
+    Spacer(modifier = Modifier.width(3.dp))
     Icon(
       imageVector = Icons.Default.Store,
       contentDescription = "Verified Business Shop",
@@ -115,34 +174,6 @@ fun VerificationBadge(user: User) {
         .size(16.dp)
         .testTag("business_badge")
     )
-  }
-
-  if (user.vipBadgeTitle.isNotEmpty()) {
-    Spacer(modifier = Modifier.width(4.dp))
-    Surface(
-      color = VybeVioletDark.copy(alpha = 0.35f),
-      shape = RoundedCornerShape(6.dp),
-      border = androidx.compose.foundation.BorderStroke(0.5.dp, VybeViolet)
-    ) {
-      Row(
-        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-        verticalAlignment = Alignment.CenterVertically
-      ) {
-        Icon(
-          imageVector = Icons.Default.WorkspacePremium,
-          contentDescription = "VIP",
-          tint = VybeVerifiedGold,
-          modifier = Modifier.size(10.dp)
-        )
-        Spacer(modifier = Modifier.width(2.dp))
-        Text(
-          text = user.vipBadgeTitle,
-          fontSize = 9.sp,
-          color = Color.White,
-          fontWeight = FontWeight.Bold
-        )
-      }
-    }
   }
 }
 
@@ -167,7 +198,7 @@ fun VybeGradientButton(
       modifier = Modifier
         .fillMaxSize()
         .background(
-          brush = Brush.horizontalGradient(listOf(VybeViolet, VybeMagenta)),
+          brush = Brush.horizontalGradient(listOf(VybeBrandCyan, VybeBrandViolet, VybeBrandMagenta)),
           shape = RoundedCornerShape(14.dp)
         ),
       contentAlignment = Alignment.Center

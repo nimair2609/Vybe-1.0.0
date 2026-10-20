@@ -68,87 +68,181 @@ fun ExploreScreen(viewModel: VybeViewModel) {
         .fillMaxSize()
         .padding(paddingValues)
     ) {
-      // Feature Portal Quick-Nav Banners (Time Capsule, Double Take, Creator Studio, Admin)
+      // Six Signature Features Grid (Unload, Time Capsule, Double Take, What Next, Crossed, Unfiltered)
       item {
         Spacer(modifier = Modifier.height(10.dp))
+        Text(
+          text = "Signature Experiences",
+          fontWeight = FontWeight.Bold,
+          fontSize = 15.sp,
+          modifier = Modifier.padding(horizontal = 16.dp)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Row 1: UNLOAD, UNFILTERED, WHAT NEXT
         Row(
           modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-          horizontalArrangement = Arrangement.spacedBy(10.dp)
+          horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-          // Time Capsule Quick Card
+          // Feature 1: UNLOAD
+          Card(
+            modifier = Modifier
+              .weight(1f)
+              .clickable { viewModel.navigateTo(Screen.UNLOAD_VIEW) }
+              .testTag("explore_unload_card"),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            shape = RoundedCornerShape(14.dp)
+          ) {
+            Column(modifier = Modifier.padding(10.dp)) {
+              Box(
+                modifier = Modifier
+                  .size(32.dp)
+                  .clip(CircleShape)
+                  .background(VybeBrandCyan.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+              ) {
+                Text("🕊️", fontSize = 16.sp)
+              }
+              Spacer(modifier = Modifier.height(6.dp))
+              Text("UNLOAD", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+              Text("24/7 Listening", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+          }
+
+          // Feature 2: UNFILTERED
+          Card(
+            modifier = Modifier
+              .weight(1f)
+              .clickable { viewModel.navigateTo(Screen.UNFILTERED_VIEW) }
+              .testTag("explore_unfiltered_card"),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            shape = RoundedCornerShape(14.dp)
+          ) {
+            Column(modifier = Modifier.padding(10.dp)) {
+              Box(
+                modifier = Modifier
+                  .size(32.dp)
+                  .clip(CircleShape)
+                  .background(VybeOnlineGreen.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+              ) {
+                Text("🌿", fontSize = 16.sp)
+              }
+              Spacer(modifier = Modifier.height(6.dp))
+              Text("UNFILTERED", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+              Text("Raw & Real", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+          }
+
+          // Feature 3: WHAT NEXT
+          Card(
+            modifier = Modifier
+              .weight(1f)
+              .clickable { viewModel.navigateTo(Screen.WHAT_NEXT_VIEW) }
+              .testTag("explore_what_next_card"),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            shape = RoundedCornerShape(14.dp)
+          ) {
+            Column(modifier = Modifier.padding(10.dp)) {
+              Box(
+                modifier = Modifier
+                  .size(32.dp)
+                  .clip(CircleShape)
+                  .background(VybeViolet.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+              ) {
+                Text("🔮", fontSize = 16.sp)
+              }
+              Spacer(modifier = Modifier.height(6.dp))
+              Text("WHAT NEXT", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+              Text("Culture Pulse", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+          }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Row 2: TIME CAPSULE, DOUBLE TAKE, CROSSED
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+          horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          // Feature 4: Time Capsule
           Card(
             modifier = Modifier
               .weight(1f)
               .clickable { viewModel.navigateTo(Screen.TIME_CAPSULES_VIEW) }
               .testTag("explore_time_capsule_card"),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(14.dp)
           ) {
-            Column(modifier = Modifier.padding(12.dp)) {
+            Column(modifier = Modifier.padding(10.dp)) {
               Box(
                 modifier = Modifier
-                  .size(36.dp)
+                  .size(32.dp)
                   .clip(CircleShape)
                   .background(VybeViolet.copy(alpha = 0.2f)),
                 contentAlignment = Alignment.Center
               ) {
-                Icon(Icons.Default.HourglassTop, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(20.dp))
+                Icon(Icons.Default.HourglassTop, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(18.dp))
               }
-              Spacer(modifier = Modifier.height(8.dp))
-              Text("Time Capsule", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-              Text("Sealed messages", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              Spacer(modifier = Modifier.height(6.dp))
+              Text("Time Capsule", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+              Text("Locked memories", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
           }
 
-          // Double Take Quick Card
+          // Feature 5: Double Take
           Card(
             modifier = Modifier
               .weight(1f)
               .clickable { viewModel.navigateTo(Screen.DOUBLE_TAKE_VIEW) }
               .testTag("explore_double_take_card"),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(14.dp)
           ) {
-            Column(modifier = Modifier.padding(12.dp)) {
+            Column(modifier = Modifier.padding(10.dp)) {
               Box(
                 modifier = Modifier
-                  .size(36.dp)
+                  .size(32.dp)
                   .clip(CircleShape)
                   .background(VybeMagenta.copy(alpha = 0.2f)),
                 contentAlignment = Alignment.Center
               ) {
-                Icon(Icons.Default.CompareArrows, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(20.dp))
+                Icon(Icons.Default.SwapHoriz, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(18.dp))
               }
-              Spacer(modifier = Modifier.height(8.dp))
-              Text("Double Take", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-              Text("Synced answers", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              Spacer(modifier = Modifier.height(6.dp))
+              Text("Double Take", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+              Text("Synced answers", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
           }
 
-          // Creator Studio Card
+          // Feature 6: Crossed Paths
           Card(
             modifier = Modifier
               .weight(1f)
-              .clickable { viewModel.navigateTo(Screen.CREATOR_STUDIO) }
-              .testTag("explore_creator_studio_card"),
+              .clickable { viewModel.navigateTo(Screen.CREATE_CROSSED_PATH) }
+              .testTag("explore_crossed_card"),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(14.dp)
           ) {
-            Column(modifier = Modifier.padding(12.dp)) {
+            Column(modifier = Modifier.padding(10.dp)) {
               Box(
                 modifier = Modifier
-                  .size(36.dp)
+                  .size(32.dp)
                   .clip(CircleShape)
                   .background(VybeCyan.copy(alpha = 0.2f)),
                 contentAlignment = Alignment.Center
               ) {
-                Icon(Icons.Default.Insights, contentDescription = null, tint = VybeCyan, modifier = Modifier.size(20.dp))
+                Icon(Icons.Default.NearMe, contentDescription = null, tint = VybeCyan, modifier = Modifier.size(18.dp))
               }
-              Spacer(modifier = Modifier.height(8.dp))
-              Text("Creator Studio", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-              Text("Insights & Payouts", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              Spacer(modifier = Modifier.height(6.dp))
+              Text("Crossed", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+              Text("Encounters", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
           }
         }

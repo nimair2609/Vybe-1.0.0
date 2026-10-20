@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 enum class MainTab {
-  FEED, MOOD_ZONES, CROSSED_PATHS, EXPLORE, INBOX
+  FEED, VYBES, MOOD_ZONES, EXPLORE, INBOX, CROSSED_PATHS
 }
 
 enum class Screen {
@@ -30,7 +30,10 @@ enum class Screen {
   SETTINGS,
   REELS_VIEWER,
   TIME_CAPSULES_VIEW,
-  DOUBLE_TAKE_VIEW
+  DOUBLE_TAKE_VIEW,
+  UNLOAD_VIEW,
+  UNFILTERED_VIEW,
+  WHAT_NEXT_VIEW
 }
 
 class VybeViewModel : ViewModel() {
@@ -57,14 +60,17 @@ class VybeViewModel : ViewModel() {
   private val _searchQuery = MutableStateFlow("")
   val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-  private val _isDarkMode = MutableStateFlow(true)
-  val isDarkMode: StateFlow<Boolean> = _isDarkMode.asStateFlow()
-
   // Repository flows
   val currentUser = repository.currentUser
   val isLoggedIn = repository.isLoggedIn
+  val themeMode = repository.themeMode
+  val isDarkMode = MutableStateFlow(true) // Kept for backward compatibility
+
   val posts = repository.posts
+  val unfilteredPosts = repository.unfilteredPosts
   val stories = repository.stories
+  val unloadRooms = repository.unloadRooms
+  val activeUnloadRoom = repository.activeUnloadRoom
   val crossedPaths = repository.crossedPaths
   val timeCapsules = repository.timeCapsules
   val doubleTakePrompts = repository.doubleTakePrompts
@@ -76,10 +82,15 @@ class VybeViewModel : ViewModel() {
   val adminReports = repository.adminReports
   val notifications = repository.notifications
   val selectedMoodFilter = repository.selectedMoodFilter
+  val supportTickets = repository.supportTickets
+  val timeManagementStats = repository.timeManagementStats
+  val activeDeviceSessions = repository.activeDeviceSessions
+  val notificationPreferences = repository.notificationPreferences
+  val userActivity = repository.userActivity
 
   init {
     viewModelScope.launch {
-      delay(1600) // Brief stylish splash
+      delay(1500) // Brief polished startup animation
       _currentScreen.value = if (repository.isLoggedIn.value) Screen.MAIN else Screen.AUTH
     }
   }
@@ -129,12 +140,21 @@ class VybeViewModel : ViewModel() {
   }
 
   fun toggleDarkMode() {
-    _isDarkMode.value = !_isDarkMode.value
+    isDarkMode.value = !isDarkMode.value
+    repository.setThemeMode(if (isDarkMode.value) AppThemeMode.DARK else AppThemeMode.LIGHT)
+  }
+
+  fun setThemeMode(mode: AppThemeMode) {
+    repository.setThemeMode(mode)
+    isDarkMode.value = (mode == AppThemeMode.DARK)
   }
 
   // Repository delegated actions
   fun toggleLike(postId: String) = repository.toggleLikePost(postId)
   fun toggleSave(postId: String) = repository.toggleSavePost(postId)
+  fun archivePost(postId: String) = repository.archivePost(postId)
+  fun restoreArchivedPost(postId: String) = repository.restoreArchivedPost(postId)
+  fun reactToPost(postId: String, reaction: VybeReaction) = repository.reactToPost(postId, reaction)
   fun addComment(postId: String, text: String) = repository.addComment(postId, text)
   fun createPost(caption: String, mood: MoodType?, mediaType: MediaType = MediaType.TEXT, imageUrl: String? = null) {
     repository.createPost(caption, mood, mediaType, imageUrl)
@@ -142,13 +162,37 @@ class VybeViewModel : ViewModel() {
   }
   fun selectMoodFilter(mood: MoodType?) = repository.selectMoodFilter(mood)
   fun updateUserMoodAndPulse(mood: MoodType?, pulse: LivePulseStatus) = repository.updateUserMoodAndPulse(mood, pulse)
+
+  // 14.1 UNLOAD
+  fun joinUnloadRoom(room: UnloadRoom) {
+    repository.joinUnloadRoom(room)
+    navigateTo(Screen.UNLOAD_VIEW)
+  }
+  fun leaveUnloadRoom() {
+    repository.leaveUnloadRoom()
+    navigateBack()
+  }
+  fun sendUnloadMessage(roomId: String, text: String, isAnonymous: Boolean) =
+    repository.sendUnloadMessage(roomId, text, isAnonymous)
+
+  // 14.6 UNFILTERED
+  fun createUnfilteredPost(caption: String, imageUrl: String) =
+    repository.createUnfilteredPost(caption, imageUrl)
+  fun addUnfilteredComment(postId: String, text: String) =
+    repository.addUnfilteredComment(postId, text)
+
+  // Double Take & Predictions
   fun submitDoubleTakeAnswer(promptId: String, answer: String) = repository.submitDoubleTakeAnswer(promptId, answer)
   fun votePrediction(predictionId: String, optionId: Int) = repository.votePrediction(predictionId, optionId)
+
+  // Time Capsule
   fun createTimeCapsule(title: String, message: String, recipient: String, unlockDate: String) {
     repository.createTimeCapsule(title, message, recipient, unlockDate)
     navigateBack()
   }
   fun unlockTimeCapsule(capsuleId: String) = repository.unlockTimeCapsule(capsuleId)
+
+  // Messages & Calls
   fun sendDirectMessage(conversationId: String, text: String) = repository.sendDirectMessage(conversationId, text)
   fun startVoiceCall(peer: User) {
     repository.startCall(peer, isVideo = false)
@@ -165,12 +209,45 @@ class VybeViewModel : ViewModel() {
   }
   fun toggleCallMute() = repository.toggleCallMute()
   fun toggleCallCamera() = repository.toggleCallCamera()
+
+  // Shops & Admin
   fun addShopReview(shopId: String, rating: Int, text: String) = repository.addShopReview(shopId, rating, text)
   fun submitAdminAction(reportId: String, action: ReportStatus) = repository.submitAdminReportAction(reportId, action)
   fun sendCrossedPathRequest(encounterId: String) = repository.sendCrossedPathRequest(encounterId)
 
-  fun register(username: String, email: String, dob: String): Pair<Boolean, String> {
-    val result = repository.registerAccount(username, email, dob)
+  // Account & Settings
+  fun checkUserIdAvailability(requestedId: String) = repository.checkUserIdAvailability(requestedId)
+  fun updateAccountProfile(
+    firstName: String,
+    lastName: String,
+    requestedUserId: String,
+    email: String,
+    phone: String,
+    bio: String,
+    avatarUrl: String,
+    profileVideoUrl: String?
+  ) = repository.updateAccountProfile(
+    firstName, lastName, requestedUserId, email, phone, bio, avatarUrl, profileVideoUrl
+  )
+
+  fun submitSupportTicket(category: String, subject: String, message: String) =
+    repository.submitSupportTicket(category, subject, message)
+  fun updateTimeManagement(breakMinutes: Int, isEnabled: Boolean) =
+    repository.updateTimeManagement(breakMinutes, isEnabled)
+  fun logoutDevice(sessionId: String) = repository.logoutDevice(sessionId)
+  fun updateNotificationPreferences(prefs: NotificationPreferences) =
+    repository.updateNotificationPreferences(prefs)
+  fun completeOnboarding() = repository.completeOnboarding()
+
+  fun register(
+    username: String,
+    email: String,
+    dob: String,
+    firstName: String = "",
+    lastName: String = "",
+    phone: String = ""
+  ): Pair<Boolean, String> {
+    val result = repository.registerAccount(username, email, dob, firstName, lastName, phone)
     if (result.first) {
       _currentScreen.value = Screen.MAIN
     }

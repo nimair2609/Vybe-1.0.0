@@ -1,0 +1,703 @@
+VYBE 2.0 — COMPLETE APP UPGRADE MASTER PROMPT
+
+Product of NR Next | Preserve Existing Features | Production-Ready Upgrade
+
+You are a senior Android engineer, full-stack developer, UI/UX designer, security engineer, and QA specialist.
+
+Your task is to upgrade my existing VYBE social media application to VYBE 2.0, using the existing project as the source of truth.
+
+VYBE is a social platform built around authentic connections, creativity, memories, and distinctive social experiences.
+
+This is an upgrade, NOT a rebuild.
+
+The existing application already contains features and working functionality. Inspect the entire project before changing anything. Preserve every existing feature, route, screen, component, backend integration, database schema, and user flow unless a change is explicitly required below.
+
+Do not replace working functionality with mockups, demo data, placeholder buttons, or a separate sample application.
+
+---
+
+1. MANDATORY PROJECT PRESERVATION
+
+Before making changes:
+
+1. Inspect the complete project structure, framework, package manager, Android configuration, navigation, database, backend, authentication, and deployment configuration.
+2. Identify all existing core features and their implementation.
+3. Create a backup or safe working copy.
+4. Establish a baseline build and record existing failures.
+5. Prepare a feature-by-feature preservation checklist.
+6. Reuse existing components and services whenever practical.
+7. Upgrade the current architecture instead of creating duplicate systems.
+8. Preserve existing database records and user accounts.
+9. Add migrations when schema changes are necessary.
+10. Never expose secrets, service-role keys, passwords, OTPs, or private credentials in frontend code or logs.
+
+If a required feature depends on a backend service that does not exist, implement the appropriate integration and clearly identify any external setup still required. Do not pretend that an unconfigured service is working.
+
+Do not remove any of the existing VYBE core features.
+
+2. RESPONSIVE MOBILE LAYOUT — HIGHEST PRIORITY
+
+The entire application must fit properly on different phone sizes and aspect ratios.
+
+Fix the current layout problem where the header appears too low or is incorrectly positioned.
+
+Requirements:
+
+- Support small Android phones, large phones, different screen densities, portrait layouts, and landscape where appropriate.
+- Respect system status bars, navigation bars, display cutouts, safe areas, and keyboard insets.
+- Use the correct native window-inset handling for the existing framework.
+- Prevent the header from appearing unnecessarily below the status bar.
+- Avoid content being hidden behind the header, bottom navigation, keyboard, or system navigation bar.
+- Ensure scrolling works independently and naturally.
+- Prevent horizontal overflow, clipped text, overlapping buttons, and inaccessible controls.
+- Make forms usable when the keyboard is open.
+- Use responsive sizing rather than hardcoded device-specific coordinates.
+- Preserve appropriate touch targets, typography, spacing, and visual hierarchy.
+- Ensure modals, bottom sheets, media viewers, profile screens, settings, and feeds fit correctly.
+- Keep the bottom navigation fixed where appropriate without covering the content.
+
+Test multiple screen dimensions using an emulator or available device previews. Do not claim universal compatibility without testing.
+
+3. VYBE BRANDING AND ANIMATION
+
+Use the existing official VYBE logo and the official NR Next brand asset already present in the project.
+
+Do not invent replacement logos or alter their identity.
+
+Startup animation
+
+Create a polished VYBE startup/loading animation:
+
+- Initially show only the VYBE logo and a subtle “from NR Next” brand attribution.
+- Do not show additional navigation, feature cards, or promotional content during the initial logo animation.
+- Animate the VYBE logo with a smooth, premium effect.
+- Show a letter-reveal animation in which the VYBE wordmark initially appears incomplete, with letters or strokes attempting to appear, briefly blinking or fading, and then progressively resolving into the complete wordmark.
+- Once loading is complete, reveal the full VYBE logo and transition smoothly to the app.
+- Keep the animation short, polished, and responsive.
+- Avoid an endless animation or a fake loading screen.
+- Show a loading indicator only while actual initialization is occurring.
+- Handle loading failures with a clear retry or recovery option.
+- Respect reduced-motion accessibility preferences where supported.
+
+Use the existing official logo asset as the final wordmark. If the source contains no usable logo asset, ask for the official asset rather than inventing one.
+
+4. HEADER AND THEME SETTINGS
+
+Remove the light/dark mode toggle from the main application header.
+
+Move theme selection into Settings.
+
+Support the existing theme options, including Light, Dark, and System Default if the existing implementation supports them.
+
+Save the user's preference persistently and apply it consistently across the entire application.
+
+Do not delete theme functionality. Relocate it without breaking existing theme settings.
+
+Keep the header clean, correctly aligned, and visually consistent across screens.
+
+5. SETTINGS — COMPLETE INFORMATION ARCHITECTURE
+
+Create or reorganize the Settings page with the following sections.
+
+Account and preferences
+
+- Saved
+- Archive
+- Your Activity
+- Notifications
+- Time Management
+- Appearance / Theme
+
+More Information
+
+- Help
+- Chat with Support
+- About VYBE
+
+Account Center
+
+Add a dedicated VYBE Account Center where users can manage their account information, security, and account activity.
+
+Include:
+
+- First name and last name management
+- Unique user ID management, subject to availability
+- Email address management and verification
+- Phone number management and verification
+- Password change
+- Active sessions and available device-management controls
+- Login and security activity
+- Privacy preferences
+- Connected accounts, if supported by the existing project
+- Account deactivation and deletion, with confirmation and appropriate recovery rules
+- Relevant consent, policy, and security settings
+
+Use the existing account data and backend. Do not create duplicate accounts or disconnected profile data.
+
+Require reauthentication or OTP verification for sensitive changes where appropriate.
+
+Saved
+
+Allow users to view content they have saved and remove items from Saved.
+
+Archive
+
+Allow users to view and restore their own archived content. Archiving must not accidentally delete the original content.
+
+Your Activity
+
+Show relevant account activity, including the user's posts, comments, interactions, and other supported activity.
+
+Provide appropriate filters and deletion controls where applicable.
+
+Notifications
+
+Allow users to configure notification preferences, including supported push notifications and in-app notifications.
+
+Request operating-system notification permission only when appropriate.
+
+Time Management
+
+Add useful screen-time and usage information where the platform supports it, such as:
+
+- Daily usage
+- Weekly usage
+- Optional reminders
+- Configurable time limits or break reminders
+
+Use actual recorded usage data. Do not fabricate analytics.
+
+Help and Chat with Support
+
+Create a working help center and support conversation or ticket flow using the existing backend.
+
+If live support is not configured, provide a functioning support ticket mechanism instead of a fake live chat.
+
+About
+
+Display the VYBE name, product attribution “from NR Next,” version information, and working links to applicable policies.
+
+6. REGISTRATION AND LOGIN
+
+Preserve the existing login page's overall design, visual style, and working login flow.
+
+Add or complete the following registration fields:
+
+1. First name
+2. Last name
+3. Suggested User ID
+4. Email address
+5. Phone number
+6. Date of birth
+7. OTP verification
+8. Create password
+9. Confirm password
+10. Terms and Conditions agreement checkbox
+
+Do not redesign the existing login page unnecessarily.
+
+User ID suggestions
+
+- Suggest a unique User ID using the existing naming rules.
+- Check availability against the authoritative backend/database.
+- Allow users to choose their own ID if available.
+- Show clear validation feedback if the ID is already taken.
+- Enforce uniqueness in the database with a unique constraint.
+- Handle concurrent registration attempts safely.
+- Never rely only on frontend validation.
+
+Example messages:
+
+- “This User ID is available.”
+- “This User ID is already taken. Try another.”
+- “Checking availability…”
+
+Do not expose private user information when checking availability.
+
+Email and phone verification
+
+- Send a genuine email OTP or verification link through a configured provider.
+- Send an SMS OTP through a configured SMS provider.
+- Verify OTPs server-side.
+- Set expiration and attempt limits.
+- Apply rate limiting and abuse protection.
+- Prevent reuse of expired or already-used OTPs.
+- Do not hardcode OTPs or log them.
+- Do not claim SMS or email verification works until the required provider is configured and tested.
+
+If the existing authentication provider has a secure native verification flow, use that flow rather than building an insecure parallel authentication system.
+
+Passwords
+
+- Include a show/hide button for Create Password.
+- Include a show/hide button for Confirm Password.
+- Validate password confirmation.
+- Use the existing secure authentication provider for password storage.
+- Never store plaintext passwords.
+- Never store passwords in localStorage or ordinary client-side preferences.
+- Provide clear password validation and recovery flows.
+
+Date of birth and consent
+
+- Validate date of birth and enforce the platform's configured age policy.
+- Handle invalid and future dates correctly.
+- Display Terms and Conditions and Privacy Policy before consent.
+- Require an explicit checkbox agreement.
+- Record the applicable policy version and consent timestamp.
+- Do not preselect the consent checkbox.
+
+Registration completion
+
+After registration:
+
+- Confirm required verification has succeeded.
+- Create the user's profile without duplicating existing accounts.
+- Initialize appropriate profile defaults.
+- Navigate to the existing home screen.
+- Preserve the current session and login architecture.
+- Show any remaining optional onboarding steps clearly.
+
+7. POST-LOGIN ONBOARDING AND PENDING STEPS
+
+After a successful login, evaluate the user's profile and onboarding status.
+
+If required information is missing, display a clear and friendly checklist of pending steps.
+
+Possible steps include:
+
+- Verify email
+- Verify phone
+- Complete profile
+- Add profile photo
+- Configure privacy
+- Review notification preferences
+
+Only show steps that are genuinely incomplete.
+
+Allow users to complete a step and return to where they were.
+
+Do not repeatedly interrupt users with completed steps. Clearly distinguish required security steps from optional profile enhancements.
+
+8. HOMEPAGE AND FEED
+
+Preserve the existing home feed and all working social functionality.
+
+Improve the layout and make the feed responsive.
+
+Refresh gesture
+
+Support a double-tap gesture in an appropriate feed area to refresh the feed, as requested.
+
+- Avoid conflicts with opening posts, liking content, media playback, or accessibility gestures.
+- Provide visual feedback when refreshing.
+- Prevent duplicate simultaneous requests.
+- Keep standard pull-to-refresh if it already exists.
+
+Stories
+
+Improve the Story creation interface with separate, clearly labelled options for:
+
+- Photo
+- Video
+- Text
+- Music
+
+Users should be able to choose supported media from the gallery or capture new content.
+
+Music must use licensed or otherwise authorized audio sources. Do not download copyrighted audio without permission.
+
+Provide appropriate audience and privacy controls.
+
+Implement story reactions or likes according to each user's supported privacy and interaction preferences.
+
+Preserve existing story expiry and visibility rules unless explicitly updated.
+
+9. UNIQUE POST INTERACTIONS
+
+Retain existing post functionality, including text, photo, and video publishing.
+
+Do not simply copy Instagram or Facebook's visual interaction design.
+
+Develop a distinctive VYBE interaction style that feels simple, personal, and original.
+
+Possible interaction principles:
+
+- Expressive reactions that are clearly different from a generic Like button.
+- Conversation-first comments.
+- Meaningful responses and optional quick reactions.
+- Accessible animations and subtle feedback.
+- Clear privacy and audience controls.
+
+First inspect the existing reaction system. Preserve working reaction types and existing user preferences. Do not remove or replace a working interaction without implementing and testing the intended replacement.
+
+Post composer
+
+Provide options to create:
+
+- Text posts
+- Photo posts
+- Video posts
+
+Allow gallery selection and camera capture where supported.
+
+Add a clear publishing choice for:
+
+- Post — publish to the regular feed.
+- VYBES — publish to the short-video/reels section.
+
+Use appropriate labels and descriptions so users understand where the content will appear.
+
+Validate media types, file size, duration, permissions, and upload errors.
+
+Do not publish media until the user confirms.
+
+10. BOTTOM NAVIGATION — VYBES
+
+Add or rename the bottom-navigation short-video destination to VYBES.
+
+- Preserve the existing reels/video implementation if present.
+- Keep navigation visually balanced.
+- Ensure the selected state is obvious.
+- Avoid overlapping system navigation or gesture areas.
+- Preserve all existing navigation destinations and core features.
+- If the current app already uses “Reels” internally, update the user-facing label and routing carefully rather than duplicating the screen.
+
+11. PROFILE MANAGEMENT
+
+Improve the existing profile screen without removing its current capabilities.
+
+Include:
+
+- Edit Profile
+- Edit first and last name
+- Rename User ID, subject to availability
+- Profile photo management
+- Profile video management
+- Existing posts and profile content
+- Relevant privacy and account settings
+
+Unique names and User IDs
+
+- Enforce User ID uniqueness server-side.
+- Validate changes before saving.
+- Handle conflicts without losing the user's current ID.
+- If the requested ID is unavailable, suggest alternatives.
+- Prevent two accounts from owning the same User ID.
+
+Apply appropriate validation to display names according to the existing product rules.
+
+12. PROFILE PHOTO AND FIVE-SECOND PROFILE VIDEO
+
+Support profile media management with these actions:
+
+- Upload photo from gallery
+- Capture a photo using the camera
+- Preview
+- Crop or adjust where supported
+- Replace
+- Remove
+- Edit
+- Save changes
+
+Add an optional profile video up to five seconds long.
+
+Users should be able to:
+
+- Upload a video from the gallery
+- Record a new video
+- Preview it
+- Replace it
+- Remove it
+- Delete it
+
+Validate video duration on the server or trusted processing layer where possible, as well as in the client.
+
+Provide clear fallback behavior for devices that cannot play the selected media.
+
+Do not require a profile video. Keep the ordinary profile photo available.
+
+Respect user privacy and existing audience settings.
+
+13. VERIFIED AND VIP PROFILE BADGES
+
+Use a distinctive rounded circular badge containing the official VYBE “V” logo.
+
+Support two different badge types:
+
+- Verified: awarded only after a defined, authorized verification process.
+- VIP: awarded only through an authorized VIP assignment process.
+
+Requirements:
+
+- Reuse the official VYBE logo asset.
+- Make the badge clear at small sizes.
+- Use accessible labels and tooltips.
+- Store badge status in the trusted backend.
+- Allow only authorized administrators or approved automated processes to grant or revoke badges.
+- Never grant a verified badge just because a user requests one.
+- Do not allow users to edit or forge their own badge status.
+- Preserve any existing legitimate verification functionality.
+
+Remove the unwanted generic “Top Creator” or similar decorative labels from the interface where they are not meaningful, authorized, or part of the intended product design.
+
+Do not delete creator functionality or creator tools that already exist and are genuinely used.
+
+14. PRESERVE AND INTEGRATE THE SIX SIGNATURE FEATURES
+
+These six named features are mandatory and must remain available.
+
+Do not replace them with generic feature cards or remove their underlying functionality.
+
+14.1 VYBE UNLOAD
+
+A live, continuously available listening space.
+
+- The service should be available 24 hours a day, subject to service uptime.
+- Authenticated users can join an available session or room.
+- Support the existing planned text and voice conversation modes.
+- Provide clear session status and connection feedback.
+- Include block, report, leave, and appropriate safety controls.
+- Avoid recording voice sessions.
+- Minimize conversation retention according to the documented privacy design.
+- Be honest about operational metadata, provider logs, and moderation records that may still exist.
+- Do not promise absolute deletion unless the complete system architecture supports it.
+
+Use real-time backend communication. Do not simulate live participants or show fake online counts.
+
+14.2 TIME CAPSULE
+
+Preserve the existing Time Capsule concept and implementation.
+
+Allow the supported creation and storage of memories or messages that users can revisit at the appropriate future time.
+
+Preserve privacy, access controls, scheduling, and existing expiry or delivery rules.
+
+Do not expose private capsules to other users.
+
+14.3 VYBE DOUBLE TAKE
+
+Preserve the existing Double Take concept.
+
+Inspect its actual implementation and retain its intended rediscovery or revisit experience.
+
+Do not substitute an unrelated random-video or dating feature.
+
+14.4 VYBE WHAT NEXT
+
+Preserve the existing What Next concept.
+
+Retain its intended discovery, inspiration, or next-action experience according to the existing project requirements.
+
+Do not replace its functionality with a static promotional page.
+
+14.5 VYBE CROSSED
+
+Preserve the existing Crossed feature and its missed-connection concept.
+
+Support privacy-first posting and opt-in discovery as specified by the existing project.
+
+Do not reveal another person's identity, precise location, private contact details, or movements without authorization.
+
+14.6 VYBE UNFILTERED
+
+Implement the authenticity-first social experience.
+
+Product philosophy:
+
+“Back to Real. Back to Us.”
+
+The objective is to bring back the feeling of old-school social media and move away from today's showoff culture.
+
+Requirements:
+
+- Dedicated UNFILTERED entry point and feed.
+- Capture photos directly through the in-app camera.
+- Capture videos directly through the in-app camera.
+- Disable VYBE beauty filters, face reshaping, skin smoothing, and creative appearance effects in this mode.
+- Do not offer beauty filters or face-altering editing tools in the UNFILTERED publishing flow.
+- Allow authentic everyday moments rather than requiring polished content.
+- Support comments and conversations.
+- No Like button in UNFILTERED.
+- No Share button in UNFILTERED.
+- Do not display like counts, popularity rankings, or engagement leaderboards in this feature.
+- Preserve any existing reporting, blocking, privacy, and safety controls.
+- Clearly distinguish in-app captured content from externally uploaded content.
+- Do not falsely claim that uploaded content is completely untouched.
+- Do not prevent operating-system camera processing that is necessary for normal device operation, but disable VYBE-applied beauty effects.
+
+The UNFILTERED restrictions must apply specifically to this feature. Do not accidentally remove likes and shares from the regular feed or other parts of VYBE.
+
+15. VISUAL DESIGN SYSTEM
+
+Create a consistent visual language across the upgraded app.
+
+- Preserve the established VYBE identity.
+- Use the existing logo, brand assets, typography, and colors wherever appropriate.
+- Improve spacing, hierarchy, alignment, and mobile usability.
+- Keep cards and buttons consistent.
+- Avoid unnecessary gradients, excessive animation, and clutter.
+- Maintain a premium, contemporary design without copying a competitor's distinctive interface.
+- Use meaningful icons.
+- Add loading, empty, success, error, offline, and retry states.
+- Ensure accessibility for text contrast, screen readers, and touch targets.
+
+Make each of the six signature features easy to find without overwhelming the homepage.
+
+16. BACKEND, DATABASE, AND SYNCHRONIZATION
+
+Use the existing backend and database.
+
+If the current implementation is local-only, identify what must be migrated to persistent shared storage.
+
+Requirements:
+
+- Synchronize account data across devices.
+- Enforce authentication and authorization server-side.
+- Apply appropriate row-level access policies or equivalent access controls.
+- Store uploaded media in an appropriate storage service.
+- Validate file types and enforce upload limits.
+- Protect user profiles, saved content, archive, stories, capsules, and private conversations.
+- Prevent unauthorized edits or deletion.
+- Use transactions or safe server operations for critical changes.
+- Apply rate limits to authentication, OTP, uploads, comments, and other abuse-prone endpoints.
+- Do not place secret credentials in the mobile or web client.
+- Use migrations that preserve existing records.
+- Provide safe error handling and recoverable retries.
+- Do not silently discard unsynchronized user content.
+
+If an external service requires credentials, provider configuration, a domain, or a dashboard action, provide exact setup instructions. Never invent credentials or claim setup is complete when it is not.
+
+17. PERFORMANCE AND RELIABILITY
+
+Improve performance without removing functionality.
+
+- Load feed content efficiently.
+- Paginate large feeds.
+- Resize and compress media appropriately without altering UNFILTERED content with beauty effects.
+- Use caching carefully.
+- Avoid duplicate network requests.
+- Handle slow connections and temporary disconnections.
+- Restore app state where appropriate.
+- Clean up media streams, listeners, and subscriptions when screens are closed.
+- Avoid memory leaks and unnecessary background tasks.
+- Keep startup animation independent of slow network requests where possible.
+
+18. SECURITY AND PRIVACY
+
+Implement secure defaults.
+
+- Validate all untrusted input.
+- Enforce authorization on the backend.
+- Protect sessions and sensitive account changes.
+- Never expose private contact details unnecessarily.
+- Do not expose secrets in logs.
+- Provide clear privacy and notification controls.
+- Support account deletion and appropriate data removal.
+- Do not use fake verification.
+- Do not fabricate live user counts.
+- Do not claim privacy guarantees that the backend does not enforce.
+- Ensure that optional permissions are requested only when required.
+
+19. TESTING — REQUIRED BEFORE DELIVERY
+
+Test the existing application before and after the upgrade.
+
+Layout
+
+- Small Android phone
+- Large Android phone
+- Different display densities
+- Keyboard open and closed
+- System status and navigation bars
+- Long text and validation errors
+- Portrait and landscape where supported
+
+Authentication
+
+- Registration validation
+- Duplicate User ID
+- Valid and invalid OTP
+- Expired OTP
+- Email and phone verification
+- Password confirmation
+- Password show/hide
+- Terms checkbox
+- Existing login and logout
+- Session persistence
+- Account recovery
+
+Social features
+
+- Text, photo, and video posts
+- Gallery and camera
+- Story creation and playback
+- Feed refresh gesture
+- Comments and existing reactions
+- VYBES navigation
+- Profile editing
+- Profile photo management
+- Five-second profile video
+- Verified and VIP badge permissions
+
+Signature features
+
+Test all six features, including the UNFILTERED restrictions.
+
+For UNFILTERED, verify that:
+
+- No Like button appears.
+- No Share button appears.
+- Comments work.
+- Camera capture works.
+- Beauty effects are not applied by VYBE.
+- Regular feed reactions and shares remain unchanged.
+
+For UNLOAD, test real connection behavior, room availability, disconnects, leaving, reporting, and moderation controls.
+
+Settings
+
+Test Saved, Archive, Your Activity, Notifications, Time Management, Help, Chat with Support, About, theme settings, and Account Center.
+
+Regression
+
+- Compare against the original feature checklist.
+- Confirm existing core features still work.
+- Confirm existing user data is preserved.
+- Confirm backend synchronization works across devices where configured.
+- Run available automated tests.
+- Build the actual release artifact when the environment supports it.
+
+Do not report a test as passed unless it was executed and passed.
+
+20. DELIVERY REQUIREMENTS
+
+Deliver the upgrade in the existing project's format.
+
+Provide:
+
+1. Updated complete source code.
+2. Updated project ZIP.
+3. A changelog describing every meaningful change.
+4. A list of existing features preserved.
+5. A list of tests run and their actual results.
+6. Any remaining known issues.
+7. Any required backend or provider setup.
+8. Exact build instructions for a new APK if the project supports Android.
+9. A safe installation and rollback plan.
+10. A clear distinction between implemented, tested, and awaiting configuration features.
+
+Do not provide only a prompt, design mockup, screenshot, or code snippets when the actual source project is available.
+
+Do not overwrite or uninstall the user's existing working app until the new build has been verified.
+
+If a requirement conflicts with the existing architecture, explain the conflict and implement the safest compatible solution rather than silently removing functionality.
+
+FINAL INSTRUCTION
+
+First inspect the existing VYBE project. Then upgrade it systematically.
+
+Preserve everything that already works. Add the requested improvements in the correct locations. Fix mobile layout issues. Keep all six signature features. Test the result. Deliver the complete updated project.
+
+VYBE must feel like one cohesive social platform—not a collection of disconnected demos.
+
+Brand attribution: VYBE — from NR Next.

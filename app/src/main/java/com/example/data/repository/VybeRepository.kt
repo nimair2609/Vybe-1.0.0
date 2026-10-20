@@ -25,10 +25,14 @@ class VybeRepository private constructor() {
     id = "u_aarav",
     username = "aarav_beats",
     displayName = "Aarav Mehta",
+    firstName = "Aarav",
+    lastName = "Mehta",
     bio = "Music Producer & Sound Designer 🎹 | Mumbai lo-fi sets | Mood: Chill vibes",
     avatarUrl = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400",
     coverUrl = "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=1000",
     role = UserRole.CREATOR,
+    isVerified = true,
+    isVip = false,
     isVerifiedPublicFigure = true,
     vipBadgeTitle = "Top Creator 2026",
     followersCount = 42800,
@@ -42,11 +46,14 @@ class VybeRepository private constructor() {
     id = "u_priya",
     username = "priya_design",
     displayName = "Priya Krishnamurthy",
+    firstName = "Priya",
+    lastName = "Krishnamurthy",
     bio = "Senior Product Designer in Bengaluru 🎨 | Coffee snob ☕ | Building human-centered UI",
     avatarUrl = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400",
     coverUrl = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1000",
     role = UserRole.USER,
-    isVerifiedPublicFigure = false,
+    isVerified = true,
+    isVip = false,
     followersCount = 8900,
     followingCount = 420,
     postsCount = 88,
@@ -58,11 +65,13 @@ class VybeRepository private constructor() {
     id = "u_vikram",
     username = "vikram_cricket",
     displayName = "Vikram Rathore",
+    firstName = "Vikram",
+    lastName = "Rathore",
     bio = "Cricket Analyst & Former State Player 🏏 | Tactical breakdowns & pitch analysis",
     avatarUrl = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400",
     role = UserRole.VERIFIED_PUBLIC_FIGURE,
-    isVerifiedPublicFigure = true,
-    vipBadgeTitle = "Sports Verified",
+    isVerified = true,
+    isVip = true,
     followersCount = 189000,
     followingCount = 145,
     postsCount = 412,
@@ -74,22 +83,29 @@ class VybeRepository private constructor() {
     id = "u_me",
     username = "sid_verma",
     displayName = "Siddharth Verma",
-    bio = "Full-stack engineer & photographer 📸 | Exploring Mumbai alleyways | Age 22 (Verified 16+)",
+    firstName = "Siddharth",
+    lastName = "Verma",
+    bio = "Full-stack engineer & street photographer 📸 | Exploring Mumbai alleyways | Age 22 (Verified 16+)",
     avatarUrl = "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400",
     coverUrl = "https://images.unsplash.com/photo-1518770660439-4636190af475?w=1000",
+    profileVideoUrl = "https://assets.mixkit.co/videos/preview/mixkit-urban-city-traffic-at-night-42861-large.mp4",
     email = "sid.verma@example.com",
     phone = "+91 98765 43210",
+    isEmailVerified = true,
+    isPhoneVerified = true,
     dateOfBirth = "2004-03-15",
     age = 22,
     isUnder18 = false,
     role = UserRole.CREATOR,
-    isVerifiedPublicFigure = false,
-    isVerifiedBusiness = false,
+    isVerified = true,
+    isVip = true,
+    isVerifiedPublicFigure = true,
     followersCount = 1420,
     followingCount = 385,
     postsCount = 18,
     currentMood = MoodType.HAPPY,
-    livePulse = LivePulseStatus.OPEN_TO_CHAT
+    livePulse = LivePulseStatus.OPEN_TO_CHAT,
+    isOnboardingCompleted = true
   )
 
   // Current session state
@@ -99,13 +115,28 @@ class VybeRepository private constructor() {
   private val _isLoggedIn = MutableStateFlow(true)
   val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
 
+  // App Theme Mode (Persistent)
+  private val _themeMode = MutableStateFlow(AppThemeMode.DARK)
+  val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
+
   // Posts Feed
   private val _posts = MutableStateFlow<List<Post>>(emptyList())
   val posts: StateFlow<List<Post>> = _posts.asStateFlow()
 
+  // Dedicated UNFILTERED Feed ("Back to Real. Back to Us.")
+  private val _unfilteredPosts = MutableStateFlow<List<Post>>(emptyList())
+  val unfilteredPosts: StateFlow<List<Post>> = _unfilteredPosts.asStateFlow()
+
   // Stories
   private val _stories = MutableStateFlow<List<Story>>(emptyList())
   val stories: StateFlow<List<Story>> = _stories.asStateFlow()
+
+  // 14.1 VYBE UNLOAD - 24/7 Live Listening Spaces
+  private val _unloadRooms = MutableStateFlow<List<UnloadRoom>>(emptyList())
+  val unloadRooms: StateFlow<List<UnloadRoom>> = _unloadRooms.asStateFlow()
+
+  private val _activeUnloadRoom = MutableStateFlow<UnloadRoom?>(null)
+  val activeUnloadRoom: StateFlow<UnloadRoom?> = _activeUnloadRoom.asStateFlow()
 
   // Crossed Paths Encounters
   private val _crossedPaths = MutableStateFlow<List<CrossedPathEncounter>>(emptyList())
@@ -119,7 +150,7 @@ class VybeRepository private constructor() {
   private val _doubleTakePrompts = MutableStateFlow<List<DoubleTakePrompt>>(emptyList())
   val doubleTakePrompts: StateFlow<List<DoubleTakePrompt>> = _doubleTakePrompts.asStateFlow()
 
-  // Social Predictions
+  // Social Predictions (What Next)
   private val _predictions = MutableStateFlow<List<SocialPrediction>>(emptyList())
   val predictions: StateFlow<List<SocialPrediction>> = _predictions.asStateFlow()
 
@@ -151,6 +182,22 @@ class VybeRepository private constructor() {
   private val _selectedMoodFilter = MutableStateFlow<MoodType?>(null)
   val selectedMoodFilter: StateFlow<MoodType?> = _selectedMoodFilter.asStateFlow()
 
+  // Settings & Activity State
+  private val _supportTickets = MutableStateFlow<List<SupportTicket>>(emptyList())
+  val supportTickets: StateFlow<List<SupportTicket>> = _supportTickets.asStateFlow()
+
+  private val _timeManagementStats = MutableStateFlow(TimeManagementStats())
+  val timeManagementStats: StateFlow<TimeManagementStats> = _timeManagementStats.asStateFlow()
+
+  private val _activeDeviceSessions = MutableStateFlow<List<ActiveDeviceSession>>(emptyList())
+  val activeDeviceSessions: StateFlow<List<ActiveDeviceSession>> = _activeDeviceSessions.asStateFlow()
+
+  private val _notificationPreferences = MutableStateFlow(NotificationPreferences())
+  val notificationPreferences: StateFlow<NotificationPreferences> = _notificationPreferences.asStateFlow()
+
+  private val _userActivity = MutableStateFlow<List<UserActivityItem>>(emptyList())
+  val userActivity: StateFlow<List<UserActivityItem>> = _userActivity.asStateFlow()
+
   init {
     seedInitialData()
   }
@@ -162,6 +209,8 @@ class VybeRepository private constructor() {
         author = userAarav,
         mediaUrl = "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600",
         caption = "Midnight studio session in Bandra 🎶",
+        mediaType = StoryMediaType.MUSIC,
+        musicTrackTitle = "Midnight Tape 04",
         timestamp = "1h ago"
       ),
       Story(
@@ -169,6 +218,7 @@ class VybeRepository private constructor() {
         author = userPriya,
         mediaUrl = "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=600",
         caption = "Filter coffee & wireframing morning ☕",
+        mediaType = StoryMediaType.PHOTO,
         timestamp = "3h ago"
       ),
       Story(
@@ -176,6 +226,7 @@ class VybeRepository private constructor() {
         author = userVikramCricket,
         mediaUrl = "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=600",
         caption = "Matchday prep at Wankhede! 🏟️",
+        mediaType = StoryMediaType.VIDEO,
         timestamp = "4h ago"
       )
     )
@@ -196,6 +247,8 @@ class VybeRepository private constructor() {
         tags = listOf("MumbaiLoFi", "IndieMusic", "ChillVybe"),
         moodZone = MoodType.CHILL,
         audioTrackTitle = "Colaba Rain Tape - Aarav Beats",
+        userReaction = VybeReaction.DEEP_VIBE,
+        reactionsCount = mapOf(VybeReaction.DEEP_VIBE to 142, VybeReaction.CALM to 98, VybeReaction.PURE_ENERGY to 45),
         comments = listOf(
           PostComment("c_1", "p_1", userPriya, "Looping this while designing right now! Absolutely pristine mix ✨", "1h ago", 12, true),
           PostComment("c_2", "p_1", userMe, "That snare sound is ridiculous. What mic did you use on the ambient rain?", "45m ago", 5, false)
@@ -204,7 +257,7 @@ class VybeRepository private constructor() {
       Post(
         id = "p_2",
         author = userPriya,
-        caption = "Reflecting on 5 years in UX: The best interfaces are the ones that respect human attention rather than exploiting dopamine loops. VYBE's consent-first discovery is proof we can build social without cynicism 🌱 #DesignEthics #ProductDesign",
+        caption = "Reflecting on 5 years in UX: The best interfaces are the ones that respect human attention rather than exploiting dopamine loops. VYBE 2.0 is proof we can build social without cynicism 🌱 #DesignEthics #ProductDesign",
         mediaUrls = listOf("https://images.unsplash.com/photo-1497215728101-856f4ea42174?w=800"),
         mediaType = MediaType.IMAGE,
         timestamp = "5 hours ago",
@@ -214,12 +267,14 @@ class VybeRepository private constructor() {
         sharesCount = 31,
         isLiked = true,
         tags = listOf("DesignEthics", "ProductDesign", "Mindfulness"),
-        moodZone = MoodType.HEALING
+        moodZone = MoodType.HEALING,
+        userReaction = VybeReaction.UPLIFT,
+        reactionsCount = mapOf(VybeReaction.UPLIFT to 210, VybeReaction.PURE_ENERGY to 88)
       ),
       Post(
         id = "p_3",
         author = userVikramCricket,
-        caption = "18 runs needed in the final over with 2 wickets remaining! What happens next? Prediction pool is live in Explore! ⚡🏏 Can the tailenders pull off a historic win?",
+        caption = "18 runs needed in the final over with 2 wickets remaining! What happens next? Prediction pool is live in What Next! ⚡🏏 Can the tailenders pull off a historic win?",
         mediaUrls = listOf("https://images.unsplash.com/photo-1531415074868-036b107e775a?w=800"),
         mediaType = MediaType.IMAGE,
         timestamp = "7 hours ago",
@@ -229,7 +284,9 @@ class VybeRepository private constructor() {
         sharesCount = 205,
         isLiked = false,
         tags = listOf("CricketIndia", "Prediction", "IndVsAus"),
-        moodZone = MoodType.FUN
+        moodZone = MoodType.FUN,
+        userReaction = VybeReaction.HEAT,
+        reactionsCount = mapOf(VybeReaction.HEAT to 450, VybeReaction.PURE_ENERGY to 320)
       ),
       Post(
         id = "p_4",
@@ -244,7 +301,80 @@ class VybeRepository private constructor() {
         sharesCount = 12,
         isLiked = false,
         tags = listOf("MumbaiPhotographers", "SeaLink", "StreetVibe"),
-        moodZone = MoodType.HAPPY
+        moodZone = MoodType.HAPPY,
+        isVybesReel = true,
+        reactionsCount = mapOf(VybeReaction.PURE_ENERGY to 110, VybeReaction.UPLIFT to 65)
+      )
+    )
+
+    // Dedicated UNFILTERED authentic moments ("Back to Real. Back to Us.")
+    _unfilteredPosts.value = listOf(
+      Post(
+        id = "uf_1",
+        author = userMe,
+        caption = "2:30 AM desk reality. Untangled headphones, three half-drunk chai cups, and open debugger tabs. No aesthetic filters, just real building.",
+        mediaUrls = listOf("https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800"),
+        mediaType = MediaType.IMAGE,
+        timestamp = "3 hours ago",
+        isUnfiltered = true,
+        commentsCount = 8,
+        comments = listOf(
+          PostComment("ufc_1", "uf_1", userAarav, "The cold chai cups are universal law ☕", "2h ago", 0, false),
+          PostComment("ufc_2", "uf_1", userPriya, "True engineering habitat! Proud of you Sid", "1h ago", 0, false)
+        )
+      ),
+      Post(
+        id = "uf_2",
+        author = userPriya,
+        caption = "Indiranagar afternoon thunderstorm hitting the balcony plants. Raw sound of thunder on terracotta tiles. No music, no color grading.",
+        mediaUrls = listOf("https://images.unsplash.com/photo-1534274988757-a28bf1a57c17?w=800"),
+        mediaType = MediaType.IMAGE,
+        timestamp = "6 hours ago",
+        isUnfiltered = true,
+        commentsCount = 5,
+        comments = listOf(
+          PostComment("ufc_3", "uf_2", userMe, "Petrichor through the screen 🌱", "5h ago", 0, false)
+        )
+      )
+    )
+
+    // 14.1 VYBE UNLOAD - 24/7 Live Listening Spaces
+    _unloadRooms.value = listOf(
+      UnloadRoom(
+        id = "ul_1",
+        title = "Late Night Overthinking & Lo-Fi Space",
+        description = "A quiet room for anyone struggling to sleep or carrying thoughts they cannot speak out loud at home. Text and voice available.",
+        topicTag = "Late Night Overthinking",
+        mode = UnloadRoomMode.VOICE_AND_TEXT,
+        activeListenersCount = 18,
+        isHostOnline = true,
+        recentMessages = listOf(
+          UnloadMessage("ulm_1", "Midnight Wanderer", true, "Sometimes the weight of expectations just feels very heavy at 2 AM.", "10 mins ago"),
+          UnloadMessage("ulm_2", "Quiet Companion", true, "You are not alone in that feeling. Take a slow deep breath.", "8 mins ago"),
+          UnloadMessage("ulm_3", "Aarav (Host)", false, "Gentle lo-fi piano playing. Feel free to speak or simply rest here.", "3 mins ago")
+        )
+      ),
+      UnloadRoom(
+        id = "ul_2",
+        title = "Work Burnout & Corporate Fatigue",
+        description = "Vent safely about toxic deadlines, corporate micromanagement, and feeling exhausted. Zero retention of messages.",
+        topicTag = "Work Burnout",
+        mode = UnloadRoomMode.TEXT_ONLY,
+        activeListenersCount = 11,
+        isHostOnline = true,
+        recentMessages = listOf(
+          UnloadMessage("ulm_4", "Burnt Out Engineer", true, "Shipped a 6-month feature and management asked for two more by Monday.", "15 mins ago"),
+          UnloadMessage("ulm_5", "Fellow Traveler", true, "Set your boundary. Your physical health outlasts any company.", "11 mins ago")
+        )
+      ),
+      UnloadRoom(
+        id = "ul_3",
+        title = "Silent Solidarity Room",
+        description = "Presence without obligation. No talking required. Just presence and warmth for those having a hard day.",
+        topicTag = "Silent Company",
+        mode = UnloadRoomMode.TEXT_ONLY,
+        activeListenersCount = 26,
+        isHostOnline = true
       )
     )
 
@@ -456,8 +586,8 @@ class VybeRepository private constructor() {
       NotificationItem(
         id = "notif_1",
         type = NotificationType.LIKE,
-        title = "Priya liked your post",
-        message = "Golden hour across Bandra-Worli Sea Link.",
+        title = "Priya reacted to your post",
+        message = "Uplift reaction on Golden hour across Bandra-Worli Sea Link.",
         timestamp = "15m ago",
         actorUser = userPriya
       ),
@@ -478,9 +608,36 @@ class VybeRepository private constructor() {
         actorUser = null
       )
     )
+
+    _supportTickets.value = listOf(
+      SupportTicket(
+        id = "tk_101",
+        category = "Account & Verification",
+        subject = "Public Figure Verification inquiry",
+        message = "Submitted official press coverage portfolio for verification audit.",
+        status = "Investigating",
+        createdAt = "Yesterday",
+        agentResponse = "NR Next Safety team is auditing your verified identity credentials."
+      )
+    )
+
+    _activeDeviceSessions.value = listOf(
+      ActiveDeviceSession("s_1", "Pixel 9 Pro (This Device)", "Android 15", "Mumbai, India", "Active now", true),
+      ActiveDeviceSession("s_2", "MacBook Pro 16\"", "Chrome Web", "Bengaluru, India", "Yesterday 6:40 PM", false)
+    )
+
+    _userActivity.value = listOf(
+      UserActivityItem("act_1", "POST_CREATED", "Shared a post", "Golden hour across Bandra-Worli Sea Link", "1 day ago"),
+      UserActivityItem("act_2", "REACTION_GIVEN", "Reacted ✨ Uplift", "On Priya's post 'Reflecting on 5 years in UX'", "5 hours ago"),
+      UserActivityItem("act_3", "CAPSULE_SEALED", "Sealed a Time Capsule", "To my future self (Unlocks 2027)", "Yesterday")
+    )
   }
 
   // --- ACTIONS ---
+
+  fun setThemeMode(mode: AppThemeMode) {
+    _themeMode.value = mode
+  }
 
   fun toggleLikePost(postId: String) {
     val current = _posts.value.toMutableList()
@@ -494,6 +651,27 @@ class VybeRepository private constructor() {
     }
   }
 
+  fun reactToPost(postId: String, reaction: VybeReaction) {
+    val current = _posts.value.toMutableList()
+    val index = current.indexOfFirst { it.id == postId }
+    if (index != -1) {
+      val post = current[index]
+      val currentMap = post.reactionsCount.toMutableMap()
+      val prevReaction = post.userReaction
+      if (prevReaction != null) {
+        val prevCount = (currentMap[prevReaction] ?: 1) - 1
+        if (prevCount <= 0) currentMap.remove(prevReaction) else currentMap[prevReaction] = prevCount
+      }
+      if (prevReaction != reaction) {
+        currentMap[reaction] = (currentMap[reaction] ?: 0) + 1
+        current[index] = post.copy(userReaction = reaction, reactionsCount = currentMap, isLiked = true)
+      } else {
+        current[index] = post.copy(userReaction = null, reactionsCount = currentMap, isLiked = false)
+      }
+      _posts.value = current
+    }
+  }
+
   fun toggleSavePost(postId: String) {
     val current = _posts.value.toMutableList()
     val index = current.indexOfFirst { it.id == postId }
@@ -502,6 +680,24 @@ class VybeRepository private constructor() {
       val newIsSaved = !post.isSaved
       val newCount = if (newIsSaved) post.savesCount + 1 else post.savesCount - 1
       current[index] = post.copy(isSaved = newIsSaved, savesCount = maxOf(0, newCount))
+      _posts.value = current
+    }
+  }
+
+  fun archivePost(postId: String) {
+    val current = _posts.value.toMutableList()
+    val index = current.indexOfFirst { it.id == postId }
+    if (index != -1) {
+      current[index] = current[index].copy(isArchived = true)
+      _posts.value = current
+    }
+  }
+
+  fun restoreArchivedPost(postId: String) {
+    val current = _posts.value.toMutableList()
+    val index = current.indexOfFirst { it.id == postId }
+    if (index != -1) {
+      current[index] = current[index].copy(isArchived = false)
       _posts.value = current
     }
   }
@@ -526,23 +722,86 @@ class VybeRepository private constructor() {
     }
   }
 
-  fun createPost(caption: String, mood: MoodType?, mediaType: MediaType = MediaType.TEXT, imageUrl: String? = null) {
+  fun addUnfilteredComment(postId: String, text: String) {
+    val user = _currentUser.value ?: return
+    if (text.isBlank()) return
+    val current = _unfilteredPosts.value.toMutableList()
+    val index = current.indexOfFirst { it.id == postId }
+    if (index != -1) {
+      val post = current[index]
+      val newComment = PostComment(
+        id = "ufc_${System.currentTimeMillis()}",
+        postId = postId,
+        author = user,
+        content = text.trim(),
+        timestamp = "Just now"
+      )
+      current[index] = post.copy(comments = post.comments + newComment, commentsCount = post.commentsCount + 1)
+      _unfilteredPosts.value = current
+    }
+  }
+
+  fun createPost(
+    caption: String,
+    mood: MoodType?,
+    mediaType: MediaType = MediaType.TEXT,
+    imageUrl: String? = null,
+    isVybes: Boolean = false
+  ) {
     val user = _currentUser.value ?: return
     val newPost = Post(
       id = "p_${System.currentTimeMillis()}",
       author = user,
       caption = caption,
       mediaUrls = if (!imageUrl.isNullOrBlank()) listOf(imageUrl) else emptyList(),
-      mediaType = if (!imageUrl.isNullOrBlank()) MediaType.IMAGE else mediaType,
+      mediaType = if (!imageUrl.isNullOrBlank()) (if (isVybes) MediaType.REEL else MediaType.IMAGE) else mediaType,
       timestamp = "Just now",
       likesCount = 0,
       commentsCount = 0,
       savesCount = 0,
       sharesCount = 0,
+      isVybesReel = isVybes,
       moodZone = mood,
       tags = listOf("VybeCommunity")
     )
     _posts.value = listOf(newPost) + _posts.value
+  }
+
+  fun createUnfilteredPost(caption: String, imageUrl: String) {
+    val user = _currentUser.value ?: return
+    val newPost = Post(
+      id = "uf_${System.currentTimeMillis()}",
+      author = user,
+      caption = caption,
+      mediaUrls = listOf(imageUrl),
+      mediaType = MediaType.IMAGE,
+      timestamp = "Just now",
+      isUnfiltered = true, // Strict rules: No likes, No shares, No ranking
+      commentsCount = 0
+    )
+    _unfilteredPosts.value = listOf(newPost) + _unfilteredPosts.value
+  }
+
+  fun createStory(
+    mediaUrl: String,
+    caption: String,
+    mediaType: StoryMediaType = StoryMediaType.PHOTO,
+    audience: StoryAudience = StoryAudience.EVERYONE,
+    musicTrackTitle: String? = null
+  ) {
+    val user = _currentUser.value ?: return
+    val newStory = Story(
+      id = "s_${System.currentTimeMillis()}",
+      author = user,
+      mediaUrl = mediaUrl,
+      caption = caption,
+      mediaType = mediaType,
+      audience = audience,
+      musicTrackTitle = musicTrackTitle,
+      timestamp = "Just now",
+      expiresHoursRemaining = 24
+    )
+    _stories.value = listOf(newStory) + _stories.value
   }
 
   fun selectMoodFilter(mood: MoodType?) {
@@ -553,6 +812,38 @@ class VybeRepository private constructor() {
     val user = _currentUser.value ?: return
     val updated = user.copy(currentMood = mood, livePulse = pulse)
     _currentUser.value = updated
+  }
+
+  fun joinUnloadRoom(room: UnloadRoom) {
+    _activeUnloadRoom.value = room
+  }
+
+  fun leaveUnloadRoom() {
+    _activeUnloadRoom.value = null
+  }
+
+  fun sendUnloadMessage(roomId: String, text: String, isAnonymous: Boolean) {
+    val user = _currentUser.value ?: return
+    if (text.isBlank()) return
+    val currentRooms = _unloadRooms.value.toMutableList()
+    val index = currentRooms.indexOfFirst { it.id == roomId }
+    if (index != -1) {
+      val room = currentRooms[index]
+      val newMsg = UnloadMessage(
+        id = "ulm_${System.currentTimeMillis()}",
+        senderName = if (isAnonymous) "Anonymous Vyber" else user.displayName,
+        isAnonymous = isAnonymous,
+        text = text.trim(),
+        timestamp = "Just now",
+        isMe = true
+      )
+      val updatedRoom = room.copy(recentMessages = room.recentMessages + newMsg)
+      currentRooms[index] = updatedRoom
+      _unloadRooms.value = currentRooms
+      if (_activeUnloadRoom.value?.id == roomId) {
+        _activeUnloadRoom.value = updatedRoom
+      }
+    }
   }
 
   fun submitDoubleTakeAnswer(promptId: String, answer: String) {
@@ -574,7 +865,7 @@ class VybeRepository private constructor() {
     val index = current.indexOfFirst { it.id == predictionId }
     if (index != -1) {
       val pred = current[index]
-      if (pred.userSelectedOptionId != null) return // Already voted
+      if (pred.userSelectedOptionId != null) return
       val updatedOptions = pred.options.map { opt ->
         if (opt.id == optionId) opt.copy(votesCount = opt.votesCount + 1) else opt
       }
@@ -714,7 +1005,85 @@ class VybeRepository private constructor() {
     }
   }
 
-  fun registerAccount(username: String, email: String, birthDateStr: String): Pair<Boolean, String> {
+  // --- USER ID AVAILABILITY CHECK ---
+  fun checkUserIdAvailability(requestedId: String): Pair<Boolean, String> {
+    val clean = requestedId.trim().lowercase().replace("@", "")
+    if (clean.length < 3) {
+      return Pair(false, "User ID must be at least 3 characters.")
+    }
+    val existing = listOf("sid_verma", "aarav_beats", "priya_design", "vikram_cricket", "admin", "vybe", "nrnext")
+    val currentUser = _currentUser.value
+    if (currentUser?.username == clean) {
+      return Pair(true, "This is your current User ID.")
+    }
+    if (existing.contains(clean)) {
+      return Pair(false, "This User ID is already taken. Try another.")
+    }
+    return Pair(true, "This User ID is available.")
+  }
+
+  fun updateAccountProfile(
+    firstName: String,
+    lastName: String,
+    username: String,
+    email: String,
+    phone: String,
+    bio: String,
+    profileVideoUrl: String? = null,
+    avatarUrl: String? = null
+  ) {
+    val user = _currentUser.value ?: return
+    val updated = user.copy(
+      firstName = firstName,
+      lastName = lastName,
+      displayName = "$firstName $lastName".trim(),
+      username = username.lowercase().replace(" ", "_"),
+      email = email,
+      phone = phone,
+      bio = bio,
+      profileVideoUrl = profileVideoUrl ?: user.profileVideoUrl,
+      avatarUrl = avatarUrl ?: user.avatarUrl
+    )
+    _currentUser.value = updated
+  }
+
+  fun updateTimeManagement(breakMinutes: Int, isEnabled: Boolean) {
+    _timeManagementStats.value = _timeManagementStats.value.copy(
+      breakReminderMinutes = breakMinutes,
+      isBreakReminderEnabled = isEnabled
+    )
+  }
+
+  fun submitSupportTicket(category: String, subject: String, message: String): SupportTicket {
+    val ticket = SupportTicket(
+      id = "tk_${System.currentTimeMillis() % 10000}",
+      category = category,
+      subject = subject,
+      message = message,
+      status = "Open",
+      createdAt = "Just now",
+      agentResponse = "Thank you for contacting VYBE Support (NR Next). A specialist will review your request shortly."
+    )
+    _supportTickets.value = listOf(ticket) + _supportTickets.value
+    return ticket
+  }
+
+  fun logoutDevice(sessionId: String) {
+    _activeDeviceSessions.value = _activeDeviceSessions.value.filter { it.id != sessionId }
+  }
+
+  fun updateNotificationPreferences(prefs: NotificationPreferences) {
+    _notificationPreferences.value = prefs
+  }
+
+  fun registerAccount(
+    firstName: String,
+    lastName: String,
+    username: String,
+    email: String,
+    phone: String,
+    birthDateStr: String
+  ): Pair<Boolean, String> {
     try {
       val parts = birthDateStr.split("-")
       if (parts.size == 3) {
@@ -731,12 +1100,18 @@ class VybeRepository private constructor() {
         val newUser = User(
           id = "u_${System.currentTimeMillis()}",
           username = username.lowercase().replace(" ", "_"),
-          displayName = username,
+          displayName = "$firstName $lastName".trim(),
+          firstName = firstName,
+          lastName = lastName,
           email = email,
+          phone = phone,
+          isEmailVerified = true,
+          isPhoneVerified = true,
           dateOfBirth = birthDateStr,
           age = age,
           isUnder18 = age in 16..17,
-          role = UserRole.USER
+          role = UserRole.USER,
+          isOnboardingCompleted = false
         )
         _currentUser.value = newUser
         _isLoggedIn.value = true
@@ -746,6 +1121,11 @@ class VybeRepository private constructor() {
       return Pair(false, "Invalid date format. Use YYYY-MM-DD.")
     }
     return Pair(false, "Registration could not be completed.")
+  }
+
+  // Backward compatible overload for existing tests
+  fun registerAccount(username: String, email: String, birthDateStr: String): Pair<Boolean, String> {
+    return registerAccount(username, "", username, email, "+91 98765 00000", birthDateStr)
   }
 
   fun loginUser(identifier: String, pass: String): Boolean {
@@ -761,5 +1141,10 @@ class VybeRepository private constructor() {
     val user = _currentUser.value ?: return
     _currentUser.value = user.copy(isDeactivated = true)
     _isLoggedIn.value = false
+  }
+
+  fun completeOnboarding() {
+    val user = _currentUser.value ?: return
+    _currentUser.value = user.copy(isOnboardingCompleted = true)
   }
 }

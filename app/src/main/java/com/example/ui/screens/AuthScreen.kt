@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -10,29 +11,65 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VybeGradientButton
 import com.example.ui.theme.*
 
+/**
+ * 6. REGISTRATION AND LOGIN (Section 6 & 7)
+ * - Complete 10 registration fields:
+ *   1. First name
+ *   2. Last name
+ *   3. Suggested User ID (with authoritative availability feedback)
+ *   4. Email address
+ *   5. Phone number
+ *   6. Date of birth (16+ enforcement)
+ *   7. OTP verification
+ *   8. Create password (with show/hide toggle)
+ *   9. Confirm password (with show/hide toggle & match validation)
+ *   10. Terms and conditions agreement checkbox (not preselected)
+ * - Post-login onboarding checklist support.
+ */
 @Composable
 fun AuthScreen(viewModel: VybeViewModel) {
   var isRegisterMode by remember { mutableStateOf(false) }
 
-  // Form fields
+  // 10 Registration Fields (Section 6)
+  var firstName by remember { mutableStateOf("") }
+  var lastName by remember { mutableStateOf("") }
   var username by remember { mutableStateOf("") }
-  var emailOrPhone by remember { mutableStateOf("") }
-  var password by remember { mutableStateOf("") }
-  var dateOfBirth by remember { mutableStateOf("2003-08-14") } // Default age ~23
-  var otpCode by remember { mutableStateOf("") }
+  var email by remember { mutableStateOf("") }
+  var phone by remember { mutableStateOf("") }
+  var dateOfBirth by remember { mutableStateOf("2004-03-15") }
+  var createPassword by remember { mutableStateOf("") }
+  var confirmPassword by remember { mutableStateOf("") }
+  var termsAccepted by remember { mutableStateOf(false) } // Not preselected per Section 6
+
+  // Show/Hide password toggles
+  var showCreatePassword by remember { mutableStateOf(false) }
+  var showConfirmPassword by remember { mutableStateOf(false) }
+
+  // User ID availability status
+  var userIdAvailabilityMessage by remember { mutableStateOf<String?>(null) }
+  var isUserIdAvailable by remember { mutableStateOf(true) }
+
+  // Login fields
+  var loginIdentifier by remember { mutableStateOf("") }
+  var loginPassword by remember { mutableStateOf("") }
+  var showLoginPassword by remember { mutableStateOf(false) }
+
+  // OTP flow
   var showOtpStep by remember { mutableStateOf(false) }
+  var otpCode by remember { mutableStateOf("") }
   var errorMessage by remember { mutableStateOf<String?>(null) }
   var statusMessage by remember { mutableStateOf<String?>(null) }
 
@@ -49,13 +86,13 @@ fun AuthScreen(viewModel: VybeViewModel) {
       horizontalAlignment = Alignment.CenterHorizontally,
       verticalArrangement = Arrangement.Center
     ) {
-      Spacer(modifier = Modifier.height(40.dp))
+      Spacer(modifier = Modifier.height(36.dp))
 
       // Official Logo & Header
       Box(
         modifier = Modifier
-          .size(76.dp)
-          .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+          .size(72.dp)
+          .clip(RoundedCornerShape(18.dp))
       ) {
         androidx.compose.foundation.Image(
           painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.vybe_app_icon_clean),
@@ -64,7 +101,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
         )
       }
 
-      Spacer(modifier = Modifier.height(14.dp))
+      Spacer(modifier = Modifier.height(10.dp))
 
       Text(
         text = "vybe",
@@ -74,8 +111,6 @@ fun AuthScreen(viewModel: VybeViewModel) {
         color = MaterialTheme.colorScheme.onBackground
       )
 
-      Spacer(modifier = Modifier.height(2.dp))
-
       Text(
         text = "CONNECT • SHARE • BE YOU",
         fontSize = 11.sp,
@@ -84,7 +119,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
         color = VybeBrandCyan
       )
 
-      Spacer(modifier = Modifier.height(6.dp))
+      Spacer(modifier = Modifier.height(4.dp))
 
       Text(
         text = if (isRegisterMode) "Create your verified VYBE profile" else "Welcome back to your vibe",
@@ -92,8 +127,8 @@ fun AuthScreen(viewModel: VybeViewModel) {
         color = MaterialTheme.colorScheme.onSurfaceVariant
       )
 
-      // Age Policy Banner
-      Spacer(modifier = Modifier.height(18.dp))
+      // Age Policy Banner (16+ community requirement)
+      Spacer(modifier = Modifier.height(14.dp))
       Surface(
         color = VybeViolet.copy(alpha = 0.12f),
         shape = RoundedCornerShape(12.dp),
@@ -101,34 +136,26 @@ fun AuthScreen(viewModel: VybeViewModel) {
         modifier = Modifier.fillMaxWidth()
       ) {
         Row(
-          modifier = Modifier.padding(12.dp),
+          modifier = Modifier.padding(10.dp),
           verticalAlignment = Alignment.CenterVertically
         ) {
           Icon(
             imageVector = Icons.Default.Shield,
             contentDescription = "Age policy",
             tint = VybeViolet,
-            modifier = Modifier.size(24.dp)
+            modifier = Modifier.size(20.dp)
           )
           Spacer(modifier = Modifier.width(10.dp))
-          Column {
-            Text(
-              text = "16+ Community & Safety Gate",
-              fontWeight = FontWeight.Bold,
-              fontSize = 13.sp,
-              color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-              text = "VYBE strictly requires members to be aged 16 and above. Teen accounts (16-17) receive enhanced privacy protection.",
-              fontSize = 11.sp,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              lineHeight = 15.sp
-            )
-          }
+          Text(
+            text = "16+ Community Gate • Teen accounts (16-17) receive enhanced privacy shields.",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            lineHeight = 15.sp
+          )
         }
       }
 
-      Spacer(modifier = Modifier.height(20.dp))
+      Spacer(modifier = Modifier.height(16.dp))
 
       if (errorMessage != null) {
         Surface(
@@ -162,80 +189,231 @@ fun AuthScreen(viewModel: VybeViewModel) {
 
       if (!showOtpStep) {
         if (isRegisterMode) {
+          // Field 1 & 2: First Name and Last Name
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+          ) {
+            OutlinedTextField(
+              value = firstName,
+              onValueChange = { firstName = it },
+              label = { Text("First Name") },
+              singleLine = true,
+              modifier = Modifier.weight(1f).testTag("auth_first_name_input")
+            )
+            OutlinedTextField(
+              value = lastName,
+              onValueChange = { lastName = it },
+              label = { Text("Last Name") },
+              singleLine = true,
+              modifier = Modifier.weight(1f).testTag("auth_last_name_input")
+            )
+          }
+
+          Spacer(modifier = Modifier.height(10.dp))
+
+          // Field 3: Suggested User ID with live availability check (Section 6)
           OutlinedTextField(
             value = username,
-            onValueChange = { username = it },
-            label = { Text("Unique Username") },
-            leadingIcon = { Icon(Icons.Default.AlternateEmail, contentDescription = null) },
+            onValueChange = {
+              username = it
+              if (it.isNotBlank()) {
+                val (avail, msg) = viewModel.checkUserIdAvailability(it)
+                isUserIdAvailable = avail
+                userIdAvailabilityMessage = msg
+              } else {
+                userIdAvailabilityMessage = null
+              }
+            },
+            label = { Text("Unique User ID (@username)") },
+            leadingIcon = { Text("@", fontWeight = FontWeight.Bold, color = VybeViolet) },
+            supportingText = {
+              if (userIdAvailabilityMessage != null) {
+                Text(
+                  text = userIdAvailabilityMessage ?: "",
+                  color = if (isUserIdAvailable) VybeOnlineGreen else VybeDanger,
+                  fontWeight = FontWeight.SemiBold
+                )
+              }
+            },
             singleLine = true,
             modifier = Modifier.fillMaxWidth().testTag("auth_username_input")
           )
 
-          Spacer(modifier = Modifier.height(12.dp))
+          Spacer(modifier = Modifier.height(10.dp))
 
+          // Field 4: Email Address
+          OutlinedTextField(
+            value = email,
+            onValueChange = { email = it },
+            label = { Text("Email Address") },
+            leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag("auth_email_input")
+          )
+
+          Spacer(modifier = Modifier.height(10.dp))
+
+          // Field 5: Phone Number
+          OutlinedTextField(
+            value = phone,
+            onValueChange = { phone = it },
+            label = { Text("Phone Number (+91)") },
+            leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag("auth_phone_input")
+          )
+
+          Spacer(modifier = Modifier.height(10.dp))
+
+          // Field 6: Date of Birth
           OutlinedTextField(
             value = dateOfBirth,
             onValueChange = { dateOfBirth = it },
             label = { Text("Date of Birth (YYYY-MM-DD)") },
             leadingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null) },
-            supportingText = { Text("Required to verify 16+ eligibility") },
+            supportingText = { Text("Must be 16 or older to create an account.") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth().testTag("auth_dob_input")
           )
 
-          Spacer(modifier = Modifier.height(12.dp))
-        }
+          Spacer(modifier = Modifier.height(10.dp))
 
-        OutlinedTextField(
-          value = emailOrPhone,
-          onValueChange = { emailOrPhone = it },
-          label = { Text(if (isRegisterMode) "Email or Mobile (+91)" else "Username, Email or Mobile") },
-          leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
-          singleLine = true,
-          modifier = Modifier.fillMaxWidth().testTag("auth_identifier_input")
-        )
+          // Field 8: Create Password with Show/Hide button
+          OutlinedTextField(
+            value = createPassword,
+            onValueChange = { createPassword = it },
+            label = { Text("Create Password") },
+            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+            trailingIcon = {
+              IconButton(onClick = { showCreatePassword = !showCreatePassword }) {
+                Icon(
+                  imageVector = if (showCreatePassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                  contentDescription = "Show/Hide Password"
+                )
+              }
+            },
+            visualTransformation = if (showCreatePassword) VisualTransformation.None else PasswordVisualTransformation(),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag("auth_create_password_input")
+          )
 
-        Spacer(modifier = Modifier.height(12.dp))
+          Spacer(modifier = Modifier.height(10.dp))
 
-        OutlinedTextField(
-          value = password,
-          onValueChange = { password = it },
-          label = { Text("Password") },
-          leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
-          visualTransformation = PasswordVisualTransformation(),
-          singleLine = true,
-          modifier = Modifier.fillMaxWidth().testTag("auth_password_input")
-        )
+          // Field 9: Confirm Password with Show/Hide button
+          OutlinedTextField(
+            value = confirmPassword,
+            onValueChange = { confirmPassword = it },
+            label = { Text("Confirm Password") },
+            leadingIcon = { Icon(Icons.Default.LockReset, contentDescription = null) },
+            trailingIcon = {
+              IconButton(onClick = { showConfirmPassword = !showConfirmPassword }) {
+                Icon(
+                  imageVector = if (showConfirmPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                  contentDescription = "Show/Hide Confirm Password"
+                )
+              }
+            },
+            visualTransformation = if (showConfirmPassword) VisualTransformation.None else PasswordVisualTransformation(),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag("auth_confirm_password_input")
+          )
 
-        Spacer(modifier = Modifier.height(24.dp))
+          Spacer(modifier = Modifier.height(10.dp))
 
-        VybeGradientButton(
-          text = if (isRegisterMode) "Verify & Create Account" else "Log In to VYBE",
-          onClick = {
-            errorMessage = null
-            if (isRegisterMode) {
-              if (username.isBlank() || emailOrPhone.isBlank()) {
-                errorMessage = "Please enter all required registration details."
+          // Field 10: Terms & Conditions agreement checkbox (not preselected per Section 6)
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Checkbox(
+              checked = termsAccepted,
+              onCheckedChange = { termsAccepted = it },
+              modifier = Modifier.testTag("auth_terms_checkbox")
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+              text = "I agree to the Terms of Service and Privacy Policy (v2.0).",
+              fontSize = 12.sp,
+              color = MaterialTheme.colorScheme.onSurface
+            )
+          }
+
+          Spacer(modifier = Modifier.height(18.dp))
+
+          VybeGradientButton(
+            text = "Verify & Send OTP",
+            onClick = {
+              errorMessage = null
+              if (firstName.isBlank() || lastName.isBlank() || username.isBlank() || email.isBlank() || phone.isBlank()) {
+                errorMessage = "Please fill in all 10 registration details."
+              } else if (createPassword != confirmPassword) {
+                errorMessage = "Passwords do not match."
+              } else if (createPassword.length < 6) {
+                errorMessage = "Password must be at least 6 characters."
+              } else if (!termsAccepted) {
+                errorMessage = "You must agree to the Terms & Conditions."
+              } else if (!isUserIdAvailable) {
+                errorMessage = "This User ID is already taken. Please choose another."
               } else {
                 showOtpStep = true
-                statusMessage = "6-digit OTP code sent to $emailOrPhone (Enter 123456 to verify)"
+                statusMessage = "6-digit OTP code sent to $email (Enter 123456 to verify)"
               }
-            } else {
-              val success = viewModel.login(emailOrPhone, password)
-              if (!success) errorMessage = "Invalid credentials."
-            }
-          },
-          modifier = Modifier.testTag("auth_submit_button")
-        )
+            },
+            modifier = Modifier.testTag("auth_submit_button")
+          )
+        } else {
+          // Login Form
+          OutlinedTextField(
+            value = loginIdentifier,
+            onValueChange = { loginIdentifier = it },
+            label = { Text("Username, Email or Mobile (+91)") },
+            leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag("auth_identifier_input")
+          )
+
+          Spacer(modifier = Modifier.height(12.dp))
+
+          OutlinedTextField(
+            value = loginPassword,
+            onValueChange = { loginPassword = it },
+            label = { Text("Password") },
+            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+            trailingIcon = {
+              IconButton(onClick = { showLoginPassword = !showLoginPassword }) {
+                Icon(
+                  imageVector = if (showLoginPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                  contentDescription = "Show/Hide Password"
+                )
+              }
+            },
+            visualTransformation = if (showLoginPassword) VisualTransformation.None else PasswordVisualTransformation(),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag("auth_password_input")
+          )
+
+          Spacer(modifier = Modifier.height(24.dp))
+
+          VybeGradientButton(
+            text = "Log In to VYBE",
+            onClick = {
+              errorMessage = null
+              val success = viewModel.login(loginIdentifier, loginPassword)
+              if (!success) errorMessage = "Invalid credentials. (Or enter any password to log in with test account)"
+            },
+            modifier = Modifier.testTag("auth_submit_button")
+          )
+        }
       } else {
-        // OTP Step
+        // Field 7: OTP Step
         Text(
-          text = "Enter 6-Digit OTP",
+          text = "Enter 6-Digit Verification Code",
           style = MaterialTheme.typography.titleMedium,
           fontWeight = FontWeight.Bold
         )
         Text(
-          text = "We sent a temporary verification code to $emailOrPhone",
+          text = "We sent a secure OTP to $email and $phone",
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -245,7 +423,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
         OutlinedTextField(
           value = otpCode,
           onValueChange = { otpCode = it },
-          label = { Text("OTP Code (e.g. 123456)") },
+          label = { Text("OTP Code (Enter 123456)") },
           leadingIcon = { Icon(Icons.Default.Key, contentDescription = null) },
           singleLine = true,
           modifier = Modifier.fillMaxWidth().testTag("auth_otp_input")
@@ -257,13 +435,20 @@ fun AuthScreen(viewModel: VybeViewModel) {
           text = "Confirm & Launch Profile",
           onClick = {
             if (otpCode == "123456" || otpCode.length >= 4) {
-              val (ok, msg) = viewModel.register(username, emailOrPhone, dateOfBirth)
+              val (ok, msg) = viewModel.register(
+                username = username,
+                email = email,
+                dob = dateOfBirth,
+                firstName = firstName,
+                lastName = lastName,
+                phone = phone
+              )
               if (!ok) {
                 errorMessage = msg
                 showOtpStep = false
               }
             } else {
-              errorMessage = "Incorrect OTP code. Try entering 123456."
+              errorMessage = "Incorrect OTP code. Enter 123456 to verify."
             }
           },
           modifier = Modifier.testTag("auth_otp_confirm_button")
@@ -294,7 +479,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
         )
       }
 
-      Spacer(modifier = Modifier.height(40.dp))
+      Spacer(modifier = Modifier.height(36.dp))
     }
   }
 }

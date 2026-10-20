@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.MainTab
 import com.example.ui.VybeViewModel
+import com.example.ui.theme.VybeMagenta
 import com.example.ui.theme.VybeViolet
 
 @Composable
@@ -22,6 +23,7 @@ fun MainScreen(viewModel: VybeViewModel) {
   val unreadTotal = remember(conversations) { conversations.sumOf { it.unreadCount } }
 
   Scaffold(
+    contentWindowInsets = WindowInsets(0.dp),
     bottomBar = {
       NavigationBar(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -48,7 +50,26 @@ fun MainScreen(viewModel: VybeViewModel) {
           modifier = Modifier.testTag("nav_tab_feed")
         )
 
-        // Tab 2: Mood Zones
+        // Tab 2: VYBES (Short-video destination per Section 10)
+        NavigationBarItem(
+          selected = selectedTab == MainTab.VYBES,
+          onClick = { viewModel.selectTab(MainTab.VYBES) },
+          icon = {
+            Icon(
+              imageVector = if (selectedTab == MainTab.VYBES) Icons.Default.PlayCircle else Icons.Outlined.PlayCircleOutline,
+              contentDescription = "VYBES Short-Videos"
+            )
+          },
+          label = { Text("VYBES", fontSize = 11.sp, fontWeight = if (selectedTab == MainTab.VYBES) FontWeight.Bold else FontWeight.Normal) },
+          colors = NavigationBarItemDefaults.colors(
+            indicatorColor = VybeMagenta.copy(alpha = 0.2f),
+            selectedIconColor = VybeMagenta,
+            selectedTextColor = VybeMagenta
+          ),
+          modifier = Modifier.testTag("nav_tab_vybes")
+        )
+
+        // Tab 3: Mood Zones
         NavigationBarItem(
           selected = selectedTab == MainTab.MOOD_ZONES,
           onClick = { viewModel.selectTab(MainTab.MOOD_ZONES) },
@@ -65,25 +86,6 @@ fun MainScreen(viewModel: VybeViewModel) {
             selectedTextColor = VybeViolet
           ),
           modifier = Modifier.testTag("nav_tab_moods")
-        )
-
-        // Tab 3: Crossed Paths
-        NavigationBarItem(
-          selected = selectedTab == MainTab.CROSSED_PATHS,
-          onClick = { viewModel.selectTab(MainTab.CROSSED_PATHS) },
-          icon = {
-            Icon(
-              imageVector = if (selectedTab == MainTab.CROSSED_PATHS) Icons.Default.NearMe else Icons.Outlined.NearMe,
-              contentDescription = "Crossed Paths"
-            )
-          },
-          label = { Text("Crossed", fontSize = 11.sp, fontWeight = if (selectedTab == MainTab.CROSSED_PATHS) FontWeight.Bold else FontWeight.Normal) },
-          colors = NavigationBarItemDefaults.colors(
-            indicatorColor = VybeViolet.copy(alpha = 0.2f),
-            selectedIconColor = VybeViolet,
-            selectedTextColor = VybeViolet
-          ),
-          modifier = Modifier.testTag("nav_tab_crossed")
         )
 
         // Tab 4: Explore
@@ -134,13 +136,18 @@ fun MainScreen(viewModel: VybeViewModel) {
       }
     }
   ) { paddingValues ->
-    Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+    Box(
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(paddingValues)
+    ) {
       when (selectedTab) {
         MainTab.FEED -> FeedScreen(viewModel)
+        MainTab.VYBES -> ReelsViewerScreen(viewModel)
         MainTab.MOOD_ZONES -> MoodZonesScreen(viewModel)
-        MainTab.CROSSED_PATHS -> CrossedPathsScreen(viewModel)
         MainTab.EXPLORE -> ExploreScreen(viewModel)
         MainTab.INBOX -> InboxScreen(viewModel)
+        MainTab.CROSSED_PATHS -> CrossedPathsScreen(viewModel)
       }
     }
   }

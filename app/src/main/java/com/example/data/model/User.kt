@@ -17,14 +17,21 @@ data class User(
   val id: String,
   val username: String,
   val displayName: String,
+  val firstName: String = "",
+  val lastName: String = "",
   val bio: String = "",
   val avatarUrl: String = "",
   val coverUrl: String = "",
+  val profileVideoUrl: String? = null, // Up to 5-second looping profile video
   val email: String = "",
   val phone: String = "",
+  val isEmailVerified: Boolean = false,
+  val isPhoneVerified: Boolean = false,
   val dateOfBirth: String = "2000-01-01",
   val age: Int = 24,
   val isUnder18: Boolean = false,
+  val isVerified: Boolean = false, // Distinctive rounded circular badge with official VYBE "V"
+  val isVip: Boolean = false, // Official VIP status badge with circular "V"
   val isVerifiedPublicFigure: Boolean = false,
   val isVerifiedBusiness: Boolean = false,
   val vipBadgeTitle: String = "",
@@ -37,5 +44,6 @@ data class User(
   val currentMood: MoodType? = null,
   val livePulse: LivePulseStatus = LivePulseStatus.NONE,
   val joinedDate: String = "2024",
-  val isDeactivated: Boolean = false
+  val isDeactivated: Boolean = false,
+  val isOnboardingCompleted: Boolean = false
 )
