@@ -1,0 +1,6 @@
+{
+  "name": "VYBE",
+  "description": "Next-generation social network featuring mood zones, crossed paths discovery, time capsules, short-form reels, stories, direct messaging, verified businesses and creator tools.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
