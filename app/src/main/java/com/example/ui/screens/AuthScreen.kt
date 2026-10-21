@@ -106,6 +106,8 @@ fun AuthScreen(viewModel: VybeViewModel) {
     modifier = Modifier
       .fillMaxSize()
       .background(MaterialTheme.colorScheme.background)
+      .windowInsetsPadding(WindowInsets.safeDrawing)
+      .imePadding()
       .padding(horizontal = 24.dp)
   ) {
     Column(
@@ -786,7 +788,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
         text = {
           Column {
             Text(
-              "Enter the 6-digit confirmation code sent to your email by Supabase.",
+              "Enter the 6-digit verification code sent to your email.",
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1039,7 +1041,7 @@ fun TermsAndPrivacyReaderDialog(onDismiss: () -> Unit) {
             )
           } else {
             Text("VYBE Privacy Policy", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
-            Text("Zero-Trust Architecture • Powered by Supabase Secure Cloud", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Zero-Trust Architecture • Protected Community Cloud", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(modifier = Modifier.height(8.dp))
             Text(
               "1. Data Privacy: We never sell your personal data. Private phone numbers and email addresses are never exposed to other community members or publicly indexable.\n\n" +

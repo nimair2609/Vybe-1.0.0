@@ -79,6 +79,11 @@ secrets {
   ignoreList.add("SUPABASE_SERVICE_ROLE_KEY")
   ignoreList.add("RAZORPAY_KEY_SECRET")
   ignoreList.add("CRON_SECRET_KEY")
+  ignoreList.add("RAZORPAY_KEY_ID")
+  ignoreList.add("SMS_GATEWAY_API_KEY")
+  ignoreList.add("STUN_SERVER_URL")
+  ignoreList.add("VYBE_API_BASE_URL")
+  ignoreList.add("VYBE_WEBRTC_SIGNALING_URL")
 }
 
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }

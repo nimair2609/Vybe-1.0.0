@@ -39,6 +39,7 @@ import com.example.ui.VybeViewModel
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VybeAvatar
 import com.example.ui.theme.*
+import kotlinx.coroutines.launch
 
 /**
  * VYBE CHAT DETAIL 2.0
@@ -62,6 +63,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
   val conversation by viewModel.selectedConversation.collectAsState()
   var messageInput by remember { mutableStateOf("") }
   val listState = rememberLazyListState()
+  val coroutineScope = rememberCoroutineScope()
 
   // Message action states
   var replyingToMessage by remember { mutableStateOf<DirectMessage?>(null) }
@@ -187,9 +189,12 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
         actions = {
           IconButton(
             onClick = {
-              val res = viewModel.initiateCall(conv.peerUser, isVideo = false)
-              if (res is CallAvailabilityResult.Unavailable) {
-                callUnavailableReason = res.reason
+              when (val res = viewModel.initiateCall(conv.peerUser, isVideo = false)) {
+                is CallAvailabilityResult.Unavailable -> callUnavailableReason = res.reason
+                is CallAvailabilityResult.Offline -> callUnavailableReason = res.reason
+                is CallAvailabilityResult.Blocked -> callUnavailableReason = res.reason
+                is CallAvailabilityResult.Error -> callUnavailableReason = res.message
+                else -> {}
               }
             },
             modifier = Modifier.testTag("chat_voice_call_btn")
@@ -198,9 +203,12 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
           }
           IconButton(
             onClick = {
-              val res = viewModel.initiateCall(conv.peerUser, isVideo = true)
-              if (res is CallAvailabilityResult.Unavailable) {
-                callUnavailableReason = res.reason
+              when (val res = viewModel.initiateCall(conv.peerUser, isVideo = true)) {
+                is CallAvailabilityResult.Unavailable -> callUnavailableReason = res.reason
+                is CallAvailabilityResult.Offline -> callUnavailableReason = res.reason
+                is CallAvailabilityResult.Blocked -> callUnavailableReason = res.reason
+                is CallAvailabilityResult.Error -> callUnavailableReason = res.message
+                else -> {}
               }
             },
             modifier = Modifier.testTag("chat_video_call_btn")
@@ -1104,12 +1112,14 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
       confirmButton = {
         Button(
           onClick = {
-            viewModel.submitReport(
-              targetType = reportTargetType,
-              targetId = reportTargetId,
-              reason = reportReason.ifBlank { reportCategory },
-              category = reportCategory
-            )
+            coroutineScope.launch {
+              viewModel.submitReport(
+                targetType = reportTargetType,
+                targetId = reportTargetId,
+                reason = reportReason.ifBlank { reportCategory },
+                details = reportCategory
+              )
+            }
             showReportDialog = false
             reportFeedbackMsg = "Thank you. Your report has been submitted for safety review."
           },

@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import androidx.compose.foundation.lazy.items
 import com.example.data.model.Post
 import com.example.data.model.User
 import com.example.ui.theme.*

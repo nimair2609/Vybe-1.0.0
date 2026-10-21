@@ -104,10 +104,70 @@ class VybeCoreUnitTest {
   }
 
   @Test
-  fun testSupabaseConfigSanity() {
-    val url = com.example.data.remote.SupabaseConfig.supabaseUrl
-    assertNotNull("Supabase URL should not be null", url)
-    assertTrue("Auth base URL must contain auth/v1", com.example.data.remote.SupabaseConfig.getAuthBaseUrl().contains("auth/v1"))
-    assertTrue("REST base URL must contain rest/v1", com.example.data.remote.SupabaseConfig.getRestBaseUrl().contains("rest/v1"))
+  fun testOptimisticDirectMessageSendingAndDeduplication() {
+    val convs = repository.conversations.value
+    assertTrue(convs.isNotEmpty())
+    val targetConv = convs.first()
+    val initialMsgCount = targetConv.messages.size
+
+    repository.loginUser("eligible@vybe.in", "Password123!")
+    repository.sendDirectMessage(targetConv.id, "Realtime test message for optimistic send")
+
+    val updatedConv = repository.conversations.value.first { it.id == targetConv.id }
+    assertEquals(initialMsgCount + 1, updatedConv.messages.size)
+    val latest = updatedConv.messages.last()
+    assertEquals("Realtime test message for optimistic send", latest.text)
+    assertTrue("Optimistic message must have a clientId or ID assigned", latest.id.isNotBlank())
+  }
+
+  @Test
+  fun testNotificationReadAndDelete() {
+    val notifs = repository.notifications.value
+    assertTrue(notifs.isNotEmpty())
+    val firstNotif = notifs.first()
+
+    repository.markNotificationAsRead(firstNotif.id)
+    val readNotif = repository.notifications.value.first { it.id == firstNotif.id }
+    assertTrue(readNotif.isRead)
+
+    val countBefore = repository.notifications.value.size
+    repository.deleteNotification(firstNotif.id)
+    val countAfter = repository.notifications.value.size
+    assertEquals(countBefore - 1, countAfter)
+    assertNull(repository.notifications.value.firstOrNull { it.id == firstNotif.id })
+  }
+
+  @Test
+  fun testToggleFollowUser() {
+    val allUsers = repository.allUsers.value
+    assertTrue(allUsers.size >= 2)
+    val target = allUsers.last()
+    val targetId = target.id
+    val initialFollowers = target.followersCount
+
+    val isNowFollowing = repository.toggleFollowUser(targetId)
+    val updatedTarget = repository.allUsers.value.first { it.id == targetId }
+    if (isNowFollowing) {
+      assertEquals(initialFollowers + 1, updatedTarget.followersCount)
+      assertTrue(repository.followingUserIds.value.contains(targetId))
+    }
+
+    // Toggle back
+    val toggledAgain = repository.toggleFollowUser(targetId)
+    assertNotEquals(isNowFollowing, toggledAgain)
+  }
+
+  @Test
+  fun testCallAvailabilityCheck() {
+    repository.loginUser("eligible@vybe.in", "Password123!")
+    val offlineUser = com.example.data.model.User(
+      id = "offline_user_99",
+      username = "offline_user",
+      displayName = "Offline Friend",
+      livePulse = com.example.data.model.LivePulseStatus.NONE
+    )
+    val result = repository.initiateCall(offlineUser, isVideo = false)
+    assertTrue("Offline user must return Offline result", result is com.example.data.model.CallAvailabilityResult.Offline)
   }
 }
+

@@ -27,9 +27,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.NotificationItem
 import com.example.data.model.NotificationType
 import com.example.ui.VybeViewModel
-import com.example.ui.theme.VybeBrandCyan
-import com.example.ui.theme.VybeDanger
-import com.example.ui.theme.VybeViolet
+import com.example.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -223,15 +221,18 @@ fun NotificationCard(
   onDelete: () -> Unit
 ) {
   val (icon, iconTint) = when (item.type) {
+    NotificationType.LIKE -> Pair(Icons.Default.Favorite, Color(0xFFFF5252))
     NotificationType.COMMENT_OR_REPLY -> Pair(Icons.Default.Comment, VybeBrandCyan)
-    NotificationType.POST_REACTION -> Pair(Icons.Default.ElectricBolt, Color(0xFFFFB300))
-    NotificationType.NEW_FOLLOWER -> Pair(Icons.Default.PersonAdd, VybeViolet)
-    NotificationType.DIRECT_MESSAGE -> Pair(Icons.Default.ChatBubble, Color(0xFF00E676))
-    NotificationType.CROSSED_PATHS_ALERT -> Pair(Icons.Default.Place, Color(0xFFFF5252))
-    NotificationType.TIME_CAPSULE_UNLOCKED -> Pair(Icons.Default.LockClock, Color(0xFFAB47BC))
-    NotificationType.UNLOAD_ROOM_INVITE -> Pair(Icons.Default.Hearing, VybeBrandCyan)
-    NotificationType.LIVE_STREAM_STARTED -> Pair(Icons.Default.Podcasts, Color(0xFFFF1744))
-    NotificationType.SPIRITUAL_REMINDER -> Pair(Icons.Default.SelfImprovement, Color(0xFF26A69A))
+    NotificationType.FOLLOW -> Pair(Icons.Default.PersonAdd, VybeViolet)
+    NotificationType.DIRECT_MESSAGE, NotificationType.GROUP_MESSAGE -> Pair(Icons.Default.ChatBubble, Color(0xFF00E676))
+    NotificationType.ROOM_INVITATION -> Pair(Icons.Default.Hearing, VybeBrandCyan)
+    NotificationType.TIME_CAPSULE_INVITATION, NotificationType.TIME_CAPSULE_UNLOCK -> Pair(Icons.Default.LockClock, Color(0xFFAB47BC))
+    NotificationType.DOUBLE_TAKE_RESPONSE -> Pair(Icons.Default.CameraAlt, VybeMagenta)
+    NotificationType.CROSSED_PATHS_INTERACTION -> Pair(Icons.Default.Place, Color(0xFFFF5252))
+    NotificationType.BUSINESS_VERIFICATION_UPDATE -> Pair(Icons.Default.Verified, VybeBrandCyan)
+    NotificationType.LIVE_STREAM_ALERT -> Pair(Icons.Default.Podcasts, Color(0xFFFF1744))
+    NotificationType.SECURITY_ACCOUNT_UPDATE -> Pair(Icons.Default.Security, Color(0xFF26A69A))
+    NotificationType.SHOP_REVIEW -> Pair(Icons.Default.Storefront, Color(0xFFFFB300))
   }
 
   Surface(

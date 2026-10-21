@@ -206,7 +206,6 @@ class VybeViewModel : ViewModel() {
 
   fun retrySendMessage(convId: String, messageId: String) = repository.retrySendMessage(convId, messageId)
   fun syncMessagesForConversation(convId: String) = repository.syncMessagesForConversation(convId)
-  fun initiateCall(peerUser: User, isVideo: Boolean): CallAvailabilityResult = repository.initiateCall(peerUser, isVideo)
   fun toggleFollowUser(targetUserId: String): Boolean = repository.toggleFollowUser(targetUserId)
   val followingUserIds = repository.followingUserIds
   val blockedUserIds = repository.blockedUserIds
@@ -214,7 +213,6 @@ class VybeViewModel : ViewModel() {
   suspend fun submitReport(targetType: String, targetId: String, reason: String, details: String = "") =
     repository.submitReport(targetType, targetId, reason, details)
   fun deleteNotification(notificationId: String) = repository.deleteNotification(notificationId)
-  fun markNotificationAsRead(notificationId: String) = repository.markNotificationAsRead(notificationId)
   fun markAllNotificationsRead() = repository.markAllNotificationsRead()
 
   init {

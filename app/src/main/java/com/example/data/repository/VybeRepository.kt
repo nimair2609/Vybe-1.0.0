@@ -1116,27 +1116,7 @@ class VybeRepository private constructor() {
   }
 
   fun sendDirectMessage(conversationId: String, text: String) {
-    val user = _currentUser.value ?: return
-    if (text.isBlank()) return
-    val current = _conversations.value.toMutableList()
-    val index = current.indexOfFirst { it.id == conversationId }
-    if (index != -1) {
-      val conv = current[index]
-      val newMsg = DirectMessage(
-        id = "m_${System.currentTimeMillis()}",
-        senderId = user.id,
-        text = text.trim(),
-        timestamp = "Just now",
-        isMe = true,
-        isRead = true
-      )
-      current[index] = conv.copy(
-        lastMessage = text.trim(),
-        lastMessageTimestamp = "Just now",
-        messages = conv.messages + newMsg
-      )
-      _conversations.value = current
-    }
+    sendExtendedDirectMessage(conversationId, text)
   }
 
   fun initiateCall(peerUser: User, isVideo: Boolean): CallAvailabilityResult {
@@ -1144,7 +1124,7 @@ class VybeRepository private constructor() {
     if (_blockedUserIds.value.contains(peerUser.id) || _conversations.value.any { it.peerUser.id == peerUser.id && it.isBlocked }) {
       return CallAvailabilityResult.Blocked("Cannot call a blocked user.")
     }
-    val isPeerOnline = peerUser.livePulse != LivePulseStatus.NONE && peerUser.livePulse != LivePulseStatus.QUIET_MODE
+    val isPeerOnline = peerUser.livePulse != LivePulseStatus.NONE && peerUser.livePulse != LivePulseStatus.QUIET_TIME
     if (!isPeerOnline) {
       return CallAvailabilityResult.Offline("${peerUser.displayName} is currently offline. You can leave a direct message instead.")
     }
@@ -2270,16 +2250,20 @@ class VybeRepository private constructor() {
     // Record in local admin queue
     val newReport = AdminReport(
       id = "rep_${System.currentTimeMillis()}",
-      reportedUser = _allUsers.value.firstOrNull { it.id == targetId } ?: User(
-        id = targetId,
-        username = "reported_user",
-        displayName = "Reported Content",
-        role = UserRole.USER,
-        isOnboardingCompleted = true
-      ),
-      reason = "$reason: $details".trim(),
-      severity = "MEDIUM",
-      status = "PENDING_REVIEW"
+      targetType = when (targetType.uppercase()) {
+        "POST" -> ReportTargetType.POST
+        "SHOP", "SHOP_REVIEW" -> ReportTargetType.SHOP_REVIEW
+        "CROSSED_PATHS", "CROSSED_PATHS_MESSAGE" -> ReportTargetType.CROSSED_PATHS_MESSAGE
+        else -> ReportTargetType.USER_PROFILE
+      },
+      targetId = targetId,
+      summaryText = "$reason: $details".trim(),
+      reportedByUsername = _currentUser.value?.username ?: "me",
+      reportedUser = _allUsers.value.firstOrNull { it.id == targetId }?.username ?: targetId,
+      reason = reason,
+      timestamp = "Just now",
+      status = ReportStatus.PENDING,
+      severity = "Medium"
     )
     _adminReports.value = listOf(newReport) + _adminReports.value
     return Pair(true, "Report submitted successfully. Our safety team will review it.")
@@ -2332,14 +2316,8 @@ class VybeRepository private constructor() {
     }
   }
 
-  fun markNotificationAsRead(notificationId: String) {
-    _notifications.value = _notifications.value.map {
-      if (it.id == notificationId) it.copy(isRead = true) else it
-    }
-  }
-
   fun markAllNotificationsRead() {
-    _notifications.value = _notifications.value.map { it.copy(isRead = true) }
+    markAllNotificationsAsRead()
   }
 
   fun updateChatTheme(conversationId: String, theme: String) {
