@@ -218,6 +218,33 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
           )
 
+          Spacer(modifier = Modifier.height(4.dp))
+
+          // Public VYBE ID (Section 3 requirement)
+          Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = RoundedCornerShape(8.dp)
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Text(
+                text = "Public ID: ${user.publicVybeId}",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = VybeViolet
+              )
+              Spacer(modifier = Modifier.width(6.dp))
+              Icon(
+                imageVector = Icons.Default.ContentCopy,
+                contentDescription = "Copy Public VYBE ID",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(13.dp)
+              )
+            }
+          }
+
           if (user.bio.isNotEmpty()) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(

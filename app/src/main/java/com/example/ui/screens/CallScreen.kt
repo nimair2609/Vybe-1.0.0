@@ -94,37 +94,16 @@ fun CallScreen(viewModel: VybeViewModel) {
 
         Text(
           text = when (call.state) {
-            CallState.OUTGOING -> "Calling..."
-            CallState.INCOMING -> "Incoming Call..."
-            CallState.CONNECTED -> "Active Call Session"
-            CallState.ENDED -> "Call Ended"
-            CallState.IDLE -> ""
+            CallState.OUTGOING -> "Ringing…"
+            CallState.INCOMING -> "Incoming Call…"
+            CallState.CONNECTED -> "Connected"
+            CallState.ENDED -> "Call ended"
+            CallState.IDLE -> "Connecting…"
           },
-          fontSize = 14.sp,
+          fontSize = 15.sp,
+          fontWeight = FontWeight.Medium,
           color = ObsidianTextSecondary
         )
-
-        Spacer(modifier = Modifier.height(12.dp))
-        // Signaling Notice Banner per non-negotiable requirement
-        Surface(
-          color = Color(0xFF2A1C10),
-          shape = RoundedCornerShape(10.dp),
-          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
-        ) {
-          Row(
-            modifier = Modifier.padding(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFFFFB74D), modifier = Modifier.size(16.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-              text = "Signaling Notice: WebRTC signaling server (VYBE_WEBRTC_SIGNALING_URL & STUN_SERVER_URL) is awaiting production endpoint configuration in the Secrets panel.",
-              fontSize = 10.sp,
-              color = Color(0xFFFFE0B2),
-              lineHeight = 14.sp
-            )
-          }
-        }
       }
 
       // Middle: Peer profile & avatar

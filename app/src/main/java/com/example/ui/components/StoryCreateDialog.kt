@@ -137,22 +137,22 @@ fun StoryCreateDialog(
           actions = {
             // Audience toggle indicator in header
             Surface(
-              color = if (selectedAudience == StoryAudience.CLOSE_FRIENDS) Color(0xFF2ECC71).copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+              color = if (selectedAudience == StoryAudience.VYBE_MATCHES || selectedAudience == StoryAudience.CLOSE_FRIENDS) Color(0xFF2ECC71).copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
               shape = RoundedCornerShape(16.dp),
               modifier = Modifier
                 .padding(end = 12.dp)
                 .clickable {
-                  selectedAudience = if (selectedAudience == StoryAudience.CLOSE_FRIENDS) StoryAudience.EVERYONE else StoryAudience.CLOSE_FRIENDS
+                  selectedAudience = if (selectedAudience == StoryAudience.VYBE_MATCHES || selectedAudience == StoryAudience.CLOSE_FRIENDS) StoryAudience.EVERYONE else StoryAudience.VYBE_MATCHES
                 }
             ) {
               Row(
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                if (selectedAudience == StoryAudience.CLOSE_FRIENDS) {
+                if (selectedAudience == StoryAudience.VYBE_MATCHES || selectedAudience == StoryAudience.CLOSE_FRIENDS) {
                   Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFF2ECC71), modifier = Modifier.size(14.dp))
                   Spacer(modifier = Modifier.width(4.dp))
-                  Text("Close Friends", color = Color(0xFF2ECC71), fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                  Text("VYBE Matches", color = Color(0xFF2ECC71), fontWeight = FontWeight.Bold, fontSize = 11.sp)
                 } else {
                   Icon(Icons.Default.Public, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
                   Spacer(modifier = Modifier.width(4.dp))
@@ -165,7 +165,7 @@ fun StoryCreateDialog(
         )
       },
       bottomBar = {
-        // Instagram-style Dual Bottom Action Bar (Close Friends / Your Story)
+        // Dual Bottom Action Bar (VYBE Matches / Your Story)
         Surface(
           color = MaterialTheme.colorScheme.surface,
           shadowElevation = 8.dp,
@@ -178,20 +178,20 @@ fun StoryCreateDialog(
               .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
           ) {
-            // 1. Close Friends Button (Insta signature green pill)
+            // 1. VYBE Matches Button
             OutlinedButton(
               onClick = {
                 publishStory(
                   viewModel = viewModel,
                   mode = selectedMode,
-                  audience = StoryAudience.CLOSE_FRIENDS,
+                  audience = StoryAudience.VYBE_MATCHES,
                   caption = captionText,
                   mediaUri = pickedMediaUri?.toString() ?: samplePhotoUrl,
                   textBgKey = textBackgroundKey,
                   musicTitle = selectedTrack.first,
                   location = selectedLocation,
                   onSuccess = {
-                    onStoryPublished("Published to Close Friends! ⭐️")
+                    onStoryPublished("Published to VYBE Matches! ⭐️")
                     onDismiss()
                   }
                 )
@@ -200,11 +200,11 @@ fun StoryCreateDialog(
               shape = RoundedCornerShape(24.dp),
               modifier = Modifier
                 .weight(1f)
-                .testTag("publish_close_friends_button")
+                .testTag("publish_vybe_matches_button")
             ) {
               Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFF2ECC71), modifier = Modifier.size(16.dp))
               Spacer(modifier = Modifier.width(6.dp))
-              Text("Close Friends", color = Color(0xFF2ECC71), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+              Text("VYBE Matches", color = Color(0xFF2ECC71), fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
 
             // 2. Your Story Button (Insta signature colorful share pill)
@@ -612,13 +612,13 @@ fun StoryCreateDialog(
             }
           }
 
-          // Close Friends: Green Ring
+          // VYBE Matches: Green Ring
           Surface(
-            color = if (selectedAudience == StoryAudience.CLOSE_FRIENDS) Color(0xFF2ECC71).copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+            color = if (selectedAudience == StoryAudience.VYBE_MATCHES || selectedAudience == StoryAudience.CLOSE_FRIENDS) Color(0xFF2ECC71).copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier
               .weight(1f)
-              .clickable { selectedAudience = StoryAudience.CLOSE_FRIENDS }
+              .clickable { selectedAudience = StoryAudience.VYBE_MATCHES }
           ) {
             Row(
               modifier = Modifier.padding(12.dp),
@@ -627,8 +627,8 @@ fun StoryCreateDialog(
               Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFF2ECC71), modifier = Modifier.size(14.dp))
               Spacer(modifier = Modifier.width(8.dp))
               Column {
-                Text("Close Friends", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = if (selectedAudience == StoryAudience.CLOSE_FRIENDS) Color(0xFF2ECC71) else MaterialTheme.colorScheme.onSurface)
-                Text("Green ring circle", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("VYBE Matches", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = if (selectedAudience == StoryAudience.VYBE_MATCHES || selectedAudience == StoryAudience.CLOSE_FRIENDS) Color(0xFF2ECC71) else MaterialTheme.colorScheme.onSurface)
+                Text("Exclusive matches list", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
               }
             }
           }

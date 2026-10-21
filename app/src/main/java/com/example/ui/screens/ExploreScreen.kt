@@ -37,8 +37,31 @@ fun ExploreScreen(viewModel: VybeViewModel) {
   val predictions by viewModel.predictions.collectAsState()
   val shops by viewModel.shops.collectAsState()
   val posts by viewModel.posts.collectAsState()
+  val allUsers by viewModel.allUsers.collectAsState()
 
   val trendingTags = listOf("MumbaiLoFi", "CricketIndia", "DesignEthics", "MonsoonCoffee", "BangaloreTech", "IndieCinema")
+
+  val isSearching = searchQuery.isNotBlank()
+  val cleanQuery = remember(searchQuery) { searchQuery.trim().lowercase().replace("@", "") }
+
+  val matchedUsers = remember(cleanQuery, allUsers) {
+    if (cleanQuery.isBlank()) emptyList() else {
+      allUsers.filter {
+        it.publicVybeId.lowercase().contains(cleanQuery) ||
+        it.username.lowercase().contains(cleanQuery) ||
+        it.displayName.lowercase().contains(cleanQuery)
+      }
+    }
+  }
+
+  val matchedShops = remember(cleanQuery, shops) {
+    if (cleanQuery.isBlank()) emptyList() else {
+      shops.filter {
+        it.businessName.lowercase().contains(cleanQuery) ||
+        it.category.lowercase().contains(cleanQuery)
+      }
+    }
+  }
 
   Scaffold(
     topBar = {
@@ -68,19 +91,162 @@ fun ExploreScreen(viewModel: VybeViewModel) {
         .fillMaxSize()
         .padding(paddingValues)
     ) {
-      // Six Signature Features Grid (Unload, Time Capsule, Double Take, What Next, Crossed, Unfiltered)
-      item {
-        Spacer(modifier = Modifier.height(10.dp))
-        Text(
-          text = "Signature Experiences",
-          fontWeight = FontWeight.Bold,
-          fontSize = 15.sp,
-          modifier = Modifier.padding(horizontal = 16.dp)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
+      if (isSearching) {
+        item {
+          Spacer(modifier = Modifier.height(10.dp))
+          Text(
+            text = "Search Results for \"$searchQuery\"",
+            fontWeight = FontWeight.Bold,
+            fontSize = 15.sp,
+            modifier = Modifier.padding(horizontal = 16.dp)
+          )
+          Spacer(modifier = Modifier.height(8.dp))
+        }
 
-        // Row 1: UNLOAD, UNFILTERED, WHAT NEXT
-        Row(
+        if (matchedUsers.isEmpty() && matchedShops.isEmpty()) {
+          item {
+            Card(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+              shape = RoundedCornerShape(16.dp)
+            ) {
+              Column(
+                modifier = Modifier.padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+              ) {
+                Icon(Icons.Default.SearchOff, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(36.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+                Text("No matching profiles or shops", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                  text = "Search by username (@username) or public VYBE ID (e.g. VYBE-7K4M9P2Q).",
+                  fontSize = 12.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+              }
+            }
+          }
+        } else {
+          if (matchedUsers.isNotEmpty()) {
+            item {
+              Text(
+                text = "People & Creators (${matchedUsers.size})",
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                color = VybeViolet,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+              )
+            }
+
+            items(matchedUsers, key = { it.id }) { matchedUser ->
+              Card(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(horizontal = 16.dp, vertical = 5.dp)
+                  .clickable { viewModel.openUserProfile(matchedUser) }
+                  .testTag("search_user_card_${matchedUser.id}"),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+              ) {
+                Row(
+                  modifier = Modifier.padding(12.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  com.example.ui.components.VybeAvatar(user = matchedUser, size = 44.dp)
+                  Spacer(modifier = Modifier.width(12.dp))
+                  Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                      Text(matchedUser.displayName, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                      Spacer(modifier = Modifier.width(4.dp))
+                      VerificationBadge(user = matchedUser)
+                    }
+                    Text("@${matchedUser.username}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Surface(
+                      color = MaterialTheme.colorScheme.surfaceVariant,
+                      shape = RoundedCornerShape(6.dp)
+                    ) {
+                      Text(
+                        text = "ID: ${matchedUser.publicVybeId}",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = VybeBrandCyan,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                      )
+                    }
+                  }
+                  Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+              }
+            }
+          }
+
+          if (matchedShops.isNotEmpty()) {
+            item {
+              Spacer(modifier = Modifier.height(10.dp))
+              Text(
+                text = "Verified Shops (${matchedShops.size})",
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                color = VybeVerifiedGold,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+              )
+            }
+
+            items(matchedShops, key = { it.id }) { matchedShop ->
+              Card(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(horizontal = 16.dp, vertical = 5.dp)
+                  .clickable { viewModel.openShopDetail(matchedShop) },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+              ) {
+                Row(
+                  modifier = Modifier.padding(12.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Box(
+                    modifier = Modifier
+                      .size(44.dp)
+                      .clip(CircleShape)
+                      .background(VybeVerifiedGold.copy(alpha = 0.2f)),
+                    contentAlignment = Alignment.Center
+                  ) {
+                    Icon(Icons.Default.Store, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(24.dp))
+                  }
+                  Spacer(modifier = Modifier.width(12.dp))
+                  Column(modifier = Modifier.weight(1f)) {
+                    Text(matchedShop.businessName, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("${matchedShop.category} • ${matchedShop.locationAddress}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  }
+                  Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+              }
+            }
+          }
+        }
+      } else {
+        // Six Signature Features Grid (Unload, Time Capsule, Double Take, What Next, Crossed, Unfiltered)
+        item {
+          Spacer(modifier = Modifier.height(10.dp))
+          Text(
+            text = "Signature Experiences",
+            fontWeight = FontWeight.Bold,
+            fontSize = 15.sp,
+            modifier = Modifier.padding(horizontal = 16.dp)
+          )
+          Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        item {
+          // Row 1: UNLOAD, UNFILTERED, WHAT NEXT
+          Row(
           modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
@@ -540,4 +706,5 @@ fun ExploreScreen(viewModel: VybeViewModel) {
       }
     }
   }
+}
 }

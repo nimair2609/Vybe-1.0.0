@@ -171,63 +171,31 @@ fun PostCard(
         verticalAlignment = Alignment.CenterVertically
       ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-          // Like Button
-          IconButton(
-            onClick = onLikeClick,
-            modifier = Modifier.size(36.dp).testTag("like_button_${post.id}")
+          // Comment Button (Primary conversation interaction per Section 7)
+          Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.clickable { showCommentDialog = true }
           ) {
-            Icon(
-              imageVector = if (post.isLiked) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
-              contentDescription = "Like",
-              tint = if (post.isLiked) VybeMagenta else MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(
+              modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Icon(
+                imageVector = Icons.Outlined.ChatBubbleOutline,
+                contentDescription = "Comment",
+                tint = VybeViolet,
+                modifier = Modifier.size(18.dp).testTag("comment_button_${post.id}")
+              )
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(
+                text = "${post.commentsCount} Comments",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+              )
+            }
           }
-          Text(
-            text = "${post.likesCount}",
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Medium,
-            color = if (post.isLiked) VybeMagenta else MaterialTheme.colorScheme.onSurfaceVariant
-          )
-
-          Spacer(modifier = Modifier.width(12.dp))
-
-          // Comment Button
-          IconButton(
-            onClick = { showCommentDialog = true },
-            modifier = Modifier.size(36.dp).testTag("comment_button_${post.id}")
-          ) {
-            Icon(
-              imageVector = Icons.Outlined.ChatBubbleOutline,
-              contentDescription = "Comment",
-              tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-          }
-          Text(
-            text = "${post.commentsCount}",
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-          )
-
-          Spacer(modifier = Modifier.width(12.dp))
-
-          // Share Button
-          IconButton(
-            onClick = onShareClick,
-            modifier = Modifier.size(36.dp).testTag("share_button_${post.id}")
-          ) {
-            Icon(
-              imageVector = Icons.Outlined.Share,
-              contentDescription = "Share",
-              tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-          }
-          Text(
-            text = "${post.sharesCount}",
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-          )
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {

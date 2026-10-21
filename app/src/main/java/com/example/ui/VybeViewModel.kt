@@ -97,6 +97,12 @@ class VybeViewModel : ViewModel() {
   val spiritualGratitudes = repository.spiritualGratitudes
   val spiritualIntentions = repository.spiritualIntentions
   val businessApplications = repository.businessApplications
+  val allUsers = repository.allUsers
+  val vybeMatches = repository.vybeMatches
+
+  fun addVybeMatch(user: User) = repository.addVybeMatch(user)
+  fun removeVybeMatch(userId: String) = repository.removeVybeMatch(userId)
+  fun isVybeMatch(userId: String): Boolean = repository.isVybeMatch(userId)
 
   fun markNotificationAsRead(id: String) = repository.markNotificationAsRead(id)
   fun markAllNotificationsAsRead() = repository.markAllNotificationsAsRead()

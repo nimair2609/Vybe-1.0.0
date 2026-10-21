@@ -17,6 +17,7 @@ data class User(
   val id: String,
   val username: String,
   val displayName: String,
+  val publicVybeId: String = "VYBE-${id.takeLast(8).uppercase().replace("_", "K")}",
   val firstName: String = "",
   val lastName: String = "",
   val bio: String = "",

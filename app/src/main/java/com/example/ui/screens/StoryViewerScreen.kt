@@ -264,12 +264,12 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
             )
           }
 
-          // Close Friends indicator
-          if (currentStory.audience == StoryAudience.CLOSE_FRIENDS) {
+          // VYBE Matches indicator (Renamed per Section 4)
+          if (currentStory.audience == StoryAudience.VYBE_MATCHES || currentStory.audience == StoryAudience.CLOSE_FRIENDS) {
             Row(verticalAlignment = Alignment.CenterVertically) {
               Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFF2ECC71), modifier = Modifier.size(10.dp))
               Spacer(modifier = Modifier.width(3.dp))
-              Text("Close Friends", color = Color(0xFF2ECC71), fontWeight = FontWeight.Bold, fontSize = 10.sp)
+              Text("VYBE Matches", color = Color(0xFF2ECC71), fontWeight = FontWeight.Bold, fontSize = 10.sp)
             }
           }
         }

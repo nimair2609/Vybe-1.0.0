@@ -115,6 +115,14 @@ class VybeRepository private constructor() {
   private val _isLoggedIn = MutableStateFlow(true)
   val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
 
+  // Registered Community Users (Searchable by username and public VYBE ID)
+  private val _allUsers = MutableStateFlow<List<User>>(listOf(userMe, userAarav, userPriya, userVikramCricket))
+  val allUsers: StateFlow<List<User>> = _allUsers.asStateFlow()
+
+  // VYBE Matches List (Section 4 requirement)
+  private val _vybeMatches = MutableStateFlow<List<User>>(listOf(userAarav, userPriya))
+  val vybeMatches: StateFlow<List<User>> = _vybeMatches.asStateFlow()
+
   // App Theme Mode (Persistent)
   private val _themeMode = MutableStateFlow(AppThemeMode.DARK)
   val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
@@ -1736,7 +1744,25 @@ class VybeRepository private constructor() {
 
   fun searchUserByVybeId(query: String): User? {
     val clean = query.trim().lowercase().replace("@", "")
-    val all = listOf(userMe, userAarav, userPriya, userVikramCricket)
-    return all.firstOrNull { it.username.lowercase() == clean || it.id.lowercase() == clean }
+    return _allUsers.value.firstOrNull {
+      it.publicVybeId.lowercase() == clean ||
+      it.username.lowercase() == clean ||
+      it.id.lowercase() == clean ||
+      it.displayName.lowercase() == clean
+    }
+  }
+
+  fun addVybeMatch(user: User) {
+    if (_vybeMatches.value.none { it.id == user.id }) {
+      _vybeMatches.value = _vybeMatches.value + user
+    }
+  }
+
+  fun removeVybeMatch(userId: String) {
+    _vybeMatches.value = _vybeMatches.value.filter { it.id != userId }
+  }
+
+  fun isVybeMatch(userId: String): Boolean {
+    return _vybeMatches.value.any { it.id == userId }
   }
 }

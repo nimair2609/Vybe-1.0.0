@@ -193,7 +193,7 @@ fun StoryCarousel(
 
         // 2. Peer stories (grouped by distinct authors or individual stories)
         items(stories.filter { it.author.id != currentUser?.id }, key = { it.id }) { story ->
-          val isCloseFriends = story.audience == StoryAudience.CLOSE_FRIENDS
+          val isCloseFriends = story.audience == StoryAudience.VYBE_MATCHES || story.audience == StoryAudience.CLOSE_FRIENDS
           val isViewed = story.isViewed
 
           Column(
@@ -258,7 +258,7 @@ fun StoryCarousel(
                 ) {
                   Icon(
                     imageVector = Icons.Default.Star,
-                    contentDescription = "Close Friends",
+                    contentDescription = "VYBE Matches",
                     tint = Color.White,
                     modifier = Modifier.size(10.dp)
                   )

@@ -4,8 +4,12 @@ enum class StoryMediaType {
   PHOTO, VIDEO, TEXT, MUSIC
 }
 
-enum class StoryAudience {
-  EVERYONE, CLOSE_FRIENDS, ONLY_ME
+enum class StoryAudience(val label: String) {
+  PUBLIC("Public"),
+  VYBE_MATCHES("VYBE Matches"),
+  EVERYONE("Public"),
+  CLOSE_FRIENDS("VYBE Matches"),
+  ONLY_ME("Only Me")
 }
 
 data class Story(
