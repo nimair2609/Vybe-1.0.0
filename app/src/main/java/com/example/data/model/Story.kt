@@ -20,5 +20,7 @@ data class Story(
   val expiresHoursRemaining: Int = 22,
   val isViewed: Boolean = false,
   val reactionsCount: Int = 14,
-  val isLikedByMe: Boolean = false
+  val isLikedByMe: Boolean = false,
+  val location: String? = null,
+  val textBackgroundColor: String? = null
 )

@@ -1,7 +1,14 @@
 package com.example.ui.screens
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -10,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -18,16 +26,30 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import com.example.data.model.DirectMessage
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VybeAvatar
-import com.example.ui.theme.VybeMagenta
-import com.example.ui.theme.VybeViolet
+import com.example.ui.theme.*
 
+/**
+ * VYBE CHAT DETAIL 2.0
+ * Complete direct messaging and conversation features:
+ * - Text, photo, video, GIF, location and file sharing.
+ * - Accessible swipe/tap to reply with reply context preview.
+ * - Message reactions (❤️, 🔥, ⚡, 😂, 👏).
+ * - Edit messages with (edited) indicator.
+ * - Delete for Me and Delete for Everyone.
+ * - Voice and Video call shortcuts.
+ * - Chat settings menu: View Profile, Nickname, Theme, Media Gallery, Mute, Block, Restrict, Report.
+ * - Read receipts and typing indicator.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatDetailScreen(viewModel: VybeViewModel) {
@@ -39,6 +61,59 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
   var messageInput by remember { mutableStateOf("") }
   val listState = rememberLazyListState()
 
+  // Message action states
+  var replyingToMessage by remember { mutableStateOf<DirectMessage?>(null) }
+  var selectedMessageForActions by remember { mutableStateOf<DirectMessage?>(null) }
+  var messageToEdit by remember { mutableStateOf<DirectMessage?>(null) }
+  var editTextValue by remember { mutableStateOf("") }
+
+  // Attachment / More options sheets
+  var showAttachmentMenu by remember { mutableStateOf(false) }
+  var showChatMenu by remember { mutableStateOf(false) }
+  var showNicknameDialog by remember { mutableStateOf(false) }
+  var nicknameInput by remember { mutableStateOf("") }
+  var showThemeDialog by remember { mutableStateOf(false) }
+  var showGalleryDialog by remember { mutableStateOf(false) }
+  var showLocationShareDialog by remember { mutableStateOf(false) }
+  var locationNameInput by remember { mutableStateOf("Bandra Bandstand, Mumbai") }
+
+  // Photo & Video Picker Launchers
+  val photoPickerLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.PickVisualMedia()
+  ) { uri: Uri? ->
+    if (uri != null && conversation != null) {
+      viewModel.sendExtendedDirectMessage(
+        convId = conversation!!.id,
+        text = if (messageInput.isNotBlank()) messageInput else "",
+        mediaUrl = uri.toString(),
+        mediaType = "IMAGE",
+        replyToId = replyingToMessage?.id,
+        replyToText = replyingToMessage?.text,
+        replyToSenderName = if (replyingToMessage?.isMe == true) "You" else conversation?.peerUser?.displayName
+      )
+      messageInput = ""
+      replyingToMessage = null
+    }
+  }
+
+  val videoPickerLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.PickVisualMedia()
+  ) { uri: Uri? ->
+    if (uri != null && conversation != null) {
+      viewModel.sendExtendedDirectMessage(
+        convId = conversation!!.id,
+        text = if (messageInput.isNotBlank()) messageInput else "",
+        mediaUrl = uri.toString(),
+        mediaType = "VIDEO",
+        replyToId = replyingToMessage?.id,
+        replyToText = replyingToMessage?.text,
+        replyToSenderName = if (replyingToMessage?.isMe == true) "You" else conversation?.peerUser?.displayName
+      )
+      messageInput = ""
+      replyingToMessage = null
+    }
+  }
+
   if (conversation == null) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
       Text("No conversation selected")
@@ -47,6 +122,12 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
   }
 
   val conv = conversation!!
+  val themeAccent = when (conv.chatTheme) {
+    "CYBER_LUXE" -> VybeBrandCyan
+    "SUNSET" -> Color(0xFFFF6B6B)
+    "NEON_VIOLET" -> VybeMagenta
+    else -> VybeViolet
+  }
 
   Scaffold(
     topBar = {
@@ -60,23 +141,27 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
           }
         },
         title = {
-          Row(verticalAlignment = Alignment.CenterVertically) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.clickable { viewModel.openUserProfile(conv.peerUser) }
+          ) {
             VybeAvatar(user = conv.peerUser, size = 36.dp)
             Spacer(modifier = Modifier.width(8.dp))
             Column {
               Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                  text = conv.peerUser.displayName,
+                  text = conv.customNickname ?: conv.peerUser.displayName,
                   style = MaterialTheme.typography.titleMedium,
-                  fontWeight = FontWeight.Bold
+                  fontWeight = FontWeight.Bold,
+                  maxLines = 1
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 VerificationBadge(user = conv.peerUser)
               }
               Text(
-                text = "Active Now • @${conv.peerUser.username}",
+                text = conv.typingIndicator ?: if (conv.isBlocked) "Blocked" else if (conv.isMuted) "Muted • @${conv.peerUser.username}" else "Active Now • @${conv.peerUser.username}",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (conv.typingIndicator != null) themeAccent else MaterialTheme.colorScheme.onSurfaceVariant
               )
             }
           }
@@ -86,7 +171,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
             onClick = { viewModel.startVoiceCall(conv.peerUser) },
             modifier = Modifier.testTag("chat_voice_call_btn")
           ) {
-            Icon(Icons.Default.Call, contentDescription = "Voice Call", tint = VybeViolet)
+            Icon(Icons.Default.Call, contentDescription = "Voice Call", tint = themeAccent)
           }
           IconButton(
             onClick = { viewModel.startVideoCall(conv.peerUser) },
@@ -94,24 +179,147 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
           ) {
             Icon(Icons.Default.Videocam, contentDescription = "Video Call", tint = VybeMagenta)
           }
+          IconButton(
+            onClick = { showChatMenu = true },
+            modifier = Modifier.testTag("chat_options_menu_btn")
+          ) {
+            Icon(Icons.Default.MoreVert, contentDescription = "Chat Options")
+          }
+
+          DropdownMenu(
+            expanded = showChatMenu,
+            onDismissRequest = { showChatMenu = false }
+          ) {
+            DropdownMenuItem(
+              text = { Text("View Profile") },
+              onClick = {
+                showChatMenu = false
+                viewModel.openUserProfile(conv.peerUser)
+              },
+              leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) }
+            )
+            DropdownMenuItem(
+              text = { Text("Set Nickname") },
+              onClick = {
+                showChatMenu = false
+                nicknameInput = conv.customNickname ?: ""
+                showNicknameDialog = true
+              },
+              leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+            )
+            DropdownMenuItem(
+              text = { Text("Chat Theme") },
+              onClick = {
+                showChatMenu = false
+                showThemeDialog = true
+              },
+              leadingIcon = { Icon(Icons.Default.Palette, contentDescription = null) }
+            )
+            DropdownMenuItem(
+              text = { Text("Shared Media Gallery") },
+              onClick = {
+                showChatMenu = false
+                showGalleryDialog = true
+              },
+              leadingIcon = { Icon(Icons.Default.Collections, contentDescription = null) }
+            )
+            HorizontalDivider()
+            DropdownMenuItem(
+              text = { Text(if (conv.isMuted) "Unmute Chat" else "Mute Chat") },
+              onClick = {
+                showChatMenu = false
+                viewModel.toggleMuteChat(conv.id)
+              },
+              leadingIcon = { Icon(if (conv.isMuted) Icons.Default.NotificationsOff else Icons.Default.Notifications, contentDescription = null) }
+            )
+            DropdownMenuItem(
+              text = { Text(if (conv.isBlocked) "Unblock User" else "Block User") },
+              onClick = {
+                showChatMenu = false
+                viewModel.toggleBlockUser(conv.peerUser.id)
+              },
+              leadingIcon = { Icon(Icons.Default.Block, contentDescription = null, tint = VybeDanger) }
+            )
+            DropdownMenuItem(
+              text = { Text(if (conv.isRestricted) "Unrestrict User" else "Restrict User") },
+              onClick = {
+                showChatMenu = false
+                viewModel.toggleRestrictUser(conv.peerUser.id)
+              },
+              leadingIcon = { Icon(Icons.Default.Shield, contentDescription = null) }
+            )
+          }
         },
-        colors = TopAppBarDefaults.topAppBarColors(
-          containerColor = MaterialTheme.colorScheme.background
-        )
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
       )
     },
     bottomBar = {
-      Surface(
-        color = MaterialTheme.colorScheme.surface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .navigationBarsPadding()
+          .background(MaterialTheme.colorScheme.surface)
       ) {
+        // Reply context banner
+        AnimatedVisibility(visible = replyingToMessage != null) {
+          if (replyingToMessage != null) {
+            Surface(
+              color = themeAccent.copy(alpha = 0.15f),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(horizontal = 16.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Icon(
+                  Icons.AutoMirrored.Filled.Reply,
+                  contentDescription = null,
+                  tint = themeAccent,
+                  modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                  Text(
+                    text = "Replying to ${if (replyingToMessage!!.isMe) "yourself" else conv.peerUser.displayName}",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    color = themeAccent
+                  )
+                  Text(
+                    text = replyingToMessage!!.text,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    color = MaterialTheme.colorScheme.onSurface
+                  )
+                }
+                IconButton(
+                  onClick = { replyingToMessage = null },
+                  modifier = Modifier.size(24.dp)
+                ) {
+                  Icon(Icons.Default.Close, contentDescription = "Cancel reply", modifier = Modifier.size(14.dp))
+                }
+              }
+            }
+          }
+        }
+
+        // Input row
         Row(
           modifier = Modifier
             .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
           verticalAlignment = Alignment.CenterVertically
         ) {
+          // Attachments Button (+)
+          IconButton(
+            onClick = { showAttachmentMenu = true },
+            modifier = Modifier.testTag("chat_attachments_button")
+          ) {
+            Icon(Icons.Default.AddCircle, contentDescription = "Attachments", tint = themeAccent)
+          }
+
           OutlinedTextField(
             value = messageInput,
             onValueChange = { messageInput = it },
@@ -122,26 +330,33 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
               .testTag("message_input_field")
           )
 
-          Spacer(modifier = Modifier.width(8.dp))
+          Spacer(modifier = Modifier.width(6.dp))
 
           IconButton(
             onClick = {
               if (messageInput.isNotBlank()) {
-                viewModel.sendDirectMessage(conv.id, messageInput)
+                viewModel.sendExtendedDirectMessage(
+                  convId = conv.id,
+                  text = messageInput,
+                  replyToId = replyingToMessage?.id,
+                  replyToText = replyingToMessage?.text,
+                  replyToSenderName = if (replyingToMessage?.isMe == true) "You" else conv.peerUser.displayName
+                )
                 messageInput = ""
+                replyingToMessage = null
               }
             },
             modifier = Modifier
-              .size(44.dp)
+              .size(42.dp)
               .clip(CircleShape)
-              .background(VybeViolet)
+              .background(themeAccent)
               .testTag("send_message_button")
           ) {
             Icon(
               imageVector = Icons.AutoMirrored.Filled.Send,
               contentDescription = "Send",
               tint = Color.White,
-              modifier = Modifier.size(20.dp)
+              modifier = Modifier.size(18.dp)
             )
           }
         }
@@ -154,41 +369,543 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
         .fillMaxSize()
         .padding(paddingValues)
         .padding(horizontal = 16.dp, vertical = 8.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp)
+      verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
       items(conv.messages, key = { it.id }) { msg ->
         val isMe = msg.isMe
-        Box(
+        Column(
           modifier = Modifier.fillMaxWidth(),
-          contentAlignment = if (isMe) Alignment.CenterEnd else Alignment.CenterStart
+          horizontalAlignment = if (isMe) Alignment.End else Alignment.Start
         ) {
+          // Reply quote bubble if message was a reply
+          if (!msg.replyToText.isNullOrEmpty()) {
+            Surface(
+              color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+              shape = RoundedCornerShape(8.dp),
+              modifier = Modifier
+                .padding(bottom = 2.dp)
+                .widthIn(max = 260.dp)
+            ) {
+              Row(modifier = Modifier.padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                  modifier = Modifier
+                    .width(3.dp)
+                    .height(20.dp)
+                    .background(themeAccent)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Column {
+                  Text(
+                    text = msg.replyToSenderName ?: "Reply",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = themeAccent
+                  )
+                  Text(
+                    text = msg.replyToText,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                }
+              }
+            }
+          }
+
+          // Main Message Bubble
           Surface(
-            color = if (isMe) VybeViolet else MaterialTheme.colorScheme.surfaceVariant,
+            color = if (msg.isDeletedForEveryone) {
+              MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            } else if (isMe) themeAccent else MaterialTheme.colorScheme.surfaceVariant,
             shape = RoundedCornerShape(
               topStart = 16.dp,
               topEnd = 16.dp,
               bottomStart = if (isMe) 16.dp else 4.dp,
               bottomEnd = if (isMe) 4.dp else 16.dp
             ),
-            modifier = Modifier.widthIn(max = 280.dp)
+            modifier = Modifier
+              .widthIn(max = 280.dp)
+              .clickable { selectedMessageForActions = msg }
+              .testTag("chat_bubble_${msg.id}")
           ) {
-            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-              Text(
-                text = msg.text,
-                color = if (isMe) Color.White else MaterialTheme.colorScheme.onSurface,
-                fontSize = 14.sp
-              )
-              Spacer(modifier = Modifier.height(2.dp))
-              Text(
-                text = msg.timestamp,
-                color = if (isMe) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp,
-                modifier = Modifier.align(Alignment.End)
-              )
+            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+              // Media attachments if any
+              if (!msg.isDeletedForEveryone && !msg.mediaUrl.isNullOrEmpty()) {
+                if (msg.mediaType == "IMAGE" || msg.mediaType == "GIF") {
+                  AsyncImage(
+                    model = msg.mediaUrl,
+                    contentDescription = "Attachment",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .height(160.dp)
+                      .clip(RoundedCornerShape(8.dp))
+                  )
+                  Spacer(modifier = Modifier.height(6.dp))
+                } else if (msg.mediaType == "VIDEO") {
+                  Box(
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .height(140.dp)
+                      .clip(RoundedCornerShape(8.dp))
+                      .background(Color.Black),
+                    contentAlignment = Alignment.Center
+                  ) {
+                    Icon(Icons.Default.PlayCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(36.dp))
+                    Text(
+                      "Video • Tap to play",
+                      color = Color.White,
+                      fontSize = 10.sp,
+                      modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(6.dp)
+                    )
+                  }
+                  Spacer(modifier = Modifier.height(6.dp))
+                }
+              }
+
+              // Location Attachment
+              if (msg.locationCoordinates != null) {
+                Row(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Icon(Icons.Default.LocationOn, contentDescription = null, tint = if (isMe) Color.White else VybeMagenta)
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Column {
+                    Text(
+                      text = msg.fileName ?: "Shared Pin Location",
+                      fontWeight = FontWeight.Bold,
+                      fontSize = 12.sp,
+                      color = if (isMe) Color.White else MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                      text = msg.locationCoordinates,
+                      fontSize = 10.sp,
+                      color = if (isMe) Color.White.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                  }
+                }
+              }
+
+              // Message Text
+              if (msg.text.isNotEmpty()) {
+                Text(
+                  text = msg.text,
+                  color = if (msg.isDeletedForEveryone) MaterialTheme.colorScheme.onSurfaceVariant else if (isMe) Color.White else MaterialTheme.colorScheme.onSurface,
+                  fontSize = 14.sp,
+                  fontStyle = if (msg.isDeletedForEveryone) androidx.compose.ui.text.font.FontStyle.Italic else androidx.compose.ui.text.font.FontStyle.Normal
+                )
+              }
+
+              // Footer: Timestamp + Edited Tag + Read Receipt
+              Row(
+                modifier = Modifier
+                  .align(Alignment.End)
+                  .padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                if (msg.isEdited) {
+                  Text(
+                    text = "edited • ",
+                    color = if (isMe) Color.White.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 9.sp
+                  )
+                }
+                Text(
+                  text = msg.timestamp,
+                  color = if (isMe) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                  fontSize = 9.sp
+                )
+                if (isMe) {
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Icon(
+                    imageVector = Icons.Default.DoneAll,
+                    contentDescription = "Read",
+                    tint = if (msg.isRead) VybeBrandCyan else Color.White.copy(alpha = 0.6f),
+                    modifier = Modifier.size(12.dp)
+                  )
+                }
+              }
+            }
+          }
+
+          // Message Reactions
+          if (msg.reactions.isNotEmpty()) {
+            Row(
+              modifier = Modifier
+                .padding(top = 2.dp)
+                .offset(y = (-4).dp),
+              horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+              msg.reactions.forEach { emoji ->
+                Surface(
+                  shape = CircleShape,
+                  color = MaterialTheme.colorScheme.surfaceVariant,
+                  border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                  modifier = Modifier.clickable {
+                    viewModel.addMessageReaction(conv.id, msg.id, emoji)
+                  }
+                ) {
+                  Text(
+                    text = emoji,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                  )
+                }
+              }
             }
           }
         }
       }
     }
+  }
+
+  // Attachment Options Modal Sheet
+  if (showAttachmentMenu) {
+    AlertDialog(
+      onDismissRequest = { showAttachmentMenu = false },
+      title = { Text("Share in Chat", fontWeight = FontWeight.Bold) },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          // Photo
+          ListItem(
+            headlineContent = { Text("Send Photo") },
+            leadingContent = { Icon(Icons.Default.Photo, contentDescription = null, tint = VybeViolet) },
+            modifier = Modifier.clickable {
+              showAttachmentMenu = false
+              photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }
+          )
+          // Video
+          ListItem(
+            headlineContent = { Text("Send Video") },
+            leadingContent = { Icon(Icons.Default.Videocam, contentDescription = null, tint = VybeMagenta) },
+            modifier = Modifier.clickable {
+              showAttachmentMenu = false
+              videoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+            }
+          )
+          // GIF
+          ListItem(
+            headlineContent = { Text("Send Trending GIF") },
+            leadingContent = { Icon(Icons.Default.Gif, contentDescription = null, tint = VybeBrandCyan) },
+            modifier = Modifier.clickable {
+              showAttachmentMenu = false
+              viewModel.sendExtendedDirectMessage(
+                convId = conv.id,
+                text = "⚡ Pure Vibe",
+                mediaUrl = "https://images.unsplash.com/photo-1518020382113-a7e8fc38eac9?w=600",
+                mediaType = "GIF"
+              )
+            }
+          )
+          // Location
+          ListItem(
+            headlineContent = { Text("Share Location Pin") },
+            leadingContent = { Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color(0xFFFFB74D)) },
+            modifier = Modifier.clickable {
+              showAttachmentMenu = false
+              showLocationShareDialog = true
+            }
+          )
+          // Document / File
+          ListItem(
+            headlineContent = { Text("Send Supported Document") },
+            leadingContent = { Icon(Icons.Default.Description, contentDescription = null, tint = VybeOnlineGreen) },
+            modifier = Modifier.clickable {
+              showAttachmentMenu = false
+              viewModel.sendExtendedDirectMessage(
+                convId = conv.id,
+                text = "Sharing project outline document",
+                fileName = "vybe_roadmap_2026.pdf",
+                mediaType = "FILE"
+              )
+            }
+          )
+        }
+      },
+      confirmButton = {},
+      dismissButton = {
+        TextButton(onClick = { showAttachmentMenu = false }) { Text("Cancel") }
+      }
+    )
+  }
+
+  // Location Share Dialog
+  if (showLocationShareDialog) {
+    AlertDialog(
+      onDismissRequest = { showLocationShareDialog = false },
+      title = { Text("Share Location", fontWeight = FontWeight.Bold) },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text("Enter landmark or location name:", fontSize = 12.sp)
+          OutlinedTextField(
+            value = locationNameInput,
+            onValueChange = { locationNameInput = it },
+            label = { Text("Location Name") },
+            modifier = Modifier.fillMaxWidth()
+          )
+          Text("GPS: 19.0544° N, 72.8197° E (Mumbai)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            viewModel.sendExtendedDirectMessage(
+              convId = conv.id,
+              text = "📍 Met at $locationNameInput",
+              locationCoordinates = "19.0544° N, 72.8197° E",
+              fileName = locationNameInput,
+              mediaType = "LOCATION"
+            )
+            showLocationShareDialog = false
+          },
+          colors = ButtonDefaults.buttonColors(containerColor = themeAccent)
+        ) {
+          Text("Share Pin")
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showLocationShareDialog = false }) { Text("Cancel") }
+      }
+    )
+  }
+
+  // Message Actions Sheet (Reply, React, Edit, Delete)
+  if (selectedMessageForActions != null) {
+    val targetMsg = selectedMessageForActions!!
+    AlertDialog(
+      onDismissRequest = { selectedMessageForActions = null },
+      title = { Text("Message Options", fontWeight = FontWeight.Bold) },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          // Quick Reaction Bar
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceAround
+          ) {
+            listOf("❤️", "🔥", "⚡", "😂", "👏").forEach { emoji ->
+              Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier
+                  .size(38.dp)
+                  .clickable {
+                    viewModel.addMessageReaction(conv.id, targetMsg.id, emoji)
+                    selectedMessageForActions = null
+                  }
+              ) {
+                Box(contentAlignment = Alignment.Center) {
+                  Text(emoji, fontSize = 18.sp)
+                }
+              }
+            }
+          }
+
+          HorizontalDivider()
+
+          // Reply
+          ListItem(
+            headlineContent = { Text("Reply to Message") },
+            leadingContent = { Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = null, tint = themeAccent) },
+            modifier = Modifier.clickable {
+              replyingToMessage = targetMsg
+              selectedMessageForActions = null
+            }
+          )
+
+          // Edit (Only for own messages)
+          if (targetMsg.isMe && !targetMsg.isDeletedForEveryone) {
+            ListItem(
+              headlineContent = { Text("Edit Message") },
+              leadingContent = { Icon(Icons.Default.Edit, contentDescription = null, tint = VybeBrandCyan) },
+              modifier = Modifier.clickable {
+                editTextValue = targetMsg.text
+                messageToEdit = targetMsg
+                selectedMessageForActions = null
+              }
+            )
+
+            // Delete for Everyone
+            ListItem(
+              headlineContent = { Text("Delete for Everyone") },
+              leadingContent = { Icon(Icons.Default.DeleteForever, contentDescription = null, tint = VybeDanger) },
+              modifier = Modifier.clickable {
+                viewModel.deleteMessageForEveryone(conv.id, targetMsg.id)
+                selectedMessageForActions = null
+              }
+            )
+          }
+
+          // Delete for Me
+          ListItem(
+            headlineContent = { Text("Delete for Me") },
+            leadingContent = { Icon(Icons.Default.Delete, contentDescription = null) },
+            modifier = Modifier.clickable {
+              viewModel.deleteMessageForMe(conv.id, targetMsg.id)
+              selectedMessageForActions = null
+            }
+          )
+        }
+      },
+      confirmButton = {},
+      dismissButton = {
+        TextButton(onClick = { selectedMessageForActions = null }) { Text("Close") }
+      }
+    )
+  }
+
+  // Edit Message Dialog
+  if (messageToEdit != null) {
+    AlertDialog(
+      onDismissRequest = { messageToEdit = null },
+      title = { Text("Edit Message", fontWeight = FontWeight.Bold) },
+      text = {
+        OutlinedTextField(
+          value = editTextValue,
+          onValueChange = { editTextValue = it },
+          label = { Text("Updated message") },
+          modifier = Modifier.fillMaxWidth()
+        )
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            if (editTextValue.isNotBlank()) {
+              viewModel.editDirectMessage(conv.id, messageToEdit!!.id, editTextValue)
+              messageToEdit = null
+            }
+          },
+          colors = ButtonDefaults.buttonColors(containerColor = themeAccent)
+        ) {
+          Text("Save")
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { messageToEdit = null }) { Text("Cancel") }
+      }
+    )
+  }
+
+  // Nickname Dialog
+  if (showNicknameDialog) {
+    AlertDialog(
+      onDismissRequest = { showNicknameDialog = false },
+      title = { Text("Custom Chat Nickname", fontWeight = FontWeight.Bold) },
+      text = {
+        OutlinedTextField(
+          value = nicknameInput,
+          onValueChange = { nicknameInput = it },
+          placeholder = { Text("e.g. Bestie, DJ Aarav") },
+          label = { Text("Nickname for ${conv.peerUser.displayName}") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth()
+        )
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            viewModel.updateChatNickname(conv.id, nicknameInput)
+            showNicknameDialog = false
+          },
+          colors = ButtonDefaults.buttonColors(containerColor = themeAccent)
+        ) {
+          Text("Save")
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showNicknameDialog = false }) { Text("Cancel") }
+      }
+    )
+  }
+
+  // Theme Dialog
+  if (showThemeDialog) {
+    AlertDialog(
+      onDismissRequest = { showThemeDialog = false },
+      title = { Text("Choose Chat Theme", fontWeight = FontWeight.Bold) },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          listOf(
+            "DEFAULT" to "VYBE Signature Violet",
+            "CYBER_LUXE" to "Cyber Luxe Cyan",
+            "SUNSET" to "Sunset Coral & Gold",
+            "NEON_VIOLET" to "Neon Magenta Pulse"
+          ).forEach { (key, label) ->
+            Surface(
+              shape = RoundedCornerShape(12.dp),
+              color = if (conv.chatTheme == key) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+              modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                  viewModel.updateChatTheme(conv.id, key)
+                  showThemeDialog = false
+                }
+            ) {
+              Text(
+                text = label,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(14.dp)
+              )
+            }
+          }
+        }
+      },
+      confirmButton = {},
+      dismissButton = {
+        TextButton(onClick = { showThemeDialog = false }) { Text("Close") }
+      }
+    )
+  }
+
+  // Shared Media Gallery Dialog
+  if (showGalleryDialog) {
+    val mediaMessages = remember(conv.messages) {
+      conv.messages.filter { !it.mediaUrl.isNullOrEmpty() }
+    }
+    AlertDialog(
+      onDismissRequest = { showGalleryDialog = false },
+      title = { Text("Shared Media Gallery", fontWeight = FontWeight.Bold) },
+      text = {
+        if (mediaMessages.isEmpty()) {
+          Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+            Text("No photos or videos shared yet in this chat.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          }
+        } else {
+          LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)) {
+            items(mediaMessages) { m ->
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                AsyncImage(
+                  model = m.mediaUrl,
+                  contentDescription = null,
+                  modifier = Modifier
+                    .size(60.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+                  contentScale = ContentScale.Crop
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                  Text(m.mediaType, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                  Text("Shared ${m.timestamp}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+              }
+            }
+          }
+        }
+      },
+      confirmButton = {
+        TextButton(onClick = { showGalleryDialog = false }) { Text("Close") }
+      }
+    )
   }
 }

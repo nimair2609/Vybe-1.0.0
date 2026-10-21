@@ -76,6 +76,9 @@ secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
   ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
+  ignoreList.add("SUPABASE_SERVICE_ROLE_KEY")
+  ignoreList.add("RAZORPAY_KEY_SECRET")
+  ignoreList.add("CRON_SECRET_KEY")
 }
 
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }

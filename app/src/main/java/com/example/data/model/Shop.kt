@@ -16,7 +16,28 @@ data class ShopReview(
   val reviewText: String,
   val timestamp: String,
   val isVerifiedCustomer: Boolean = true,
+  val photoUrl: String? = null,
+  val isModerated: Boolean = true,
   val ownerReply: String? = null
+)
+
+enum class BusinessVerificationStatus {
+  NOT_APPLIED, PENDING, UNDER_REVIEW, APPROVED, REJECTED, MORE_INFO_REQUIRED
+}
+
+data class BusinessApplication(
+  val id: String,
+  val ownerId: String,
+  val businessName: String,
+  val category: String,
+  val registrationNumberOrGst: String,
+  val contactEmail: String,
+  val contactPhone: String,
+  val address: String,
+  val status: BusinessVerificationStatus = BusinessVerificationStatus.PENDING,
+  val submittedAt: String,
+  val reviewerNotes: String? = null,
+  val isActivated: Boolean = false
 )
 
 data class VybeShop(
@@ -36,5 +57,8 @@ data class VybeShop(
   val catalog: List<CatalogItem> = emptyList(),
   val reviews: List<ShopReview> = emptyList(),
   val followersCount: Int = 2450,
-  val isFollowedByMe: Boolean = false
+  val isFollowedByMe: Boolean = false,
+  val ownerId: String = "u_shop_owner",
+  val verificationStatus: BusinessVerificationStatus = BusinessVerificationStatus.APPROVED,
+  val isShopActive: Boolean = true
 )

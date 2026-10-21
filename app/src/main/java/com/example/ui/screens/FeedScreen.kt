@@ -28,6 +28,7 @@ import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.components.PostCard
 import com.example.ui.components.StoryCarousel
+import com.example.ui.components.StoryCreateDialog
 import com.example.ui.components.VybeAvatar
 import com.example.ui.theme.*
 import kotlinx.coroutines.delay
@@ -40,6 +41,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
   val posts by viewModel.posts.collectAsState()
   val stories by viewModel.stories.collectAsState()
   val selectedMood by viewModel.selectedMoodFilter.collectAsState()
+  val notifications by viewModel.notifications.collectAsState()
   val coroutineScope = rememberCoroutineScope()
 
   var feedTab by remember { mutableStateOf("For You") }
@@ -47,6 +49,8 @@ fun FeedScreen(viewModel: VybeViewModel) {
 
   var isRefreshing by remember { mutableStateOf(false) }
   var showStoryCreateSheet by remember { mutableStateOf(false) }
+  var showNotificationCenter by remember { mutableStateOf(false) }
+  var notifFilterUnreadOnly by remember { mutableStateOf(false) }
   var storyTypeSelected by remember { mutableStateOf<String?>(null) }
   var storyCreatedFeedback by remember { mutableStateOf<String?>(null) }
 
@@ -111,7 +115,23 @@ fun FeedScreen(viewModel: VybeViewModel) {
           }
         },
         actions = {
-          // Theme toggle removed from header per Section 4; placed in Settings
+          val unreadNotifsCount = remember(notifications) { notifications.count { !it.isRead } }
+          IconButton(
+            onClick = { showNotificationCenter = true },
+            modifier = Modifier.testTag("notification_bell_button")
+          ) {
+            BadgedBox(
+              badge = {
+                if (unreadNotifsCount > 0) {
+                  Badge(containerColor = VybeMagenta) {
+                    Text("$unreadNotifsCount")
+                  }
+                }
+              }
+            ) {
+              Icon(Icons.Default.Notifications, contentDescription = "Notification Center")
+            }
+          }
           IconButton(
             onClick = { viewModel.navigateTo(Screen.SETTINGS) },
             modifier = Modifier.testTag("settings_top_button")
@@ -178,12 +198,12 @@ fun FeedScreen(viewModel: VybeViewModel) {
           }
         }
 
-        // Stories Carousel
+        // Instagram-style Stories Carousel Tray
         item {
           StoryCarousel(
             stories = stories,
             currentUser = currentUser,
-            onStoryClick = { viewModel.navigateTo(Screen.REELS_VIEWER) },
+            onStoryClick = { story -> viewModel.openStory(story) },
             onAddStoryClick = { showStoryCreateSheet = true }
           )
         }
@@ -355,113 +375,160 @@ fun FeedScreen(viewModel: VybeViewModel) {
     }
   }
 
-  // Story Creation Modal with separate options for Photo, Video, Text, Music (Section 8)
+  // Instagram-style Story Creation Dialog with separate fields (Photo, Type/Text, Music, Video, Audience, Location)
   if (showStoryCreateSheet) {
+    StoryCreateDialog(
+      viewModel = viewModel,
+      onDismiss = { showStoryCreateSheet = false },
+      onStoryPublished = { feedback ->
+        storyCreatedFeedback = feedback
+        showStoryCreateSheet = false
+      }
+    )
+  }
+
+  // Home Notification Center Dialog (Upgrade C)
+  if (showNotificationCenter) {
+    val displayedNotifs = remember(notifications, notifFilterUnreadOnly) {
+      if (notifFilterUnreadOnly) notifications.filter { !it.isRead } else notifications
+    }
+
     AlertDialog(
-      onDismissRequest = { showStoryCreateSheet = false },
+      onDismissRequest = { showNotificationCenter = false },
       title = {
-        Text("Create New Story", fontWeight = FontWeight.Bold)
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Notifications, contentDescription = null, tint = VybeViolet)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Notification Center", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+          }
+          TextButton(
+            onClick = { viewModel.markAllNotificationsAsRead() },
+            modifier = Modifier.testTag("mark_all_read_button")
+          ) {
+            Text("Mark All Read", fontSize = 11.sp, color = VybeBrandCyan, fontWeight = FontWeight.Bold)
+          }
+        }
       },
       text = {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-          Text(
-            text = "Share an authentic moment that disappears in 24 hours:",
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-          )
-
-          // 1. Photo Story
-          Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = RoundedCornerShape(12.dp),
+        Column(modifier = Modifier.fillMaxWidth()) {
+          Row(
             modifier = Modifier
               .fillMaxWidth()
-              .clickable {
-                storyCreatedFeedback = "Photo Story published to your vibe ring!"
-                showStoryCreateSheet = false
-              }
+              .padding(bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
           ) {
-            Row(
-              modifier = Modifier.padding(12.dp),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Icon(Icons.Default.PhotoCamera, contentDescription = null, tint = VybeViolet)
-              Spacer(modifier = Modifier.width(12.dp))
-              Column {
-                Text("Photo Story", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text("Select from gallery or capture camera snapshot", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              }
-            }
+            FilterChip(
+              selected = !notifFilterUnreadOnly,
+              onClick = { notifFilterUnreadOnly = false },
+              label = { Text("All (${notifications.size})", fontSize = 12.sp) }
+            )
+            FilterChip(
+              selected = notifFilterUnreadOnly,
+              onClick = { notifFilterUnreadOnly = true },
+              label = { Text("Unread (${notifications.count { !it.isRead }})", fontSize = 12.sp) }
+            )
           }
 
-          // 2. Video Story
-          Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier
-              .fillMaxWidth()
-              .clickable {
-                storyCreatedFeedback = "Video Story published to your vibe ring!"
-                showStoryCreateSheet = false
-              }
-          ) {
-            Row(
-              modifier = Modifier.padding(12.dp),
-              verticalAlignment = Alignment.CenterVertically
+          if (displayedNotifs.isEmpty()) {
+            Box(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+              contentAlignment = Alignment.Center
             ) {
-              Icon(Icons.Default.Videocam, contentDescription = null, tint = VybeMagenta)
-              Spacer(modifier = Modifier.width(12.dp))
-              Column {
-                Text("Video Story", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text("Short video clip with responsive playback", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              }
+              Text(
+                if (notifFilterUnreadOnly) "No unread notifications" else "No notifications yet",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp
+              )
             }
-          }
-
-          // 3. Text Story
-          Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier
-              .fillMaxWidth()
-              .clickable {
-                storyCreatedFeedback = "Text thought published to your vibe ring!"
-                showStoryCreateSheet = false
-              }
-          ) {
-            Row(
-              modifier = Modifier.padding(12.dp),
-              verticalAlignment = Alignment.CenterVertically
+          } else {
+            LazyColumn(
+              modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 420.dp),
+              verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-              Icon(Icons.Default.TextFields, contentDescription = null, tint = VybeCyan)
-              Spacer(modifier = Modifier.width(12.dp))
-              Column {
-                Text("Text Thought", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text("Express in words with animated mood gradients", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              }
-            }
-          }
+              items(displayedNotifs, key = { it.id }) { notif ->
+                Surface(
+                  shape = RoundedCornerShape(12.dp),
+                  color = if (!notif.isRead) VybeViolet.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                  border = if (!notif.isRead) androidx.compose.foundation.BorderStroke(1.dp, VybeViolet.copy(alpha = 0.3f)) else null,
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                      viewModel.markNotificationAsRead(notif.id)
+                      showNotificationCenter = false
+                      when (notif.destinationScreen) {
+                        "CHAT_DETAIL" -> viewModel.selectTab(com.example.ui.MainTab.INBOX)
+                        "TIME_CAPSULES_VIEW" -> viewModel.navigateTo(Screen.TIME_CAPSULES_VIEW)
+                        "DOUBLE_TAKE_VIEW" -> viewModel.navigateTo(Screen.DOUBLE_TAKE_VIEW)
+                        "CROSSED_PATHS" -> viewModel.selectTab(com.example.ui.MainTab.CROSSED_PATHS)
+                        "UNLOAD_VIEW" -> viewModel.navigateTo(Screen.UNLOAD_VIEW)
+                        "SHOP_DETAIL" -> viewModel.selectTab(com.example.ui.MainTab.EXPLORE)
+                        "FEED" -> viewModel.selectTab(com.example.ui.MainTab.FEED)
+                      }
+                    }
+                    .testTag("notification_item_${notif.id}")
+                ) {
+                  Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.Top
+                  ) {
+                    val iconInfo = when (notif.type) {
+                      com.example.data.model.NotificationType.LIKE -> Pair(Icons.Default.Favorite, VybeMagenta)
+                      com.example.data.model.NotificationType.COMMENT_OR_REPLY -> Pair(Icons.Default.Comment, VybeBrandCyan)
+                      com.example.data.model.NotificationType.DIRECT_MESSAGE,
+                      com.example.data.model.NotificationType.GROUP_MESSAGE -> Pair(Icons.Default.ChatBubble, VybeViolet)
+                      com.example.data.model.NotificationType.ROOM_INVITATION -> Pair(Icons.Default.Hearing, VybeOnlineGreen)
+                      com.example.data.model.NotificationType.TIME_CAPSULE_INVITATION,
+                      com.example.data.model.NotificationType.TIME_CAPSULE_UNLOCK -> Pair(Icons.Default.HourglassBottom, Color(0xFFFFB74D))
+                      com.example.data.model.NotificationType.DOUBLE_TAKE_RESPONSE -> Pair(Icons.Default.CompareArrows, VybeViolet)
+                      com.example.data.model.NotificationType.CROSSED_PATHS_INTERACTION -> Pair(Icons.Default.Visibility, VybeBrandCyan)
+                      com.example.data.model.NotificationType.BUSINESS_VERIFICATION_UPDATE -> Pair(Icons.Default.Verified, VybeVerifiedGold)
+                      else -> Pair(Icons.Default.Notifications, VybeViolet)
+                    }
 
-          // 4. Music Story
-          Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier
-              .fillMaxWidth()
-              .clickable {
-                storyCreatedFeedback = "Music Vibe track added to your story!"
-                showStoryCreateSheet = false
-              }
-          ) {
-            Row(
-              modifier = Modifier.padding(12.dp),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color(0xFFFFB74D))
-              Spacer(modifier = Modifier.width(12.dp))
-              Column {
-                Text("Music & Audio Vibe", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text("Attach licensed Indian indie/lo-fi soundscapes", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Box(
+                      modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(iconInfo.second.copy(alpha = 0.2f)),
+                      contentAlignment = Alignment.Center
+                    ) {
+                      Icon(iconInfo.first, contentDescription = null, tint = iconInfo.second, modifier = Modifier.size(18.dp))
+                    }
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                      Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                      ) {
+                        Text(notif.title, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                        if (!notif.isRead) {
+                          Box(
+                            modifier = Modifier
+                              .size(8.dp)
+                              .clip(CircleShape)
+                              .background(VybeMagenta)
+                          )
+                        }
+                      }
+                      Spacer(modifier = Modifier.height(2.dp))
+                      Text(notif.message, fontSize = 12.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+                      Spacer(modifier = Modifier.height(4.dp))
+                      Text(notif.timestamp, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                  }
+                }
               }
             }
           }
@@ -469,8 +536,8 @@ fun FeedScreen(viewModel: VybeViewModel) {
       },
       confirmButton = {},
       dismissButton = {
-        TextButton(onClick = { showStoryCreateSheet = false }) {
-          Text("Cancel")
+        TextButton(onClick = { showNotificationCenter = false }) {
+          Text("Close")
         }
       }
     )

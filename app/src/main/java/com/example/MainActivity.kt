@@ -47,6 +47,8 @@ class MainActivity : ComponentActivity() {
             Screen.UNLOAD_VIEW -> UnloadScreen(viewModel)
             Screen.UNFILTERED_VIEW -> UnfilteredScreen(viewModel)
             Screen.WHAT_NEXT_VIEW -> WhatNextScreen(viewModel)
+            Screen.SPIRITUAL_MODE -> SpiritualModeScreen(viewModel)
+            Screen.STORY_VIEWER -> StoryViewerScreen(viewModel)
           }
         }
       }

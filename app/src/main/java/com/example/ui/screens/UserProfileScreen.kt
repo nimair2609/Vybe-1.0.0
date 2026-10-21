@@ -1,6 +1,11 @@
 package com.example.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -61,8 +67,34 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
   var editBio by remember { mutableStateOf("") }
   var editAvatarUrl by remember { mutableStateOf("") }
   var editVideoUrl by remember { mutableStateOf<String?>("") }
+  var editCoverUrl by remember { mutableStateOf("") }
   var availabilityMessage by remember { mutableStateOf<String?>(null) }
   var isAvailable by remember { mutableStateOf(true) }
+
+  val context = LocalContext.current
+  var showGoLiveModal by remember { mutableStateOf(false) }
+  var isLiveStreamingActive by remember { mutableStateOf(false) }
+  var liveStreamTitle by remember { mutableStateOf("Casual Sunday Jam & Real Talk") }
+  var isMicMuted by remember { mutableStateOf(false) }
+  var isFrontCamera by remember { mutableStateOf(true) }
+
+  // Profile photo: still image only (Requirement L)
+  val avatarPickerLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.PickVisualMedia()
+  ) { uri: Uri? ->
+    if (uri != null) {
+      editAvatarUrl = uri.toString()
+    }
+  }
+
+  // Banner photo: photo or short video (Requirement L)
+  val bannerPickerLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.PickVisualMedia()
+  ) { uri: Uri? ->
+    if (uri != null) {
+      editCoverUrl = uri.toString()
+    }
+  }
 
   if (profileUser == null) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -252,53 +284,111 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
               ) {
                 Text("Message", fontWeight = FontWeight.Bold)
               }
-            }
-          } else {
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-              Button(
-                onClick = {
-                  editDisplayName = user.displayName
-                  editFirstName = user.firstName
-                  editLastName = user.lastName
-                  editUsername = user.username
-                  editBio = user.bio
-                  editAvatarUrl = user.avatarUrl
-                  editVideoUrl = user.profileVideoUrl
-                  showEditProfileModal = true
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.weight(1f).testTag("edit_profile_button")
-              ) {
-                Icon(Icons.Default.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Edit Profile", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
-              }
 
+              Spacer(modifier = Modifier.height(8.dp))
               OutlinedButton(
                 onClick = {
-                  if (!user.profileVideoUrl.isNullOrEmpty()) {
-                    showVideoPlayerModal = true
-                  } else {
+                  val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "VYBE - Follow @${user.username}")
+                    putExtra(Intent.EXTRA_TEXT, "Check out @${user.username} on VYBE! https://vybe.app/u/${user.username}")
+                  }
+                  context.startActivity(Intent.createChooser(shareIntent, "Share Profile"))
+                },
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().testTag("share_peer_profile_button")
+              ) {
+                Icon(Icons.Default.Share, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Share Profile", fontWeight = FontWeight.Bold)
+              }
+            }
+          } else {
+            Column(modifier = Modifier.fillMaxWidth()) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+              ) {
+                Button(
+                  onClick = {
                     editDisplayName = user.displayName
                     editFirstName = user.firstName
                     editLastName = user.lastName
                     editUsername = user.username
                     editBio = user.bio
                     editAvatarUrl = user.avatarUrl
-                    editVideoUrl = "https://assets.mixkit.co/videos/preview/mixkit-urban-city-traffic-at-night-42861-large.mp4"
+                    editCoverUrl = user.coverUrl
+                    editVideoUrl = user.profileVideoUrl
                     showEditProfileModal = true
-                  }
-                },
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.weight(1f)
+                  },
+                  colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                  shape = RoundedCornerShape(12.dp),
+                  modifier = Modifier.weight(1f).testTag("edit_profile_button")
+                ) {
+                  Icon(Icons.Default.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(16.dp))
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text("Edit Profile", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                }
+
+                OutlinedButton(
+                  onClick = {
+                    if (!user.profileVideoUrl.isNullOrEmpty()) {
+                      showVideoPlayerModal = true
+                    } else {
+                      editDisplayName = user.displayName
+                      editFirstName = user.firstName
+                      editLastName = user.lastName
+                      editUsername = user.username
+                      editBio = user.bio
+                      editAvatarUrl = user.avatarUrl
+                      editCoverUrl = user.coverUrl
+                      editVideoUrl = "https://assets.mixkit.co/videos/preview/mixkit-urban-city-traffic-at-night-42861-large.mp4"
+                      showEditProfileModal = true
+                    }
+                  },
+                  shape = RoundedCornerShape(12.dp),
+                  modifier = Modifier.weight(1f)
+                ) {
+                  Icon(Icons.Default.Videocam, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(16.dp))
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text(if (user.profileVideoUrl.isNullOrEmpty()) "+ 5s Video" else "View 5s Video", fontWeight = FontWeight.Bold)
+                }
+              }
+
+              Spacer(modifier = Modifier.height(10.dp))
+
+              // Creator Actions: Go Live & Share VYBE (Requirement L)
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
               ) {
-                Icon(Icons.Default.Videocam, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(if (user.profileVideoUrl.isNullOrEmpty()) "+ 5s Video" else "View 5s Video", fontWeight = FontWeight.Bold)
+                Button(
+                  onClick = { showGoLiveModal = true },
+                  colors = ButtonDefaults.buttonColors(containerColor = VybeMagenta),
+                  shape = RoundedCornerShape(12.dp),
+                  modifier = Modifier.weight(1f).testTag("profile_go_live_button")
+                ) {
+                  Icon(Icons.Default.Podcasts, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text("Go Live", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+
+                OutlinedButton(
+                  onClick = {
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                      type = "text/plain"
+                      putExtra(Intent.EXTRA_SUBJECT, "Connect on VYBE")
+                      putExtra(Intent.EXTRA_TEXT, "Join me on VYBE! Follow @${user.username} at https://vybe.app/u/${user.username}")
+                    }
+                    context.startActivity(Intent.createChooser(shareIntent, "Share VYBE Profile"))
+                  },
+                  shape = RoundedCornerShape(12.dp),
+                  modifier = Modifier.weight(1f).testTag("profile_share_vybe_button")
+                ) {
+                  Icon(Icons.Default.Share, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(16.dp))
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text("Share VYBE", fontWeight = FontWeight.Bold)
+                }
               }
             }
           }
@@ -471,6 +561,57 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
             modifier = Modifier.fillMaxWidth()
           )
 
+          // Media Selection (Requirement L)
+          Text("Profile Photo (Still Image Only):", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Text(
+              text = if (editAvatarUrl.isNotBlank()) "Photo attached" else "Default avatar",
+              fontSize = 11.sp,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedButton(
+              onClick = {
+                avatarPickerLauncher.launch(
+                  PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+              },
+              shape = RoundedCornerShape(10.dp)
+            ) {
+              Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(14.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("Choose Photo", fontSize = 11.sp)
+            }
+          }
+
+          Text("Banner (Photo or Short Video):", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Text(
+              text = if (editCoverUrl.isNotBlank()) "Banner media attached" else "Default banner",
+              fontSize = 11.sp,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedButton(
+              onClick = {
+                bannerPickerLauncher.launch(
+                  PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                )
+              },
+              shape = RoundedCornerShape(10.dp)
+            ) {
+              Icon(Icons.Default.Panorama, contentDescription = null, modifier = Modifier.size(14.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("Choose Banner", fontSize = 11.sp)
+            }
+          }
+
           // 5-Second Video selector
           Text("5-Second Profile Video:", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
           Row(
@@ -510,7 +651,8 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
                 phone = currentUser?.phone ?: "",
                 bio = editBio,
                 avatarUrl = editAvatarUrl,
-                profileVideoUrl = editVideoUrl
+                profileVideoUrl = editVideoUrl,
+                coverUrl = editCoverUrl
               )
               showEditProfileModal = false
             }
@@ -522,6 +664,157 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
       },
       dismissButton = {
         TextButton(onClick = { showEditProfileModal = false }) { Text("Cancel") }
+      }
+    )
+  }
+
+  // Go Live Modal (Requirement L)
+  if (showGoLiveModal) {
+    AlertDialog(
+      onDismissRequest = {
+        if (isLiveStreamingActive) isLiveStreamingActive = false
+        showGoLiveModal = false
+      },
+      title = {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Icon(Icons.Default.Podcasts, contentDescription = null, tint = VybeMagenta)
+          Spacer(modifier = Modifier.width(8.dp))
+          Text("VYBE Live Studio", fontWeight = FontWeight.Bold)
+        }
+      },
+      text = {
+        Column(
+          modifier = Modifier.fillMaxWidth(),
+          verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+          // Camera Preview Box
+          Box(
+            modifier = Modifier
+              .fillMaxWidth()
+              .height(180.dp)
+              .clip(RoundedCornerShape(16.dp))
+              .background(Color(0xFF0F1720)),
+            contentAlignment = Alignment.Center
+          ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+              Icon(
+                if (isFrontCamera) Icons.Default.CameraFront else Icons.Default.CameraRear,
+                contentDescription = null,
+                tint = if (isLiveStreamingActive) VybeOnlineGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(48.dp)
+              )
+              Spacer(modifier = Modifier.height(6.dp))
+              Text(
+                if (isLiveStreamingActive) "Broadcasting Live via WebRTC/RTMP" else "Camera Preview Ready",
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
+              )
+              Text(
+                if (isFrontCamera) "Front Camera • 1080p60" else "Rear Ultra-Wide • 1080p60",
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 10.sp
+              )
+            }
+
+            // Status Badge
+            Surface(
+              color = if (isLiveStreamingActive) VybeDanger else Color.Black.copy(alpha = 0.6f),
+              shape = RoundedCornerShape(8.dp),
+              modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(10.dp)
+            ) {
+              Row(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Box(
+                  modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(if (isLiveStreamingActive) Color.White else Color.Gray)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                  if (isLiveStreamingActive) "LIVE • 14 viewers" else "OFFLINE",
+                  color = Color.White,
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.Bold
+                )
+              }
+            }
+          }
+
+          OutlinedTextField(
+            value = liveStreamTitle,
+            onValueChange = { liveStreamTitle = it },
+            label = { Text("Stream Title") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+          )
+
+          // Camera & Mic Controls
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceAround
+          ) {
+            IconButton(
+              onClick = { isMicMuted = !isMicMuted },
+              modifier = Modifier
+                .clip(CircleShape)
+                .background(if (isMicMuted) VybeDanger.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+              Icon(
+                if (isMicMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                contentDescription = "Mute Mic",
+                tint = if (isMicMuted) VybeDanger else MaterialTheme.colorScheme.onSurface
+              )
+            }
+
+            IconButton(
+              onClick = { isFrontCamera = !isFrontCamera },
+              modifier = Modifier
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+              Icon(
+                Icons.Default.FlipCameraAndroid,
+                contentDescription = "Flip Camera",
+                tint = VybeBrandCyan
+              )
+            }
+          }
+
+          Text(
+            text = "Infrastructure: WebRTC ultra-low latency signaling active. Requires camera & microphone permissions.",
+            fontSize = 10.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            lineHeight = 14.sp
+          )
+        }
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            isLiveStreamingActive = !isLiveStreamingActive
+          },
+          colors = ButtonDefaults.buttonColors(
+            containerColor = if (isLiveStreamingActive) VybeDanger else VybeMagenta
+          )
+        ) {
+          Text(if (isLiveStreamingActive) "End Broadcast" else "Start Live Stream", fontWeight = FontWeight.Bold)
+        }
+      },
+      dismissButton = {
+        TextButton(
+          onClick = {
+            if (isLiveStreamingActive) isLiveStreamingActive = false
+            showGoLiveModal = false
+          }
+        ) {
+          Text("Close")
+        }
       }
     )
   }

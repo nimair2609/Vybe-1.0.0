@@ -1,5 +1,12 @@
 package com.example.ui.screens
 
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -7,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -15,10 +23,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.data.model.ConnectionRequestStatus
 import com.example.data.model.CrossedPathEncounter
 import com.example.data.model.CrossedPathType
@@ -27,9 +38,18 @@ import com.example.ui.components.VybeAvatar
 import com.example.ui.components.VybeGradientButton
 import com.example.ui.theme.*
 
+/**
+ * VYBE CROSSED PATHS 2.0
+ * Consent-first real-world discovery with fixed navigation and Google Maps location integration.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CrossedPathsScreen(viewModel: VybeViewModel) {
+  BackHandler {
+    viewModel.navigateBack()
+  }
+
+  val context = LocalContext.current
   val encounters by viewModel.crossedPaths.collectAsState()
   var selectedTab by remember { mutableStateOf(CrossedPathType.MISSED_CONNECTION) }
 
@@ -37,6 +57,13 @@ fun CrossedPathsScreen(viewModel: VybeViewModel) {
   var newLocation by remember { mutableStateOf("") }
   var newVenue by remember { mutableStateOf("") }
   var newDescription by remember { mutableStateOf("") }
+  var pickedPhotoUri by remember { mutableStateOf<Uri?>(null) }
+
+  val photoPickerLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.PickVisualMedia()
+  ) { uri: Uri? ->
+    pickedPhotoUri = uri
+  }
 
   val filteredEncounters = remember(encounters, selectedTab) {
     encounters.filter { it.type == selectedTab }
@@ -45,12 +72,21 @@ fun CrossedPathsScreen(viewModel: VybeViewModel) {
   Scaffold(
     topBar = {
       TopAppBar(
+        navigationIcon = {
+          IconButton(
+            onClick = { viewModel.navigateBack() },
+            modifier = Modifier.testTag("crossed_paths_back_button")
+          ) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+          }
+        },
         title = {
           Column {
             Text(
               text = "Crossed Paths",
               style = MaterialTheme.typography.titleLarge,
-              fontWeight = FontWeight.Bold
+              fontWeight = FontWeight.Bold,
+              fontSize = 17.sp
             )
             Text(
               text = "Consent-first real-world discovery",
@@ -61,10 +97,18 @@ fun CrossedPathsScreen(viewModel: VybeViewModel) {
         },
         actions = {
           Button(
-            onClick = { showCreateDialog = true },
+            onClick = {
+              newLocation = ""
+              newVenue = ""
+              newDescription = ""
+              pickedPhotoUri = null
+              showCreateDialog = true
+            },
             colors = ButtonDefaults.buttonColors(containerColor = VybeMagenta),
             shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.padding(end = 12.dp).testTag("noticed_someone_button")
+            modifier = Modifier
+              .padding(end = 8.dp)
+              .testTag("noticed_someone_button")
           ) {
             Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(4.dp))
@@ -109,7 +153,7 @@ fun CrossedPathsScreen(viewModel: VybeViewModel) {
             }
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-              text = "Zero continuous GPS tracking. No exact coordinates. Encounters only share broad neighborhoods. Direct chat opens ONLY after the recipient explicitly accepts your handshake request.",
+              text = "No real-time tracking or exact GPS broadcast. Encounters expire in 72 hours. Both parties must consent before private messaging unlocks.",
               fontSize = 11.sp,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
               lineHeight = 15.sp
@@ -118,195 +162,261 @@ fun CrossedPathsScreen(viewModel: VybeViewModel) {
         }
       }
 
-      // Three Sub-tabs
+      // Filter Tabs
       item {
         Row(
           modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .padding(horizontal = 16.dp, vertical = 4.dp),
           horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-          CrossedPathType.values().forEach { type ->
-            val label = when (type) {
-              CrossedPathType.MISSED_CONNECTION -> "Missed Connections"
-              CrossedPathType.VENUE_EVENT -> "Venues & Events"
-              CrossedPathType.BROAD_NEARBY -> "Nearby Opt-In"
-            }
-            val isSelected = selectedTab == type
-            Surface(
-              color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-              shape = RoundedCornerShape(16.dp),
-              modifier = Modifier
-                .weight(1f)
-                .clickable { selectedTab = type }
-            ) {
-              Box(
-                modifier = Modifier.padding(vertical = 10.dp),
-                contentAlignment = Alignment.Center
-              ) {
-                Text(
-                  text = label,
-                  fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                  fontSize = 11.sp,
-                  color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                  maxLines = 1
-                )
-              }
-            }
-          }
+          FilterChip(
+            selected = selectedTab == CrossedPathType.MISSED_CONNECTION,
+            onClick = { selectedTab = CrossedPathType.MISSED_CONNECTION },
+            label = { Text("Missed Connections", fontSize = 12.sp) }
+          )
+          FilterChip(
+            selected = selectedTab == CrossedPathType.VENUE_EVENT,
+            onClick = { selectedTab = CrossedPathType.VENUE_EVENT },
+            label = { Text("Venue / Events", fontSize = 12.sp) }
+          )
+          FilterChip(
+            selected = selectedTab == CrossedPathType.BROAD_NEARBY,
+            onClick = { selectedTab = CrossedPathType.BROAD_NEARBY },
+            label = { Text("Area Nearby", fontSize = 12.sp) }
+          )
         }
       }
 
-      // Encounter items
       items(filteredEncounters, key = { it.id }) { encounter ->
         Card(
           modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = 16.dp, vertical = 6.dp)
             .testTag("encounter_card_${encounter.id}"),
           colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          shape = RoundedCornerShape(18.dp),
-          border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+          shape = RoundedCornerShape(16.dp),
+          border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
         ) {
           Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              VybeAvatar(user = encounter.poster, size = 40.dp)
-              Spacer(modifier = Modifier.width(10.dp))
-              Column(modifier = Modifier.weight(1f)) {
-                Text(
-                  text = encounter.title,
-                  style = MaterialTheme.typography.titleMedium,
-                  fontWeight = FontWeight.Bold
-                )
-                Text(
-                  text = "📍 ${encounter.broadLocation} • ${encounter.encounterDate}",
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-              }
-              Surface(
-                color = VybeViolet.copy(alpha = 0.15f),
-                shape = RoundedCornerShape(8.dp)
-              ) {
-                Text(
-                  text = "⏳ ${encounter.expiresHoursRemaining}h left",
-                  fontSize = 10.sp,
-                  fontWeight = FontWeight.Bold,
-                  color = VybeViolet,
-                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                )
-              }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Text(
-              text = encounter.description,
-              style = MaterialTheme.typography.bodyMedium,
-              color = MaterialTheme.colorScheme.onSurface,
-              lineHeight = 20.sp
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
+            // Location & Date
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.SpaceBetween,
               verticalAlignment = Alignment.CenterVertically
             ) {
-              Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                encounter.tags.forEach { tag ->
-                  Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(6.dp)
-                  ) {
-                    Text(
-                      text = "#$tag",
-                      fontSize = 10.sp,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
-                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                  }
-                }
-              }
-
-              Button(
-                onClick = { viewModel.sendCrossedPathRequest(encounter.id) },
-                enabled = !encounter.hasSentRequest,
-                colors = ButtonDefaults.buttonColors(
-                  containerColor = if (encounter.hasSentRequest) MaterialTheme.colorScheme.surfaceVariant else VybeViolet
-                ),
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.testTag("handshake_button_${encounter.id}")
-              ) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                  imageVector = if (encounter.hasSentRequest) Icons.Default.Check else Icons.Default.WavingHand,
+                  imageVector = Icons.Default.Place,
                   contentDescription = null,
-                  modifier = Modifier.size(14.dp)
+                  tint = VybeMagenta,
+                  modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                  text = if (encounter.hasSentRequest) "Handshake Sent" else "That Was Me",
-                  fontSize = 11.sp,
-                  fontWeight = FontWeight.Bold
+                  text = encounter.venueOrEventName ?: encounter.broadLocation,
+                  fontWeight = FontWeight.Bold,
+                  fontSize = 13.sp
                 )
+              }
+              Surface(
+                color = VybeViolet.copy(alpha = 0.15f),
+                shape = RoundedCornerShape(6.dp)
+              ) {
+                Text(
+                  text = "Expires in ${encounter.expiresHoursRemaining}h",
+                  fontSize = 10.sp,
+                  color = VybeViolet,
+                  fontWeight = FontWeight.Bold,
+                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+              }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+              text = encounter.title,
+              fontWeight = FontWeight.Bold,
+              fontSize = 15.sp,
+              color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+              text = encounter.description,
+              fontSize = 12.sp,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              lineHeight = 17.sp
+            )
+
+            // Optional Shared Photo
+            if (encounter.photoUrl != null) {
+              Spacer(modifier = Modifier.height(10.dp))
+              Box(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .height(140.dp)
+                  .clip(RoundedCornerShape(10.dp))
+              ) {
+                AsyncImage(
+                  model = encounter.photoUrl,
+                  contentDescription = "Encounter scene photo",
+                  contentScale = ContentScale.Crop,
+                  modifier = Modifier.fillMaxSize()
+                )
+              }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Action row: Google Maps viewing + Connect button
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              // Google Maps Button
+              TextButton(
+                onClick = {
+                  val query = encounter.venueOrEventName ?: encounter.broadLocation
+                  val mapIntent = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(query)}"))
+                  try {
+                    context.startActivity(mapIntent)
+                  } catch (_: Exception) {
+                    // Fallback to browser search
+                    val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.google.com/?q=${Uri.encode(query)}"))
+                    context.startActivity(webIntent)
+                  }
+                },
+                modifier = Modifier.testTag("open_maps_${encounter.id}")
+              ) {
+                Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(16.dp), tint = VybeBrandCyan)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("View on Maps", fontSize = 11.sp, color = VybeBrandCyan, fontWeight = FontWeight.Bold)
+              }
+
+              if (encounter.hasSentRequest) {
+                Surface(
+                  color = VybeOnlineGreen.copy(alpha = 0.2f),
+                  shape = RoundedCornerShape(8.dp)
+                ) {
+                  Text(
+                    text = "Request Pending ⏳",
+                    color = VybeOnlineGreen,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                  )
+                }
+              } else {
+                Button(
+                  onClick = { viewModel.sendCrossedPathRequest(encounter.id) },
+                  colors = ButtonDefaults.buttonColors(containerColor = VybeMagenta),
+                  shape = RoundedCornerShape(10.dp),
+                  contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                  modifier = Modifier.testTag("request_connection_${encounter.id}")
+                ) {
+                  Text("Was That You? 🤝", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
               }
             }
           }
         }
       }
-
-      item {
-        Spacer(modifier = Modifier.height(80.dp))
-      }
     }
   }
 
-  // Create Missed Connection Dialog
+  // Create Encounter Dialog with Photo Sharing & Map selection
   if (showCreateDialog) {
     AlertDialog(
       onDismissRequest = { showCreateDialog = false },
-      title = { Text("I Noticed Someone", fontWeight = FontWeight.Bold) },
+      title = { Text("I Noticed Someone", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
       text = {
-        Column(modifier = Modifier.fillMaxWidth()) {
-          Text(
-            text = "Post a respectful, non-identifying description. Expires in 72h.",
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-          )
-          Spacer(modifier = Modifier.height(10.dp))
+        LazyColumn(
+          modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 420.dp),
+          verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+          item {
+            Text(
+              text = "Post a respectful, non-identifying description. Expires in 72 hours automatically.",
+              fontSize = 12.sp,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+          }
 
-          OutlinedTextField(
-            value = newLocation,
-            onValueChange = { newLocation = it },
-            label = { Text("Broad Location (e.g. Bandra West, Mumbai)") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-          )
+          item {
+            OutlinedTextField(
+              value = newLocation,
+              onValueChange = { newLocation = it },
+              label = { Text("Broad Area / City") },
+              placeholder = { Text("e.g. Bandra West, Mumbai") },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth().testTag("encounter_location_input")
+            )
+          }
 
-          Spacer(modifier = Modifier.height(8.dp))
+          item {
+            OutlinedTextField(
+              value = newVenue,
+              onValueChange = { newVenue = it },
+              label = { Text("Venue / Landmark (for Google Maps)") },
+              placeholder = { Text("e.g. Subko Coffee / Bandstand") },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth().testTag("encounter_venue_input")
+            )
+          }
 
-          OutlinedTextField(
-            value = newVenue,
-            onValueChange = { newVenue = it },
-            label = { Text("Venue / Event (e.g. Blue Tokai Coffee)") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-          )
+          item {
+            OutlinedTextField(
+              value = newDescription,
+              onValueChange = { newDescription = it },
+              label = { Text("Respectful Description") },
+              placeholder = { Text("e.g. You wore a vintage corduroy jacket and were reading Murakami...") },
+              minLines = 3,
+              modifier = Modifier.fillMaxWidth().testTag("encounter_desc_input")
+            )
+          }
 
-          Spacer(modifier = Modifier.height(8.dp))
-
-          OutlinedTextField(
-            value = newDescription,
-            onValueChange = { newDescription = it },
-            label = { Text("Respectful Description") },
-            placeholder = { Text("e.g. You wore a green denim jacket...") },
-            minLines = 3,
-            modifier = Modifier.fillMaxWidth()
-          )
+          item {
+            Text("Optional Photo of Venue / Atmosphere", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            if (pickedPhotoUri != null) {
+              Box(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .height(100.dp)
+                  .clip(RoundedCornerShape(8.dp))
+              ) {
+                AsyncImage(
+                  model = pickedPhotoUri,
+                  contentDescription = "Selected Photo",
+                  contentScale = ContentScale.Crop,
+                  modifier = Modifier.fillMaxSize()
+                )
+                IconButton(
+                  onClick = { pickedPhotoUri = null },
+                  modifier = Modifier.align(Alignment.TopEnd)
+                ) {
+                  Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.White)
+                }
+              }
+            } else {
+              OutlinedButton(
+                onClick = {
+                  photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp)
+              ) {
+                Icon(Icons.Default.AddAPhoto, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Attach Atmosphere Photo", fontSize = 11.sp)
+              }
+            }
+          }
         }
       },
       confirmButton = {
@@ -317,11 +427,13 @@ fun CrossedPathsScreen(viewModel: VybeViewModel) {
               newDescription = ""
               newVenue = ""
               newLocation = ""
+              pickedPhotoUri = null
             }
           },
-          colors = ButtonDefaults.buttonColors(containerColor = VybeMagenta)
+          colors = ButtonDefaults.buttonColors(containerColor = VybeMagenta),
+          modifier = Modifier.testTag("submit_crossed_path_button")
         ) {
-          Text("Post Encounter")
+          Text("Post Encounter", fontWeight = FontWeight.Bold)
         }
       },
       dismissButton = {

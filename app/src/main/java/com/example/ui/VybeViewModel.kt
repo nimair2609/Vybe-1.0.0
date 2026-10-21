@@ -34,7 +34,8 @@ enum class Screen {
   UNLOAD_VIEW,
   UNFILTERED_VIEW,
   WHAT_NEXT_VIEW,
-  SPIRITUAL_MODE
+  SPIRITUAL_MODE,
+  STORY_VIEWER
 }
 
 class VybeViewModel : ViewModel() {
@@ -42,6 +43,9 @@ class VybeViewModel : ViewModel() {
 
   private val _currentScreen = MutableStateFlow(Screen.SPLASH)
   val currentScreen: StateFlow<Screen> = _currentScreen.asStateFlow()
+
+  private val _currentStoryIndex = MutableStateFlow(0)
+  val currentStoryIndex: StateFlow<Int> = _currentStoryIndex.asStateFlow()
 
   private val screenBackStack = mutableListOf<Screen>()
 
@@ -87,10 +91,12 @@ class VybeViewModel : ViewModel() {
   val timeManagementStats = repository.timeManagementStats
   val notificationPreferences = repository.notificationPreferences
   val userActivity = repository.userActivity
+  val activeDeviceSessions = repository.activeDeviceSessions
   val isSpiritualMode = repository.isSpiritualMode
   val spiritualReflections = repository.spiritualReflections
   val spiritualGratitudes = repository.spiritualGratitudes
   val spiritualIntentions = repository.spiritualIntentions
+  val businessApplications = repository.businessApplications
 
   fun markNotificationAsRead(id: String) = repository.markNotificationAsRead(id)
   fun markAllNotificationsAsRead() = repository.markAllNotificationsAsRead()
@@ -101,6 +107,93 @@ class VybeViewModel : ViewModel() {
   fun addGratitudeEntry(entry: String) = repository.addGratitudeEntry(entry)
   fun addIntention(text: String) = repository.addIntention(text)
   fun toggleIntentionFulfilled(id: String) = repository.toggleIntentionFulfilled(id)
+
+  // Unload room actions
+  fun createUnloadRoom(
+    title: String,
+    description: String,
+    topicTag: String,
+    mode: UnloadRoomMode,
+    durationMinutes: Int,
+    capacity: Int,
+    scheduledTime: String,
+    joinerMessage: String,
+    termsAgreed: Boolean
+  ) = repository.createUnloadRoom(title, description, topicTag, mode, durationMinutes, capacity, scheduledTime, joinerMessage, termsAgreed)
+
+  fun updateUnloadRoom(
+    roomId: String,
+    title: String,
+    description: String,
+    topicTag: String,
+    mode: UnloadRoomMode,
+    durationMinutes: Int,
+    capacity: Int
+  ) = repository.updateUnloadRoom(roomId, title, description, topicTag, mode, durationMinutes, capacity)
+
+  fun deleteUnloadRoom(roomId: String) = repository.deleteUnloadRoom(roomId)
+
+  // What Next
+  fun createPredictionPoll(title: String, category: String, durationHours: Int, options: List<String>) =
+    repository.createPredictionPoll(title, category, durationHours, options)
+
+  fun deletePredictionPoll(pollId: String) = repository.deletePredictionPoll(pollId)
+
+  // Time Capsule
+  fun respondToCapsuleInvitation(capsuleId: String, accept: Boolean) =
+    repository.respondToCapsuleInvitation(capsuleId, accept)
+
+  // Double Take
+  fun createDoubleTakePrompt(question: String, category: String, optA: String, optB: String, peer: User) =
+    repository.createDoubleTakePrompt(question, category, optA, optB, peer)
+
+  fun deleteDoubleTakePrompt(promptId: String) = repository.deleteDoubleTakePrompt(promptId)
+  fun acceptDoubleTakeMatch(promptId: String) = repository.acceptDoubleTakeMatch(promptId)
+
+  // Business
+  fun submitBusinessApplication(name: String, cat: String, gst: String, email: String, phone: String, addr: String) =
+    repository.submitBusinessApplication(name, cat, gst, email, phone, addr)
+
+  fun reviewBusinessApplication(appId: String, status: BusinessVerificationStatus, notes: String) =
+    repository.reviewBusinessApplication(appId, status, notes)
+
+  fun activateBusinessShop(shopId: String) = repository.activateBusinessShop(shopId)
+
+  // Messaging
+  fun sendExtendedDirectMessage(
+    convId: String,
+    text: String,
+    mediaUrl: String? = null,
+    mediaType: String = "TEXT",
+    fileName: String? = null,
+    locationCoordinates: String? = null,
+    replyToId: String? = null,
+    replyToText: String? = null,
+    replyToSenderName: String? = null
+  ) = repository.sendExtendedDirectMessage(convId, text, mediaUrl, mediaType, fileName, locationCoordinates, replyToId, replyToText, replyToSenderName)
+
+  fun editDirectMessage(convId: String, msgId: String, text: String) =
+    repository.editDirectMessage(convId, msgId, text)
+
+  fun deleteMessageForMe(convId: String, msgId: String) =
+    repository.deleteMessageForMe(convId, msgId)
+
+  fun deleteMessageForEveryone(convId: String, msgId: String) =
+    repository.deleteMessageForEveryone(convId, msgId)
+
+  fun addMessageReaction(convId: String, msgId: String, emoji: String) =
+    repository.addMessageReaction(convId, msgId, emoji)
+
+  fun setHiddenChatPin(pin: String) = repository.setHiddenChatPin(pin)
+  fun verifyHiddenChatPin(pin: String): Boolean = repository.verifyHiddenChatPin(pin)
+  fun toggleHideConversation(convId: String) = repository.toggleHideConversation(convId)
+  fun createGroupConversation(name: String, members: List<User>) = repository.createGroupConversation(name, members)
+  fun updateChatNickname(convId: String, nickname: String) = repository.updateChatNickname(convId, nickname)
+  fun toggleMuteChat(convId: String) = repository.toggleMuteChat(convId)
+  fun toggleBlockUser(userId: String) = repository.toggleBlockUser(userId)
+  fun toggleRestrictUser(userId: String) = repository.toggleRestrictUser(userId)
+  fun updateChatTheme(convId: String, theme: String) = repository.updateChatTheme(convId, theme)
+  fun searchUserByVybeId(query: String): User? = repository.searchUserByVybeId(query)
 
   init {
     viewModelScope.launch {
@@ -238,10 +331,19 @@ class VybeViewModel : ViewModel() {
     email: String,
     phone: String,
     bio: String,
-    avatarUrl: String,
-    profileVideoUrl: String?
+    avatarUrl: String? = null,
+    profileVideoUrl: String? = null,
+    coverUrl: String? = null
   ) = repository.updateAccountProfile(
-    firstName, lastName, requestedUserId, email, phone, bio, avatarUrl, profileVideoUrl
+    firstName = firstName,
+    lastName = lastName,
+    username = requestedUserId,
+    email = email,
+    phone = phone,
+    bio = bio,
+    profileVideoUrl = profileVideoUrl,
+    avatarUrl = avatarUrl,
+    coverUrl = coverUrl
   )
 
   fun submitSupportTicket(category: String, subject: String, message: String) =
@@ -285,4 +387,62 @@ class VybeViewModel : ViewModel() {
     repository.deactivateAccount()
     _currentScreen.value = Screen.AUTH
   }
+
+  // --- Instagram-style Story Interactions ---
+  fun openStory(story: Story) {
+    val list = repository.stories.value
+    val idx = list.indexOfFirst { it.id == story.id }
+    _currentStoryIndex.value = if (idx >= 0) idx else 0
+    repository.markStoryViewed(story.id)
+    navigateTo(Screen.STORY_VIEWER)
+  }
+
+  fun openStoryAtIndex(index: Int) {
+    val list = repository.stories.value
+    if (index in list.indices) {
+      _currentStoryIndex.value = index
+      repository.markStoryViewed(list[index].id)
+      navigateTo(Screen.STORY_VIEWER)
+    }
+  }
+
+  fun nextStory(): Boolean {
+    val list = repository.stories.value
+    if (_currentStoryIndex.value < list.size - 1) {
+      _currentStoryIndex.value += 1
+      repository.markStoryViewed(list[_currentStoryIndex.value].id)
+      return true
+    }
+    return false
+  }
+
+  fun prevStory(): Boolean {
+    if (_currentStoryIndex.value > 0) {
+      _currentStoryIndex.value -= 1
+      return true
+    }
+    return false
+  }
+
+  fun createStory(
+    mediaUrl: String,
+    caption: String,
+    mediaType: StoryMediaType = StoryMediaType.PHOTO,
+    audience: StoryAudience = StoryAudience.EVERYONE,
+    musicTrackTitle: String? = null,
+    location: String? = null,
+    textBackgroundColor: String? = null
+  ) = repository.createStory(
+    mediaUrl = mediaUrl,
+    caption = caption,
+    mediaType = mediaType,
+    audience = audience,
+    musicTrackTitle = musicTrackTitle,
+    location = location,
+    textBackgroundColor = textBackgroundColor
+  )
+
+  fun markStoryViewed(storyId: String) = repository.markStoryViewed(storyId)
+  fun toggleStoryLike(storyId: String) = repository.toggleStoryLike(storyId)
+  fun deleteStory(storyId: String) = repository.deleteStory(storyId)
 }

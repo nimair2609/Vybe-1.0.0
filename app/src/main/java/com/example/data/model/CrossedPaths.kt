@@ -22,5 +22,7 @@ data class CrossedPathEncounter(
   val potentialMatchesCount: Int = 1,
   val hasSentRequest: Boolean = false,
   val requestStatus: ConnectionRequestStatus = ConnectionRequestStatus.PENDING,
-  val tags: List<String> = emptyList()
+  val tags: List<String> = emptyList(),
+  val photoUrl: String? = null,
+  val mapQueryLocation: String? = null
 )

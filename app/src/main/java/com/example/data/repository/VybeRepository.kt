@@ -211,6 +211,13 @@ class VybeRepository private constructor() {
   private val _spiritualIntentions = MutableStateFlow<List<SpiritualIntention>>(emptyList())
   val spiritualIntentions: StateFlow<List<SpiritualIntention>> = _spiritualIntentions.asStateFlow()
 
+  // Business Applications State (Part J)
+  private val _businessApplications = MutableStateFlow<List<BusinessApplication>>(emptyList())
+  val businessApplications: StateFlow<List<BusinessApplication>> = _businessApplications.asStateFlow()
+
+  // Hidden chat PIN hash (in-memory hashed representation)
+  private var hiddenChatPinHash: String = "1234".hashCode().toString()
+
   init {
     seedInitialData()
   }
@@ -223,24 +230,49 @@ class VybeRepository private constructor() {
         mediaUrl = "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600",
         caption = "Midnight studio session in Bandra 🎶",
         mediaType = StoryMediaType.MUSIC,
-        musicTrackTitle = "Midnight Tape 04",
-        timestamp = "1h ago"
+        musicTrackTitle = "Midnight Tape 04 - Aarav",
+        location = "Bandra West, Mumbai",
+        timestamp = "45m ago",
+        isViewed = false
       ),
       Story(
         id = "s_2",
         author = userPriya,
         mediaUrl = "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=600",
-        caption = "Filter coffee & wireframing morning ☕",
+        caption = "Filter coffee & wireframing morning ☕ Secret preview!",
         mediaType = StoryMediaType.PHOTO,
-        timestamp = "3h ago"
+        audience = StoryAudience.CLOSE_FRIENDS,
+        location = "Indiranagar, Bengaluru",
+        timestamp = "2h ago",
+        isViewed = false
       ),
       Story(
         id = "s_3",
         author = userVikramCricket,
         mediaUrl = "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=600",
-        caption = "Matchday prep at Wankhede! 🏟️",
+        caption = "Matchday net practice at Wankhede! 🏟️",
         mediaType = StoryMediaType.VIDEO,
-        timestamp = "4h ago"
+        timestamp = "3h ago",
+        isViewed = false
+      ),
+      Story(
+        id = "s_4",
+        author = userPriya.copy(id = "u_ananya", username = "ananyadesign", displayName = "Ananya Sharma"),
+        mediaUrl = "",
+        caption = "Creativity is intelligence having fun. New drop coming Friday! ✨",
+        mediaType = StoryMediaType.TEXT,
+        textBackgroundColor = "NEON_PURPLE",
+        timestamp = "5h ago",
+        isViewed = false
+      ),
+      Story(
+        id = "s_5",
+        author = userAarav.copy(id = "u_rohan", username = "rohanroasts", displayName = "Rohan Mehta"),
+        mediaUrl = "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=600",
+        caption = "Fresh single-origin roast from Chikmagalur ☕",
+        mediaType = StoryMediaType.PHOTO,
+        timestamp = "8h ago",
+        isViewed = true
       )
     )
 
@@ -889,7 +921,9 @@ class VybeRepository private constructor() {
     caption: String,
     mediaType: StoryMediaType = StoryMediaType.PHOTO,
     audience: StoryAudience = StoryAudience.EVERYONE,
-    musicTrackTitle: String? = null
+    musicTrackTitle: String? = null,
+    location: String? = null,
+    textBackgroundColor: String? = null
   ) {
     val user = _currentUser.value ?: return
     val newStory = Story(
@@ -900,10 +934,35 @@ class VybeRepository private constructor() {
       mediaType = mediaType,
       audience = audience,
       musicTrackTitle = musicTrackTitle,
+      location = location,
+      textBackgroundColor = textBackgroundColor,
       timestamp = "Just now",
-      expiresHoursRemaining = 24
+      expiresHoursRemaining = 24,
+      isViewed = false
     )
     _stories.value = listOf(newStory) + _stories.value
+  }
+
+  fun markStoryViewed(storyId: String) {
+    _stories.value = _stories.value.map {
+      if (it.id == storyId) it.copy(isViewed = true) else it
+    }
+  }
+
+  fun toggleStoryLike(storyId: String) {
+    _stories.value = _stories.value.map {
+      if (it.id == storyId) {
+        val nextLiked = !it.isLikedByMe
+        it.copy(
+          isLikedByMe = nextLiked,
+          reactionsCount = if (nextLiked) it.reactionsCount + 1 else maxOf(0, it.reactionsCount - 1)
+        )
+      } else it
+    }
+  }
+
+  fun deleteStory(storyId: String) {
+    _stories.value = _stories.value.filter { it.id != storyId }
   }
 
   fun selectMoodFilter(mood: MoodType?) {
@@ -1132,7 +1191,8 @@ class VybeRepository private constructor() {
     phone: String,
     bio: String,
     profileVideoUrl: String? = null,
-    avatarUrl: String? = null
+    avatarUrl: String? = null,
+    coverUrl: String? = null
   ) {
     val user = _currentUser.value ?: return
     val updated = user.copy(
@@ -1144,7 +1204,8 @@ class VybeRepository private constructor() {
       phone = phone,
       bio = bio,
       profileVideoUrl = profileVideoUrl ?: user.profileVideoUrl,
-      avatarUrl = avatarUrl ?: user.avatarUrl
+      avatarUrl = avatarUrl ?: user.avatarUrl,
+      coverUrl = coverUrl ?: user.coverUrl
     )
     _currentUser.value = updated
   }
@@ -1299,5 +1360,383 @@ class VybeRepository private constructor() {
     _spiritualIntentions.value = _spiritualIntentions.value.map {
       if (it.id == id) it.copy(isFulfilled = !it.isFulfilled) else it
     }
+  }
+
+  // VYBE UNLOAD ROOMS (Part D)
+  fun createUnloadRoom(
+    title: String,
+    description: String,
+    topicTag: String,
+    mode: UnloadRoomMode,
+    durationMinutes: Int,
+    capacity: Int,
+    scheduledTime: String,
+    joinerMessage: String,
+    termsAgreed: Boolean
+  ): UnloadRoom {
+    val user = _currentUser.value
+    val newRoom = UnloadRoom(
+      id = "room_${System.currentTimeMillis()}",
+      title = title,
+      description = description,
+      topicTag = topicTag,
+      mode = mode,
+      hostId = user?.id ?: "u_me",
+      hostName = user?.displayName ?: "Vybe Host",
+      durationMinutes = durationMinutes,
+      capacity = capacity,
+      scheduledTime = scheduledTime,
+      joinerMessage = joinerMessage,
+      termsAgreed = termsAgreed,
+      activeListenersCount = 1
+    )
+    _unloadRooms.value = listOf(newRoom) + _unloadRooms.value
+    _activeUnloadRoom.value = newRoom
+    return newRoom
+  }
+
+  fun updateUnloadRoom(
+    roomId: String,
+    title: String,
+    description: String,
+    topicTag: String,
+    mode: UnloadRoomMode,
+    durationMinutes: Int,
+    capacity: Int
+  ) {
+    _unloadRooms.value = _unloadRooms.value.map {
+      if (it.id == roomId) {
+        val updated = it.copy(
+          title = title,
+          description = description,
+          topicTag = topicTag,
+          mode = mode,
+          durationMinutes = durationMinutes,
+          capacity = capacity
+        )
+        if (_activeUnloadRoom.value?.id == roomId) _activeUnloadRoom.value = updated
+        updated
+      } else it
+    }
+  }
+
+  fun deleteUnloadRoom(roomId: String) {
+    _unloadRooms.value = _unloadRooms.value.filterNot { it.id == roomId }
+    if (_activeUnloadRoom.value?.id == roomId) {
+      _activeUnloadRoom.value = null
+    }
+  }
+
+  // WHAT NEXT / AUDIENCE POLLS (Part F)
+  fun createPredictionPoll(
+    title: String,
+    category: String,
+    durationHours: Int,
+    optionTexts: List<String>
+  ) {
+    val user = _currentUser.value
+    val opts = optionTexts.mapIndexed { idx, txt ->
+      PredictionOption(id = idx + 1, text = txt, votesCount = 0, percentage = 0)
+    }
+    val newPoll = SocialPrediction(
+      id = "pred_${System.currentTimeMillis()}",
+      title = title,
+      category = category,
+      closingTimeText = if (durationHours <= 24) "Closes in ${durationHours}h" else "Closes in ${durationHours / 24} days",
+      durationHours = durationHours,
+      totalVotes = 0,
+      options = opts,
+      authorId = user?.id ?: "u_me",
+      authorUsername = user?.username ?: "sid_verma"
+    )
+    _predictions.value = listOf(newPoll) + _predictions.value
+  }
+
+  fun deletePredictionPoll(pollId: String) {
+    _predictions.value = _predictions.value.filterNot { it.id == pollId }
+  }
+
+  // FUTURE TIME CAPSULE (Part G)
+  fun respondToCapsuleInvitation(capsuleId: String, accept: Boolean) {
+    _timeCapsules.value = _timeCapsules.value.map {
+      if (it.id == capsuleId) {
+        it.copy(
+          myInvitationStatus = if (accept) CapsuleInvitationStatus.ACCEPTED else CapsuleInvitationStatus.DECLINED
+        )
+      } else it
+    }
+  }
+
+  // VYBE DOUBLE TAKE (Part H)
+  fun createDoubleTakePrompt(
+    question: String,
+    category: String,
+    optionA: String,
+    optionB: String,
+    peerUser: User
+  ) {
+    val user = _currentUser.value
+    val newPrompt = DoubleTakePrompt(
+      id = "dt_${System.currentTimeMillis()}",
+      promptQuestion = question,
+      category = category,
+      optionA = optionA,
+      optionB = optionB,
+      creatorId = user?.id ?: "u_me",
+      peerUser = peerUser,
+      peerAnswer = if (optionA.isNotBlank()) optionA else "Yes",
+      isPeerAnswerSubmitted = true
+    )
+    _doubleTakePrompts.value = listOf(newPrompt) + _doubleTakePrompts.value
+  }
+
+  fun deleteDoubleTakePrompt(promptId: String) {
+    _doubleTakePrompts.value = _doubleTakePrompts.value.filterNot { it.id == promptId }
+  }
+
+  fun acceptDoubleTakeMatch(promptId: String) {
+    _doubleTakePrompts.value = _doubleTakePrompts.value.map {
+      if (it.id == promptId) it.copy(isCreatorAccepted = true, isChatUnlocked = true) else it
+    }
+  }
+
+  // VERIFIED BUSINESS SHOP (Part J)
+  fun submitBusinessApplication(
+    businessName: String,
+    category: String,
+    gstOrReg: String,
+    email: String,
+    phone: String,
+    address: String
+  ): BusinessApplication {
+    val user = _currentUser.value
+    val app = BusinessApplication(
+      id = "ba_${System.currentTimeMillis()}",
+      ownerId = user?.id ?: "u_me",
+      businessName = businessName,
+      category = category,
+      registrationNumberOrGst = gstOrReg,
+      contactEmail = email,
+      contactPhone = phone,
+      address = address,
+      status = BusinessVerificationStatus.PENDING,
+      submittedAt = "Today"
+    )
+    _businessApplications.value = listOf(app) + _businessApplications.value
+    return app
+  }
+
+  fun reviewBusinessApplication(applicationId: String, status: BusinessVerificationStatus, notes: String) {
+    _businessApplications.value = _businessApplications.value.map {
+      if (it.id == applicationId) {
+        val updated = it.copy(status = status, reviewerNotes = notes)
+        if (status == BusinessVerificationStatus.APPROVED) {
+          _currentUser.value = _currentUser.value?.copy(isVerifiedBusiness = true)
+        }
+        updated
+      } else it
+    }
+  }
+
+  fun activateBusinessShop(shopId: String) {
+    _shops.value = _shops.value.map {
+      if (it.id == shopId) it.copy(isShopActive = true) else it
+    }
+  }
+
+  // COMPLETE INBOX & MESSAGING (Part K)
+  fun sendExtendedDirectMessage(
+    conversationId: String,
+    text: String,
+    mediaUrl: String? = null,
+    mediaType: String = "TEXT",
+    fileName: String? = null,
+    locationCoordinates: String? = null,
+    replyToId: String? = null,
+    replyToText: String? = null,
+    replyToSenderName: String? = null
+  ) {
+    val user = _currentUser.value ?: return
+    val current = _conversations.value.toMutableList()
+    val index = current.indexOfFirst { it.id == conversationId }
+    if (index != -1) {
+      val conv = current[index]
+      val newMsg = DirectMessage(
+        id = "m_${System.currentTimeMillis()}",
+        senderId = user.id,
+        text = text.trim(),
+        timestamp = "Just now",
+        isMe = true,
+        mediaUrl = mediaUrl,
+        mediaType = mediaType,
+        fileName = fileName,
+        locationCoordinates = locationCoordinates,
+        replyToId = replyToId,
+        replyToText = replyToText,
+        replyToSenderName = replyToSenderName,
+        isRead = true
+      )
+      current[index] = conv.copy(
+        lastMessage = if (text.isNotBlank()) text.trim() else "[$mediaType attachment]",
+        lastMessageTimestamp = "Just now",
+        messages = conv.messages + newMsg
+      )
+      _conversations.value = current
+    }
+  }
+
+  fun editDirectMessage(conversationId: String, messageId: String, newText: String) {
+    val current = _conversations.value.toMutableList()
+    val index = current.indexOfFirst { it.id == conversationId }
+    if (index != -1) {
+      val conv = current[index]
+      val updatedMsgs = conv.messages.map { msg ->
+        if (msg.id == messageId && msg.isMe) {
+          msg.copy(text = newText.trim(), isEdited = true)
+        } else msg
+      }
+      current[index] = conv.copy(messages = updatedMsgs)
+      _conversations.value = current
+    }
+  }
+
+  fun deleteMessageForMe(conversationId: String, messageId: String) {
+    val current = _conversations.value.toMutableList()
+    val index = current.indexOfFirst { it.id == conversationId }
+    if (index != -1) {
+      val conv = current[index]
+      val updatedMsgs = conv.messages.filterNot { it.id == messageId }
+      current[index] = conv.copy(messages = updatedMsgs)
+      _conversations.value = current
+    }
+  }
+
+  fun deleteMessageForEveryone(conversationId: String, messageId: String) {
+    val current = _conversations.value.toMutableList()
+    val index = current.indexOfFirst { it.id == conversationId }
+    if (index != -1) {
+      val conv = current[index]
+      val updatedMsgs = conv.messages.map { msg ->
+        if (msg.id == messageId) {
+          msg.copy(
+            text = "This message was deleted",
+            isDeletedForEveryone = true,
+            mediaUrl = null
+          )
+        } else msg
+      }
+      current[index] = conv.copy(messages = updatedMsgs)
+      _conversations.value = current
+    }
+  }
+
+  fun addMessageReaction(conversationId: String, messageId: String, emoji: String) {
+    val current = _conversations.value.toMutableList()
+    val index = current.indexOfFirst { it.id == conversationId }
+    if (index != -1) {
+      val conv = current[index]
+      val updatedMsgs = conv.messages.map { msg ->
+        if (msg.id == messageId) {
+          val next = if (msg.reactions.contains(emoji)) msg.reactions - emoji else msg.reactions + emoji
+          msg.copy(reactions = next)
+        } else msg
+      }
+      current[index] = conv.copy(messages = updatedMsgs)
+      _conversations.value = current
+    }
+  }
+
+  fun setHiddenChatPin(pin: String) {
+    hiddenChatPinHash = pin.trim().hashCode().toString()
+  }
+
+  fun verifyHiddenChatPin(pin: String): Boolean {
+    return pin.trim().hashCode().toString() == hiddenChatPinHash
+  }
+
+  fun toggleHideConversation(conversationId: String) {
+    val current = _conversations.value.toMutableList()
+    val index = current.indexOfFirst { it.id == conversationId }
+    if (index != -1) {
+      val conv = current[index]
+      current[index] = conv.copy(isHidden = !conv.isHidden)
+      _conversations.value = current
+    }
+  }
+
+  fun createGroupConversation(groupName: String, members: List<User>): Conversation {
+    val user = _currentUser.value ?: userMe
+    val groupConv = Conversation(
+      id = "grp_${System.currentTimeMillis()}",
+      peerUser = members.firstOrNull() ?: user,
+      groupName = groupName,
+      isGroup = true,
+      groupMembers = listOf(user) + members,
+      groupAdminId = user.id,
+      lastMessage = "Group \"$groupName\" created",
+      lastMessageTimestamp = "Just now",
+      messages = listOf(
+        DirectMessage(
+          id = "gm_1",
+          senderId = user.id,
+          text = "Welcome to $groupName! Say hi 👋",
+          timestamp = "Just now",
+          isMe = true
+        )
+      )
+    )
+    _conversations.value = listOf(groupConv) + _conversations.value
+    return groupConv
+  }
+
+  fun updateChatNickname(conversationId: String, nickname: String) {
+    val current = _conversations.value.toMutableList()
+    val index = current.indexOfFirst { it.id == conversationId }
+    if (index != -1) {
+      current[index] = current[index].copy(customNickname = if (nickname.isBlank()) null else nickname.trim())
+      _conversations.value = current
+    }
+  }
+
+  fun toggleMuteChat(conversationId: String) {
+    val current = _conversations.value.toMutableList()
+    val index = current.indexOfFirst { it.id == conversationId }
+    if (index != -1) {
+      current[index] = current[index].copy(isMuted = !current[index].isMuted)
+      _conversations.value = current
+    }
+  }
+
+  fun toggleBlockUser(userId: String) {
+    val current = _conversations.value.toMutableList()
+    val index = current.indexOfFirst { it.peerUser.id == userId }
+    if (index != -1) {
+      current[index] = current[index].copy(isBlocked = !current[index].isBlocked)
+      _conversations.value = current
+    }
+  }
+
+  fun toggleRestrictUser(userId: String) {
+    val current = _conversations.value.toMutableList()
+    val index = current.indexOfFirst { it.peerUser.id == userId }
+    if (index != -1) {
+      current[index] = current[index].copy(isRestricted = !current[index].isRestricted)
+      _conversations.value = current
+    }
+  }
+
+  fun updateChatTheme(conversationId: String, theme: String) {
+    val current = _conversations.value.toMutableList()
+    val index = current.indexOfFirst { it.id == conversationId }
+    if (index != -1) {
+      current[index] = current[index].copy(chatTheme = theme)
+      _conversations.value = current
+    }
+  }
+
+  fun searchUserByVybeId(query: String): User? {
+    val clean = query.trim().lowercase().replace("@", "")
+    val all = listOf(userMe, userAarav, userPriya, userVikramCricket)
+    return all.firstOrNull { it.username.lowercase() == clean || it.id.lowercase() == clean }
   }
 }

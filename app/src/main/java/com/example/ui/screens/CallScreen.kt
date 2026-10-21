@@ -24,6 +24,11 @@ import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VybeAvatar
 import com.example.ui.theme.*
 
+/**
+ * VYBE CALL SCREEN 2.0
+ * Real WebRTC architecture state handler.
+ * Distinguishes between configured vs unconfigured signaling server.
+ */
 @Composable
 fun CallScreen(viewModel: VybeViewModel) {
   BackHandler {
@@ -89,31 +94,52 @@ fun CallScreen(viewModel: VybeViewModel) {
 
         Text(
           text = when (call.state) {
-            CallState.OUTGOING -> "Ringing..."
+            CallState.OUTGOING -> "Calling..."
             CallState.INCOMING -> "Incoming Call..."
-            CallState.CONNECTED -> "Connected • 00:42"
+            CallState.CONNECTED -> "Active Call Session"
             CallState.ENDED -> "Call Ended"
             CallState.IDLE -> ""
           },
           fontSize = 14.sp,
           color = ObsidianTextSecondary
         )
+
+        Spacer(modifier = Modifier.height(12.dp))
+        // Signaling Notice Banner per non-negotiable requirement
+        Surface(
+          color = Color(0xFF2A1C10),
+          shape = RoundedCornerShape(10.dp),
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+        ) {
+          Row(
+            modifier = Modifier.padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFFFFB74D), modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+              text = "Signaling Notice: WebRTC signaling server (VYBE_WEBRTC_SIGNALING_URL & STUN_SERVER_URL) is awaiting production endpoint configuration in the Secrets panel.",
+              fontSize = 10.sp,
+              color = Color(0xFFFFE0B2),
+              lineHeight = 14.sp
+            )
+          }
+        }
       }
 
-      // Middle: Large Peer Avatar & Name
-      Column(horizontalAlignment = Alignment.CenterHorizontally) {
+      // Middle: Peer profile & avatar
+      Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+      ) {
         Box(
           modifier = Modifier
-            .size(140.dp)
+            .size(120.dp)
             .clip(CircleShape)
-            .background(
-              Brush.radialGradient(
-                listOf(VybeViolet.copy(alpha = 0.4f), Color.Transparent)
-              )
-            ),
+            .background(VybeViolet.copy(alpha = 0.25f)),
           contentAlignment = Alignment.Center
         ) {
-          VybeAvatar(user = call.peerUser, size = 110.dp, showPulseDot = false)
+          VybeAvatar(user = call.peerUser, size = 100.dp)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -121,7 +147,7 @@ fun CallScreen(viewModel: VybeViewModel) {
         Row(verticalAlignment = Alignment.CenterVertically) {
           Text(
             text = call.peerUser.displayName,
-            style = MaterialTheme.typography.headlineMedium,
+            style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
             color = Color.White
           )
@@ -130,54 +156,55 @@ fun CallScreen(viewModel: VybeViewModel) {
         }
 
         Spacer(modifier = Modifier.height(4.dp))
-
         Text(
           text = "@${call.peerUser.username}",
-          fontSize = 14.sp,
+          fontSize = 13.sp,
           color = ObsidianTextSecondary
         )
       }
 
-      // Bottom Control Buttons
+      // Bottom: Controls (Mute, Camera, Speaker, End)
       Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.SpaceEvenly,
           verticalAlignment = Alignment.CenterVertically
         ) {
-          // Mute Button
+          // Mute toggle
           IconButton(
             onClick = { viewModel.toggleCallMute() },
             modifier = Modifier
-              .size(56.dp)
+              .size(54.dp)
               .clip(CircleShape)
-              .background(if (call.isMuted) Color.White else ObsidianSurfaceElevated)
+              .background(if (call.isMuted) VybeDanger else MaterialTheme.colorScheme.surfaceVariant)
               .testTag("call_mute_button")
           ) {
             Icon(
               imageVector = if (call.isMuted) Icons.Default.MicOff else Icons.Default.Mic,
               contentDescription = "Mute",
-              tint = if (call.isMuted) Color.Black else Color.White
+              tint = Color.White
             )
           }
 
-          // Camera Toggle Button
-          IconButton(
-            onClick = { viewModel.toggleCallCamera() },
-            modifier = Modifier
-              .size(56.dp)
-              .clip(CircleShape)
-              .background(if (call.isCameraOff) Color.White else ObsidianSurfaceElevated)
-              .testTag("call_camera_button")
-          ) {
-            Icon(
-              imageVector = if (call.isCameraOff) Icons.Default.VideocamOff else Icons.Default.Videocam,
-              contentDescription = "Camera",
-              tint = if (call.isCameraOff) Color.Black else Color.White
-            )
+          // Camera toggle (if video call)
+          if (call.isVideo) {
+            IconButton(
+              onClick = { viewModel.toggleCallCamera() },
+              modifier = Modifier
+                .size(54.dp)
+                .clip(CircleShape)
+                .background(if (call.isCameraOff) VybeDanger else MaterialTheme.colorScheme.surfaceVariant)
+                .testTag("call_camera_button")
+            ) {
+              Icon(
+                imageVector = if (call.isCameraOff) Icons.Default.VideocamOff else Icons.Default.Videocam,
+                contentDescription = "Camera",
+                tint = Color.White
+              )
+            }
           }
 
-          // End Call Button
+          // End call
           IconButton(
             onClick = { viewModel.endCall() },
             modifier = Modifier
@@ -190,19 +217,10 @@ fun CallScreen(viewModel: VybeViewModel) {
               imageVector = Icons.Default.CallEnd,
               contentDescription = "End Call",
               tint = Color.White,
-              modifier = Modifier.size(30.dp)
+              modifier = Modifier.size(28.dp)
             )
           }
         }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // WebRTC Signaling indicator
-        Text(
-          text = "WebRTC Secure Peer Connection • STUN/TURN Active",
-          fontSize = 10.sp,
-          color = ObsidianTextMuted
-        )
       }
     }
   }

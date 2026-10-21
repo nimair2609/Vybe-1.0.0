@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -24,8 +25,12 @@ import com.example.ui.VybeViewModel
 import com.example.ui.theme.*
 
 /**
- * 14.4 VYBE WHAT NEXT
- * Authentic discovery, cultural predictions, next-action community roadmaps.
+ * VYBE WHAT NEXT 2.0
+ * Community predictions & audience consensus polls.
+ * - Create, edit, delete, save, and publish audience polls.
+ * - Configure questions, custom options, and duration (24h, 3 days, 7 days).
+ * - Collect votes securely and display real-time percentage results.
+ * - Enforce poll author permissions.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,6 +40,15 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
   }
 
   val predictions by viewModel.predictions.collectAsState()
+  val currentUser by viewModel.currentUser.collectAsState()
+
+  var showCreatePollDialog by remember { mutableStateOf(false) }
+  var pollTitle by remember { mutableStateOf("") }
+  var pollCategory by remember { mutableStateOf("Culture & Music") }
+  var pollDurationHours by remember { mutableIntStateOf(24) }
+  var pollOptions by remember { mutableStateOf(listOf("Yes, absolutely", "No, unlikely")) }
+
+  val categoryChoices = listOf("Culture & Music", "Cinema & OTT", "Technology & AI", "City Life", "Cricket & Sports")
 
   Scaffold(
     topBar = {
@@ -51,6 +65,26 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
           Column {
             Text("VYBE WHAT NEXT", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Text("Community Culture & Discovery Consensus", fontSize = 11.sp, color = VybeBrandCyan)
+          }
+        },
+        actions = {
+          Button(
+            onClick = {
+              pollTitle = ""
+              pollCategory = "Culture & Music"
+              pollDurationHours = 24
+              pollOptions = listOf("Yes, absolutely", "No, unlikely")
+              showCreatePollDialog = true
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier
+              .padding(end = 8.dp)
+              .testTag("create_poll_button")
+          ) {
+            Icon(Icons.Default.AddChart, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("New Poll", fontSize = 12.sp, fontWeight = FontWeight.Bold)
           }
         },
         colors = TopAppBarDefaults.topAppBarColors(
@@ -86,7 +120,7 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
                 color = MaterialTheme.colorScheme.onSurface
               )
               Text(
-                text = "Predict and discover where music, cinema, technology, and city vibes are heading next. Vote with your intuition.",
+                text = "Predict and discover where music, cinema, technology, and city vibes are heading next. Vote with your intuition or launch your own poll.",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = 16.sp
@@ -97,17 +131,21 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
       }
 
       item {
-        Text("Active Cultural Predictions", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+        Text("Active Cultural Predictions (${predictions.size})", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
       }
 
       items(predictions, key = { it.id }) { pred ->
+        val isAuthor = pred.authorId == currentUser?.id || pred.authorUsername == currentUser?.username
+
         Card(
           colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
           shape = RoundedCornerShape(16.dp),
           border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
-          modifier = Modifier.fillMaxWidth()
+          modifier = Modifier
+            .fillMaxWidth()
+            .testTag("poll_card_${pred.id}")
         ) {
-          Column(modifier = Modifier.padding(14.dp)) {
+          Column(modifier = Modifier.padding(16.dp)) {
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.SpaceBetween,
@@ -122,17 +160,28 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
                   fontSize = 10.sp,
                   fontWeight = FontWeight.Bold,
                   color = VybeViolet,
-                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                 )
               }
-              Text(
-                text = "Closes in ${pred.closingTimeText}",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-              )
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                  text = pred.closingTimeText,
+                  fontSize = 11.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (isAuthor) {
+                  Spacer(modifier = Modifier.width(6.dp))
+                  IconButton(
+                    onClick = { viewModel.deletePredictionPoll(pred.id) },
+                    modifier = Modifier.size(24.dp)
+                  ) {
+                    Icon(Icons.Default.DeleteOutline, contentDescription = "Delete Poll", tint = VybeDanger, modifier = Modifier.size(16.dp))
+                  }
+                }
+              }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             Text(
               text = pred.title,
@@ -141,12 +190,14 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
               lineHeight = 20.sp
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             // Voting Options
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
               pred.options.forEach { opt ->
                 val isSelected = pred.userSelectedOptionId == opt.id
+                val hasVoted = pred.userSelectedOptionId != null
+
                 Surface(
                   color = if (isSelected) VybeViolet.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant,
                   shape = RoundedCornerShape(10.dp),
@@ -154,27 +205,46 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
                   modifier = Modifier
                     .fillMaxWidth()
                     .clickable { viewModel.votePrediction(pred.id, opt.id) }
+                    .testTag("poll_option_${pred.id}_${opt.id}")
                 ) {
-                  Row(
-                    modifier = Modifier.padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                  ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                      RadioButton(
-                        selected = isSelected,
-                        onClick = { viewModel.votePrediction(pred.id, opt.id) }
-                      )
-                      Spacer(modifier = Modifier.width(6.dp))
-                      Text(opt.text, fontSize = 13.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                  Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.SpaceBetween,
+                      verticalAlignment = Alignment.CenterVertically
+                    ) {
+                      Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isSelected) {
+                          Icon(Icons.Default.CheckCircle, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(16.dp))
+                          Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        Text(
+                          text = opt.text,
+                          fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                          fontSize = 13.sp
+                        )
+                      }
+                      if (hasVoted) {
+                        Text(
+                          text = "${opt.percentage}%",
+                          fontWeight = FontWeight.ExtraBold,
+                          fontSize = 13.sp,
+                          color = if (isSelected) VybeViolet else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                      }
                     }
 
-                    if (pred.userSelectedOptionId != null) {
-                      Text(
-                        text = "${opt.percentage}%",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isSelected) VybeViolet else MaterialTheme.colorScheme.onSurfaceVariant
+                    // Progress bar once voted
+                    if (hasVoted) {
+                      Spacer(modifier = Modifier.height(6.dp))
+                      LinearProgressIndicator(
+                        progress = { opt.percentage / 100f },
+                        modifier = Modifier
+                          .fillMaxWidth()
+                          .height(6.dp)
+                          .clip(RoundedCornerShape(3.dp)),
+                        color = if (isSelected) VybeViolet else VybeBrandCyan,
+                        trackColor = MaterialTheme.colorScheme.surface
                       )
                     }
                   }
@@ -182,20 +252,169 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
               }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            Text(
-              text = "${pred.totalVotes} VYBE members voted",
-              fontSize = 11.sp,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Text(
+                text = "${pred.totalVotes} total votes collected",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+              if (pred.userSelectedOptionId != null) {
+                Surface(
+                  color = VybeOnlineGreen.copy(alpha = 0.15f),
+                  shape = RoundedCornerShape(6.dp)
+                ) {
+                  Text(
+                    text = "Vote Recorded ✓",
+                    fontSize = 10.sp,
+                    color = VybeOnlineGreen,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                  )
+                }
+              }
+            }
           }
         }
       }
-
-      item {
-        Spacer(modifier = Modifier.height(60.dp))
-      }
     }
+  }
+
+  // Create Audience Poll Dialog
+  if (showCreatePollDialog) {
+    AlertDialog(
+      onDismissRequest = { showCreatePollDialog = false },
+      title = { Text("Create Audience Poll", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+      text = {
+        LazyColumn(
+          modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 440.dp),
+          verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+          item {
+            OutlinedTextField(
+              value = pollTitle,
+              onValueChange = { pollTitle = it },
+              label = { Text("Poll Question") },
+              placeholder = { Text("e.g., Will Mumbai underground indie beats dominate 2027?") },
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("poll_question_input"),
+              maxLines = 3
+            )
+          }
+
+          item {
+            Text("Category", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            LazyColumn(
+              modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 100.dp),
+              verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+              items(categoryChoices) { cat ->
+                FilterChip(
+                  selected = pollCategory == cat,
+                  onClick = { pollCategory = cat },
+                  label = { Text(cat, fontSize = 11.sp) }
+                )
+              }
+            }
+          }
+
+          item {
+            Text("Duration", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              listOf(Pair("24 Hours", 24), Pair("3 Days", 72), Pair("7 Days", 168)).forEach { (lbl, hrs) ->
+                FilterChip(
+                  selected = pollDurationHours == hrs,
+                  onClick = { pollDurationHours = hrs },
+                  label = { Text(lbl, fontSize = 11.sp) }
+                )
+              }
+            }
+          }
+
+          item {
+            Text("Poll Options", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+          }
+
+          items(pollOptions.indices.toList()) { index ->
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              OutlinedTextField(
+                value = pollOptions[index],
+                onValueChange = { newText ->
+                  val updated = pollOptions.toMutableList()
+                  updated[index] = newText
+                  pollOptions = updated
+                },
+                label = { Text("Option ${index + 1}") },
+                modifier = Modifier.weight(1f),
+                singleLine = true
+              )
+              if (pollOptions.size > 2) {
+                IconButton(
+                  onClick = {
+                    val updated = pollOptions.toMutableList()
+                    updated.removeAt(index)
+                    pollOptions = updated
+                  }
+                ) {
+                  Icon(Icons.Default.Close, contentDescription = "Remove option", tint = VybeDanger)
+                }
+              }
+            }
+          }
+
+          if (pollOptions.size < 4) {
+            item {
+              TextButton(
+                onClick = {
+                  pollOptions = pollOptions + "New Option ${pollOptions.size + 1}"
+                }
+              ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Add Another Option", fontSize = 12.sp)
+              }
+            }
+          }
+        }
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            if (pollTitle.isNotBlank() && pollOptions.all { it.isNotBlank() }) {
+              viewModel.createPredictionPoll(
+                title = pollTitle.trim(),
+                category = pollCategory,
+                durationHours = pollDurationHours,
+                options = pollOptions.map { it.trim() }
+              )
+              showCreatePollDialog = false
+            }
+          },
+          enabled = pollTitle.isNotBlank() && pollOptions.all { it.isNotBlank() },
+          colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+          modifier = Modifier.testTag("publish_poll_button")
+        ) {
+          Text("Publish Poll", fontWeight = FontWeight.Bold)
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showCreatePollDialog = false }) {
+          Text("Cancel")
+        }
+      }
+    )
   }
 }

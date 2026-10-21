@@ -195,6 +195,107 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
         }
       }
 
+      // Business Verification Queue (Upgrade J)
+      item {
+        val businessApplications by viewModel.businessApplications.collectAsState()
+        Text(
+          "Business Verification Applications (${businessApplications.size})",
+          style = MaterialTheme.typography.titleMedium,
+          fontWeight = FontWeight.Bold,
+          modifier = Modifier.padding(top = 10.dp)
+        )
+      }
+
+      item {
+        val businessApplications by viewModel.businessApplications.collectAsState()
+        if (businessApplications.isEmpty()) {
+          Text("No pending business applications.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+          Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            businessApplications.forEach { app ->
+              Card(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .testTag("business_app_card_${app.id}"),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, VybeVerifiedGold.copy(alpha = 0.4f))
+              ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Text(app.businessName, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Surface(
+                      color = when (app.status) {
+                        com.example.data.model.BusinessVerificationStatus.APPROVED -> VybeOnlineGreen.copy(alpha = 0.2f)
+                        com.example.data.model.BusinessVerificationStatus.PENDING -> VybeVerifiedGold.copy(alpha = 0.2f)
+                        else -> VybeDanger.copy(alpha = 0.2f)
+                      },
+                      shape = RoundedCornerShape(6.dp)
+                    ) {
+                      Text(
+                        text = app.status.name,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = when (app.status) {
+                          com.example.data.model.BusinessVerificationStatus.APPROVED -> VybeOnlineGreen
+                          com.example.data.model.BusinessVerificationStatus.PENDING -> VybeVerifiedGold
+                          else -> VybeDanger
+                        },
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                      )
+                    }
+                  }
+
+                  Spacer(modifier = Modifier.height(4.dp))
+                  Text("${app.category} • Reg/GST: ${app.registrationNumberOrGst}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  Text("Address: ${app.address} • Contact: ${app.contactEmail}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                  if (app.status == com.example.data.model.BusinessVerificationStatus.PENDING) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.End
+                    ) {
+                      TextButton(
+                        onClick = {
+                          viewModel.reviewBusinessApplication(
+                            app.id,
+                            com.example.data.model.BusinessVerificationStatus.REJECTED,
+                            "Missing trade license documentation."
+                          )
+                        },
+                        modifier = Modifier.testTag("reject_biz_app_${app.id}")
+                      ) {
+                        Text("Reject", color = VybeDanger, fontSize = 11.sp)
+                      }
+                      Spacer(modifier = Modifier.width(8.dp))
+                      Button(
+                        onClick = {
+                          viewModel.reviewBusinessApplication(
+                            app.id,
+                            com.example.data.model.BusinessVerificationStatus.APPROVED,
+                            "Verified against GST and commercial registry."
+                          )
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = VybeOnlineGreen),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.testTag("approve_biz_app_${app.id}")
+                      ) {
+                        Text("Approve Verification ✓", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
       item {
         Spacer(modifier = Modifier.height(80.dp))
       }

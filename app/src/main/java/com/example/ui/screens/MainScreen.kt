@@ -148,6 +148,8 @@ fun MainScreen(viewModel: VybeViewModel) {
         MainTab.EXPLORE -> ExploreScreen(viewModel)
         MainTab.INBOX -> InboxScreen(viewModel)
         MainTab.CROSSED_PATHS -> CrossedPathsScreen(viewModel)
+        MainTab.CREATE -> CreatePostScreen(viewModel)
+        MainTab.PROFILE -> UserProfileScreen(viewModel)
       }
     }
   }
