@@ -1,5 +1,11 @@
 package com.example.data.model
 
+enum class MessageStatus {
+  SENDING,
+  SENT,
+  FAILED
+}
+
 data class DirectMessage(
   val id: String,
   val senderId: String,
@@ -16,8 +22,18 @@ data class DirectMessage(
   val replyToId: String? = null,
   val replyToText: String? = null,
   val replyToSenderName: String? = null,
-  val reactions: List<String> = emptyList() // Reactions: ❤️, 🔥, ⚡, 😂, 👏
+  val reactions: List<String> = emptyList(), // Reactions: ❤️, 🔥, ⚡, 😂, 👏
+  val status: MessageStatus = MessageStatus.SENT,
+  val clientId: String? = null
 )
+
+sealed class CallAvailabilityResult {
+  object Available : CallAvailabilityResult()
+  data class Unavailable(val reason: String) : CallAvailabilityResult()
+  data class Offline(val reason: String = "User is currently offline.") : CallAvailabilityResult()
+  data class Blocked(val reason: String = "Cannot call a blocked user.") : CallAvailabilityResult()
+  data class Error(val message: String) : CallAvailabilityResult()
+}
 
 data class Conversation(
   val id: String,

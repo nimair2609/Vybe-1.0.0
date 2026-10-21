@@ -469,4 +469,271 @@ class SupabaseRepository {
       fallback
     }
   }
+
+  suspend fun updateUserProfile(
+    userId: String,
+    firstName: String,
+    lastName: String,
+    displayName: String,
+    bio: String,
+    avatarUrl: String,
+    coverUrl: String,
+    accessToken: String = ""
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    try {
+      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
+      val dto = SupabaseProfileDto(
+        id = userId,
+        username = "",
+        displayName = displayName,
+        firstName = firstName,
+        lastName = lastName,
+        bio = bio,
+        avatarUrl = avatarUrl,
+        coverUrl = coverUrl
+      )
+      val resp = SupabaseNetworkClient.restApi.upsertProfile(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        profile = dto
+      )
+      if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to update profile"))
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun checkUsernameAvailable(username: String): Boolean = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext true
+    try {
+      val resp = SupabaseNetworkClient.restApi.getProfileByUsername(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = "Bearer ${SupabaseConfig.supabaseAnonKey}",
+        usernameFilter = "eq.${username.trim().lowercase()}"
+      )
+      if (resp.isSuccessful) {
+        val list = resp.body() ?: emptyList()
+        list.isEmpty()
+      } else {
+        true
+      }
+    } catch (e: Exception) {
+      true
+    }
+  }
+
+  suspend fun resolveEmailForIdentifier(identifier: String): String? = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext null
+    val clean = identifier.trim().lowercase().removePrefix("@")
+    if (clean.contains("@")) return@withContext clean
+    try {
+      val resp = SupabaseNetworkClient.restApi.getProfileByUsername(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = "Bearer ${SupabaseConfig.supabaseAnonKey}",
+        usernameFilter = "eq.$clean"
+      )
+      if (resp.isSuccessful && !resp.body().isNullOrEmpty()) {
+        return@withContext resp.body()!!.first().email
+      }
+    } catch (e: Exception) {
+      Log.w(TAG, "Username resolution error: ${e.message}")
+    }
+    null
+  }
+
+  suspend fun sendMessage(
+    conversationId: String,
+    senderId: String,
+    content: String,
+    mediaUrl: String? = null,
+    mediaType: String = "TEXT",
+    replyToId: String? = null,
+    accessToken: String = ""
+  ): Result<SupabaseMessageDto> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.failure(Exception("Supabase not configured"))
+    try {
+      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
+      val dto = SupabaseMessageDto(
+        conversationId = conversationId,
+        senderId = senderId,
+        content = content,
+        mediaUrl = mediaUrl,
+        mediaType = mediaType,
+        replyToMessageId = replyToId
+      )
+      val resp = SupabaseNetworkClient.restApi.insertMessage(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        message = dto
+      )
+      if (resp.isSuccessful && !resp.body().isNullOrEmpty()) {
+        Result.success(resp.body()!!.first())
+      } else {
+        val err = parseErrorMessage(resp.errorBody()?.string() ?: "", "Failed to send message.")
+        Result.failure(Exception(err))
+      }
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun fetchMessages(
+    conversationId: String,
+    accessToken: String = "",
+    limit: Int = 40
+  ): Result<List<SupabaseMessageDto>> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(emptyList())
+    try {
+      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
+      val resp = SupabaseNetworkClient.restApi.getMessages(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        conversationIdFilter = "eq.$conversationId",
+        limit = limit
+      )
+      if (resp.isSuccessful && resp.body() != null) {
+        Result.success(resp.body()!!)
+      } else {
+        Result.failure(Exception("Failed to fetch messages"))
+      }
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun addComment(
+    postId: String,
+    authorId: String,
+    content: String,
+    accessToken: String = ""
+  ): Result<SupabaseCommentDto> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.failure(Exception("Supabase not configured"))
+    try {
+      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
+      val dto = SupabaseCommentDto(
+        postId = postId,
+        authorId = authorId,
+        content = content
+      )
+      val resp = SupabaseNetworkClient.restApi.insertComment(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        comment = dto
+      )
+      if (resp.isSuccessful && !resp.body().isNullOrEmpty()) {
+        Result.success(resp.body()!!.first())
+      } else {
+        Result.failure(Exception("Failed to post comment"))
+      }
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun followUser(followerId: String, followedId: String, accessToken: String = ""): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    try {
+      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
+      val resp = SupabaseNetworkClient.restApi.insertFollow(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        body = SupabaseFollowDto(followerId = followerId, followedId = followedId)
+      )
+      if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to follow"))
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun unfollowUser(followerId: String, followedId: String, accessToken: String = ""): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    try {
+      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
+      val resp = SupabaseNetworkClient.restApi.deleteFollow(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        followerFilter = "eq.$followerId",
+        followedFilter = "eq.$followedId"
+      )
+      if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to unfollow"))
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun blockUser(blockerId: String, blockedId: String, accessToken: String = ""): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    try {
+      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
+      val resp = SupabaseNetworkClient.restApi.insertBlock(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        body = SupabaseBlockDto(blockerId = blockerId, blockedId = blockedId)
+      )
+      if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to block user"))
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun unblockUser(blockerId: String, blockedId: String, accessToken: String = ""): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    try {
+      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
+      val resp = SupabaseNetworkClient.restApi.deleteBlock(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        blockerFilter = "eq.$blockerId",
+        blockedFilter = "eq.$blockedId"
+      )
+      if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to unblock user"))
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun submitReport(
+    reporterId: String,
+    targetType: String,
+    targetId: String,
+    reason: String,
+    details: String = "",
+    accessToken: String = ""
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    try {
+      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
+      val dto = SupabaseReportDto(
+        reporterId = reporterId,
+        targetType = targetType,
+        targetId = targetId,
+        reason = reason,
+        adminNotes = details.ifBlank { null }
+      )
+      val resp = SupabaseNetworkClient.restApi.submitReport(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        body = dto
+      )
+      if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to submit report"))
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun deleteNotification(notificationId: String, accessToken: String = ""): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    try {
+      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
+      val resp = SupabaseNetworkClient.restApi.deleteNotification(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        idFilter = "eq.$notificationId"
+      )
+      if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to delete notification"))
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
 }

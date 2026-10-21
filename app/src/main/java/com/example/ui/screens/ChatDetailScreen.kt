@@ -32,7 +32,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.example.data.model.CallAvailabilityResult
 import com.example.data.model.DirectMessage
+import com.example.data.model.MessageStatus
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VybeAvatar
@@ -76,6 +78,22 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
   var showGalleryDialog by remember { mutableStateOf(false) }
   var showLocationShareDialog by remember { mutableStateOf(false) }
   var locationNameInput by remember { mutableStateOf("Bandra Bandstand, Mumbai") }
+
+  // Call & Reporting states
+  var callUnavailableReason by remember { mutableStateOf<String?>(null) }
+  var showReportDialog by remember { mutableStateOf(false) }
+  var reportTargetType by remember { mutableStateOf("USER") }
+  var reportTargetId by remember { mutableStateOf("") }
+  var reportCategory by remember { mutableStateOf("Harassment / Bullying") }
+  var reportReason by remember { mutableStateOf("") }
+  var reportFeedbackMsg by remember { mutableStateOf<String?>(null) }
+
+  // Auto-scroll on new messages
+  LaunchedEffect(conversation?.messages?.size) {
+    if ((conversation?.messages?.size ?: 0) > 0) {
+      listState.animateScrollToItem((conversation?.messages?.size ?: 1) - 1)
+    }
+  }
 
   // Photo & Video Picker Launchers
   val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -168,13 +186,23 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
         },
         actions = {
           IconButton(
-            onClick = { viewModel.startVoiceCall(conv.peerUser) },
+            onClick = {
+              val res = viewModel.initiateCall(conv.peerUser, isVideo = false)
+              if (res is CallAvailabilityResult.Unavailable) {
+                callUnavailableReason = res.reason
+              }
+            },
             modifier = Modifier.testTag("chat_voice_call_btn")
           ) {
             Icon(Icons.Default.Call, contentDescription = "Voice Call", tint = themeAccent)
           }
           IconButton(
-            onClick = { viewModel.startVideoCall(conv.peerUser) },
+            onClick = {
+              val res = viewModel.initiateCall(conv.peerUser, isVideo = true)
+              if (res is CallAvailabilityResult.Unavailable) {
+                callUnavailableReason = res.reason
+              }
+            },
             modifier = Modifier.testTag("chat_video_call_btn")
           ) {
             Icon(Icons.Default.Videocam, contentDescription = "Video Call", tint = VybeMagenta)
@@ -248,6 +276,17 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
               },
               leadingIcon = { Icon(Icons.Default.Shield, contentDescription = null) }
             )
+            DropdownMenuItem(
+              text = { Text("Report User", color = VybeDanger) },
+              onClick = {
+                showChatMenu = false
+                reportTargetType = "USER"
+                reportTargetId = conv.peerUser.id
+                reportReason = ""
+                showReportDialog = true
+              },
+              leadingIcon = { Icon(Icons.Default.Report, contentDescription = null, tint = VybeDanger) }
+            )
           }
         },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -257,107 +296,142 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
       Column(
         modifier = Modifier
           .fillMaxWidth()
+          .imePadding()
           .navigationBarsPadding()
           .background(MaterialTheme.colorScheme.surface)
       ) {
-        // Reply context banner
-        AnimatedVisibility(visible = replyingToMessage != null) {
-          if (replyingToMessage != null) {
-            Surface(
-              color = themeAccent.copy(alpha = 0.15f),
-              modifier = Modifier.fillMaxWidth()
+        if (conv.isBlocked) {
+          Surface(
+            color = VybeDanger.copy(alpha = 0.15f),
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(12.dp),
+            shape = RoundedCornerShape(12.dp)
+          ) {
+            Row(
+              modifier = Modifier.padding(12.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.SpaceBetween
             ) {
-              Row(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .padding(horizontal = 16.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Icon(
-                  Icons.AutoMirrored.Filled.Reply,
-                  contentDescription = null,
-                  tint = themeAccent,
-                  modifier = Modifier.size(16.dp)
-                )
+              Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Block, contentDescription = null, tint = VybeDanger)
                 Spacer(modifier = Modifier.width(8.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                  Text(
-                    text = "Replying to ${if (replyingToMessage!!.isMe) "yourself" else conv.peerUser.displayName}",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp,
-                    color = themeAccent
-                  )
-                  Text(
-                    text = replyingToMessage!!.text,
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    color = MaterialTheme.colorScheme.onSurface
-                  )
-                }
-                IconButton(
-                  onClick = { replyingToMessage = null },
-                  modifier = Modifier.size(24.dp)
+                Text(
+                  "You have blocked this user. Unblock to send messages or place calls.",
+                  fontSize = 12.sp,
+                  color = MaterialTheme.colorScheme.onSurface
+                )
+              }
+              Button(
+                onClick = { viewModel.toggleBlockUser(conv.peerUser.id) },
+                colors = ButtonDefaults.buttonColors(containerColor = VybeDanger),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(8.dp)
+              ) {
+                Text("Unblock", fontSize = 11.sp)
+              }
+            }
+          }
+        } else {
+          // Reply context banner
+          AnimatedVisibility(visible = replyingToMessage != null) {
+            if (replyingToMessage != null) {
+              Surface(
+                color = themeAccent.copy(alpha = 0.15f),
+                modifier = Modifier.fillMaxWidth()
+              ) {
+                Row(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                  verticalAlignment = Alignment.CenterVertically
                 ) {
-                  Icon(Icons.Default.Close, contentDescription = "Cancel reply", modifier = Modifier.size(14.dp))
+                  Icon(
+                    Icons.AutoMirrored.Filled.Reply,
+                    contentDescription = null,
+                    tint = themeAccent,
+                    modifier = Modifier.size(16.dp)
+                  )
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                      text = "Replying to ${if (replyingToMessage!!.isMe) "yourself" else conv.peerUser.displayName}",
+                      fontWeight = FontWeight.Bold,
+                      fontSize = 11.sp,
+                      color = themeAccent
+                    )
+                    Text(
+                      text = replyingToMessage!!.text,
+                      fontSize = 12.sp,
+                      maxLines = 1,
+                      color = MaterialTheme.colorScheme.onSurface
+                    )
+                  }
+                  IconButton(
+                    onClick = { replyingToMessage = null },
+                    modifier = Modifier.size(24.dp)
+                  ) {
+                    Icon(Icons.Default.Close, contentDescription = "Cancel reply", modifier = Modifier.size(14.dp))
+                  }
                 }
               }
             }
           }
-        }
 
-        // Input row
-        Row(
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          // Attachments Button (+)
-          IconButton(
-            onClick = { showAttachmentMenu = true },
-            modifier = Modifier.testTag("chat_attachments_button")
-          ) {
-            Icon(Icons.Default.AddCircle, contentDescription = "Attachments", tint = themeAccent)
-          }
-
-          OutlinedTextField(
-            value = messageInput,
-            onValueChange = { messageInput = it },
-            placeholder = { Text("Send a message...", fontSize = 14.sp) },
-            shape = RoundedCornerShape(24.dp),
+          // Input row
+          Row(
             modifier = Modifier
-              .weight(1f)
-              .testTag("message_input_field")
-          )
-
-          Spacer(modifier = Modifier.width(6.dp))
-
-          IconButton(
-            onClick = {
-              if (messageInput.isNotBlank()) {
-                viewModel.sendExtendedDirectMessage(
-                  convId = conv.id,
-                  text = messageInput,
-                  replyToId = replyingToMessage?.id,
-                  replyToText = replyingToMessage?.text,
-                  replyToSenderName = if (replyingToMessage?.isMe == true) "You" else conv.peerUser.displayName
-                )
-                messageInput = ""
-                replyingToMessage = null
-              }
-            },
-            modifier = Modifier
-              .size(42.dp)
-              .clip(CircleShape)
-              .background(themeAccent)
-              .testTag("send_message_button")
+              .fillMaxWidth()
+              .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
           ) {
-            Icon(
-              imageVector = Icons.AutoMirrored.Filled.Send,
-              contentDescription = "Send",
-              tint = Color.White,
-              modifier = Modifier.size(18.dp)
+            // Attachments Button (+)
+            IconButton(
+              onClick = { showAttachmentMenu = true },
+              modifier = Modifier.testTag("chat_attachments_button")
+            ) {
+              Icon(Icons.Default.AddCircle, contentDescription = "Attachments", tint = themeAccent)
+            }
+
+            OutlinedTextField(
+              value = messageInput,
+              onValueChange = { messageInput = it },
+              placeholder = { Text("Send a message...", fontSize = 14.sp) },
+              shape = RoundedCornerShape(24.dp),
+              modifier = Modifier
+                .weight(1f)
+                .testTag("message_input_field")
             )
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            IconButton(
+              onClick = {
+                if (messageInput.isNotBlank()) {
+                  viewModel.sendExtendedDirectMessage(
+                    convId = conv.id,
+                    text = messageInput,
+                    replyToId = replyingToMessage?.id,
+                    replyToText = replyingToMessage?.text,
+                    replyToSenderName = if (replyingToMessage?.isMe == true) "You" else conv.peerUser.displayName
+                  )
+                  messageInput = ""
+                  replyingToMessage = null
+                }
+              },
+              modifier = Modifier
+                .size(42.dp)
+                .clip(CircleShape)
+                .background(themeAccent)
+                .testTag("send_message_button")
+            ) {
+              Icon(
+                imageVector = Icons.AutoMirrored.Filled.Send,
+                contentDescription = "Send",
+                tint = Color.White,
+                modifier = Modifier.size(18.dp)
+              )
+            }
           }
         }
       }
@@ -501,7 +575,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                 )
               }
 
-              // Footer: Timestamp + Edited Tag + Read Receipt
+              // Footer: Timestamp + Edited Tag + Status Indicator (Sending, Sent, Failed)
               Row(
                 modifier = Modifier
                   .align(Alignment.End)
@@ -522,12 +596,46 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                 )
                 if (isMe) {
                   Spacer(modifier = Modifier.width(4.dp))
-                  Icon(
-                    imageVector = Icons.Default.DoneAll,
-                    contentDescription = "Read",
-                    tint = if (msg.isRead) VybeBrandCyan else Color.White.copy(alpha = 0.6f),
-                    modifier = Modifier.size(12.dp)
-                  )
+                  when (msg.status) {
+                    MessageStatus.SENDING -> {
+                      CircularProgressIndicator(
+                        modifier = Modifier.size(10.dp),
+                        strokeWidth = 1.5.dp,
+                        color = Color.White.copy(alpha = 0.85f)
+                      )
+                    }
+                    MessageStatus.FAILED -> {
+                      Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                          .clip(RoundedCornerShape(4.dp))
+                          .clickable { viewModel.retrySendMessage(conv.id, msg.id) }
+                          .padding(horizontal = 2.dp)
+                      ) {
+                        Icon(
+                          imageVector = Icons.Default.ErrorOutline,
+                          contentDescription = "Failed. Tap to retry",
+                          tint = Color(0xFFFF6B6B),
+                          modifier = Modifier.size(12.dp)
+                        )
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text(
+                          text = "Retry",
+                          color = Color(0xFFFF6B6B),
+                          fontSize = 9.sp,
+                          fontWeight = FontWeight.Bold
+                        )
+                      }
+                    }
+                    MessageStatus.SENT -> {
+                      Icon(
+                        imageVector = Icons.Default.DoneAll,
+                        contentDescription = if (msg.isRead) "Read" else "Sent",
+                        tint = if (msg.isRead) VybeBrandCyan else Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.size(12.dp)
+                      )
+                    }
+                  }
                 }
               }
             }
@@ -750,6 +858,19 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
               selectedMessageForActions = null
             }
           )
+
+          // Report Message
+          ListItem(
+            headlineContent = { Text("Report Message", color = VybeDanger) },
+            leadingContent = { Icon(Icons.Default.Report, contentDescription = null, tint = VybeDanger) },
+            modifier = Modifier.clickable {
+              reportTargetType = "MESSAGE"
+              reportTargetId = targetMsg.id
+              reportReason = ""
+              showReportDialog = true
+              selectedMessageForActions = null
+            }
+          )
         }
       },
       confirmButton = {},
@@ -905,6 +1026,115 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
       },
       confirmButton = {
         TextButton(onClick = { showGalleryDialog = false }) { Text("Close") }
+      }
+    )
+  }
+
+  // Pre-call availability error dialog
+  if (callUnavailableReason != null) {
+    AlertDialog(
+      onDismissRequest = { callUnavailableReason = null },
+      icon = { Icon(Icons.Default.PhoneMissed, contentDescription = null, tint = VybeDanger) },
+      title = { Text("Call Unavailable", fontWeight = FontWeight.Bold) },
+      text = {
+        Text(
+          text = callUnavailableReason ?: "User is currently unavailable for calls.",
+          fontSize = 13.sp
+        )
+      },
+      confirmButton = {
+        Button(
+          onClick = { callUnavailableReason = null },
+          colors = ButtonDefaults.buttonColors(containerColor = themeAccent)
+        ) {
+          Text("OK")
+        }
+      }
+    )
+  }
+
+  // Report Dialog (for user or message)
+  if (showReportDialog) {
+    val categories = listOf(
+      "Harassment / Bullying",
+      "Spam or Scam",
+      "Hate Speech or Discrimination",
+      "Nudity or Inappropriate Content",
+      "Impersonation",
+      "Threats or Violence"
+    )
+    AlertDialog(
+      onDismissRequest = { showReportDialog = false },
+      title = {
+        Text(
+          text = if (reportTargetType == "USER") "Report @${conv.peerUser.username}" else "Report Message",
+          fontWeight = FontWeight.Bold
+        )
+      },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          Text("Select category:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+          categories.forEach { cat ->
+            Surface(
+              shape = RoundedCornerShape(8.dp),
+              color = if (reportCategory == cat) themeAccent.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+              border = if (reportCategory == cat) androidx.compose.foundation.BorderStroke(1.dp, themeAccent) else null,
+              modifier = Modifier
+                .fillMaxWidth()
+                .clickable { reportCategory = cat }
+            ) {
+              Text(
+                text = cat,
+                fontSize = 12.sp,
+                fontWeight = if (reportCategory == cat) FontWeight.Bold else FontWeight.Normal,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+              )
+            }
+          }
+          OutlinedTextField(
+            value = reportReason,
+            onValueChange = { reportReason = it },
+            label = { Text("Details (optional)") },
+            placeholder = { Text("Provide additional context...") },
+            modifier = Modifier.fillMaxWidth(),
+            maxLines = 3
+          )
+        }
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            viewModel.submitReport(
+              targetType = reportTargetType,
+              targetId = reportTargetId,
+              reason = reportReason.ifBlank { reportCategory },
+              category = reportCategory
+            )
+            showReportDialog = false
+            reportFeedbackMsg = "Thank you. Your report has been submitted for safety review."
+          },
+          colors = ButtonDefaults.buttonColors(containerColor = VybeDanger)
+        ) {
+          Text("Submit Report")
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showReportDialog = false }) { Text("Cancel") }
+      }
+    )
+  }
+
+  // Report Feedback Confirmation Dialog
+  if (reportFeedbackMsg != null) {
+    AlertDialog(
+      onDismissRequest = { reportFeedbackMsg = null },
+      icon = { Icon(Icons.Default.CheckCircle, contentDescription = null, tint = VybeOnlineGreen) },
+      title = { Text("Report Received", fontWeight = FontWeight.Bold) },
+      text = { Text(reportFeedbackMsg ?: "", fontSize = 13.sp) },
+      confirmButton = {
+        Button(onClick = { reportFeedbackMsg = null }) {
+          Text("Done")
+        }
       }
     )
   }

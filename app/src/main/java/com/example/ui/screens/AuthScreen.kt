@@ -156,37 +156,6 @@ fun AuthScreen(viewModel: VybeViewModel) {
         color = MaterialTheme.colorScheme.onSurfaceVariant
       )
 
-      // Supabase Connection Status Banner
-      Spacer(modifier = Modifier.height(10.dp))
-      Surface(
-        color = if (viewModel.isSupabaseConfigured) VybeOnlineGreen.copy(alpha = 0.12f) else Color(0xFFFFB300).copy(alpha = 0.12f),
-        shape = RoundedCornerShape(10.dp),
-        border = androidx.compose.foundation.BorderStroke(
-          1.dp,
-          if (viewModel.isSupabaseConfigured) VybeOnlineGreen.copy(alpha = 0.35f) else Color(0xFFFFB300).copy(alpha = 0.35f)
-        ),
-        modifier = Modifier.fillMaxWidth()
-      ) {
-        Row(
-          modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          Icon(
-            imageVector = if (viewModel.isSupabaseConfigured) Icons.Default.CloudDone else Icons.Default.CloudQueue,
-            contentDescription = "Supabase Status",
-            tint = if (viewModel.isSupabaseConfigured) VybeOnlineGreen else Color(0xFFFFB300),
-            modifier = Modifier.size(16.dp)
-          )
-          Spacer(modifier = Modifier.width(8.dp))
-          Text(
-            text = if (viewModel.isSupabaseConfigured) "Supabase Auth & Database Live" else "Developer Mode • Connect SUPABASE_URL in Secrets for Live Auth",
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = if (viewModel.isSupabaseConfigured) VybeOnlineGreen else Color(0xFFFFB300)
-          )
-        }
-      }
-
       // Age Policy Banner (16+ community requirement)
       Spacer(modifier = Modifier.height(10.dp))
       Surface(
@@ -757,6 +726,30 @@ fun AuthScreen(viewModel: VybeViewModel) {
             Spacer(modifier = Modifier.width(6.dp))
             Text("Have a confirmation code? Verify Email", fontSize = 12.sp, color = VybeViolet, fontWeight = FontWeight.SemiBold)
           }
+
+          Spacer(modifier = Modifier.height(14.dp))
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Text("By signing in, you agree to our ", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+              "Terms",
+              fontSize = 11.sp,
+              color = VybeBrandCyan,
+              fontWeight = FontWeight.Bold,
+              modifier = Modifier.clickable { showLegalReader = true }.testTag("login_terms_link")
+            )
+            Text(" & ", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+              "Privacy Policy",
+              fontSize = 11.sp,
+              color = VybeBrandCyan,
+              fontWeight = FontWeight.Bold,
+              modifier = Modifier.clickable { showLegalReader = true }.testTag("login_privacy_link")
+            )
+          }
         }
 
       Spacer(modifier = Modifier.height(16.dp))
@@ -980,5 +973,94 @@ fun AuthScreen(viewModel: VybeViewModel) {
         }
       )
     }
+
+    // --- DIALOG 3: TERMS & CONDITIONS + PRIVACY POLICY READER ---
+    if (showLegalReader) {
+      TermsAndPrivacyReaderDialog(onDismiss = { showLegalReader = false })
+    }
   }
+}
+
+@Composable
+fun TermsAndPrivacyReaderDialog(onDismiss: () -> Unit) {
+  var selectedTab by remember { mutableStateOf(0) } // 0 = Terms, 1 = Privacy
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = {
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Default.Gavel, contentDescription = null, tint = VybeBrandCyan)
+        Spacer(modifier = Modifier.width(8.dp))
+        Text("VYBE Community & Legal", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+      }
+    },
+    text = {
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .heightIn(max = 380.dp)
+      ) {
+        TabRow(
+          selectedTabIndex = selectedTab,
+          containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+          contentColor = VybeBrandCyan
+        ) {
+          Tab(
+            selected = selectedTab == 0,
+            onClick = { selectedTab = 0 },
+            text = { Text("Terms of Service", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+          )
+          Tab(
+            selected = selectedTab == 1,
+            onClick = { selectedTab = 1 },
+            text = { Text("Privacy Policy", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+          )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .weight(1f)
+            .verticalScroll(rememberScrollState())
+        ) {
+          if (selectedTab == 0) {
+            Text("VYBE Terms of Service", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+            Text("Version 3.0 • Effective October 2026 • Product of NR Next | NR Group", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+              "1. Age Requirement: VYBE is exclusively built for individuals aged 16 and older. Users aged 16-17 are automatically placed in Teen Safety Protected Mode.\n\n" +
+              "2. Authentic Social Experience: Impersonation, unauthorized scraping, spamming, and harassment are strictly prohibited. Accounts engaging in abusive behavior will be blocked and investigated.\n\n" +
+              "3. Content Ownership: You retain ownership of all media and posts you publish on VYBE. You grant VYBE the license to display and distribute your posts per your chosen visibility settings.\n\n" +
+              "4. Unfiltered Policy: VYBE Unfiltered posts emphasize raw, authentic self-expression without algorithmic like-farming.",
+              fontSize = 12.sp,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              lineHeight = 17.sp
+            )
+          } else {
+            Text("VYBE Privacy Policy", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+            Text("Zero-Trust Architecture • Powered by Supabase Secure Cloud", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+              "1. Data Privacy: We never sell your personal data. Private phone numbers and email addresses are never exposed to other community members or publicly indexable.\n\n" +
+              "2. Consent-First Crossed Paths: Encounter discovery is coarse-grained and requires mutual consent before any direct contact is established.\n\n" +
+              "3. End-to-End Control: You can request complete account deletion or data export anytime via Settings.\n\n" +
+              "4. Protected Messaging: Direct messages are protected with Row Level Security so only conversation participants can read them.",
+              fontSize = 12.sp,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              lineHeight = 17.sp
+            )
+          }
+        }
+      }
+    },
+    confirmButton = {
+      Button(
+        onClick = onDismiss,
+        colors = ButtonDefaults.buttonColors(containerColor = VybeViolet)
+      ) {
+        Text("I Understand & Close", fontWeight = FontWeight.Bold)
+      }
+    }
+  )
 }

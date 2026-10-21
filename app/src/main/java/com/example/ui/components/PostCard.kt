@@ -35,6 +35,7 @@ fun PostCard(
   onShareClick: () -> Unit,
   onUserClick: (User) -> Unit,
   onRemixClick: (() -> Unit)? = null,
+  onAddComment: ((String) -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
   var showCommentDialog by remember { mutableStateOf(false) }
@@ -264,25 +265,36 @@ fun PostCard(
       onDismissRequest = { showCommentDialog = false },
       title = { Text("Comments (${post.comments.size})", fontWeight = FontWeight.Bold) },
       text = {
-        Column(modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
           if (post.comments.isEmpty()) {
-            Text("No comments yet. Start the conversation!", style = MaterialTheme.typography.bodyMedium)
+            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
+              Text("No comments yet. Start the conversation!", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
           } else {
-            post.comments.forEach { comment ->
-              Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                verticalAlignment = Alignment.Top
-              ) {
-                VybeAvatar(user = comment.author, size = 28.dp)
-                Spacer(modifier = Modifier.width(8.dp))
-                Column {
-                  Text(comment.author.displayName, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                  Text(comment.content, fontSize = 13.sp)
+            androidx.compose.foundation.lazy.LazyColumn(
+              modifier = Modifier.weight(1f, fill = false),
+              verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+              items(post.comments) { comment ->
+                Row(
+                  modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                  verticalAlignment = Alignment.Top
+                ) {
+                  VybeAvatar(user = comment.author, size = 30.dp)
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                      Text(comment.author.displayName, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                      Spacer(modifier = Modifier.width(4.dp))
+                      Text("@${comment.author.username}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text(comment.content, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                  }
                 }
               }
             }
           }
-          Spacer(modifier = Modifier.height(12.dp))
+          Spacer(modifier = Modifier.height(10.dp))
           OutlinedTextField(
             value = commentText,
             onValueChange = { commentText = it },
@@ -295,7 +307,11 @@ fun PostCard(
         Button(
           onClick = {
             if (commentText.isNotBlank()) {
-              onCommentClick()
+              if (onAddComment != null) {
+                onAddComment(commentText)
+              } else {
+                onCommentClick()
+              }
               commentText = ""
               showCommentDialog = false
             }

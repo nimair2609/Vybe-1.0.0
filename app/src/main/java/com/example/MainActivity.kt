@@ -53,6 +53,8 @@ class MainActivity : ComponentActivity() {
             Screen.WHAT_NEXT_VIEW -> WhatNextScreen(viewModel)
             Screen.SPIRITUAL_MODE -> SpiritualModeScreen(viewModel)
             Screen.STORY_VIEWER -> StoryViewerScreen(viewModel)
+            Screen.NOTIFICATIONS -> NotificationCenterScreen(viewModel)
+            Screen.LIVE_STUDIO -> LiveStudioScreen(viewModel)
           }
         }
       }
@@ -67,8 +69,42 @@ class MainActivity : ComponentActivity() {
 
   private fun handleAuthDeepLink(intent: Intent?) {
     val data = intent?.data ?: return
-    if (data.scheme == "vybe") {
-      Log.i("MainActivity", "Captured auth deep link: $data")
+    Log.i("MainActivity", "Captured auth deep link: $data")
+    try {
+      // 1. Handle fragment (#access_token=...&refresh_token=...)
+      val fragment = data.fragment
+      val queryParamToken = data.getQueryParameter("access_token") ?: data.getQueryParameter("token")
+
+      var accessToken: String? = queryParamToken
+      var refreshToken: String? = data.getQueryParameter("refresh_token")
+      var type: String? = data.getQueryParameter("type")
+
+      if (!fragment.isNullOrBlank()) {
+        val pairs = fragment.split("&")
+        for (pair in pairs) {
+          val parts = pair.split("=", limit = 2)
+          if (parts.size == 2) {
+            when (parts[0]) {
+              "access_token" -> accessToken = parts[1]
+              "refresh_token" -> refreshToken = parts[1]
+              "type" -> type = parts[1]
+            }
+          }
+        }
+      }
+
+      if (!accessToken.isNullOrBlank()) {
+        Log.i("MainActivity", "Successfully parsed auth session tokens from deep link ($type)")
+        val repo = com.example.data.repository.VybeRepository.getInstance()
+        val session = com.example.data.session.SessionManager.getInstance(applicationContext)
+        // If current user already loaded, preserve user profile with new tokens
+        val user = repo.currentUser.value ?: session.loadCurrentUser()
+        if (user != null) {
+          session.saveSession(user, accessToken, refreshToken ?: "")
+        }
+      }
+    } catch (e: Exception) {
+      Log.e("MainActivity", "Failed to parse deep link: ${e.message}")
     }
   }
 }

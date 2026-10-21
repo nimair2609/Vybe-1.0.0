@@ -35,7 +35,9 @@ enum class Screen {
   UNFILTERED_VIEW,
   WHAT_NEXT_VIEW,
   SPIRITUAL_MODE,
-  STORY_VIEWER
+  STORY_VIEWER,
+  NOTIFICATIONS,
+  LIVE_STUDIO
 }
 
 class VybeViewModel : ViewModel() {
@@ -197,9 +199,23 @@ class VybeViewModel : ViewModel() {
   fun updateChatNickname(convId: String, nickname: String) = repository.updateChatNickname(convId, nickname)
   fun toggleMuteChat(convId: String) = repository.toggleMuteChat(convId)
   fun toggleBlockUser(userId: String) = repository.toggleBlockUser(userId)
+  fun unblockUser(userId: String) = repository.unblockUser(userId)
   fun toggleRestrictUser(userId: String) = repository.toggleRestrictUser(userId)
   fun updateChatTheme(convId: String, theme: String) = repository.updateChatTheme(convId, theme)
   fun searchUserByVybeId(query: String): User? = repository.searchUserByVybeId(query)
+
+  fun retrySendMessage(convId: String, messageId: String) = repository.retrySendMessage(convId, messageId)
+  fun syncMessagesForConversation(convId: String) = repository.syncMessagesForConversation(convId)
+  fun initiateCall(peerUser: User, isVideo: Boolean): CallAvailabilityResult = repository.initiateCall(peerUser, isVideo)
+  fun toggleFollowUser(targetUserId: String): Boolean = repository.toggleFollowUser(targetUserId)
+  val followingUserIds = repository.followingUserIds
+  val blockedUserIds = repository.blockedUserIds
+  val restrictedUserIds = repository.restrictedUserIds
+  suspend fun submitReport(targetType: String, targetId: String, reason: String, details: String = "") =
+    repository.submitReport(targetType, targetId, reason, details)
+  fun deleteNotification(notificationId: String) = repository.deleteNotification(notificationId)
+  fun markNotificationAsRead(notificationId: String) = repository.markNotificationAsRead(notificationId)
+  fun markAllNotificationsRead() = repository.markAllNotificationsRead()
 
   init {
     viewModelScope.launch {
@@ -307,13 +323,18 @@ class VybeViewModel : ViewModel() {
 
   // Messages & Calls
   fun sendDirectMessage(conversationId: String, text: String) = repository.sendDirectMessage(conversationId, text)
+  fun initiateCall(peer: User, isVideo: Boolean): CallAvailabilityResult {
+    val result = repository.initiateCall(peer, isVideo)
+    if (result is CallAvailabilityResult.Available) {
+      navigateTo(Screen.CALL_SCREEN)
+    }
+    return result
+  }
   fun startVoiceCall(peer: User) {
-    repository.startCall(peer, isVideo = false)
-    navigateTo(Screen.CALL_SCREEN)
+    initiateCall(peer, isVideo = false)
   }
   fun startVideoCall(peer: User) {
-    repository.startCall(peer, isVideo = true)
-    navigateTo(Screen.CALL_SCREEN)
+    initiateCall(peer, isVideo = true)
   }
   fun acceptCall() = repository.acceptCall()
   fun endCall() {

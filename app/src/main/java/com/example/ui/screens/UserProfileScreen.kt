@@ -51,9 +51,11 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
   val profileUser by viewModel.selectedUserProfile.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
   val posts by viewModel.posts.collectAsState()
+  val followingUserIds by viewModel.followingUserIds.collectAsState()
+  val allUsers by viewModel.allUsers.collectAsState()
 
   var selectedTab by remember { mutableStateOf("Posts") }
-  var isFollowed by remember { mutableStateOf(false) }
+  var showFollowListModal by remember { mutableStateOf<String?>(null) }
 
   // 5-second video player modal state (Section 12)
   var showVideoPlayerModal by remember { mutableStateOf(false) }
@@ -265,11 +267,23 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
               Text("${user.postsCount}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
               Text("Posts", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+              horizontalAlignment = Alignment.CenterHorizontally,
+              modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { showFollowListModal = "Followers" }
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+            ) {
               Text("${user.followersCount}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
               Text("Followers", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+              horizontalAlignment = Alignment.CenterHorizontally,
+              modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { showFollowListModal = "Following" }
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+            ) {
               Text("${user.followingCount}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
               Text("Following", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -279,12 +293,13 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
 
           // Actions: Follow / Message or Edit Profile
           if (!isMe) {
+            val isFollowed = followingUserIds.contains(user.id)
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
               Button(
-                onClick = { isFollowed = !isFollowed },
+                onClick = { viewModel.toggleFollowUser(user.id) },
                 colors = ButtonDefaults.buttonColors(
                   containerColor = if (isFollowed) MaterialTheme.colorScheme.surfaceVariant else VybeViolet
                 ),
@@ -390,7 +405,7 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
               ) {
                 Button(
-                  onClick = { showGoLiveModal = true },
+                  onClick = { viewModel.navigateTo(Screen.LIVE_STUDIO) },
                   colors = ButtonDefaults.buttonColors(containerColor = VybeMagenta),
                   shape = RoundedCornerShape(12.dp),
                   modifier = Modifier.weight(1f).testTag("profile_go_live_button")
@@ -465,6 +480,7 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
             onLikeClick = { viewModel.toggleLike(post.id) },
             onSaveClick = { viewModel.toggleSave(post.id) },
             onCommentClick = {},
+            onAddComment = { text -> viewModel.addComment(post.id, text) },
             onShareClick = {},
             onUserClick = {}
           )
@@ -842,6 +858,66 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
         ) {
           Text("Close")
         }
+      }
+    )
+  }
+
+  // Followers & Following List Dialog
+  if (showFollowListModal != null) {
+    val title = showFollowListModal!!
+    val listUsers = if (title == "Following") {
+      allUsers.filter { followingUserIds.contains(it.id) || it.id != user.id }
+    } else {
+      allUsers.filter { it.id != user.id }
+    }
+    AlertDialog(
+      onDismissRequest = { showFollowListModal = null },
+      title = { Text(title, fontWeight = FontWeight.Bold) },
+      text = {
+        if (listUsers.isEmpty()) {
+          Box(modifier = Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
+            Text("No users yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
+          }
+        } else {
+          LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
+            items(listUsers) { u ->
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .clickable {
+                    showFollowListModal = null
+                    viewModel.openUserProfile(u)
+                  }
+                  .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                VybeAvatar(user = u, size = 38.dp)
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(u.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    VerificationBadge(user = u)
+                  }
+                  Text("@${u.username}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (u.id != currentUser?.id) {
+                  val isUFollowed = followingUserIds.contains(u.id)
+                  OutlinedButton(
+                    onClick = { viewModel.toggleFollowUser(u.id) },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                    shape = RoundedCornerShape(8.dp)
+                  ) {
+                    Text(if (isUFollowed) "Following" else "Follow", fontSize = 11.sp)
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      confirmButton = {
+        TextButton(onClick = { showFollowListModal = null }) { Text("Close") }
       }
     )
   }

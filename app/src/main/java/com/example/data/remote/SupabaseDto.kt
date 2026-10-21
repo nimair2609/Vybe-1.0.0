@@ -78,3 +78,62 @@ data class SupabaseProfileDto(
   @Json(name = "following_count") val followingCount: Int? = 0,
   @Json(name = "posts_count") val postsCount: Int? = 0
 )
+
+@JsonClass(generateAdapter = true)
+data class SupabaseMessageDto(
+  val id: String? = null,
+  @Json(name = "conversation_id") val conversationId: String,
+  @Json(name = "sender_id") val senderId: String,
+  val content: String,
+  @Json(name = "media_url") val mediaUrl: String? = null,
+  @Json(name = "media_type") val mediaType: String? = "TEXT",
+  @Json(name = "reply_to_message_id") val replyToMessageId: String? = null,
+  @Json(name = "created_at") val createdAt: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class SupabaseCommentDto(
+  val id: String? = null,
+  @Json(name = "post_id") val postId: String,
+  @Json(name = "author_id") val authorId: String,
+  val content: String,
+  @Json(name = "created_at") val createdAt: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class SupabaseNotificationDto(
+  val id: String? = null,
+  @Json(name = "recipient_id") val recipientId: String,
+  @Json(name = "actor_id") val actorId: String? = null,
+  val type: String,
+  val title: String,
+  val message: String,
+  @Json(name = "target_id") val targetId: String? = null,
+  @Json(name = "is_read") val isRead: Boolean? = false,
+  @Json(name = "created_at") val createdAt: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class SupabaseReportDto(
+  val id: String? = null,
+  @Json(name = "reporter_id") val reporterId: String,
+  @Json(name = "target_type") val targetType: String,
+  @Json(name = "target_id") val targetId: String,
+  val reason: String,
+  @Json(name = "admin_notes") val adminNotes: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class SupabaseBlockDto(
+  @Json(name = "blocker_id") val blockerId: String,
+  @Json(name = "blocked_id") val blockedId: String,
+  @Json(name = "created_at") val createdAt: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class SupabaseFollowDto(
+  @Json(name = "follower_id") val followerId: String,
+  @Json(name = "followed_id") val followedId: String,
+  @Json(name = "created_at") val createdAt: String? = null
+)
+

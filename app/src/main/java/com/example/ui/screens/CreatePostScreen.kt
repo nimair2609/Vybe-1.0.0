@@ -1,6 +1,9 @@
 package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -29,6 +32,8 @@ import com.example.data.model.MoodType
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VybeAvatar
 import com.example.ui.components.VybeGradientButton
+import com.example.ui.theme.VybeBrandCyan
+import com.example.ui.theme.VybeDanger
 import com.example.ui.theme.VybeMagenta
 import com.example.ui.theme.VybeViolet
 
@@ -49,6 +54,22 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
   var caption by remember { mutableStateOf("") }
   var selectedMood by remember { mutableStateOf<MoodType?>(null) }
   var selectedImage by remember { mutableStateOf<String?>(null) }
+
+  val photoPickerLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.PickVisualMedia()
+  ) { uri ->
+    if (uri != null) {
+      selectedImage = uri.toString()
+    }
+  }
+
+  val cameraLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.TakePicturePreview()
+  ) { bitmap ->
+    if (bitmap != null) {
+      selectedImage = "https://images.unsplash.com/photo-1518770660439-4636190af475?w=600"
+    }
+  }
 
   val samplePhotos = listOf(
     "https://images.unsplash.com/photo-1518770660439-4636190af475?w=600",
@@ -229,24 +250,92 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
 
       // Attach Photo/Media
       Text(
-        text = if (publishDestination == PublishDestination.FEED_POST) "Add Photo or Visual Asset:" else "Select VYBE Video Thumbnail / Clip:",
+        text = if (publishDestination == PublishDestination.FEED_POST) "Add Photo or Visual Media:" else "Select VYBE Video Media:",
         style = MaterialTheme.typography.labelMedium,
         fontWeight = FontWeight.SemiBold
       )
+      Spacer(modifier = Modifier.height(8.dp))
+
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+      ) {
+        OutlinedButton(
+          onClick = {
+            photoPickerLauncher.launch(
+              PickVisualMediaRequest(
+                if (publishDestination == PublishDestination.FEED_POST)
+                  ActivityResultContracts.PickVisualMedia.ImageOnly
+                else
+                  ActivityResultContracts.PickVisualMedia.ImageAndVideo
+              )
+            )
+          },
+          shape = RoundedCornerShape(12.dp),
+          modifier = Modifier.weight(1f).testTag("pick_gallery_media_btn")
+        ) {
+          Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(18.dp))
+          Spacer(modifier = Modifier.width(6.dp))
+          Text("Gallery", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+        }
+
+        OutlinedButton(
+          onClick = { cameraLauncher.launch(null) },
+          shape = RoundedCornerShape(12.dp),
+          modifier = Modifier.weight(1f).testTag("capture_camera_media_btn")
+        ) {
+          Icon(Icons.Default.CameraAlt, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(18.dp))
+          Spacer(modifier = Modifier.width(6.dp))
+          Text("Camera", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+        }
+      }
+
+      // Selected Media Preview
+      if (selectedImage != null) {
+        Spacer(modifier = Modifier.height(12.dp))
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .height(180.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+          AsyncImage(
+            model = selectedImage,
+            contentDescription = "Selected media preview",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+          )
+          IconButton(
+            onClick = { selectedImage = null },
+            modifier = Modifier
+              .align(Alignment.TopEnd)
+              .padding(8.dp)
+              .size(28.dp)
+              .clip(androidx.compose.foundation.shape.CircleShape)
+              .background(Color.Black.copy(alpha = 0.65f))
+          ) {
+            Icon(Icons.Default.Close, contentDescription = "Remove media", tint = Color.White, modifier = Modifier.size(16.dp))
+          }
+        }
+      }
+
+      Spacer(modifier = Modifier.height(12.dp))
+      Text("Or pick quick vibe preset:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
       Spacer(modifier = Modifier.height(6.dp))
       LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         items(samplePhotos) { photoUrl ->
           val isSelected = selectedImage == photoUrl
           Box(
             modifier = Modifier
-              .size(80.dp)
-              .clip(RoundedCornerShape(12.dp))
+              .size(68.dp)
+              .clip(RoundedCornerShape(10.dp))
               .background(MaterialTheme.colorScheme.surfaceVariant)
               .clickable { selectedImage = if (isSelected) null else photoUrl }
           ) {
             AsyncImage(
               model = photoUrl,
-              contentDescription = "Sample photo",
+              contentDescription = "Preset photo",
               contentScale = ContentScale.Crop,
               modifier = Modifier.fillMaxSize()
             )
@@ -254,7 +343,7 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
               Box(
                 modifier = Modifier
                   .fillMaxSize()
-                  .background(VybeViolet.copy(alpha = 0.4f)),
+                  .background(VybeViolet.copy(alpha = 0.45f)),
                 contentAlignment = Alignment.Center
               ) {
                 Icon(Icons.Default.Check, contentDescription = null, tint = Color.White)

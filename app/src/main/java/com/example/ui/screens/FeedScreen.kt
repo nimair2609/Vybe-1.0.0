@@ -42,6 +42,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
   val stories by viewModel.stories.collectAsState()
   val selectedMood by viewModel.selectedMoodFilter.collectAsState()
   val notifications by viewModel.notifications.collectAsState()
+  val followingUserIds by viewModel.followingUserIds.collectAsState()
   val coroutineScope = rememberCoroutineScope()
 
   var feedTab by remember { mutableStateOf("For You") }
@@ -49,17 +50,18 @@ fun FeedScreen(viewModel: VybeViewModel) {
 
   var isRefreshing by remember { mutableStateOf(false) }
   var showStoryCreateSheet by remember { mutableStateOf(false) }
-  var showNotificationCenter by remember { mutableStateOf(false) }
-  var notifFilterUnreadOnly by remember { mutableStateOf(false) }
   var storyTypeSelected by remember { mutableStateOf<String?>(null) }
   var storyCreatedFeedback by remember { mutableStateOf<String?>(null) }
 
-  val filteredPosts = remember(posts, selectedMood, feedTab) {
+  val filteredPosts = remember(posts, selectedMood, feedTab, followingUserIds) {
+    var list = posts
     if (selectedMood != null) {
-      posts.filter { it.moodZone == selectedMood }
-    } else {
-      posts
+      list = list.filter { it.moodZone == selectedMood }
     }
+    if (feedTab == "Following") {
+      list = list.filter { followingUserIds.contains(it.author.id) }
+    }
+    list
   }
 
   fun triggerRefresh() {
@@ -117,7 +119,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
         actions = {
           val unreadNotifsCount = remember(notifications) { notifications.count { !it.isRead } }
           IconButton(
-            onClick = { showNotificationCenter = true },
+            onClick = { viewModel.navigateTo(Screen.NOTIFICATIONS) },
             modifier = Modifier.testTag("notification_bell_button")
           ) {
             BadgedBox(
@@ -311,6 +313,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
               onLikeClick = { viewModel.toggleLike(post.id) },
               onSaveClick = { viewModel.toggleSave(post.id) },
               onCommentClick = { viewModel.addComment(post.id, "Appreciating this vibe!") },
+              onAddComment = { text -> viewModel.addComment(post.id, text) },
               onShareClick = { /* Share dialog */ },
               onUserClick = { user -> viewModel.openUserProfile(user) },
               onRemixClick = { viewModel.navigateTo(Screen.REELS_VIEWER) }
