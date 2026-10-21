@@ -74,4 +74,40 @@ class VybeCoreUnitTest {
     val updated = repository.predictions.value.first { it.id == pred.id }
     assertEquals(optId, updated.userSelectedOptionId)
   }
+
+  @Test
+  fun testTermsAcceptanceRequired() = kotlinx.coroutines.runBlocking {
+    val result = repository.registerWithSupabase(
+      username = "test_terms_user",
+      email = "terms@vybe.in",
+      password = "Password123!",
+      firstName = "Terms",
+      lastName = "Tester",
+      phone = "+91 98765 11111",
+      birthDateStr = "2000-01-01",
+      termsAccepted = false
+    )
+    assertFalse("Registration must be rejected if terms not accepted", result.first)
+    assertTrue(result.second.contains("Terms of Service"))
+  }
+
+  @Test
+  fun testLoginAndLogoutSessionFlow() {
+    val loginSuccess = repository.loginUser("eligible@vybe.in", "Password123!")
+    assertTrue(loginSuccess)
+    assertTrue("User should be logged in after loginUser", repository.isLoggedIn.value)
+    assertNotNull("Current user must not be null after login", repository.currentUser.value)
+
+    repository.logout()
+    assertFalse("User should be logged out after logout", repository.isLoggedIn.value)
+    assertNull("Current user must be null after logout", repository.currentUser.value)
+  }
+
+  @Test
+  fun testSupabaseConfigSanity() {
+    val url = com.example.data.remote.SupabaseConfig.supabaseUrl
+    assertNotNull("Supabase URL should not be null", url)
+    assertTrue("Auth base URL must contain auth/v1", com.example.data.remote.SupabaseConfig.getAuthBaseUrl().contains("auth/v1"))
+    assertTrue("REST base URL must contain rest/v1", com.example.data.remote.SupabaseConfig.getRestBaseUrl().contains("rest/v1"))
+  }
 }

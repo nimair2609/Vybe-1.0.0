@@ -19,6 +19,7 @@ import com.example.ui.theme.VybeTheme
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    com.example.data.repository.VybeRepository.getInstance().initSession(applicationContext)
     enableEdgeToEdge()
     setContent {
       val viewModel: VybeViewModel = viewModel()

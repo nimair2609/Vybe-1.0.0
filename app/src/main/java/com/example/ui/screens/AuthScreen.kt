@@ -20,6 +20,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VybeGradientButton
 import com.example.ui.theme.*
@@ -82,9 +83,8 @@ fun AuthScreen(viewModel: VybeViewModel) {
   var loginPassword by remember { mutableStateOf("") }
   var showLoginPassword by remember { mutableStateOf(false) }
 
-  // OTP flow
-  var showOtpStep by remember { mutableStateOf(false) }
-  var otpCode by remember { mutableStateOf("") }
+  val coroutineScope = rememberCoroutineScope()
+  var isLoading by remember { mutableStateOf(false) }
   var errorMessage by remember { mutableStateOf<String?>(null) }
   var statusMessage by remember { mutableStateOf<String?>(null) }
 
@@ -142,8 +142,39 @@ fun AuthScreen(viewModel: VybeViewModel) {
         color = MaterialTheme.colorScheme.onSurfaceVariant
       )
 
+      // Supabase Connection Status Banner
+      Spacer(modifier = Modifier.height(10.dp))
+      Surface(
+        color = if (viewModel.isSupabaseConfigured) VybeOnlineGreen.copy(alpha = 0.12f) else Color(0xFFFFB300).copy(alpha = 0.12f),
+        shape = RoundedCornerShape(10.dp),
+        border = androidx.compose.foundation.BorderStroke(
+          1.dp,
+          if (viewModel.isSupabaseConfigured) VybeOnlineGreen.copy(alpha = 0.35f) else Color(0xFFFFB300).copy(alpha = 0.35f)
+        ),
+        modifier = Modifier.fillMaxWidth()
+      ) {
+        Row(
+          modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Icon(
+            imageVector = if (viewModel.isSupabaseConfigured) Icons.Default.CloudDone else Icons.Default.CloudQueue,
+            contentDescription = "Supabase Status",
+            tint = if (viewModel.isSupabaseConfigured) VybeOnlineGreen else Color(0xFFFFB300),
+            modifier = Modifier.size(16.dp)
+          )
+          Spacer(modifier = Modifier.width(8.dp))
+          Text(
+            text = if (viewModel.isSupabaseConfigured) "Supabase Auth & Database Live" else "Developer Mode • Connect SUPABASE_URL in Secrets for Live Auth",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (viewModel.isSupabaseConfigured) VybeOnlineGreen else Color(0xFFFFB300)
+          )
+        }
+      }
+
       // Age Policy Banner (16+ community requirement)
-      Spacer(modifier = Modifier.height(14.dp))
+      Spacer(modifier = Modifier.height(10.dp))
       Surface(
         color = VybeViolet.copy(alpha = 0.12f),
         shape = RoundedCornerShape(12.dp),
@@ -202,8 +233,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
         }
       }
 
-      if (!showOtpStep) {
-        if (isRegisterMode) {
+      if (isRegisterMode) {
           // Account Type Selector (Section 2 & 11 requirement)
           Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp),
@@ -413,22 +443,40 @@ fun AuthScreen(viewModel: VybeViewModel) {
             Spacer(modifier = Modifier.height(18.dp))
 
             VybeGradientButton(
-              text = "Verify & Send OTP",
+              text = if (isLoading) "Creating Account..." else "Create Account & Join VYBE",
               onClick = {
                 errorMessage = null
+                statusMessage = null
                 if (firstName.isBlank() || lastName.isBlank() || username.isBlank() || email.isBlank() || phone.isBlank()) {
                   errorMessage = "Please fill in all 10 registration details."
+                } else if (!termsAccepted) {
+                  errorMessage = "You must agree to the Terms of Service & Privacy Policy to register."
                 } else if (createPassword != confirmPassword) {
                   errorMessage = "Passwords do not match."
                 } else if (createPassword.length < 6) {
                   errorMessage = "Password must be at least 6 characters."
-                } else if (!termsAccepted) {
-                  errorMessage = "You must agree to the Terms & Conditions."
                 } else if (!isUserIdAvailable) {
                   errorMessage = "This User ID is already taken. Please choose another."
                 } else {
-                  showOtpStep = true
-                  statusMessage = "6-digit OTP code sent to $email (Enter 123456 to verify)"
+                  coroutineScope.launch {
+                    isLoading = true
+                    val (ok, msg) = viewModel.registerWithSupabase(
+                      username = username,
+                      email = email,
+                      password = createPassword,
+                      firstName = firstName,
+                      lastName = lastName,
+                      phone = phone,
+                      dob = dateOfBirth,
+                      termsAccepted = termsAccepted
+                    )
+                    isLoading = false
+                    if (!ok) {
+                      errorMessage = msg
+                    } else {
+                      statusMessage = msg
+                    }
+                  }
                 }
               },
               modifier = Modifier.testTag("auth_submit_button")
@@ -634,70 +682,26 @@ fun AuthScreen(viewModel: VybeViewModel) {
           Spacer(modifier = Modifier.height(24.dp))
 
           VybeGradientButton(
-            text = "Log In to VYBE",
+            text = if (isLoading) "Logging in..." else "Log In to VYBE",
             onClick = {
               errorMessage = null
-              val success = viewModel.login(loginIdentifier, loginPassword)
-              if (!success) errorMessage = "Invalid credentials. (Or enter any password to log in with test account)"
+              statusMessage = null
+              if (loginIdentifier.isBlank() || loginPassword.isBlank()) {
+                errorMessage = "Please enter your email and password."
+              } else {
+                coroutineScope.launch {
+                  isLoading = true
+                  val (ok, msg) = viewModel.loginWithSupabase(loginIdentifier, loginPassword)
+                  isLoading = false
+                  if (!ok) {
+                    errorMessage = msg
+                  }
+                }
+              }
             },
             modifier = Modifier.testTag("auth_submit_button")
           )
         }
-      } else {
-        // Field 7: OTP Step
-        Text(
-          text = "Enter 6-Digit Verification Code",
-          style = MaterialTheme.typography.titleMedium,
-          fontWeight = FontWeight.Bold
-        )
-        Text(
-          text = "We sent a secure OTP to $email and $phone",
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedTextField(
-          value = otpCode,
-          onValueChange = { otpCode = it },
-          label = { Text("OTP Code (Enter 123456)") },
-          leadingIcon = { Icon(Icons.Default.Key, contentDescription = null) },
-          singleLine = true,
-          modifier = Modifier.fillMaxWidth().testTag("auth_otp_input")
-        )
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        VybeGradientButton(
-          text = "Confirm & Launch Profile",
-          onClick = {
-            if (otpCode == "123456" || otpCode.length >= 4) {
-              val (ok, msg) = viewModel.register(
-                username = username,
-                email = email,
-                dob = dateOfBirth,
-                firstName = firstName,
-                lastName = lastName,
-                phone = phone
-              )
-              if (!ok) {
-                errorMessage = msg
-                showOtpStep = false
-              }
-            } else {
-              errorMessage = "Incorrect OTP code. Enter 123456 to verify."
-            }
-          },
-          modifier = Modifier.testTag("auth_otp_confirm_button")
-        )
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        TextButton(onClick = { showOtpStep = false }) {
-          Text("Back to Edit Details")
-        }
-      }
 
       Spacer(modifier = Modifier.height(16.dp))
 
@@ -706,7 +710,6 @@ fun AuthScreen(viewModel: VybeViewModel) {
           isRegisterMode = !isRegisterMode
           errorMessage = null
           statusMessage = null
-          showOtpStep = false
         },
         modifier = Modifier.testTag("auth_mode_toggle_button")
       ) {

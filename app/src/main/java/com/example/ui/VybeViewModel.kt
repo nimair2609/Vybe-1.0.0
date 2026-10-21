@@ -361,6 +361,43 @@ class VybeViewModel : ViewModel() {
     repository.updateNotificationPreferences(prefs)
   fun completeOnboarding() = repository.completeOnboarding()
 
+  val isSupabaseConfigured: Boolean
+    get() = repository.isSupabaseConfigured
+
+  suspend fun loginWithSupabase(identifier: String, pass: String): Pair<Boolean, String> {
+    val result = repository.loginWithSupabase(identifier, pass)
+    if (result.first) {
+      _currentScreen.value = Screen.MAIN
+    }
+    return result
+  }
+
+  suspend fun registerWithSupabase(
+    username: String,
+    email: String,
+    password: String,
+    firstName: String,
+    lastName: String,
+    phone: String,
+    dob: String,
+    termsAccepted: Boolean
+  ): Pair<Boolean, String> {
+    val result = repository.registerWithSupabase(
+      username = username,
+      email = email,
+      password = password,
+      firstName = firstName,
+      lastName = lastName,
+      phone = phone,
+      birthDateStr = dob,
+      termsAccepted = termsAccepted
+    )
+    if (result.first) {
+      _currentScreen.value = Screen.MAIN
+    }
+    return result
+  }
+
   fun register(
     username: String,
     email: String,
@@ -369,7 +406,7 @@ class VybeViewModel : ViewModel() {
     lastName: String = "",
     phone: String = ""
   ): Pair<Boolean, String> {
-    val result = repository.registerAccount(username, email, dob, firstName, lastName, phone)
+    val result = repository.registerAccount(firstName, lastName, username, email, phone, dob)
     if (result.first) {
       _currentScreen.value = Screen.MAIN
     }

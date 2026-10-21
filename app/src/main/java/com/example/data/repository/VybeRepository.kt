@@ -1,9 +1,15 @@
 package com.example.data.repository
 
+import android.content.Context
 import com.example.data.model.*
+import com.example.data.remote.SupabaseRepository
+import com.example.data.session.SessionManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.Period
 
@@ -108,12 +114,31 @@ class VybeRepository private constructor() {
     isOnboardingCompleted = true
   )
 
-  // Current session state
-  private val _currentUser = MutableStateFlow<User?>(userMe)
+  private val supabaseRepo = SupabaseRepository()
+
+  val isSupabaseConfigured: Boolean
+    get() = supabaseRepo.isConfigured
+
+  // Current session state (starts unauthenticated on first launch until session restored or logged in)
+  private val _currentUser = MutableStateFlow<User?>(null)
   val currentUser: StateFlow<User?> = _currentUser.asStateFlow()
 
-  private val _isLoggedIn = MutableStateFlow(true)
+  private val _isLoggedIn = MutableStateFlow(false)
   val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
+
+  fun initSession(context: Context) {
+    val session = SessionManager.getInstance(context)
+    if (session.isLoggedIn) {
+      val user = session.loadCurrentUser()
+      if (user != null) {
+        _currentUser.value = user
+        _isLoggedIn.value = true
+        if (_allUsers.value.none { it.id == user.id }) {
+          _allUsers.value = listOf(user) + _allUsers.value
+        }
+      }
+    }
+  }
 
   // Registered Community Users (Searchable by username and public VYBE ID)
   private val _allUsers = MutableStateFlow<List<User>>(listOf(userMe, userAarav, userPriya, userVikramCricket))
@@ -845,7 +870,7 @@ class VybeRepository private constructor() {
   }
 
   fun addComment(postId: String, text: String) {
-    val user = _currentUser.value ?: return
+    val user = _currentUser.value ?: userMe
     if (text.isBlank()) return
     val current = _posts.value.toMutableList()
     val index = current.indexOfFirst { it.id == postId }
@@ -865,7 +890,7 @@ class VybeRepository private constructor() {
   }
 
   fun addUnfilteredComment(postId: String, text: String) {
-    val user = _currentUser.value ?: return
+    val user = _currentUser.value ?: userMe
     if (text.isBlank()) return
     val current = _unfilteredPosts.value.toMutableList()
     val index = current.indexOfFirst { it.id == postId }
@@ -890,7 +915,7 @@ class VybeRepository private constructor() {
     imageUrl: String? = null,
     isVybes: Boolean = false
   ) {
-    val user = _currentUser.value ?: return
+    val user = _currentUser.value ?: userMe
     val newPost = Post(
       id = "p_${System.currentTimeMillis()}",
       author = user,
@@ -910,7 +935,7 @@ class VybeRepository private constructor() {
   }
 
   fun createUnfilteredPost(caption: String, imageUrl: String) {
-    val user = _currentUser.value ?: return
+    val user = _currentUser.value ?: userMe
     val newPost = Post(
       id = "uf_${System.currentTimeMillis()}",
       author = user,
@@ -1247,6 +1272,81 @@ class VybeRepository private constructor() {
     _notificationPreferences.value = prefs
   }
 
+  fun checkAgeRequirement(birthDateStr: String): Pair<Boolean, String> {
+    return try {
+      val parts = birthDateStr.split("-")
+      if (parts.size == 3) {
+        val y = parts[0].toInt()
+        val m = parts[1].toInt()
+        val d = parts[2].toInt()
+        val dob = LocalDate.of(y, m, d)
+        val age = Period.between(dob, LocalDate.now()).years
+        if (age < 16) {
+          Pair(false, "VYBE is strictly for individuals aged 16 and above. Access cannot be granted.")
+        } else {
+          Pair(true, "Eligible")
+        }
+      } else {
+        Pair(false, "Invalid date format. Use YYYY-MM-DD.")
+      }
+    } catch (e: Exception) {
+      Pair(false, "Invalid date format. Use YYYY-MM-DD.")
+    }
+  }
+
+  suspend fun registerWithSupabase(
+    username: String,
+    email: String,
+    password: String,
+    firstName: String,
+    lastName: String,
+    phone: String,
+    birthDateStr: String,
+    termsAccepted: Boolean
+  ): Pair<Boolean, String> {
+    if (!termsAccepted) {
+      return Pair(false, "You must agree to the Terms of Service and Privacy Policy to register.")
+    }
+
+    val ageCheck = checkAgeRequirement(birthDateStr)
+    if (!ageCheck.first) return ageCheck
+
+    if (password.length < 6) {
+      return Pair(false, "Password must be at least 6 characters.")
+    }
+
+    if (supabaseRepo.isConfigured) {
+      val res = supabaseRepo.signUpWithEmail(
+        username = username,
+        email = email,
+        password = password,
+        firstName = firstName,
+        lastName = lastName,
+        phone = phone,
+        dateOfBirth = birthDateStr
+      )
+      return if (res.isSuccess) {
+        val (user, token) = res.getOrThrow()
+        _currentUser.value = user
+        _isLoggedIn.value = true
+        if (_allUsers.value.none { it.id == user.id }) {
+          _allUsers.value = listOf(user) + _allUsers.value
+        }
+        SessionManager.get()?.saveSession(user, token)
+        Pair(true, "Account created with Supabase Auth! ${if (user.isUnder18) "Teen Safety Protected Mode active." else "Standard Verified Mode active."}")
+      } else {
+        Pair(false, res.exceptionOrNull()?.message ?: "Supabase registration failed.")
+      }
+    } else {
+      // Local Developer Mode fallback when Supabase keys are pending configuration in Secrets
+      val local = registerAccount(firstName, lastName, username, email, phone, birthDateStr)
+      if (local.first && _currentUser.value != null) {
+        SessionManager.get()?.saveSession(_currentUser.value!!)
+      }
+      return local
+    }
+  }
+
   fun registerAccount(
     firstName: String,
     lastName: String,
@@ -1255,43 +1355,43 @@ class VybeRepository private constructor() {
     phone: String,
     birthDateStr: String
   ): Pair<Boolean, String> {
+    val ageCheck = checkAgeRequirement(birthDateStr)
+    if (!ageCheck.first) return ageCheck
+
     try {
       val parts = birthDateStr.split("-")
-      if (parts.size == 3) {
-        val y = parts[0].toInt()
-        val m = parts[1].toInt()
-        val d = parts[2].toInt()
-        val dob = LocalDate.of(y, m, d)
-        val age = Period.between(dob, LocalDate.now()).years
+      val y = parts[0].toInt()
+      val m = parts[1].toInt()
+      val d = parts[2].toInt()
+      val dob = LocalDate.of(y, m, d)
+      val age = Period.between(dob, LocalDate.now()).years
 
-        if (age < 16) {
-          return Pair(false, "VYBE is strictly for individuals aged 16 and above. Access cannot be granted.")
-        }
-
-        val newUser = User(
-          id = "u_${System.currentTimeMillis()}",
-          username = username.lowercase().replace(" ", "_"),
-          displayName = "$firstName $lastName".trim(),
-          firstName = firstName,
-          lastName = lastName,
-          email = email,
-          phone = phone,
-          isEmailVerified = true,
-          isPhoneVerified = true,
-          dateOfBirth = birthDateStr,
-          age = age,
-          isUnder18 = age in 16..17,
-          role = UserRole.USER,
-          isOnboardingCompleted = false
-        )
-        _currentUser.value = newUser
-        _isLoggedIn.value = true
-        return Pair(true, "Welcome to VYBE! Account created with ${if (newUser.isUnder18) "Teen Safety Protected Mode" else "Standard Verified Mode"}.")
+      val newUser = User(
+        id = "u_${System.currentTimeMillis()}",
+        username = username.lowercase().replace(" ", "_"),
+        displayName = "$firstName $lastName".trim().ifBlank { username },
+        firstName = firstName,
+        lastName = lastName,
+        email = email,
+        phone = phone,
+        isEmailVerified = true,
+        isPhoneVerified = true,
+        dateOfBirth = birthDateStr,
+        age = age,
+        isUnder18 = age in 16..17,
+        role = UserRole.USER,
+        isOnboardingCompleted = false
+      )
+      _currentUser.value = newUser
+      _isLoggedIn.value = true
+      if (_allUsers.value.none { it.id == newUser.id }) {
+        _allUsers.value = listOf(newUser) + _allUsers.value
       }
+      SessionManager.get()?.saveSession(newUser)
+      return Pair(true, "Welcome to VYBE! Account created with ${if (newUser.isUnder18) "Teen Safety Protected Mode" else "Standard Verified Mode"}.")
     } catch (e: Exception) {
-      return Pair(false, "Invalid date format. Use YYYY-MM-DD.")
+      return Pair(false, "Registration could not be completed.")
     }
-    return Pair(false, "Registration could not be completed.")
   }
 
   // Backward compatible overload for existing tests
@@ -1299,12 +1399,76 @@ class VybeRepository private constructor() {
     return registerAccount(username, "", username, email, "+91 98765 00000", birthDateStr)
   }
 
+  suspend fun loginWithSupabase(identifier: String, pass: String): Pair<Boolean, String> {
+    if (identifier.isBlank() || pass.isBlank()) {
+      return Pair(false, "Please enter your email and password.")
+    }
+
+    if (supabaseRepo.isConfigured) {
+      val res = supabaseRepo.signInWithEmail(identifier, pass)
+      return if (res.isSuccess) {
+        val (user, token) = res.getOrThrow()
+        _currentUser.value = user
+        _isLoggedIn.value = true
+        if (_allUsers.value.none { it.id == user.id }) {
+          _allUsers.value = listOf(user) + _allUsers.value
+        }
+        SessionManager.get()?.saveSession(user, token)
+        Pair(true, "Logged in to Supabase!")
+      } else {
+        Pair(false, res.exceptionOrNull()?.message ?: "Invalid email or password.")
+      }
+    } else {
+      // Offline / Developer Mode fallback
+      val clean = identifier.trim().lowercase().replace("@", "")
+      val matched = _allUsers.value.firstOrNull {
+        it.email.equals(identifier.trim(), ignoreCase = true) ||
+        it.username.lowercase() == clean ||
+        it.publicVybeId.lowercase() == clean
+      } ?: User(
+        id = "u_${System.currentTimeMillis()}",
+        username = clean.ifBlank { "vybe_user" },
+        displayName = identifier.substringBefore("@").replace(".", " ").replaceFirstChar { it.uppercase() },
+        email = identifier.trim(),
+        role = UserRole.USER,
+        isOnboardingCompleted = true
+      )
+      _currentUser.value = matched
+      _isLoggedIn.value = true
+      if (_allUsers.value.none { it.id == matched.id }) {
+        _allUsers.value = listOf(matched) + _allUsers.value
+      }
+      SessionManager.get()?.saveSession(matched)
+      return Pair(true, "Logged in (Developer Mode - Supabase awaiting configuration in Secrets)")
+    }
+  }
+
   fun loginUser(identifier: String, pass: String): Boolean {
+    val clean = identifier.trim().lowercase().replace("@", "")
+    val matched = _allUsers.value.firstOrNull {
+      it.email.equals(identifier.trim(), ignoreCase = true) ||
+      it.username.lowercase() == clean
+    } ?: User(
+      id = "u_${System.currentTimeMillis()}",
+      username = clean.ifBlank { "vybe_user" },
+      displayName = identifier.substringBefore("@"),
+      email = identifier.trim(),
+      role = UserRole.USER,
+      isOnboardingCompleted = true
+    )
+    _currentUser.value = matched
     _isLoggedIn.value = true
+    SessionManager.get()?.saveSession(matched)
     return true
   }
 
   fun logout() {
+    val token = SessionManager.get()?.accessToken ?: ""
+    CoroutineScope(Dispatchers.IO).launch {
+      supabaseRepo.signOut(token)
+    }
+    SessionManager.get()?.clearSession()
+    _currentUser.value = null
     _isLoggedIn.value = false
   }
 
