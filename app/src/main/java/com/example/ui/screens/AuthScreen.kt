@@ -86,6 +86,20 @@ fun AuthScreen(viewModel: VybeViewModel) {
   val coroutineScope = rememberCoroutineScope()
   var isLoading by remember { mutableStateOf(false) }
   var errorMessage by remember { mutableStateOf<String?>(null) }
+  var showForgotPasswordDialog by remember { mutableStateOf(false) }
+  var showOtpVerifyDialog by remember { mutableStateOf(false) }
+  var resetEmail by remember { mutableStateOf("") }
+  var resetOtp by remember { mutableStateOf("") }
+  var newPassword by remember { mutableStateOf("") }
+  var showNewPassword by remember { mutableStateOf(false) }
+  var resetStep by remember { mutableStateOf(1) }
+  var resetLoading by remember { mutableStateOf(false) }
+  var resetError by remember { mutableStateOf<String?>(null) }
+  var resetMessage by remember { mutableStateOf<String?>(null) }
+  var verifyEmailInput by remember { mutableStateOf("") }
+  var verifyOtpInput by remember { mutableStateOf("") }
+  var verifyLoading by remember { mutableStateOf(false) }
+  var verifyError by remember { mutableStateOf<String?>(null) }
   var statusMessage by remember { mutableStateOf<String?>(null) }
 
   Box(
@@ -209,12 +223,25 @@ fun AuthScreen(viewModel: VybeViewModel) {
           shape = RoundedCornerShape(8.dp),
           modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
         ) {
-          Text(
-            text = errorMessage ?: "",
-            color = VybeDanger,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(10.dp)
-          )
+          Column(modifier = Modifier.padding(10.dp)) {
+            Text(
+              text = errorMessage ?: "",
+              color = VybeDanger,
+              style = MaterialTheme.typography.bodySmall
+            )
+            if (errorMessage?.contains("confirm", ignoreCase = true) == true || errorMessage?.contains("not confirmed", ignoreCase = true) == true) {
+              Spacer(modifier = Modifier.height(6.dp))
+              TextButton(
+                onClick = {
+                  verifyEmailInput = if (loginIdentifier.contains("@")) loginIdentifier else email
+                  showOtpVerifyDialog = true
+                },
+                contentPadding = PaddingValues(0.dp)
+              ) {
+                Text("Enter Verification Code ->", color = VybeBrandCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+              }
+            }
+          }
         }
       }
 
@@ -678,6 +705,22 @@ fun AuthScreen(viewModel: VybeViewModel) {
             singleLine = true,
             modifier = Modifier.fillMaxWidth().testTag("auth_password_input")
           )
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+          ) {
+            TextButton(
+              onClick = {
+                resetEmail = if (loginIdentifier.contains("@")) loginIdentifier else email
+                resetStep = 1
+                resetError = null
+                resetMessage = null
+                showForgotPasswordDialog = true
+              }
+            ) {
+              Text("Forgot password?", fontSize = 12.sp, color = VybeBrandCyan, fontWeight = FontWeight.SemiBold)
+            }
+          }
 
           Spacer(modifier = Modifier.height(24.dp))
 
@@ -701,6 +744,19 @@ fun AuthScreen(viewModel: VybeViewModel) {
             },
             modifier = Modifier.testTag("auth_submit_button")
           )
+          Spacer(modifier = Modifier.height(8.dp))
+          TextButton(
+            onClick = {
+              verifyEmailInput = if (loginIdentifier.contains("@")) loginIdentifier else email
+              verifyError = null
+              showOtpVerifyDialog = true
+            },
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Icon(Icons.Default.MarkEmailRead, contentDescription = null, modifier = Modifier.size(16.dp), tint = VybeViolet)
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Have a confirmation code? Verify Email", fontSize = 12.sp, color = VybeViolet, fontWeight = FontWeight.SemiBold)
+          }
         }
 
       Spacer(modifier = Modifier.height(16.dp))
@@ -721,6 +777,208 @@ fun AuthScreen(viewModel: VybeViewModel) {
       }
 
       Spacer(modifier = Modifier.height(36.dp))
+    }
+
+    // --- DIALOG 1: IN-APP EMAIL OTP VERIFICATION ---
+    if (showOtpVerifyDialog) {
+      AlertDialog(
+        onDismissRequest = { if (!verifyLoading) showOtpVerifyDialog = false },
+        title = {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.MarkEmailRead, contentDescription = null, tint = VybeViolet)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Verify Your Email", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+          }
+        },
+        text = {
+          Column {
+            Text(
+              "Enter the 6-digit confirmation code sent to your email by Supabase.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedTextField(
+              value = verifyEmailInput,
+              onValueChange = { verifyEmailInput = it },
+              label = { Text("Email Address") },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            OutlinedTextField(
+              value = verifyOtpInput,
+              onValueChange = { verifyOtpInput = it },
+              label = { Text("6-Digit Verification Code") },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth()
+            )
+            if (verifyError != null) {
+              Spacer(modifier = Modifier.height(8.dp))
+              Text(verifyError!!, color = VybeDanger, fontSize = 11.sp)
+            }
+          }
+        },
+        confirmButton = {
+          Button(
+            onClick = {
+              verifyError = null
+              coroutineScope.launch {
+                verifyLoading = true
+                val (ok, msg) = viewModel.verifyOtp(verifyEmailInput, verifyOtpInput, "signup")
+                verifyLoading = false
+                if (ok) {
+                  showOtpVerifyDialog = false
+                  statusMessage = msg
+                } else {
+                  verifyError = msg
+                }
+              }
+            },
+            enabled = !verifyLoading && verifyEmailInput.isNotBlank() && verifyOtpInput.isNotBlank(),
+            colors = ButtonDefaults.buttonColors(containerColor = VybeViolet)
+          ) {
+            Text(if (verifyLoading) "Verifying..." else "Verify & Log In")
+          }
+        },
+        dismissButton = {
+          TextButton(
+            onClick = { showOtpVerifyDialog = false },
+            enabled = !verifyLoading
+          ) {
+            Text("Cancel")
+          }
+        }
+      )
+    }
+
+    // --- DIALOG 2: FORGOT & RESET PASSWORD ---
+    if (showForgotPasswordDialog) {
+      AlertDialog(
+        onDismissRequest = { if (!resetLoading) showForgotPasswordDialog = false },
+        title = {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.LockReset, contentDescription = null, tint = VybeBrandCyan)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+              if (resetStep == 1) "Reset Password" else "Enter New Password",
+              style = MaterialTheme.typography.titleMedium,
+              fontWeight = FontWeight.Bold
+            )
+          }
+        },
+        text = {
+          Column {
+            if (resetStep == 1) {
+              Text(
+                "Enter your registered email address. We will send a 6-digit recovery code.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+              Spacer(modifier = Modifier.height(12.dp))
+              OutlinedTextField(
+                value = resetEmail,
+                onValueChange = { resetEmail = it },
+                label = { Text("Email Address") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+              )
+            } else {
+              Text(
+                "A reset code was sent to . Enter the code and your new password.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+              Spacer(modifier = Modifier.height(12.dp))
+              OutlinedTextField(
+                value = resetOtp,
+                onValueChange = { resetOtp = it },
+                label = { Text("6-Digit Reset Code") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+              )
+              Spacer(modifier = Modifier.height(10.dp))
+              OutlinedTextField(
+                value = newPassword,
+                onValueChange = { newPassword = it },
+                label = { Text("New Password (min 6 chars)") },
+                singleLine = true,
+                visualTransformation = if (showNewPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                  IconButton(onClick = { showNewPassword = !showNewPassword }) {
+                    Icon(
+                      imageVector = if (showNewPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                      contentDescription = null
+                    )
+                  }
+                },
+                modifier = Modifier.fillMaxWidth()
+              )
+            }
+            if (resetError != null) {
+              Spacer(modifier = Modifier.height(8.dp))
+              Text(resetError!!, color = VybeDanger, fontSize = 11.sp)
+            }
+            if (resetMessage != null) {
+              Spacer(modifier = Modifier.height(8.dp))
+              Text(resetMessage!!, color = VybeOnlineGreen, fontSize = 11.sp)
+            }
+          }
+        },
+        confirmButton = {
+          if (resetStep == 1) {
+            Button(
+              onClick = {
+                resetError = null
+                coroutineScope.launch {
+                  resetLoading = true
+                  val (ok, msg) = viewModel.sendPasswordReset(resetEmail)
+                  resetLoading = false
+                  if (ok) {
+                    resetStep = 2
+                    resetMessage = msg
+                  } else {
+                    resetError = msg
+                  }
+                }
+              },
+              enabled = !resetLoading && resetEmail.isNotBlank(),
+              colors = ButtonDefaults.buttonColors(containerColor = VybeBrandCyan)
+            ) {
+              Text(if (resetLoading) "Sending..." else "Send Reset Code", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+          } else {
+            Button(
+              onClick = {
+                resetError = null
+                coroutineScope.launch {
+                  resetLoading = true
+                  val (ok, msg) = viewModel.resetPasswordWithOtp(resetEmail, resetOtp, newPassword)
+                  resetLoading = false
+                  if (ok) {
+                    showForgotPasswordDialog = false
+                    statusMessage = msg
+                  } else {
+                    resetError = msg
+                  }
+                }
+              },
+              enabled = !resetLoading && resetOtp.isNotBlank() && newPassword.length >= 6,
+              colors = ButtonDefaults.buttonColors(containerColor = VybeBrandCyan)
+            ) {
+              Text(if (resetLoading) "Updating..." else "Confirm New Password", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+          }
+        },
+        dismissButton = {
+          TextButton(
+            onClick = { showForgotPasswordDialog = false },
+            enabled = !resetLoading
+          ) {
+            Text("Cancel")
+          }
+        }
+      )
     }
   }
 }

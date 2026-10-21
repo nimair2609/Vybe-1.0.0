@@ -6,21 +6,33 @@ import com.example.data.model.UserRole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.time.LocalDate
-import java.time.Period
 
+/**
+ * Supabase Data Repository for VYBE.
+ *
+ * Implements real GoTrue REST authentication (signup, email/password login,
+ * in-app OTP verification, password recovery/reset, and session logout)
+ * and PostgREST profile operations.
+ */
 class SupabaseRepository {
 
   companion object {
     private const val TAG = "SupabaseRepo"
+    @Volatile
+    private var instance: SupabaseRepository? = null
+
+    fun getInstance(): SupabaseRepository {
+      return instance ?: synchronized(this) {
+        instance ?: SupabaseRepository().also { instance = it }
+      }
+    }
   }
 
   val isConfigured: Boolean
     get() = SupabaseConfig.isConfigured()
 
   /**
-   * Registers a new user with Supabase Auth (email + password).
-   * Also ensures a public profile is created in public.profiles.
+   * Registers a new user with email and password via Supabase Auth.
    */
   suspend fun signUpWithEmail(
     username: String,
@@ -33,14 +45,13 @@ class SupabaseRepository {
   ): Result<Pair<User, String>> = withContext(Dispatchers.IO) {
     if (!isConfigured) {
       return@withContext Result.failure(
-        IllegalStateException("Supabase backend is not configured. Please add your SUPABASE_URL and SUPABASE_ANON_KEY in the AI Studio Secrets panel.")
+        IllegalStateException("Supabase backend is not configured.")
       )
     }
 
     try {
-      val cleanUsername = username.trim().lowercase().replace(" ", "_").replace("@", "")
-      val displayName = "$firstName $lastName".trim().ifBlank { cleanUsername }
-
+      val cleanUsername = username.trim().lowercase().removePrefix("@")
+      val displayName = if (firstName.isNotBlank()) "$firstName $lastName".trim() else cleanUsername
       val metadata = mapOf(
         "username" to cleanUsername,
         "display_name" to displayName,
@@ -58,6 +69,7 @@ class SupabaseRepository {
 
       val response = SupabaseNetworkClient.authApi.signUp(
         apiKey = SupabaseConfig.supabaseAnonKey,
+        redirectTo = "vybe://auth-callback",
         request = request
       )
 
@@ -88,7 +100,6 @@ class SupabaseRepository {
         )
 
         val token = authBody.accessToken ?: ""
-        val refreshToken = authBody.refreshToken ?: ""
 
         // Try creating / upserting profile in public.profiles if token is present
         if (token.isNotEmpty()) {
@@ -112,14 +123,8 @@ class SupabaseRepository {
               profile = profileDto
             )
           } catch (e: Exception) {
-            Log.w(TAG, "Profile upsert notice (trigger may handle): ${e.message}")
+            Log.w(TAG, "Profile upsert notice (trigger handles): ${e.message}")
           }
-        }
-
-        val confirmationNotice = if (token.isEmpty()) {
-          "Account created! Please check your email inbox to confirm your email address before logging in."
-        } else {
-          "Account registered and verified successfully in Supabase!"
         }
 
         Result.success(Pair(createdUser, token))
@@ -143,7 +148,7 @@ class SupabaseRepository {
   ): Result<Pair<User, String>> = withContext(Dispatchers.IO) {
     if (!isConfigured) {
       return@withContext Result.failure(
-        IllegalStateException("Supabase backend is not configured. Please add your SUPABASE_URL and SUPABASE_ANON_KEY in the AI Studio Secrets panel.")
+        IllegalStateException("Supabase backend is not configured.")
       )
     }
 
@@ -161,13 +166,12 @@ class SupabaseRepository {
       if (response.isSuccessful && response.body() != null) {
         val authBody = response.body()!!
         val token = authBody.accessToken ?: return@withContext Result.failure(
-          Exception("No access token returned from Supabase.")
+          Exception("No access token returned from Supabase. (Email may not be confirmed yet)")
         )
         val userDto = authBody.user ?: return@withContext Result.failure(
           Exception("No user record returned from Supabase.")
         )
 
-        // Fetch or derive user profile
         var userProfile: User? = null
         try {
           val profilesResp = SupabaseNetworkClient.restApi.getProfileById(
@@ -205,12 +209,12 @@ class SupabaseRepository {
         }
 
         if (userProfile == null) {
-          // Derive from auth metadata
           val meta = userDto.userMetadata ?: emptyMap()
           val username = (meta["username"] as? String) ?: email.substringBefore("@")
           val displayName = (meta["display_name"] as? String) ?: username
           val firstName = (meta["first_name"] as? String) ?: ""
           val lastName = (meta["last_name"] as? String) ?: ""
+          val phone = (meta["phone"] as? String) ?: userDto.phone ?: ""
           val dob = (meta["date_of_birth"] as? String) ?: "2000-01-01"
           val age = calculateAge(dob)
 
@@ -221,7 +225,7 @@ class SupabaseRepository {
             firstName = firstName,
             lastName = lastName,
             email = userDto.email ?: email.trim(),
-            phone = userDto.phone ?: "",
+            phone = phone,
             dateOfBirth = dob,
             age = age,
             isUnder18 = age in 16..17,
@@ -233,11 +237,185 @@ class SupabaseRepository {
         Result.success(Pair(userProfile, token))
       } else {
         val errorBody = response.errorBody()?.string() ?: ""
-        val errorMsg = parseErrorMessage(errorBody, "Invalid login credentials. (${response.code()})")
+        val errorMsg = parseErrorMessage(errorBody, "Invalid login credentials (${response.code()})")
         Result.failure(Exception(errorMsg))
       }
     } catch (e: Exception) {
       Log.e(TAG, "Sign in exception: ${e.message}", e)
+      Result.failure(e)
+    }
+  }
+
+  /**
+   * Verifies an email or recovery OTP code directly in-app without requiring browser redirects.
+   */
+  suspend fun verifyOtp(
+    email: String,
+    token: String,
+    type: String = "signup"
+  ): Result<Pair<User, String>> = withContext(Dispatchers.IO) {
+    if (!isConfigured) {
+      return@withContext Result.failure(IllegalStateException("Supabase not configured."))
+    }
+    try {
+      val request = SupabaseVerifyOtpRequest(
+        type = type,
+        token = token.trim(),
+        email = email.trim()
+      )
+      val response = SupabaseNetworkClient.authApi.verifyOtp(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        request = request
+      )
+      if (response.isSuccessful && response.body() != null) {
+        val authBody = response.body()!!
+        val accessToken = authBody.accessToken ?: return@withContext Result.failure(
+          Exception("OTP verified, but session token was empty.")
+        )
+        val userDto = authBody.user ?: return@withContext Result.failure(
+          Exception("OTP verified, but user data was missing.")
+        )
+
+        var userProfile: User? = null
+        try {
+          val profilesResp = SupabaseNetworkClient.restApi.getProfileById(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = "Bearer $accessToken",
+            idFilter = "eq.${userDto.id}"
+          )
+          if (profilesResp.isSuccessful && !profilesResp.body().isNullOrEmpty()) {
+            val p = profilesResp.body()!!.first()
+            userProfile = User(
+              id = p.id,
+              username = p.username,
+              displayName = p.displayName,
+              firstName = p.firstName ?: "",
+              lastName = p.lastName ?: "",
+              email = p.email ?: userDto.email ?: "",
+              phone = p.phone ?: userDto.phone ?: "",
+              bio = p.bio ?: "",
+              avatarUrl = p.avatarUrl ?: "",
+              coverUrl = p.coverUrl ?: "",
+              dateOfBirth = p.dateOfBirth ?: "2000-01-01",
+              age = p.age ?: 20,
+              isUnder18 = p.isUnder18 ?: false,
+              role = try { UserRole.valueOf(p.role ?: "USER") } catch (e: Exception) { UserRole.USER },
+              isVerified = p.isVerified ?: false,
+              isVip = p.isVip ?: false,
+              followersCount = p.followersCount ?: 0,
+              followingCount = p.followingCount ?: 0,
+              postsCount = p.postsCount ?: 0,
+              isOnboardingCompleted = true
+            )
+          }
+        } catch (e: Exception) {
+          Log.w(TAG, "Profile fetch after OTP verify: ${e.message}")
+        }
+
+        if (userProfile == null) {
+          val meta = userDto.userMetadata ?: emptyMap()
+          val username = (meta["username"] as? String) ?: email.substringBefore("@")
+          val displayName = (meta["display_name"] as? String) ?: username
+          val firstName = (meta["first_name"] as? String) ?: ""
+          val lastName = (meta["last_name"] as? String) ?: ""
+          val phone = (meta["phone"] as? String) ?: userDto.phone ?: ""
+          val dob = (meta["date_of_birth"] as? String) ?: "2000-01-01"
+          val age = calculateAge(dob)
+
+          userProfile = User(
+            id = userDto.id,
+            username = username,
+            displayName = displayName,
+            firstName = firstName,
+            lastName = lastName,
+            email = userDto.email ?: email.trim(),
+            phone = phone,
+            dateOfBirth = dob,
+            age = age,
+            isUnder18 = age in 16..17,
+            role = UserRole.USER,
+            isOnboardingCompleted = true
+          )
+        }
+
+        Result.success(Pair(userProfile, accessToken))
+      } else {
+        val errorBody = response.errorBody()?.string() ?: ""
+        val errorMsg = parseErrorMessage(errorBody, "Invalid or expired verification code.")
+        Result.failure(Exception(errorMsg))
+      }
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  /**
+   * Sends a password reset request via Supabase Auth.
+   */
+  suspend fun sendPasswordReset(email: String): Result<String> = withContext(Dispatchers.IO) {
+    if (!isConfigured) {
+      return@withContext Result.failure(IllegalStateException("Supabase not configured."))
+    }
+    try {
+      val request = SupabaseRecoverPasswordRequest(email = email.trim())
+      val response = SupabaseNetworkClient.authApi.recoverPassword(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        redirectTo = "vybe://reset-password",
+        request = request
+      )
+      if (response.isSuccessful) {
+        Result.success("Password reset code sent to $email. Please check your inbox.")
+      } else {
+        val errorBody = response.errorBody()?.string() ?: ""
+        val errorMsg = parseErrorMessage(errorBody, "Failed to send password reset request.")
+        Result.failure(Exception(errorMsg))
+      }
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  /**
+   * Resets the user's password using the OTP code received in email.
+   */
+  suspend fun resetPasswordWithOtp(
+    email: String,
+    otp: String,
+    newPassword: String
+  ): Result<String> = withContext(Dispatchers.IO) {
+    if (!isConfigured) {
+      return@withContext Result.failure(IllegalStateException("Supabase not configured."))
+    }
+    try {
+      val verifyReq = SupabaseVerifyOtpRequest(
+        type = "recovery",
+        token = otp.trim(),
+        email = email.trim()
+      )
+      val verifyResp = SupabaseNetworkClient.authApi.verifyOtp(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        request = verifyReq
+      )
+      if (!verifyResp.isSuccessful || verifyResp.body()?.accessToken == null) {
+        val err = parseErrorMessage(verifyResp.errorBody()?.string() ?: "", "Invalid or expired recovery code.")
+        return@withContext Result.failure(Exception(err))
+      }
+
+      val token = verifyResp.body()!!.accessToken!!
+      val updateReq = SupabaseUpdateUserRequest(password = newPassword)
+      val updateResp = SupabaseNetworkClient.authApi.updateUser(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = "Bearer $token",
+        request = updateReq
+      )
+
+      if (updateResp.isSuccessful) {
+        Result.success("Password reset successfully! Please log in with your new password.")
+      } else {
+        val err = parseErrorMessage(updateResp.errorBody()?.string() ?: "", "Failed to update password.")
+        Result.failure(Exception(err))
+      }
+    } catch (e: Exception) {
       Result.failure(e)
     }
   }
@@ -260,8 +438,16 @@ class SupabaseRepository {
     return try {
       val parts = dateOfBirth.split("-")
       if (parts.size == 3) {
-        val dob = LocalDate.of(parts[0].toInt(), parts[1].toInt(), parts[2].toInt())
-        Period.between(dob, LocalDate.now()).years
+        val y = parts[0].toInt()
+        val m = parts[1].toInt()
+        val d = parts[2].toInt()
+        val cal = java.util.Calendar.getInstance()
+        val cy = cal.get(java.util.Calendar.YEAR)
+        val cm = cal.get(java.util.Calendar.MONTH) + 1
+        val cd = cal.get(java.util.Calendar.DAY_OF_MONTH)
+        var calculated = cy - y
+        if (cm < m || (cm == m && cd < d)) calculated--
+        calculated
       } else 20
     } catch (e: Exception) {
       20

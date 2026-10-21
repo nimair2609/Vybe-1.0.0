@@ -17,6 +17,25 @@ data class SupabaseSignInRequest(
 )
 
 @JsonClass(generateAdapter = true)
+data class SupabaseVerifyOtpRequest(
+  val type: String,
+  val token: String,
+  val email: String? = null,
+  val phone: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class SupabaseRecoverPasswordRequest(
+  val email: String
+)
+
+@JsonClass(generateAdapter = true)
+data class SupabaseUpdateUserRequest(
+  val password: String? = null,
+  val data: Map<String, Any?>? = null
+)
+
+@JsonClass(generateAdapter = true)
 data class SupabaseAuthResponse(
   @Json(name = "access_token") val accessToken: String? = null,
   @Json(name = "token_type") val tokenType: String? = null,

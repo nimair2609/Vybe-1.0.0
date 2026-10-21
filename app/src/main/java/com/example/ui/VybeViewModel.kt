@@ -364,6 +364,22 @@ class VybeViewModel : ViewModel() {
   val isSupabaseConfigured: Boolean
     get() = repository.isSupabaseConfigured
 
+  suspend fun verifyOtp(email: String, token: String, type: String = "signup"): Pair<Boolean, String> {
+    val result = repository.verifyOtp(email, token, type)
+    if (result.first) {
+      _currentScreen.value = Screen.MAIN
+    }
+    return result
+  }
+
+  suspend fun sendPasswordReset(email: String): Pair<Boolean, String> {
+    return repository.sendPasswordReset(email)
+  }
+
+  suspend fun resetPasswordWithOtp(email: String, otp: String, newPass: String): Pair<Boolean, String> {
+    return repository.resetPasswordWithOtp(email, otp, newPass)
+  }
+
   suspend fun loginWithSupabase(identifier: String, pass: String): Pair<Boolean, String> {
     val result = repository.loginWithSupabase(identifier, pass)
     if (result.first) {

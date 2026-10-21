@@ -1,12 +1,13 @@
 package com.example
 
+import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -17,9 +18,11 @@ import com.example.ui.screens.*
 import com.example.ui.theme.VybeTheme
 
 class MainActivity : ComponentActivity() {
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     com.example.data.repository.VybeRepository.getInstance().initSession(applicationContext)
+    handleAuthDeepLink(intent)
     enableEdgeToEdge()
     setContent {
       val viewModel: VybeViewModel = viewModel()
@@ -53,6 +56,19 @@ class MainActivity : ComponentActivity() {
           }
         }
       }
+    }
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    handleAuthDeepLink(intent)
+  }
+
+  private fun handleAuthDeepLink(intent: Intent?) {
+    val data = intent?.data ?: return
+    if (data.scheme == "vybe") {
+      Log.i("MainActivity", "Captured auth deep link: $data")
     }
   }
 }
