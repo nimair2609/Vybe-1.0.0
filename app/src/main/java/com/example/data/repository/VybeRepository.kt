@@ -1644,7 +1644,8 @@ class VybeRepository private constructor() {
     category: String,
     optionA: String,
     optionB: String,
-    peerUser: User
+    peerUser: User,
+    isPublic: Boolean = false
   ) {
     val user = _currentUser.value
     val newPrompt = DoubleTakePrompt(
@@ -1656,9 +1657,50 @@ class VybeRepository private constructor() {
       creatorId = user?.id ?: "u_me",
       peerUser = peerUser,
       peerAnswer = if (optionA.isNotBlank()) optionA else "Yes",
-      isPeerAnswerSubmitted = true
+      isPeerAnswerSubmitted = true,
+      isPublic = isPublic,
+      publicAnswers = if (isPublic) listOf(
+        com.example.data.model.PublicAnswer(
+          id = "pa_1",
+          user = peerUser,
+          answer = optionA,
+          timestamp = "5m ago",
+          isConnected = false
+        )
+      ) else emptyList()
     )
     _doubleTakePrompts.value = listOf(newPrompt) + _doubleTakePrompts.value
+  }
+
+  fun submitPublicDoubleTakeAnswer(promptId: String, answer: String) {
+    val user = _currentUser.value ?: return
+    _doubleTakePrompts.value = _doubleTakePrompts.value.map { prompt ->
+      if (prompt.id == promptId) {
+        val newAns = com.example.data.model.PublicAnswer(
+          id = "pa_${System.currentTimeMillis()}",
+          user = user,
+          answer = answer,
+          timestamp = "Just now",
+          isConnected = false
+        )
+        prompt.copy(
+          publicAnswers = prompt.publicAnswers + newAns,
+          myAnswer = answer,
+          isMyAnswerSubmitted = true
+        )
+      } else prompt
+    }
+  }
+
+  fun connectWithPublicDoubleTakeAnswer(promptId: String, answerId: String) {
+    _doubleTakePrompts.value = _doubleTakePrompts.value.map { prompt ->
+      if (prompt.id == promptId) {
+        val updated = prompt.publicAnswers.map { ans ->
+          if (ans.id == answerId) ans.copy(isConnected = true) else ans
+        }
+        prompt.copy(publicAnswers = updated, isChatUnlocked = true)
+      } else prompt
+    }
   }
 
   fun deleteDoubleTakePrompt(promptId: String) {
@@ -2053,6 +2095,68 @@ class VybeRepository private constructor() {
     )
     _conversations.value = listOf(groupConv) + _conversations.value
     return groupConv
+  }
+
+  fun markConversationAsRead(conversationId: String) {
+    val current = _conversations.value.toMutableList()
+    val index = current.indexOfFirst { it.id == conversationId }
+    if (index != -1) {
+      current[index] = current[index].copy(unreadCount = 0)
+      _conversations.value = current
+    }
+  }
+
+  fun deleteConversation(conversationId: String) {
+    _conversations.value = _conversations.value.filterNot { it.id == conversationId }
+  }
+
+  fun addGroupMember(conversationId: String, newMember: User) {
+    val current = _conversations.value.toMutableList()
+    val index = current.indexOfFirst { it.id == conversationId }
+    if (index != -1) {
+      val conv = current[index]
+      if (!conv.groupMembers.any { it.id == newMember.id }) {
+        val updatedMembers = conv.groupMembers + newMember
+        current[index] = conv.copy(groupMembers = updatedMembers)
+        _conversations.value = current
+      }
+    }
+  }
+
+  fun removeGroupMember(conversationId: String, memberUserId: String) {
+    val current = _conversations.value.toMutableList()
+    val index = current.indexOfFirst { it.id == conversationId }
+    if (index != -1) {
+      val conv = current[index]
+      val updatedMembers = conv.groupMembers.filterNot { it.id == memberUserId }
+      current[index] = conv.copy(groupMembers = updatedMembers)
+      _conversations.value = current
+    }
+  }
+
+  fun sendVoiceMessage(conversationId: String, durationText: String = "0:08") {
+    val user = _currentUser.value ?: userMe
+    val voiceMsg = DirectMessage(
+      id = "vmsg_${System.currentTimeMillis()}",
+      senderId = user.id,
+      text = "🎙️ Voice Message ($durationText)",
+      timestamp = "Just now",
+      isMe = true,
+      mediaType = "AUDIO",
+      fileName = "voice_note_${System.currentTimeMillis()}.m4a"
+    )
+    val current = _conversations.value.toMutableList()
+    val index = current.indexOfFirst { it.id == conversationId }
+    if (index != -1) {
+      val conv = current[index]
+      val updatedMsgs = conv.messages + voiceMsg
+      current[index] = conv.copy(
+        messages = updatedMsgs,
+        lastMessage = "🎙️ Voice Message ($durationText)",
+        lastMessageTimestamp = "Just now"
+      )
+      _conversations.value = current
+    }
   }
 
   fun updateChatNickname(conversationId: String, nickname: String) {

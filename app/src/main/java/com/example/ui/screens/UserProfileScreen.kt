@@ -700,17 +700,154 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
     }
   }
 
-  // Edit Profile Modal (Section 11 & 12)
+  // Edit Profile Full Screen (Section 11 & 12)
   if (showEditProfileModal) {
-    AlertDialog(
+    androidx.compose.ui.window.Dialog(
       onDismissRequest = { showEditProfileModal = false },
-      title = { Text("Edit Profile & Media", fontWeight = FontWeight.Bold) },
-      text = {
+      properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+      Scaffold(
+        topBar = {
+          TopAppBar(
+            title = { Text("Edit Profile", fontWeight = FontWeight.Bold) },
+            navigationIcon = {
+              IconButton(onClick = { showEditProfileModal = false }) {
+                Icon(Icons.Default.Close, contentDescription = "Close")
+              }
+            },
+            actions = {
+              Button(
+                onClick = {
+                  if (isAvailable) {
+                    viewModel.updateAccountProfile(
+                      firstName = editFirstName,
+                      lastName = editLastName,
+                      requestedUserId = editUsername,
+                      email = currentUser?.email ?: "",
+                      phone = currentUser?.phone ?: "",
+                      bio = editBio,
+                      avatarUrl = editAvatarUrl,
+                      profileVideoUrl = editVideoUrl,
+                      coverUrl = editCoverUrl
+                    )
+                    showEditProfileModal = false
+                  }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                modifier = Modifier.padding(end = 8.dp)
+              ) {
+                Text("Save", fontWeight = FontWeight.Bold)
+              }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+          )
+        }
+      ) { innerPadding ->
         Column(
-          modifier = Modifier.fillMaxWidth(),
-          verticalArrangement = Arrangement.spacedBy(10.dp)
+          modifier = Modifier
+            .fillMaxSize()
+            .padding(innerPadding)
+            .padding(horizontal = 20.dp)
+            .verticalScroll(rememberScrollState()),
+          verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          Spacer(modifier = Modifier.height(4.dp))
+
+          // Banner Preview & Picker
+          Text("Profile Banner Cover", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+          Box(
+            modifier = Modifier
+              .fillMaxWidth()
+              .height(130.dp)
+              .clip(RoundedCornerShape(14.dp))
+              .background(
+                androidx.compose.ui.graphics.Brush.horizontalGradient(
+                  listOf(VybeVioletDark, ObsidianSurface, VybeVioletDark)
+                )
+              )
+              .clickable {
+                bannerPickerLauncher.launch(
+                  PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+              }
+          ) {
+            if (editCoverUrl.isNotBlank()) {
+              AsyncImage(
+                model = editCoverUrl,
+                contentDescription = "Cover preview",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+              )
+            }
+            Surface(
+              color = Color.Black.copy(alpha = 0.6f),
+              shape = CircleShape,
+              modifier = Modifier
+                .align(Alignment.Center)
+                .padding(8.dp)
+            ) {
+              Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Change Cover Banner", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+              }
+            }
+          }
+
+          // Avatar Preview & Picker
+          Text("Avatar Profile Photo", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+              modifier = Modifier
+                .size(72.dp)
+                .clip(CircleShape)
+                .background(
+                  androidx.compose.ui.graphics.Brush.linearGradient(listOf(VybeBrandViolet, VybeBrandMagenta))
+                )
+                .clickable {
+                  avatarPickerLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                  )
+                },
+              contentAlignment = Alignment.Center
+            ) {
+              if (editAvatarUrl.isNotBlank()) {
+                AsyncImage(
+                  model = editAvatarUrl,
+                  contentDescription = "Avatar preview",
+                  contentScale = ContentScale.Crop,
+                  modifier = Modifier.fillMaxSize().clip(CircleShape)
+                )
+              } else {
+                Text(
+                  text = editFirstName.take(1).uppercase().ifBlank { "U" },
+                  color = Color.White,
+                  fontWeight = FontWeight.Bold,
+                  fontSize = 28.sp
+                )
+              }
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            OutlinedButton(
+              onClick = {
+                avatarPickerLauncher.launch(
+                  PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+              },
+              shape = RoundedCornerShape(12.dp)
+            ) {
+              Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(16.dp))
+              Spacer(modifier = Modifier.width(6.dp))
+              Text("Upload Photo", fontWeight = FontWeight.SemiBold)
+            }
+          }
+
+          Divider(modifier = Modifier.padding(vertical = 4.dp))
+
+          Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(
               value = editFirstName,
               onValueChange = { editFirstName = it },
@@ -735,7 +872,7 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
               isAvailable = avail
               availabilityMessage = msg
             },
-            label = { Text("Rename User ID") },
+            label = { Text("User ID (@username)") },
             leadingIcon = { Text("@", fontWeight = FontWeight.Bold, color = VybeViolet) },
             supportingText = {
               if (availabilityMessage != null) {
@@ -753,90 +890,16 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
           OutlinedTextField(
             value = editBio,
             onValueChange = { editBio = it },
-            label = { Text("Bio") },
-            minLines = 2,
+            label = { Text("Bio (Introduce your vibe)") },
+            minLines = 3,
+            maxLines = 5,
             modifier = Modifier.fillMaxWidth()
           )
 
-          // Media Selection (Requirement L)
-          Text("Profile Photo (Still Image Only):", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Text(
-              text = if (editAvatarUrl.isNotBlank()) "Photo attached" else "Default avatar",
-              fontSize = 11.sp,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            OutlinedButton(
-              onClick = {
-                avatarPickerLauncher.launch(
-                  PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                )
-              },
-              shape = RoundedCornerShape(10.dp)
-            ) {
-              Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(14.dp))
-              Spacer(modifier = Modifier.width(4.dp))
-              Text("Choose Photo", fontSize = 11.sp)
-            }
-          }
-
-          Text("Banner (Photo Only):", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Text(
-              text = if (editCoverUrl.isNotBlank()) "Banner attached" else "Default banner",
-              fontSize = 11.sp,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            OutlinedButton(
-              onClick = {
-                bannerPickerLauncher.launch(
-                  PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                )
-              },
-              shape = RoundedCornerShape(10.dp)
-            ) {
-              Icon(Icons.Default.Panorama, contentDescription = null, modifier = Modifier.size(14.dp))
-              Spacer(modifier = Modifier.width(4.dp))
-              Text("Choose Banner", fontSize = 11.sp)
-            }
-          }
+          Spacer(modifier = Modifier.height(24.dp))
         }
-      },
-      confirmButton = {
-        Button(
-          onClick = {
-            if (isAvailable) {
-              viewModel.updateAccountProfile(
-                firstName = editFirstName,
-                lastName = editLastName,
-                requestedUserId = editUsername,
-                email = currentUser?.email ?: "",
-                phone = currentUser?.phone ?: "",
-                bio = editBio,
-                avatarUrl = editAvatarUrl,
-                profileVideoUrl = editVideoUrl,
-                coverUrl = editCoverUrl
-              )
-              showEditProfileModal = false
-            }
-          },
-          colors = ButtonDefaults.buttonColors(containerColor = VybeViolet)
-        ) {
-          Text("Save Changes")
-        }
-      },
-      dismissButton = {
-        TextButton(onClick = { showEditProfileModal = false }) { Text("Cancel") }
       }
-    )
+    }
   }
 
   // Go Live Modal (Requirement L)

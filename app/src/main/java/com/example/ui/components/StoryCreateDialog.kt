@@ -92,11 +92,9 @@ fun StoryCreateDialog(
   var selectedLocation by remember { mutableStateOf<String?>(null) }
   var showLocationPicker by remember { mutableStateOf(false) }
 
-  // Photo / Media state
+  // Photo / Media state (starts clean without default pre-selected photo)
   var pickedMediaUri by remember { mutableStateOf<Uri?>(null) }
-  var samplePhotoUrl by remember {
-    mutableStateOf("https://images.unsplash.com/photo-1519741497674-611481863552?w=800")
-  }
+  var samplePhotoUrl by remember { mutableStateOf<String?>(null) }
 
   // Text mode state
   var textBackgroundKey by remember { mutableStateOf("NEON_PURPLE") }
@@ -317,33 +315,56 @@ fun StoryCreateDialog(
                   contentScale = ContentScale.Crop,
                   modifier = Modifier.fillMaxSize()
                 )
-              } else {
+              } else if (samplePhotoUrl != null) {
                 AsyncImage(
                   model = samplePhotoUrl,
                   contentDescription = "Sample photo",
                   contentScale = ContentScale.Crop,
                   modifier = Modifier.fillMaxSize()
                 )
+              } else {
+                Box(
+                  modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                      Brush.verticalGradient(listOf(Color(0xFF2A2338), Color(0xFF13111C)))
+                    )
+                    .clickable {
+                      photoPicker.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                      )
+                    },
+                  contentAlignment = Alignment.Center
+                ) {
+                  Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(48.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text("Tap to Select Photo from Device", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("Or choose another story format above", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
+                  }
+                }
               }
 
               // Gallery Picker Overlay button
-              Box(
-                modifier = Modifier
-                  .align(Alignment.BottomEnd)
-                  .padding(12.dp)
-                  .clip(RoundedCornerShape(12.dp))
-                  .background(Color.Black.copy(alpha = 0.6f))
-                  .clickable {
-                    photoPicker.launch(
-                      PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
+              if (pickedMediaUri != null || samplePhotoUrl != null) {
+                Box(
+                  modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(12.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .clickable {
+                      photoPicker.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                      )
+                    }
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Change Photo", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                   }
-                  .padding(horizontal = 12.dp, vertical = 8.dp)
-              ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                  Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text("Change Photo", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
               }
             }

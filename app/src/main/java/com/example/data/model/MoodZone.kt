@@ -15,13 +15,13 @@ enum class MoodType(
   val vibeTagline: String,
   val safetyGuideline: String
 ) {
-  HEARTBREAK(
-    title = "Heartbreak",
-    subtitle = "Supportive reflections & solidarity",
-    emoji = "💔",
-    accentColor = MoodHeartbreak,
-    vibeTagline = "A safe space for honesty, healing tears, and silent company.",
-    safetyGuideline = "Be kind. Hostility or unwanted romantic pressure is prohibited."
+  GENERAL(
+    title = "General",
+    subtitle = "Mixup feed of all community vibes",
+    emoji = "🌐",
+    accentColor = Color(0xFF00E5FF),
+    vibeTagline = "All moods combined. Explore the unfiltered diversity of VYBE.",
+    safetyGuideline = "Open to everyone. Be respectful and mindful of diverse emotions."
   ),
   HAPPY(
     title = "Happy",
@@ -30,6 +30,14 @@ enum class MoodType(
     accentColor = MoodHappy,
     vibeTagline = "Share your wins, everyday joys, and wholesome energy.",
     safetyGuideline = "Celebrate together and keep the vibes uplifting!"
+  ),
+  HEARTBREAK(
+    title = "Heartbreak",
+    subtitle = "Supportive reflections & solidarity",
+    emoji = "💔",
+    accentColor = MoodHeartbreak,
+    vibeTagline = "A safe space for honesty, healing tears, and silent company.",
+    safetyGuideline = "Be kind. Hostility or unwanted romantic pressure is prohibited."
   ),
   CHILL(
     title = "Chill",
@@ -40,7 +48,7 @@ enum class MoodType(
     safetyGuideline = "No loud arguments or controversial debates here."
   ),
   HEALING(
-    title = "Healing & Beginnings",
+    title = "Healing & Beginning",
     subtitle = "Growth, fresh starts & encouragement",
     emoji = "🌱",
     accentColor = MoodHealing,

@@ -1,5 +1,13 @@
 package com.example.data.model
 
+data class PublicAnswer(
+  val id: String,
+  val user: User,
+  val answer: String,
+  val timestamp: String = "Just now",
+  val isConnected: Boolean = false
+)
+
 data class DoubleTakePrompt(
   val id: String,
   val promptQuestion: String,
@@ -15,7 +23,9 @@ data class DoubleTakePrompt(
   val isRevealed: Boolean = false,
   val matchReactionsCount: Int = 0,
   val isCreatorAccepted: Boolean = false,
-  val isChatUnlocked: Boolean = false
+  val isChatUnlocked: Boolean = false,
+  val isPublic: Boolean = false,
+  val publicAnswers: List<PublicAnswer> = emptyList()
 )
 
 data class PredictionOption(

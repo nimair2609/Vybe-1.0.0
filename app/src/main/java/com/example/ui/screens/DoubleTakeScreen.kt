@@ -141,28 +141,46 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
           )
         ) {
           Column(modifier = Modifier.padding(16.dp)) {
-            // Category & Peer header
+            // Category & Type Header
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.SpaceBetween,
               verticalAlignment = Alignment.CenterVertically
             ) {
-              Surface(
-                color = VybeMagenta.copy(alpha = 0.15f),
-                shape = RoundedCornerShape(6.dp)
-              ) {
-                Text(
-                  text = prompt.category.uppercase(),
-                  fontSize = 10.sp,
-                  fontWeight = FontWeight.Bold,
-                  color = VybeMagenta,
-                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                )
-              }
               Row(verticalAlignment = Alignment.CenterVertically) {
-                VybeAvatar(user = prompt.peerUser, size = 24.dp)
+                Surface(
+                  color = VybeMagenta.copy(alpha = 0.15f),
+                  shape = RoundedCornerShape(6.dp)
+                ) {
+                  Text(
+                    text = prompt.category.uppercase(),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = VybeMagenta,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                  )
+                }
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("@${prompt.peerUser.username}", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Surface(
+                  color = if (prompt.isPublic) VybeBrandCyan.copy(alpha = 0.2f) else VybeViolet.copy(alpha = 0.2f),
+                  shape = RoundedCornerShape(6.dp)
+                ) {
+                  Text(
+                    text = if (prompt.isPublic) "PUBLIC PROMPT 🌐" else "PRIVATE TAGGED 👥",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (prompt.isPublic) VybeBrandCyan else VybeViolet,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                  )
+                }
+              }
+
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!prompt.isPublic) {
+                  VybeAvatar(user = prompt.peerUser, size = 24.dp)
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text("@${prompt.peerUser.username}", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                }
                 if (isCreator) {
                   Spacer(modifier = Modifier.width(6.dp))
                   IconButton(
@@ -186,108 +204,235 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Two-Choice Yes / No buttons
-            if (!prompt.isMyAnswerSubmitted) {
-              Text("Choose your honest answer to reveal:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              Spacer(modifier = Modifier.height(8.dp))
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-              ) {
-                Button(
-                  onClick = { viewModel.submitDoubleTakeAnswer(prompt.id, prompt.optionA) },
-                  colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-                  shape = RoundedCornerShape(10.dp),
-                  modifier = Modifier.weight(1f).testTag("answer_optA_${prompt.id}")
-                ) {
-                  Text(prompt.optionA, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                }
-                Button(
-                  onClick = { viewModel.submitDoubleTakeAnswer(prompt.id, prompt.optionB) },
-                  colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                  shape = RoundedCornerShape(10.dp),
-                  modifier = Modifier.weight(1f).testTag("answer_optB_${prompt.id}")
-                ) {
-                  Text(prompt.optionB, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
-                }
-              }
-            } else {
-              // Answer Submitted State
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-              ) {
-                // My Answer Card
-                Surface(
-                  color = VybeViolet.copy(alpha = 0.2f),
-                  shape = RoundedCornerShape(10.dp),
-                  modifier = Modifier.weight(1f)
-                ) {
-                  Column(modifier = Modifier.padding(10.dp)) {
-                    Text("Your Answer", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(prompt.myAnswer, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = VybeViolet)
+            if (prompt.isPublic) {
+              // PUBLIC PROMPT LOGIC
+              if (isCreator) {
+                // Author reviews public community answers
+                Text(
+                  text = "Community Answers (${prompt.publicAnswers.size})",
+                  fontSize = 12.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = VybeBrandCyan
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (prompt.publicAnswers.isEmpty()) {
+                  Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                  ) {
+                    Text(
+                      text = "No answers submitted yet. Your public prompt is live for anyone to answer!",
+                      fontSize = 11.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      modifier = Modifier.padding(12.dp)
+                    )
+                  }
+                } else {
+                  Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    prompt.publicAnswers.forEach { ans ->
+                      Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                      ) {
+                        Row(
+                          modifier = Modifier.padding(10.dp),
+                          verticalAlignment = Alignment.CenterVertically,
+                          horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                          Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                            VybeAvatar(user = ans.user, size = 32.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                              Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(ans.user.displayName, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("@${ans.user.username}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                              }
+                              Text(
+                                text = "Chose: \"${ans.answer}\" • ${ans.timestamp}",
+                                fontSize = 11.sp,
+                                color = VybeViolet,
+                                fontWeight = FontWeight.SemiBold
+                              )
+                            }
+                          }
+
+                          if (ans.isConnected) {
+                            Surface(
+                              color = VybeOnlineGreen.copy(alpha = 0.2f),
+                              shape = RoundedCornerShape(6.dp)
+                            ) {
+                              Text(
+                                text = "Connected ✓",
+                                fontSize = 10.sp,
+                                color = VybeOnlineGreen,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                              )
+                            }
+                          } else {
+                            Button(
+                              onClick = { viewModel.connectWithPublicDoubleTakeAnswer(prompt.id, ans.id) },
+                              colors = ButtonDefaults.buttonColors(containerColor = VybeOnlineGreen),
+                              shape = RoundedCornerShape(8.dp),
+                              contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                              Text("Connect", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                          }
+                        }
+                      }
+                    }
                   }
                 }
-
-                // Peer Answer Card (Hidden or Revealed)
-                Surface(
-                  color = if (isRevealed) VybeMagenta.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
-                  shape = RoundedCornerShape(10.dp),
-                  modifier = Modifier.weight(1f)
-                ) {
-                  Column(modifier = Modifier.padding(10.dp)) {
-                    Text("${prompt.peerUser.displayName}'s Answer", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.height(2.dp))
-                    if (isRevealed) {
-                      Text(prompt.peerAnswer, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = VybeMagenta)
-                    } else {
-                      Text("🔒 Sealed until match", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              } else {
+                // Non-author participant answering public prompt
+                if (!prompt.isMyAnswerSubmitted) {
+                  Text("Submit your answer to this public prompt:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  Spacer(modifier = Modifier.height(8.dp))
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                  ) {
+                    Button(
+                      onClick = { viewModel.submitPublicDoubleTakeAnswer(prompt.id, prompt.optionA) },
+                      colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                      shape = RoundedCornerShape(10.dp),
+                      modifier = Modifier.weight(1f).testTag("public_answer_optA_${prompt.id}")
+                    ) {
+                      Text(prompt.optionA, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                    Button(
+                      onClick = { viewModel.submitPublicDoubleTakeAnswer(prompt.id, prompt.optionB) },
+                      colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                      shape = RoundedCornerShape(10.dp),
+                      modifier = Modifier.weight(1f).testTag("public_answer_optB_${prompt.id}")
+                    ) {
+                      Text(prompt.optionB, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                  }
+                } else {
+                  Surface(
+                    color = VybeViolet.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                  ) {
+                    Row(
+                      modifier = Modifier.padding(12.dp),
+                      verticalAlignment = Alignment.CenterVertically
+                    ) {
+                      Icon(Icons.Default.CheckCircle, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(18.dp))
+                      Spacer(modifier = Modifier.width(8.dp))
+                      Column {
+                        Text("Your Answer: \"${prompt.myAnswer}\"", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = VybeViolet)
+                        Text("Submitted to author. If they connect with your response, a chat will open!", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      }
                     }
                   }
                 }
               }
-            }
-
-            // Match Unlocked Celebration & Conversation Link
-            if (isMatched) {
-              Spacer(modifier = Modifier.height(12.dp))
-              Surface(
-                color = VybeOnlineGreen.copy(alpha = 0.15f),
-                shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, VybeOnlineGreen.copy(alpha = 0.4f)),
-                modifier = Modifier.fillMaxWidth()
-              ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                  Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("✨ It's a Match!", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = VybeOnlineGreen)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Both agreed on \"${prompt.myAnswer}\"", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                  }
-                  Spacer(modifier = Modifier.height(8.dp))
+            } else {
+              // PRIVATE TAGGED FRIENDS LOGIC (Blind synchronous reveal)
+              if (!prompt.isMyAnswerSubmitted) {
+                Text("Choose your honest answer to reveal:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                   Button(
-                    onClick = {
-                      viewModel.selectTab(com.example.ui.MainTab.INBOX)
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = VybeOnlineGreen),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth().testTag("open_chat_double_take_${prompt.id}")
+                    onClick = { viewModel.submitDoubleTakeAnswer(prompt.id, prompt.optionA) },
+                    colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f).testTag("answer_optA_${prompt.id}")
                   ) {
-                    Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Open Conversation with @${prompt.peerUser.username}", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(prompt.optionA, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                  }
+                  Button(
+                    onClick = { viewModel.submitDoubleTakeAnswer(prompt.id, prompt.optionB) },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f).testTag("answer_optB_${prompt.id}")
+                  ) {
+                    Text(prompt.optionB, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                  }
+                }
+              } else {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                  Surface(
+                    color = VybeViolet.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f)
+                  ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                      Text("Your Answer", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      Spacer(modifier = Modifier.height(2.dp))
+                      Text(prompt.myAnswer, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = VybeViolet)
+                    }
+                  }
+
+                  Surface(
+                    color = if (isRevealed) VybeMagenta.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f)
+                  ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                      Text("${prompt.peerUser.displayName}'s Answer", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      Spacer(modifier = Modifier.height(2.dp))
+                      if (isRevealed) {
+                        Text(prompt.peerAnswer, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = VybeMagenta)
+                      } else {
+                        Text("🔒 Sealed until match", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      }
+                    }
                   }
                 }
               }
-            } else if (isRevealed && isCreator && !prompt.isCreatorAccepted) {
-              // Creator option to accept answer as match anyway
-              Spacer(modifier = Modifier.height(10.dp))
-              OutlinedButton(
-                onClick = { viewModel.acceptDoubleTakeMatch(prompt.id) },
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth().testTag("accept_double_take_${prompt.id}")
-              ) {
-                Text("Accept Answer as Compatible & Unlock Chat", fontSize = 11.sp)
+
+              if (isMatched) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                  color = VybeOnlineGreen.copy(alpha = 0.15f),
+                  shape = RoundedCornerShape(12.dp),
+                  border = androidx.compose.foundation.BorderStroke(1.dp, VybeOnlineGreen.copy(alpha = 0.4f)),
+                  modifier = Modifier.fillMaxWidth()
+                ) {
+                  Column(modifier = Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                      Text("✨ It's a Match!", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = VybeOnlineGreen)
+                      Spacer(modifier = Modifier.width(6.dp))
+                      Text("Both agreed on \"${prompt.myAnswer}\"", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                      onClick = {
+                        viewModel.selectTab(com.example.ui.MainTab.INBOX)
+                      },
+                      colors = ButtonDefaults.buttonColors(containerColor = VybeOnlineGreen),
+                      shape = RoundedCornerShape(8.dp),
+                      modifier = Modifier.fillMaxWidth().testTag("open_chat_double_take_${prompt.id}")
+                    ) {
+                      Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
+                      Spacer(modifier = Modifier.width(6.dp))
+                      Text("Open Conversation with @${prompt.peerUser.username}", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                  }
+                }
+              } else if (isRevealed && isCreator && !prompt.isCreatorAccepted) {
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedButton(
+                  onClick = { viewModel.acceptDoubleTakeMatch(prompt.id) },
+                  shape = RoundedCornerShape(8.dp),
+                  modifier = Modifier.fillMaxWidth().testTag("accept_double_take_${prompt.id}")
+                ) {
+                  Text("Accept Answer as Compatible & Unlock Chat", fontSize = 11.sp)
+                }
               }
             }
           }
@@ -296,8 +441,9 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
     }
   }
 
-  // Create Double Take Dialog
+  // Create Double Take Dialog (Public vs Private Mode)
   if (showCreateDialog) {
+    var isPublicMode by remember { mutableStateOf(false) }
     val peerOptions = remember {
       listOf(
         com.example.data.model.User(
@@ -322,13 +468,31 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
       title = { Text("Create Double Take", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          Text("Prompt Type", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            FilterChip(
+              selected = !isPublicMode,
+              onClick = { isPublicMode = false },
+              label = { Text("Private (Tag Friends)", fontSize = 11.sp) }
+            )
+            FilterChip(
+              selected = isPublicMode,
+              onClick = { isPublicMode = true },
+              label = { Text("Public (Anyone Answers)", fontSize = 11.sp) }
+            )
+          }
+
           OutlinedTextField(
             value = newQuestion,
             onValueChange = { newQuestion = it },
             label = { Text("Prompt Question") },
             placeholder = { Text("e.g. Filter coffee or Matcha Latte?") },
             modifier = Modifier.fillMaxWidth().testTag("double_take_question_input"),
-            maxLines = 3
+            maxLines = 3,
+            shape = RoundedCornerShape(12.dp)
           )
 
           Row(
@@ -340,24 +504,42 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
               onValueChange = { newOptA = it },
               label = { Text("Option A") },
               modifier = Modifier.weight(1f),
-              singleLine = true
+              singleLine = true,
+              shape = RoundedCornerShape(10.dp)
             )
             OutlinedTextField(
               value = newOptB,
               onValueChange = { newOptB = it },
               label = { Text("Option B") },
               modifier = Modifier.weight(1f),
-              singleLine = true
+              singleLine = true,
+              shape = RoundedCornerShape(10.dp)
             )
           }
 
-          Text("Send Prompt To:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            peerOptions.forEachIndexed { idx, peer ->
-              FilterChip(
-                selected = selectedPeerIndex == idx,
-                onClick = { selectedPeerIndex = idx },
-                label = { Text("@${peer.username}", fontSize = 11.sp) }
+          if (!isPublicMode) {
+            Text("Tag Friend to Answer:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              peerOptions.forEachIndexed { idx, peer ->
+                FilterChip(
+                  selected = selectedPeerIndex == idx,
+                  onClick = { selectedPeerIndex = idx },
+                  label = { Text("@${peer.username}", fontSize = 11.sp) }
+                )
+              }
+            }
+          } else {
+            Surface(
+              color = VybeBrandCyan.copy(alpha = 0.15f),
+              shape = RoundedCornerShape(10.dp),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Text(
+                text = "🌐 Public mode: Community members can answer your prompt. You can check all their answers and tap Connect to start chatting!",
+                fontSize = 11.sp,
+                color = VybeBrandCyan,
+                modifier = Modifier.padding(10.dp),
+                lineHeight = 15.sp
               )
             }
           }
@@ -373,7 +555,8 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
                 category = newCategory,
                 optA = newOptA.trim().ifBlank { "Yes" },
                 optB = newOptB.trim().ifBlank { "No" },
-                peer = peer
+                peer = peer,
+                isPublic = isPublicMode
               )
               showCreateDialog = false
             }
@@ -382,7 +565,7 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
           colors = ButtonDefaults.buttonColors(containerColor = VybeMagenta),
           modifier = Modifier.testTag("submit_double_take_button")
         ) {
-          Text("Launch Double Take", fontWeight = FontWeight.Bold)
+          Text(if (isPublicMode) "Launch Public Prompt" else "Launch Double Take", fontWeight = FontWeight.Bold)
         }
       },
       dismissButton = {

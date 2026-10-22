@@ -260,71 +260,168 @@ fun PostCard(
     }
   }
 
-  // Comment Dialog
+  // Instagram / Facebook Style Comment Sheet
   if (showCommentDialog) {
-    AlertDialog(
+    ModalBottomSheet(
       onDismissRequest = { showCommentDialog = false },
-      title = { Text("Comments (${post.comments.size})", fontWeight = FontWeight.Bold) },
-      text = {
-        Column(modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
+      dragHandle = { BottomSheetDefaults.DragHandle() },
+      containerColor = MaterialTheme.colorScheme.surface,
+      windowInsets = WindowInsets.ime.union(WindowInsets.navigationBars)
+    ) {
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 16.dp)
+          .navigationBarsPadding()
+      ) {
+        // Header
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+          horizontalArrangement = Arrangement.Center,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Text(
+            text = "Comments (${post.comments.size})",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+          )
+        }
+
+        Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+        // Comments List
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .weight(1f, fill = false)
+            .heightIn(min = 120.dp, max = 360.dp)
+        ) {
           if (post.comments.isEmpty()) {
-            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
-              Text("No comments yet. Start the conversation!", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Box(
+              modifier = Modifier.fillMaxSize().padding(24.dp),
+              contentAlignment = Alignment.Center
+            ) {
+              Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(36.dp))
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("No comments yet", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("Start the conversation by sharing your vibe below.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              }
             }
           } else {
             androidx.compose.foundation.lazy.LazyColumn(
-              modifier = Modifier.weight(1f, fill = false),
-              verticalArrangement = Arrangement.spacedBy(8.dp)
+              modifier = Modifier.fillMaxSize(),
+              contentPadding = PaddingValues(vertical = 12.dp),
+              verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
               items(post.comments) { comment ->
                 Row(
-                  modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                  modifier = Modifier.fillMaxWidth(),
                   verticalAlignment = Alignment.Top
                 ) {
-                  VybeAvatar(user = comment.author, size = 30.dp)
-                  Spacer(modifier = Modifier.width(8.dp))
+                  VybeAvatar(user = comment.author, size = 36.dp)
+                  Spacer(modifier = Modifier.width(10.dp))
                   Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                      Text(comment.author.displayName, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                      Text(comment.author.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                       Spacer(modifier = Modifier.width(4.dp))
-                      Text("@${comment.author.username}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      Text(comment.timestamp, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Text(comment.content, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                      text = comment.content,
+                      fontSize = 13.sp,
+                      color = MaterialTheme.colorScheme.onSurface,
+                      lineHeight = 18.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                      Text(
+                        text = "Reply",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.clickable {
+                          commentText = "@${comment.author.username} "
+                        }
+                      )
+                    }
+                  }
+                  IconButton(
+                    onClick = { /* Toggle comment like */ },
+                    modifier = Modifier.size(28.dp)
+                  ) {
+                    Icon(
+                      imageVector = if (comment.isLiked) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
+                      contentDescription = "Like comment",
+                      tint = if (comment.isLiked) Color(0xFFFF5252) else MaterialTheme.colorScheme.onSurfaceVariant,
+                      modifier = Modifier.size(16.dp)
+                    )
                   }
                 }
               }
             }
           }
-          Spacer(modifier = Modifier.height(10.dp))
+        }
+
+        // Quick Emoji Reaction Row (Insta/FB feature)
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+          horizontalArrangement = Arrangement.SpaceAround
+        ) {
+          listOf("❤️", "🙌", "🔥", "👏", "😂", "😍", "✨").forEach { emoji ->
+            Text(
+              text = emoji,
+              fontSize = 20.sp,
+              modifier = Modifier
+                .clickable {
+                  commentText += emoji
+                }
+                .padding(4.dp)
+            )
+          }
+        }
+
+        // Bottom Input Row
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
           OutlinedTextField(
             value = commentText,
             onValueChange = { commentText = it },
-            placeholder = { Text("Write a comment...") },
-            modifier = Modifier.fillMaxWidth().testTag("comment_input_${post.id}")
+            placeholder = { Text("Add a comment for ${post.author.displayName}...") },
+            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier
+              .weight(1f)
+              .testTag("comment_input_${post.id}")
           )
-        }
-      },
-      confirmButton = {
-        Button(
-          onClick = {
-            if (commentText.isNotBlank()) {
-              if (onAddComment != null) {
-                onAddComment(commentText)
-              } else {
-                onCommentClick()
+          Spacer(modifier = Modifier.width(8.dp))
+          IconButton(
+            onClick = {
+              if (commentText.isNotBlank()) {
+                if (onAddComment != null) {
+                  onAddComment(commentText)
+                } else {
+                  onCommentClick()
+                }
+                commentText = ""
               }
-              commentText = ""
-              showCommentDialog = false
-            }
-          },
-          colors = ButtonDefaults.buttonColors(containerColor = VybeViolet)
-        ) {
-          Text("Post")
+            },
+            modifier = Modifier
+              .size(44.dp)
+              .clip(CircleShape)
+              .background(VybeViolet)
+          ) {
+            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send Comment", tint = Color.White, modifier = Modifier.size(18.dp))
+          }
         }
-      },
-      dismissButton = {
-        TextButton(onClick = { showCommentDialog = false }) { Text("Cancel") }
+        Spacer(modifier = Modifier.height(10.dp))
       }
-    )
+    }
   }
 }

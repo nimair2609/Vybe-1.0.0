@@ -233,187 +233,340 @@ fun ExploreScreen(viewModel: VybeViewModel) {
           }
         }
       } else {
-        // Six Signature Features Grid (Unload, Time Capsule, Double Take, What Next, Crossed, Unfiltered)
+        // Core VYBE Experiences - Highlighted as the foundational signature features
         item {
-          Spacer(modifier = Modifier.height(10.dp))
-          Text(
-            text = "Signature Experiences",
-            fontWeight = FontWeight.Bold,
-            fontSize = 15.sp,
-            modifier = Modifier.padding(horizontal = 16.dp)
-          )
-          Spacer(modifier = Modifier.height(8.dp))
+          Spacer(modifier = Modifier.height(14.dp))
+          Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 16.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, VybeViolet.copy(alpha = 0.4f))
+          ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Text("✨", fontSize = 18.sp)
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text(
+                    text = "CORE VYBE EXPERIENCES",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 14.sp,
+                    letterSpacing = 0.8.sp,
+                    color = VybeBrandCyan
+                  )
+                }
+                Surface(
+                  color = VybeViolet.copy(alpha = 0.25f),
+                  shape = RoundedCornerShape(8.dp)
+                ) {
+                  Text(
+                    text = "FLAGSHIP",
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = VybeViolet,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                  )
+                }
+              }
+              Spacer(modifier = Modifier.height(4.dp))
+              Text(
+                text = "Six intimate, anti-algorithm ways to connect without vanity metrics or superficial filters.",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 15.sp
+              )
+            }
+          }
+          Spacer(modifier = Modifier.height(12.dp))
         }
 
+        // Feature 1 & 2: UNLOAD & UNFILTERED (Large Featured Pair)
         item {
-          // Row 1: UNLOAD, UNFILTERED, WHAT NEXT
           Row(
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-          horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-          // Feature 1: UNLOAD
-          Card(
             modifier = Modifier
-              .weight(1f)
-              .clickable { viewModel.navigateTo(Screen.UNLOAD_VIEW) }
-              .testTag("explore_unload_card"),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            shape = RoundedCornerShape(14.dp)
+              .fillMaxWidth()
+              .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
           ) {
-            Column(modifier = Modifier.padding(10.dp)) {
-              Box(
-                modifier = Modifier
-                  .size(32.dp)
-                  .clip(CircleShape)
-                  .background(VybeBrandCyan.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-              ) {
-                Text("🕊️", fontSize = 16.sp)
+            // UNLOAD
+            Card(
+              modifier = Modifier
+                .weight(1f)
+                .clickable { viewModel.navigateTo(Screen.UNLOAD_VIEW) }
+                .testTag("explore_unload_card"),
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+              shape = RoundedCornerShape(18.dp),
+              border = androidx.compose.foundation.BorderStroke(1.2.dp, VybeViolet.copy(alpha = 0.6f))
+            ) {
+              Column(modifier = Modifier.padding(14.dp)) {
+                Box(
+                  modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(VybeViolet.copy(alpha = 0.25f)),
+                  contentAlignment = Alignment.Center
+                ) {
+                  Text("🕊️", fontSize = 20.sp)
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Text("UNLOAD", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Box(
+                    modifier = Modifier
+                      .size(6.dp)
+                      .clip(CircleShape)
+                      .background(VybeOnlineGreen)
+                  )
+                }
+                Text("24/7 Live Listening", fontSize = 11.sp, color = VybeBrandCyan, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                  text = "Zero audio recordings. Ephemeral voice & chat sanctuary.",
+                  fontSize = 10.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  lineHeight = 13.sp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                  text = "Enter Sanctuary →",
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = VybeViolet
+                )
               }
-              Spacer(modifier = Modifier.height(6.dp))
-              Text("UNLOAD", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-              Text("24/7 Listening", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-          }
 
-          // Feature 2: UNFILTERED
-          Card(
-            modifier = Modifier
-              .weight(1f)
-              .clickable { viewModel.navigateTo(Screen.UNFILTERED_VIEW) }
-              .testTag("explore_unfiltered_card"),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            shape = RoundedCornerShape(14.dp)
-          ) {
-            Column(modifier = Modifier.padding(10.dp)) {
-              Box(
-                modifier = Modifier
-                  .size(32.dp)
-                  .clip(CircleShape)
-                  .background(VybeOnlineGreen.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-              ) {
-                Text("🌿", fontSize = 16.sp)
+            // UNFILTERED
+            Card(
+              modifier = Modifier
+                .weight(1f)
+                .clickable { viewModel.navigateTo(Screen.UNFILTERED_VIEW) }
+                .testTag("explore_unfiltered_card"),
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+              shape = RoundedCornerShape(18.dp),
+              border = androidx.compose.foundation.BorderStroke(1.2.dp, VybeOnlineGreen.copy(alpha = 0.6f))
+            ) {
+              Column(modifier = Modifier.padding(14.dp)) {
+                Box(
+                  modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(VybeOnlineGreen.copy(alpha = 0.25f)),
+                  contentAlignment = Alignment.Center
+                ) {
+                  Text("🌿", fontSize = 20.sp)
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Text("UNFILTERED", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                Text("Raw & Real Moments", fontSize = 11.sp, color = VybeOnlineGreen, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                  text = "Authentic snapshots without skin-smoothing or filters.",
+                  fontSize = 10.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  lineHeight = 13.sp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                  text = "Post Unfiltered →",
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = VybeOnlineGreen
+                )
               }
-              Spacer(modifier = Modifier.height(6.dp))
-              Text("UNFILTERED", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-              Text("Raw & Real", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
           }
-
-          // Feature 3: WHAT NEXT
-          Card(
-            modifier = Modifier
-              .weight(1f)
-              .clickable { viewModel.navigateTo(Screen.WHAT_NEXT_VIEW) }
-              .testTag("explore_what_next_card"),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            shape = RoundedCornerShape(14.dp)
-          ) {
-            Column(modifier = Modifier.padding(10.dp)) {
-              Box(
-                modifier = Modifier
-                  .size(32.dp)
-                  .clip(CircleShape)
-                  .background(VybeViolet.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-              ) {
-                Text("🔮", fontSize = 16.sp)
-              }
-              Spacer(modifier = Modifier.height(6.dp))
-              Text("WHAT NEXT", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-              Text("Culture Pulse", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-          }
+          Spacer(modifier = Modifier.height(10.dp))
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Row 2: TIME CAPSULE, DOUBLE TAKE, CROSSED
-        Row(
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-          horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-          // Feature 4: Time Capsule
-          Card(
+        // Feature 3 & 4: WHAT NEXT & TIME CAPSULE
+        item {
+          Row(
             modifier = Modifier
-              .weight(1f)
-              .clickable { viewModel.navigateTo(Screen.TIME_CAPSULES_VIEW) }
-              .testTag("explore_time_capsule_card"),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            shape = RoundedCornerShape(14.dp)
+              .fillMaxWidth()
+              .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
           ) {
-            Column(modifier = Modifier.padding(10.dp)) {
-              Box(
-                modifier = Modifier
-                  .size(32.dp)
-                  .clip(CircleShape)
-                  .background(VybeViolet.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-              ) {
-                Icon(Icons.Default.HourglassTop, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(18.dp))
+            // WHAT NEXT
+            Card(
+              modifier = Modifier
+                .weight(1f)
+                .clickable { viewModel.navigateTo(Screen.WHAT_NEXT_VIEW) }
+                .testTag("explore_what_next_card"),
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+              shape = RoundedCornerShape(18.dp),
+              border = androidx.compose.foundation.BorderStroke(1.2.dp, VybeBrandCyan.copy(alpha = 0.5f))
+            ) {
+              Column(modifier = Modifier.padding(14.dp)) {
+                Box(
+                  modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(VybeBrandCyan.copy(alpha = 0.25f)),
+                  contentAlignment = Alignment.Center
+                ) {
+                  Text("🔮", fontSize = 20.sp)
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Text("WHAT NEXT", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                Text("Culture Pulse Polls", fontSize = 11.sp, color = VybeBrandCyan, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                  text = "Vote on dilemmas & predictions before they unfold.",
+                  fontSize = 10.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  lineHeight = 13.sp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                  text = "Vote Now →",
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = VybeBrandCyan
+                )
               }
-              Spacer(modifier = Modifier.height(6.dp))
-              Text("Time Capsule", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-              Text("Locked memories", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            // TIME CAPSULE
+            Card(
+              modifier = Modifier
+                .weight(1f)
+                .clickable { viewModel.navigateTo(Screen.TIME_CAPSULES_VIEW) }
+                .testTag("explore_time_capsule_card"),
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+              shape = RoundedCornerShape(18.dp),
+              border = androidx.compose.foundation.BorderStroke(1.2.dp, VybeVerifiedGold.copy(alpha = 0.5f))
+            ) {
+              Column(modifier = Modifier.padding(14.dp)) {
+                Box(
+                  modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(VybeVerifiedGold.copy(alpha = 0.25f)),
+                  contentAlignment = Alignment.Center
+                ) {
+                  Text("⏳", fontSize = 20.sp)
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Text("TIME CAPSULE", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                Text("Sealed Vaults", fontSize = 11.sp, color = VybeVerifiedGold, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                  text = "Lock memories into future dates with invite links.",
+                  fontSize = 10.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  lineHeight = 13.sp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                  text = "Seal Memory →",
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = VybeVerifiedGold
+                )
+              }
             }
           }
-
-          // Feature 5: Double Take
-          Card(
-            modifier = Modifier
-              .weight(1f)
-              .clickable { viewModel.navigateTo(Screen.DOUBLE_TAKE_VIEW) }
-              .testTag("explore_double_take_card"),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            shape = RoundedCornerShape(14.dp)
-          ) {
-            Column(modifier = Modifier.padding(10.dp)) {
-              Box(
-                modifier = Modifier
-                  .size(32.dp)
-                  .clip(CircleShape)
-                  .background(VybeMagenta.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-              ) {
-                Icon(Icons.Default.SwapHoriz, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(18.dp))
-              }
-              Spacer(modifier = Modifier.height(6.dp))
-              Text("Double Take", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-              Text("Synced answers", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-          }
-
-          // Feature 6: Crossed Paths
-          Card(
-            modifier = Modifier
-              .weight(1f)
-              .clickable { viewModel.navigateTo(Screen.CREATE_CROSSED_PATH) }
-              .testTag("explore_crossed_card"),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            shape = RoundedCornerShape(14.dp)
-          ) {
-            Column(modifier = Modifier.padding(10.dp)) {
-              Box(
-                modifier = Modifier
-                  .size(32.dp)
-                  .clip(CircleShape)
-                  .background(VybeCyan.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-              ) {
-                Icon(Icons.Default.NearMe, contentDescription = null, tint = VybeCyan, modifier = Modifier.size(18.dp))
-              }
-              Spacer(modifier = Modifier.height(6.dp))
-              Text("Crossed", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-              Text("Encounters", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-          }
+          Spacer(modifier = Modifier.height(10.dp))
         }
-      }
+
+        // Feature 5 & 6: DOUBLE TAKE & CROSSED PATHS
+        item {
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+          ) {
+            // DOUBLE TAKE
+            Card(
+              modifier = Modifier
+                .weight(1f)
+                .clickable { viewModel.navigateTo(Screen.DOUBLE_TAKE_VIEW) }
+                .testTag("explore_double_take_card"),
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+              shape = RoundedCornerShape(18.dp),
+              border = androidx.compose.foundation.BorderStroke(1.2.dp, VybeHeartbreakRed.copy(alpha = 0.5f))
+            ) {
+              Column(modifier = Modifier.padding(14.dp)) {
+                Box(
+                  modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(VybeHeartbreakRed.copy(alpha = 0.25f)),
+                  contentAlignment = Alignment.Center
+                ) {
+                  Text("🎭", fontSize = 20.sp)
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Text("DOUBLE TAKE", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                Text("Two-Sided Dilemmas", fontSize = 11.sp, color = VybeHeartbreakRed, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                  text = "Public & private dilemmas connecting synced answers.",
+                  fontSize = 10.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  lineHeight = 13.sp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                  text = "Sync Minds →",
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = VybeHeartbreakRed
+                )
+              }
+            }
+
+            // CROSSED PATHS
+            Card(
+              modifier = Modifier
+                .weight(1f)
+                .clickable { viewModel.navigateTo(Screen.CREATE_CROSSED_PATH) }
+                .testTag("explore_crossed_card"),
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+              shape = RoundedCornerShape(18.dp),
+              border = androidx.compose.foundation.BorderStroke(1.2.dp, VybeBrandCyan.copy(alpha = 0.5f))
+            ) {
+              Column(modifier = Modifier.padding(14.dp)) {
+                Box(
+                  modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(VybeBrandCyan.copy(alpha = 0.25f)),
+                  contentAlignment = Alignment.Center
+                ) {
+                  Text("📍", fontSize = 20.sp)
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Text("CROSSED PATHS", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                Text("Real-World Spark", fontSize = 11.sp, color = VybeBrandCyan, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                  text = "Post encounters by venue & Google Maps location.",
+                  fontSize = 10.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  lineHeight = 13.sp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                  text = "Find Connection →",
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = VybeBrandCyan
+                )
+              }
+            }
+          }
+          Spacer(modifier = Modifier.height(12.dp))
+        }
 
       // Admin & Moderation Quick Bar (Isolated to Admin accounts only)
       if (currentUser?.role == com.example.data.model.UserRole.ADMIN) {

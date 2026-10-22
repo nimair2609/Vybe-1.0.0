@@ -92,6 +92,14 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
     }
   }
 
+  val launchCameraSafely = {
+    try {
+      cameraLauncher.launch(null)
+    } catch (_: Exception) {
+      photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    }
+  }
+
   Scaffold(
     topBar = {
       TopAppBar(
@@ -110,9 +118,9 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
           }
         },
         actions = {
-          // Camera button: Opens real device camera
+          // Camera button: Opens real device camera safely
           IconButton(
-            onClick = { cameraLauncher.launch(null) },
+            onClick = { launchCameraSafely() },
             modifier = Modifier.testTag("unfiltered_camera_button")
           ) {
             Icon(Icons.Default.PhotoCamera, contentDescription = "Take Raw Camera Photo", tint = VybeViolet)
@@ -127,7 +135,7 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
             Icon(Icons.Default.PhotoLibrary, contentDescription = "Pick Raw Photo from Gallery")
           }
           FilledTonalButton(
-            onClick = { cameraLauncher.launch(null) },
+            onClick = { launchCameraSafely() },
             modifier = Modifier.padding(end = 8.dp).testTag("unfiltered_create_button")
           ) {
             Text("Capture", fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -192,7 +200,7 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
               Button(
-                onClick = { cameraLauncher.launch(null) },
+                onClick = { launchCameraSafely() },
                 colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
                 shape = RoundedCornerShape(10.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
@@ -499,7 +507,7 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
               horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
               OutlinedButton(
-                onClick = { cameraLauncher.launch(null) },
+                onClick = { launchCameraSafely() },
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(12.dp)
               ) {

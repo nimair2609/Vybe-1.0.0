@@ -74,6 +74,8 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
   // Attachment / More options sheets
   var showAttachmentMenu by remember { mutableStateOf(false) }
   var showChatMenu by remember { mutableStateOf(false) }
+  var showGroupMembersDialog by remember { mutableStateOf(false) }
+  var newMemberUsernameInput by remember { mutableStateOf("") }
   var showNicknameDialog by remember { mutableStateOf(false) }
   var nicknameInput by remember { mutableStateOf("") }
   var showThemeDialog by remember { mutableStateOf(false) }
@@ -226,6 +228,16 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
             expanded = showChatMenu,
             onDismissRequest = { showChatMenu = false }
           ) {
+            if (conv.isGroup) {
+              DropdownMenuItem(
+                text = { Text("Group Members & Admin") },
+                onClick = {
+                  showChatMenu = false
+                  showGroupMembersDialog = true
+                },
+                leadingIcon = { Icon(Icons.Default.Group, contentDescription = null, tint = VybeViolet) }
+              )
+            }
             DropdownMenuItem(
               text = { Text("View Profile") },
               onClick = {
@@ -413,9 +425,9 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
 
             Spacer(modifier = Modifier.width(6.dp))
 
-            IconButton(
-              onClick = {
-                if (messageInput.isNotBlank()) {
+            if (messageInput.isNotBlank()) {
+              IconButton(
+                onClick = {
                   viewModel.sendExtendedDirectMessage(
                     convId = conv.id,
                     text = messageInput,
@@ -425,20 +437,38 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                   )
                   messageInput = ""
                   replyingToMessage = null
-                }
-              },
-              modifier = Modifier
-                .size(42.dp)
-                .clip(CircleShape)
-                .background(themeAccent)
-                .testTag("send_message_button")
-            ) {
-              Icon(
-                imageVector = Icons.AutoMirrored.Filled.Send,
-                contentDescription = "Send",
-                tint = Color.White,
-                modifier = Modifier.size(18.dp)
-              )
+                },
+                modifier = Modifier
+                  .size(42.dp)
+                  .clip(CircleShape)
+                  .background(themeAccent)
+                  .testTag("send_message_button")
+              ) {
+                Icon(
+                  imageVector = Icons.AutoMirrored.Filled.Send,
+                  contentDescription = "Send",
+                  tint = Color.White,
+                  modifier = Modifier.size(18.dp)
+                )
+              }
+            } else {
+              IconButton(
+                onClick = {
+                  viewModel.sendVoiceMessage(conv.id)
+                },
+                modifier = Modifier
+                  .size(42.dp)
+                  .clip(CircleShape)
+                  .background(VybeMagenta)
+                  .testTag("send_voice_note_button")
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Mic,
+                  contentDescription = "Record & Send Voice Message",
+                  tint = Color.White,
+                  modifier = Modifier.size(20.dp)
+                )
+              }
             }
           }
         }
@@ -545,6 +575,52 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                   }
                   Spacer(modifier = Modifier.height(6.dp))
                 }
+              }
+
+              // Voice Message Attachment
+              if (!msg.isDeletedForEveryone && (msg.mediaType == "VOICE" || msg.fileName?.endsWith(".m4a") == true || msg.text.startsWith("🎤 Voice message"))) {
+                Surface(
+                  color = if (isMe) Color.White.copy(alpha = 0.2f) else themeAccent.copy(alpha = 0.15f),
+                  shape = RoundedCornerShape(10.dp),
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                ) {
+                  Row(
+                    modifier = Modifier.padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Box(
+                      modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(if (isMe) Color.White else themeAccent),
+                      contentAlignment = Alignment.Center
+                    ) {
+                      Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = "Play Voice Note",
+                        tint = if (isMe) themeAccent else Color.White,
+                        modifier = Modifier.size(18.dp)
+                      )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                      Text(
+                        text = "Voice Message (0:12)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = if (isMe) Color.White else MaterialTheme.colorScheme.onSurface
+                      )
+                      Text(
+                        text = "High Quality Audio Note",
+                        fontSize = 9.sp,
+                        color = if (isMe) Color.White.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
+                      )
+                    }
+                  }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
               }
 
               // Location Attachment
@@ -1143,6 +1219,173 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
       text = { Text(reportFeedbackMsg ?: "", fontSize = 13.sp) },
       confirmButton = {
         Button(onClick = { reportFeedbackMsg = null }) {
+          Text("Done")
+        }
+      }
+    )
+  }
+
+  // Group Members & Admin Dialog
+  if (showGroupMembersDialog && conv.isGroup) {
+    val allUsers by viewModel.allUsers.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
+    val isGroupAdmin = conv.groupAdminIds.contains(currentUser?.id) || conv.groupAdminIds.isEmpty() || currentUser?.id == "u_me"
+
+    AlertDialog(
+      onDismissRequest = { showGroupMembersDialog = false },
+      title = {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Icon(Icons.Default.Group, contentDescription = null, tint = themeAccent)
+          Spacer(modifier = Modifier.width(8.dp))
+          Text(conv.groupName ?: "Group Members", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        }
+      },
+      text = {
+        LazyColumn(
+          modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 420.dp),
+          verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+          item {
+            Text(
+              text = "Group Participants (${conv.groupMembers.size})",
+              fontWeight = FontWeight.Bold,
+              fontSize = 12.sp,
+              color = themeAccent
+            )
+          }
+
+          items(conv.groupMembers) { member ->
+            val isMemberAdmin = conv.groupAdminIds.contains(member.id)
+            Surface(
+              color = MaterialTheme.colorScheme.surfaceVariant,
+              shape = RoundedCornerShape(10.dp),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+              ) {
+                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                  VybeAvatar(user = member, size = 34.dp)
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                      Text(member.displayName, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                      Spacer(modifier = Modifier.width(4.dp))
+                      if (isMemberAdmin) {
+                        Surface(
+                          color = VybeVerifiedGold.copy(alpha = 0.2f),
+                          shape = RoundedCornerShape(4.dp)
+                        ) {
+                          Text(
+                            "Admin",
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = VybeVerifiedGold,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                          )
+                        }
+                      }
+                    }
+                    Text("@${member.username}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  }
+                }
+
+                if (isGroupAdmin && member.id != currentUser?.id) {
+                  OutlinedButton(
+                    onClick = {
+                      viewModel.removeGroupMember(conv.id, member.id)
+                    },
+                    shape = RoundedCornerShape(6.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                  ) {
+                    Text("Remove", fontSize = 10.sp, color = VybeDanger)
+                  }
+                }
+              }
+            }
+          }
+
+          if (isGroupAdmin) {
+            item {
+              HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+              Text("Add User to Group", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+
+            item {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                OutlinedTextField(
+                  value = newMemberUsernameInput,
+                  onValueChange = { newMemberUsernameInput = it },
+                  placeholder = { Text("@username", fontSize = 12.sp) },
+                  singleLine = true,
+                  modifier = Modifier.weight(1f),
+                  shape = RoundedCornerShape(10.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Button(
+                  onClick = {
+                    if (newMemberUsernameInput.isNotBlank()) {
+                      val cleanUname = newMemberUsernameInput.trim().replace("@", "").lowercase()
+                      val candidate = allUsers.firstOrNull { it.username.lowercase() == cleanUname }
+                        ?: com.example.data.model.User(
+                          id = "u_${cleanUname}",
+                          username = cleanUname,
+                          displayName = cleanUname.replaceFirstChar { it.uppercase() },
+                          bio = "VYBE Community Member"
+                        )
+                      viewModel.addGroupMember(conv.id, candidate)
+                      newMemberUsernameInput = ""
+                    }
+                  },
+                  colors = ButtonDefaults.buttonColors(containerColor = themeAccent),
+                  shape = RoundedCornerShape(10.dp),
+                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                  Text("Add", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+              }
+            }
+
+            item {
+              Text("Quick Add Contacts:", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("priya_design", "aarav_beats", "vikram_cricket").forEach { uname ->
+                  val existing = conv.groupMembers.any { it.username == uname }
+                  if (!existing) {
+                    FilterChip(
+                      selected = false,
+                      onClick = {
+                        val candidate = allUsers.firstOrNull { it.username == uname }
+                          ?: com.example.data.model.User(
+                            id = "u_${uname}",
+                            username = uname,
+                            displayName = uname.replaceFirstChar { it.uppercase() }
+                          )
+                        viewModel.addGroupMember(conv.id, candidate)
+                      },
+                      label = { Text("+ @$uname", fontSize = 9.sp) }
+                    )
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      confirmButton = {
+        Button(
+          onClick = { showGroupMembersDialog = false },
+          colors = ButtonDefaults.buttonColors(containerColor = themeAccent)
+        ) {
           Text("Done")
         }
       }

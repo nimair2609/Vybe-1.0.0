@@ -314,38 +314,54 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
         }
       }
 
-      // Selected Media Preview
+      // Selected Media Preview & Crop / Aspect Ratio
+      var cropRatio by remember { mutableStateOf("1:1") }
+      var showPreviewDialog by remember { mutableStateOf(false) }
+      var selectedLocation by remember { mutableStateOf<String?>(null) }
+      var showLocationDialog by remember { mutableStateOf(false) }
+      var locationSearchQuery by remember { mutableStateOf("") }
+
       if (selectedImage != null) {
         Spacer(modifier = Modifier.height(12.dp))
+        val previewHeight = when (cropRatio) {
+          "4:5" -> 240.dp
+          "16:9" -> 140.dp
+          else -> 200.dp
+        }
         Box(
           modifier = Modifier
             .fillMaxWidth()
-            .height(180.dp)
+            .height(previewHeight)
             .clip(RoundedCornerShape(14.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
         ) {
           AsyncImage(
             model = selectedImage,
             contentDescription = "Selected media preview",
-            contentScale = ContentScale.Crop,
+            contentScale = when (cropRatio) {
+              "16:9" -> ContentScale.FillWidth
+              "4:5" -> ContentScale.Crop
+              else -> ContentScale.Fit
+            },
             modifier = Modifier.fillMaxSize()
           )
-          if (selectedMediaType == MediaType.VIDEO || selectedMediaType == MediaType.REEL) {
-            Surface(
-              color = Color.Black.copy(alpha = 0.75f),
-              shape = RoundedCornerShape(8.dp),
-              modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(10.dp)
+
+          // Preview button overlay
+          Surface(
+            color = Color.Black.copy(alpha = 0.65f),
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier
+              .align(Alignment.BottomStart)
+              .padding(8.dp)
+              .clickable { showPreviewDialog = true }
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+              verticalAlignment = Alignment.CenterVertically
             ) {
-              Row(
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Icon(Icons.Default.PlayCircle, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Video Media Ready", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
-              }
+              Icon(Icons.Default.Fullscreen, contentDescription = "Preview", tint = Color.White, modifier = Modifier.size(16.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("Preview Full", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
           }
 
@@ -361,6 +377,171 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
             Icon(Icons.Default.Close, contentDescription = "Remove media", tint = Color.White, modifier = Modifier.size(16.dp))
           }
         }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        // Crop / Aspect Ratio bar
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Text("Crop / Aspect Ratio:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
+          Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("1:1" to "Square", "4:5" to "Portrait", "16:9" to "Wide").forEach { (ratio, label) ->
+              FilterChip(
+                selected = cropRatio == ratio,
+                onClick = { cropRatio = ratio },
+                label = { Text("$ratio $label", fontSize = 10.sp) }
+              )
+            }
+          }
+        }
+      }
+
+      // Google Maps Location Chooser
+      Spacer(modifier = Modifier.height(12.dp))
+      Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+          .fillMaxWidth()
+          .clickable { showLocationDialog = true }
+      ) {
+        Row(
+          modifier = Modifier.padding(12.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color(0xFFFF5252), modifier = Modifier.size(20.dp))
+          Spacer(modifier = Modifier.width(8.dp))
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = selectedLocation ?: "Add Location with Google Maps",
+              fontWeight = if (selectedLocation != null) FontWeight.Bold else FontWeight.Normal,
+              fontSize = 12.sp,
+              color = if (selectedLocation != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+              text = "Search city, cafe, or pin on Google Maps",
+              fontSize = 10.sp,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+          }
+          if (selectedLocation != null) {
+            IconButton(
+              onClick = { selectedLocation = null },
+              modifier = Modifier.size(24.dp)
+            ) {
+              Icon(Icons.Default.Close, contentDescription = "Clear", modifier = Modifier.size(14.dp))
+            }
+          } else {
+            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+          }
+        }
+      }
+
+      // Full Preview Dialog
+      if (showPreviewDialog && selectedImage != null) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = { showPreviewDialog = false }) {
+          Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp)
+          ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Text("Image Preview ($cropRatio)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                IconButton(onClick = { showPreviewDialog = false }) {
+                  Icon(Icons.Default.Close, contentDescription = "Close")
+                }
+              }
+              Spacer(modifier = Modifier.height(8.dp))
+              Box(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .weight(1f)
+                  .clip(RoundedCornerShape(12.dp))
+                  .background(Color.Black)
+              ) {
+                AsyncImage(
+                  model = selectedImage,
+                  contentDescription = "Full preview",
+                  contentScale = ContentScale.Fit,
+                  modifier = Modifier.fillMaxSize()
+                )
+              }
+            }
+          }
+        }
+      }
+
+      // Google Maps Location Picker Modal
+      if (showLocationDialog) {
+        AlertDialog(
+          onDismissRequest = { showLocationDialog = false },
+          title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Icon(Icons.Default.Place, contentDescription = null, tint = Color(0xFFFF5252))
+              Spacer(modifier = Modifier.width(8.dp))
+              Text("Google Maps Location", fontWeight = FontWeight.Bold)
+            }
+          },
+          text = {
+            Column(
+              modifier = Modifier.fillMaxWidth(),
+              verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+              OutlinedTextField(
+                value = locationSearchQuery,
+                onValueChange = { locationSearchQuery = it },
+                placeholder = { Text("Search location on Google Maps...") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+              )
+
+              Text("Popular Hotspots:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+              listOf(
+                "📍 Bandra West, Mumbai",
+                "📍 Indiranagar, Bengaluru",
+                "📍 Hauz Khas Social, Delhi",
+                "📍 Cyber Hub, Gurugram",
+                "📍 Koregaon Park, Pune"
+              ).forEach { spot ->
+                Surface(
+                  shape = RoundedCornerShape(8.dp),
+                  color = MaterialTheme.colorScheme.surfaceVariant,
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                      selectedLocation = spot
+                      showLocationDialog = false
+                    }
+                ) {
+                  Text(spot, fontSize = 12.sp, modifier = Modifier.padding(10.dp))
+                }
+              }
+            }
+          },
+          confirmButton = {
+            if (locationSearchQuery.isNotBlank()) {
+              Button(
+                onClick = {
+                  selectedLocation = "📍 ${locationSearchQuery.trim()}"
+                  showLocationDialog = false
+                }
+              ) {
+                Text("Select Location")
+              }
+            }
+          },
+          dismissButton = {
+            TextButton(onClick = { showLocationDialog = false }) { Text("Cancel") }
+          }
+        )
       }
 
       Spacer(modifier = Modifier.height(12.dp))

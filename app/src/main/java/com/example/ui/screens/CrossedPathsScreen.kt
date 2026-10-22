@@ -23,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -328,24 +330,153 @@ fun CrossedPathsScreen(viewModel: VybeViewModel) {
     }
   }
 
-  // Create Encounter Dialog with Photo Sharing & Map selection
+  // Create Encounter Full-Page Dialog with Photo Sharing & Google Maps Location Picker
   if (showCreateDialog) {
-    AlertDialog(
+    val quickLocations = listOf(
+      "Subko Coffee, Bandra West, Mumbai",
+      "Bandstand Promenade, Mumbai",
+      "Hauz Khas Village, New Delhi",
+      "Indiranagar 100ft Road, Bangalore",
+      "Koregaon Park Lane 7, Pune",
+      "Connaught Place Inner Circle, Delhi"
+    )
+
+    Dialog(
       onDismissRequest = { showCreateDialog = false },
-      title = { Text("I Noticed Someone", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
-      text = {
+      properties = DialogProperties(
+        usePlatformDefaultWidth = false,
+        dismissOnBackPress = true
+      )
+    ) {
+      Scaffold(
+        topBar = {
+          TopAppBar(
+            navigationIcon = {
+              IconButton(onClick = { showCreateDialog = false }) {
+                Icon(Icons.Default.Close, contentDescription = "Close")
+              }
+            },
+            title = {
+              Column {
+                Text("I Noticed Someone", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("Crossed Paths • Consent-First Discovery", fontSize = 11.sp, color = VybeMagenta)
+              }
+            },
+            actions = {
+              Button(
+                onClick = {
+                  if (newDescription.isNotBlank()) {
+                    showCreateDialog = false
+                    newDescription = ""
+                    newVenue = ""
+                    newLocation = ""
+                    pickedPhotoUri = null
+                  }
+                },
+                enabled = newDescription.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(containerColor = VybeMagenta),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                  .padding(end = 8.dp)
+                  .testTag("submit_crossed_path_button")
+              ) {
+                Text("Post Encounter", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+              }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+              containerColor = MaterialTheme.colorScheme.background
+            )
+          )
+        }
+      ) { innerPadding ->
         LazyColumn(
           modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 420.dp),
-          verticalArrangement = Arrangement.spacedBy(10.dp)
+            .fillMaxSize()
+            .padding(innerPadding)
+            .padding(horizontal = 16.dp),
+          verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
           item {
-            Text(
-              text = "Post a respectful, non-identifying description. Expires in 72 hours automatically.",
-              fontSize = 12.sp,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
+            Spacer(modifier = Modifier.height(4.dp))
+            Surface(
+              color = VybeMagenta.copy(alpha = 0.12f),
+              shape = RoundedCornerShape(14.dp),
+              border = androidx.compose.foundation.BorderStroke(1.dp, VybeMagenta.copy(alpha = 0.3f))
+            ) {
+              Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Icon(Icons.Default.Security, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                  text = "Post a respectful, non-identifying description. No exact live tracking. Encounters expire in 72 hours automatically.",
+                  fontSize = 11.sp,
+                  color = MaterialTheme.colorScheme.onSurface,
+                  lineHeight = 15.sp
+                )
+              }
+            }
+          }
+
+          item {
+            Text("Select or Search Google Maps Location", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            OutlinedTextField(
+              value = newVenue,
+              onValueChange = { newVenue = it },
+              label = { Text("Venue / Landmark (for Google Maps)") },
+              placeholder = { Text("e.g. Subko Coffee, Bandra") },
+              leadingIcon = { Icon(Icons.Default.Place, contentDescription = null, tint = VybeMagenta) },
+              trailingIcon = {
+                if (newVenue.isNotBlank()) {
+                  IconButton(
+                    onClick = {
+                      val mapIntent = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(newVenue)}"))
+                      try {
+                        context.startActivity(mapIntent)
+                      } catch (_: Exception) {
+                        val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.google.com/?q=${Uri.encode(newVenue)}"))
+                        context.startActivity(webIntent)
+                      }
+                    }
+                  ) {
+                    Icon(Icons.Default.Map, contentDescription = "Preview on Maps", tint = VybeBrandCyan)
+                  }
+                }
+              },
+              singleLine = true,
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("encounter_venue_input"),
+              shape = RoundedCornerShape(12.dp)
             )
+          }
+
+          item {
+            Text("Quick Location Suggestions:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+              quickLocations.forEach { loc ->
+                Surface(
+                  color = if (newVenue == loc) VybeMagenta.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+                  shape = RoundedCornerShape(8.dp),
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                      newVenue = loc
+                      newLocation = loc.substringAfterLast(", ").trim()
+                    }
+                ) {
+                  Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Icon(Icons.Default.LocationSearching, contentDescription = null, modifier = Modifier.size(14.dp), tint = VybeMagenta)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(loc, fontSize = 11.sp, fontWeight = if (newVenue == loc) FontWeight.Bold else FontWeight.Normal)
+                  }
+                }
+              }
+            }
           }
 
           item {
@@ -355,18 +486,10 @@ fun CrossedPathsScreen(viewModel: VybeViewModel) {
               label = { Text("Broad Area / City") },
               placeholder = { Text("e.g. Bandra West, Mumbai") },
               singleLine = true,
-              modifier = Modifier.fillMaxWidth().testTag("encounter_location_input")
-            )
-          }
-
-          item {
-            OutlinedTextField(
-              value = newVenue,
-              onValueChange = { newVenue = it },
-              label = { Text("Venue / Landmark (for Google Maps)") },
-              placeholder = { Text("e.g. Subko Coffee / Bandstand") },
-              singleLine = true,
-              modifier = Modifier.fillMaxWidth().testTag("encounter_venue_input")
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("encounter_location_input"),
+              shape = RoundedCornerShape(12.dp)
             )
           }
 
@@ -375,20 +498,24 @@ fun CrossedPathsScreen(viewModel: VybeViewModel) {
               value = newDescription,
               onValueChange = { newDescription = it },
               label = { Text("Respectful Description") },
-              placeholder = { Text("e.g. You wore a vintage corduroy jacket and were reading Murakami...") },
-              minLines = 3,
-              modifier = Modifier.fillMaxWidth().testTag("encounter_desc_input")
+              placeholder = { Text("e.g. You wore a vintage corduroy jacket and were reading Murakami at the corner table...") },
+              minLines = 4,
+              maxLines = 6,
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("encounter_desc_input"),
+              shape = RoundedCornerShape(14.dp)
             )
           }
 
           item {
-            Text("Optional Photo of Venue / Atmosphere", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("Optional Atmosphere / Venue Photo", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             if (pickedPhotoUri != null) {
               Box(
                 modifier = Modifier
                   .fillMaxWidth()
-                  .height(100.dp)
-                  .clip(RoundedCornerShape(8.dp))
+                  .height(140.dp)
+                  .clip(RoundedCornerShape(12.dp))
               ) {
                 AsyncImage(
                   model = pickedPhotoUri,
@@ -398,9 +525,12 @@ fun CrossedPathsScreen(viewModel: VybeViewModel) {
                 )
                 IconButton(
                   onClick = { pickedPhotoUri = null },
-                  modifier = Modifier.align(Alignment.TopEnd)
+                  modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    .size(32.dp)
                 ) {
-                  Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.White)
+                  Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(16.dp))
                 }
               }
             } else {
@@ -409,36 +539,43 @@ fun CrossedPathsScreen(viewModel: VybeViewModel) {
                   photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 },
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(12.dp)
               ) {
                 Icon(Icons.Default.AddAPhoto, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Attach Atmosphere Photo", fontSize = 11.sp)
+                Text("Attach Venue / Atmosphere Photo", fontSize = 12.sp)
               }
             }
           }
-        }
-      },
-      confirmButton = {
-        Button(
-          onClick = {
-            if (newDescription.isNotBlank()) {
-              showCreateDialog = false
-              newDescription = ""
-              newVenue = ""
-              newLocation = ""
-              pickedPhotoUri = null
+
+          item {
+            Button(
+              onClick = {
+                if (newDescription.isNotBlank()) {
+                  showCreateDialog = false
+                  newDescription = ""
+                  newVenue = ""
+                  newLocation = ""
+                  pickedPhotoUri = null
+                }
+              },
+              enabled = newDescription.isNotBlank(),
+              colors = ButtonDefaults.buttonColors(containerColor = VybeMagenta),
+              shape = RoundedCornerShape(14.dp),
+              modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .testTag("submit_crossed_path_large_button")
+            ) {
+              Text("Post Respectful Encounter", fontWeight = FontWeight.Bold, fontSize = 14.sp)
             }
-          },
-          colors = ButtonDefaults.buttonColors(containerColor = VybeMagenta),
-          modifier = Modifier.testTag("submit_crossed_path_button")
-        ) {
-          Text("Post Encounter", fontWeight = FontWeight.Bold)
+          }
+
+          item {
+            Spacer(modifier = Modifier.height(30.dp))
+          }
         }
-      },
-      dismissButton = {
-        TextButton(onClick = { showCreateDialog = false }) { Text("Cancel") }
       }
-    )
+    }
   }
 }

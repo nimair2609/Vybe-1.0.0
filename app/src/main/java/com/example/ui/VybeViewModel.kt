@@ -185,8 +185,14 @@ class VybeViewModel : ViewModel() {
     repository.respondToCapsuleInvitation(capsuleId, accept)
 
   // Double Take
-  fun createDoubleTakePrompt(question: String, category: String, optA: String, optB: String, peer: User) =
-    repository.createDoubleTakePrompt(question, category, optA, optB, peer)
+  fun createDoubleTakePrompt(question: String, category: String, optA: String, optB: String, peer: User, isPublic: Boolean = false) =
+    repository.createDoubleTakePrompt(question, category, optA, optB, peer, isPublic)
+
+  fun submitPublicDoubleTakeAnswer(promptId: String, answer: String) =
+    repository.submitPublicDoubleTakeAnswer(promptId, answer)
+
+  fun connectWithPublicDoubleTakeAnswer(promptId: String, answerId: String) =
+    repository.connectWithPublicDoubleTakeAnswer(promptId, answerId)
 
   fun deleteDoubleTakePrompt(promptId: String) = repository.deleteDoubleTakePrompt(promptId)
   fun acceptDoubleTakeMatch(promptId: String) = repository.acceptDoubleTakeMatch(promptId)
@@ -228,6 +234,11 @@ class VybeViewModel : ViewModel() {
   fun setHiddenChatPin(pin: String) = repository.setHiddenChatPin(pin)
   fun verifyHiddenChatPin(pin: String): Boolean = repository.verifyHiddenChatPin(pin)
   fun toggleHideConversation(convId: String) = repository.toggleHideConversation(convId)
+  fun markConversationAsRead(convId: String) = repository.markConversationAsRead(convId)
+  fun deleteConversation(convId: String) = repository.deleteConversation(convId)
+  fun addGroupMember(convId: String, user: User) = repository.addGroupMember(convId, user)
+  fun removeGroupMember(convId: String, userId: String) = repository.removeGroupMember(convId, userId)
+  fun sendVoiceMessage(convId: String, duration: String = "0:08") = repository.sendVoiceMessage(convId, duration)
   fun createGroupConversation(name: String, members: List<User>) = repository.createGroupConversation(name, members)
   fun updateChatNickname(convId: String, nickname: String) = repository.updateChatNickname(convId, nickname)
   fun toggleMuteChat(convId: String) = repository.toggleMuteChat(convId)

@@ -472,7 +472,11 @@ fun AuthScreen(viewModel: VybeViewModel) {
                     if (!ok) {
                       errorMessage = msg
                     } else {
-                      statusMessage = msg
+                      statusMessage = "Account initiated! Please enter your 6-digit verification code below."
+                      verifyEmailInput = email
+                      verifyOtpInput = ""
+                      verifyError = null
+                      showOtpVerifyDialog = true
                     }
                   }
                 }
@@ -558,21 +562,64 @@ fun AuthScreen(viewModel: VybeViewModel) {
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Document & Logo Upload Preview Card
+            // Document & Logo Upload Preview Card (PDF / JPEG to backend team)
             Surface(
               color = MaterialTheme.colorScheme.surfaceVariant,
-              shape = RoundedCornerShape(12.dp),
+              shape = RoundedCornerShape(14.dp),
+              border = androidx.compose.foundation.BorderStroke(1.dp, VybeVerifiedGold.copy(alpha = 0.5f)),
               modifier = Modifier.fillMaxWidth()
             ) {
-              Column(modifier = Modifier.padding(12.dp)) {
+              Column(modifier = Modifier.padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                  Icon(Icons.Default.UploadFile, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(20.dp))
+                  Icon(Icons.Default.UploadFile, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(22.dp))
                   Spacer(modifier = Modifier.width(8.dp))
-                  Text("Verification Document Attached:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                  Text("Verification Document (PDF / JPEG)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                  text = "File: $businessDocName",
+                  fontSize = 12.sp,
+                  fontWeight = FontWeight.SemiBold,
+                  color = MaterialTheme.colorScheme.onSurface
+                )
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(businessDocName, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Logo attached: official_shop_mark.png", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Surface(
+                  color = VybeVerifiedGold.copy(alpha = 0.15f),
+                  shape = RoundedCornerShape(6.dp)
+                ) {
+                  Text(
+                    text = "🔒 Direct Channel to NR Next Backend Verification Team",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = VybeVerifiedGold,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                  )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                  OutlinedButton(
+                    onClick = {
+                      businessDocName = "Registration_Certificate_${System.currentTimeMillis().toString().takeLast(4)}.pdf"
+                    },
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f)
+                  ) {
+                    Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFFFF5252))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Select PDF", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                  }
+                  OutlinedButton(
+                    onClick = {
+                      businessDocName = "Shop_License_Photo_${System.currentTimeMillis().toString().takeLast(4)}.jpeg"
+                    },
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f)
+                  ) {
+                    Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(16.dp), tint = VybeBrandCyan)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Select JPEG", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                  }
+                }
               }
             }
 
@@ -615,19 +662,6 @@ fun AuthScreen(viewModel: VybeViewModel) {
                 } else if (!termsAccepted) {
                   errorMessage = "You must agree to the Merchant Terms & Conditions."
                 } else {
-                  val app = com.example.data.model.BusinessApplication(
-                    id = "bapp_${System.currentTimeMillis()}",
-                    ownerId = "u_pending_merchant",
-                    businessName = businessName,
-                    category = businessCategory,
-                    registrationNumberOrGst = "GSTIN27AAACR1234F1Z5",
-                    contactEmail = businessContactEmail,
-                    contactPhone = businessContactPhone,
-                    address = businessAddress,
-                    status = com.example.data.model.BusinessVerificationStatus.PENDING,
-                    submittedAt = "Just now",
-                    reviewerNotes = "Application submitted. Awaiting NR Next Safety audit."
-                  )
                   viewModel.submitBusinessApplication(
                     name = businessName,
                     cat = businessCategory,
@@ -636,7 +670,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
                     phone = businessContactPhone,
                     addr = businessAddress
                   )
-                  statusMessage = "Business Verification Application Submitted! Status: Under Review by NR Next Safety team."
+                  statusMessage = "Business Application with $businessDocName transmitted directly to NR Next Backend Team! Status: Under Review."
                 }
               },
               colors = ButtonDefaults.buttonColors(containerColor = VybeVerifiedGold),
@@ -651,7 +685,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
           OutlinedTextField(
             value = loginIdentifier,
             onValueChange = { loginIdentifier = it },
-            label = { Text("Username, Email or Mobile (+91)") },
+            label = { Text("User ID (@username), Email, or Phone (+91)") },
             leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth().testTag("auth_identifier_input")
@@ -693,7 +727,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
             }
           }
 
-          Spacer(modifier = Modifier.height(24.dp))
+          Spacer(modifier = Modifier.height(20.dp))
 
           VybeGradientButton(
             text = if (isLoading) "Logging in..." else "Log In to VYBE",
@@ -701,7 +735,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
               errorMessage = null
               statusMessage = null
               if (loginIdentifier.isBlank() || loginPassword.isBlank()) {
-                errorMessage = "Please enter your email and password."
+                errorMessage = "Please enter your User ID / Email and password."
               } else {
                 coroutineScope.launch {
                   isLoading = true
@@ -715,19 +749,6 @@ fun AuthScreen(viewModel: VybeViewModel) {
             },
             modifier = Modifier.testTag("auth_submit_button")
           )
-          Spacer(modifier = Modifier.height(8.dp))
-          TextButton(
-            onClick = {
-              verifyEmailInput = if (loginIdentifier.contains("@")) loginIdentifier else email
-              verifyError = null
-              showOtpVerifyDialog = true
-            },
-            modifier = Modifier.fillMaxWidth()
-          ) {
-            Icon(Icons.Default.MarkEmailRead, contentDescription = null, modifier = Modifier.size(16.dp), tint = VybeViolet)
-            Spacer(modifier = Modifier.width(6.dp))
-            Text("Have a confirmation code? Verify Email", fontSize = 12.sp, color = VybeViolet, fontWeight = FontWeight.SemiBold)
-          }
 
           Spacer(modifier = Modifier.height(14.dp))
           Row(

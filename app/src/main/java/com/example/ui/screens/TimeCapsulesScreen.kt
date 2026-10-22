@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -7,6 +8,9 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -340,19 +344,75 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
     }
   }
 
-  // Create Capsule Dialog
+  // Create Capsule Full-Screen Dialog
   if (showCreateDialog) {
-    AlertDialog(
+    val context = LocalContext.current
+    val generatedInviteLink = "https://vybe.app/capsule/join?code=CAPSULE-${System.currentTimeMillis() % 100000}"
+
+    Dialog(
       onDismissRequest = { showCreateDialog = false },
-      title = { Text("Seal a Future Time Capsule", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
-      text = {
+      properties = DialogProperties(
+        usePlatformDefaultWidth = false,
+        dismissOnBackPress = true
+      )
+    ) {
+      Scaffold(
+        topBar = {
+          TopAppBar(
+            navigationIcon = {
+              IconButton(onClick = { showCreateDialog = false }) {
+                Icon(Icons.Default.Close, contentDescription = "Close")
+              }
+            },
+            title = {
+              Column {
+                Text("Seal a Time Capsule", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("VYBE TIME CAPSULE • Cryptographically Sealed", fontSize = 11.sp, color = VybeBrandCyan)
+              }
+            },
+            actions = {
+              Button(
+                onClick = {
+                  if (titleInput.isNotBlank() && messageInput.isNotBlank()) {
+                    val recipientSummary = when (recipientType) {
+                      "myself" -> "To myself"
+                      "friends" -> "To @$selectedFriendUsername"
+                      else -> "Shareable Link Members"
+                    }
+                    viewModel.createTimeCapsule(
+                      title = titleInput.trim(),
+                      message = messageInput.trim(),
+                      recipient = recipientSummary,
+                      unlockDate = unlockDateInput.trim()
+                    )
+                    showCreateDialog = false
+                  }
+                },
+                enabled = titleInput.isNotBlank() && messageInput.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                  .padding(end = 8.dp)
+                  .testTag("confirm_seal_capsule_button")
+              ) {
+                Text("Seal Capsule", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+              }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+              containerColor = MaterialTheme.colorScheme.background
+            )
+          )
+        }
+      ) { innerPadding ->
         LazyColumn(
           modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 440.dp),
-          verticalArrangement = Arrangement.spacedBy(10.dp)
+            .fillMaxSize()
+            .padding(innerPadding)
+            .padding(horizontal = 16.dp),
+          verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
           item {
+            Spacer(modifier = Modifier.height(4.dp))
             OutlinedTextField(
               value = titleInput,
               onValueChange = { titleInput = it },
@@ -361,12 +421,13 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
               modifier = Modifier
                 .fillMaxWidth()
                 .testTag("capsule_title_input"),
-              singleLine = true
+              singleLine = true,
+              shape = RoundedCornerShape(14.dp)
             )
           }
 
           item {
-            Text("Recipient", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("Recipient Access", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
               FilterChip(
                 selected = recipientType == "myself",
@@ -376,7 +437,12 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
               FilterChip(
                 selected = recipientType == "friends",
                 onClick = { recipientType = "friends" },
-                label = { Text("Invite Friends", fontSize = 11.sp) }
+                label = { Text("Tag Friends", fontSize = 11.sp) }
+              )
+              FilterChip(
+                selected = recipientType == "invite_link",
+                onClick = { recipientType = "invite_link" },
+                label = { Text("Share Invite Link", fontSize = 11.sp) }
               )
             }
           }
@@ -394,6 +460,59 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
                 }
               }
             }
+          } else if (recipientType == "invite_link") {
+            item {
+              Card(
+                colors = CardDefaults.cardColors(containerColor = VybeVioletDark.copy(alpha = 0.35f)),
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, VybeViolet.copy(alpha = 0.4f))
+              ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Link, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Shareable Capsule Invite Link", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White)
+                  }
+                  Spacer(modifier = Modifier.height(4.dp))
+                  Text(
+                    text = "Anyone who clicks this link can join and unlock this capsule when the time arrives.",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                  Spacer(modifier = Modifier.height(8.dp))
+                  Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                  ) {
+                    Text(
+                      text = generatedInviteLink,
+                      fontSize = 11.sp,
+                      color = VybeBrandCyan,
+                      fontWeight = FontWeight.SemiBold,
+                      modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                  }
+                  Spacer(modifier = Modifier.height(8.dp))
+                  OutlinedButton(
+                    onClick = {
+                      val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_SUBJECT, "Join my VYBE Time Capsule!")
+                        putExtra(Intent.EXTRA_TEXT, "I just sealed a future Time Capsule on VYBE! Join with this invite link: $generatedInviteLink")
+                      }
+                      context.startActivity(Intent.createChooser(shareIntent, "Share Capsule Link"))
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp)
+                  ) {
+                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(14.dp), tint = VybeBrandCyan)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Share Invite Link", fontSize = 11.sp, color = VybeBrandCyan, fontWeight = FontWeight.Bold)
+                  }
+                }
+              }
+            }
           }
 
           item {
@@ -403,7 +522,8 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
               label = { Text("Unlock Date") },
               placeholder = { Text("e.g., Jan 01, 2027") },
               modifier = Modifier.fillMaxWidth(),
-              singleLine = true
+              singleLine = true,
+              shape = RoundedCornerShape(14.dp)
             )
           }
 
@@ -417,18 +537,19 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
                 .fillMaxWidth()
                 .testTag("capsule_message_input"),
               minLines = 3,
-              maxLines = 5
+              maxLines = 5,
+              shape = RoundedCornerShape(14.dp)
             )
           }
 
           item {
-            Text("Photo or Video Attachment", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("Photo or Video Attachment", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             if (pickedMediaUri != null) {
               Box(
                 modifier = Modifier
                   .fillMaxWidth()
-                  .height(120.dp)
-                  .clip(RoundedCornerShape(8.dp))
+                  .height(140.dp)
+                  .clip(RoundedCornerShape(12.dp))
               ) {
                 AsyncImage(
                   model = pickedMediaUri,
@@ -441,7 +562,7 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
                   modifier = Modifier
                     .align(Alignment.TopEnd)
                     .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                    .size(28.dp)
+                    .size(32.dp)
                 ) {
                   Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(16.dp))
                 }
@@ -452,7 +573,7 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
                   photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
                 },
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp)
+                shape = RoundedCornerShape(12.dp)
               ) {
                 Icon(Icons.Default.AttachFile, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
@@ -460,34 +581,42 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
               }
             }
           }
-        }
-      },
-      confirmButton = {
-        Button(
-          onClick = {
-            if (titleInput.isNotBlank() && messageInput.isNotBlank()) {
-              val recipientSummary = if (recipientType == "myself") "To myself" else "To @$selectedFriendUsername"
-              viewModel.createTimeCapsule(
-                title = titleInput.trim(),
-                message = messageInput.trim(),
-                recipient = recipientSummary,
-                unlockDate = unlockDateInput.trim()
-              )
-              showCreateDialog = false
+
+          item {
+            Button(
+              onClick = {
+                if (titleInput.isNotBlank() && messageInput.isNotBlank()) {
+                  val recipientSummary = when (recipientType) {
+                    "myself" -> "To myself"
+                    "friends" -> "To @$selectedFriendUsername"
+                    else -> "Shareable Link Members"
+                  }
+                  viewModel.createTimeCapsule(
+                    title = titleInput.trim(),
+                    message = messageInput.trim(),
+                    recipient = recipientSummary,
+                    unlockDate = unlockDateInput.trim()
+                  )
+                  showCreateDialog = false
+                }
+              },
+              enabled = titleInput.isNotBlank() && messageInput.isNotBlank(),
+              colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+              shape = RoundedCornerShape(14.dp),
+              modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .testTag("confirm_seal_capsule_large_button")
+            ) {
+              Text("Cryptographically Seal Capsule", fontWeight = FontWeight.Bold, fontSize = 14.sp)
             }
-          },
-          enabled = titleInput.isNotBlank() && messageInput.isNotBlank(),
-          colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-          modifier = Modifier.testTag("confirm_seal_capsule_button")
-        ) {
-          Text("Lock & Seal Capsule", fontWeight = FontWeight.Bold)
-        }
-      },
-      dismissButton = {
-        TextButton(onClick = { showCreateDialog = false }) {
-          Text("Cancel")
+          }
+
+          item {
+            Spacer(modifier = Modifier.height(30.dp))
+          }
         }
       }
-    )
+    }
   }
 }

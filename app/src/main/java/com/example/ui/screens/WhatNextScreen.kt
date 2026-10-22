@@ -21,6 +21,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.ui.VybeViewModel
 import com.example.ui.theme.*
 
@@ -285,19 +288,67 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
     }
   }
 
-  // Create Audience Poll Dialog
+  // Create Audience Poll Full-Page Dialog
   if (showCreatePollDialog) {
-    AlertDialog(
+    Dialog(
       onDismissRequest = { showCreatePollDialog = false },
-      title = { Text("Create Audience Poll", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
-      text = {
+      properties = DialogProperties(
+        usePlatformDefaultWidth = false,
+        dismissOnBackPress = true
+      )
+    ) {
+      Scaffold(
+        topBar = {
+          TopAppBar(
+            navigationIcon = {
+              IconButton(onClick = { showCreatePollDialog = false }) {
+                Icon(Icons.Default.Close, contentDescription = "Close")
+              }
+            },
+            title = {
+              Column {
+                Text("New Audience Poll", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("VYBE WHAT NEXT • Community Consensus", fontSize = 11.sp, color = VybeBrandCyan)
+              }
+            },
+            actions = {
+              Button(
+                onClick = {
+                  if (pollTitle.isNotBlank() && pollOptions.all { it.isNotBlank() }) {
+                    viewModel.createPredictionPoll(
+                      title = pollTitle.trim(),
+                      category = pollCategory,
+                      durationHours = pollDurationHours,
+                      options = pollOptions.map { it.trim() }
+                    )
+                    showCreatePollDialog = false
+                  }
+                },
+                enabled = pollTitle.isNotBlank() && pollOptions.all { it.isNotBlank() },
+                colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                  .padding(end = 8.dp)
+                  .testTag("publish_poll_button")
+              ) {
+                Text("Publish Poll", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+              }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+              containerColor = MaterialTheme.colorScheme.background
+            )
+          )
+        }
+      ) { innerPadding ->
         LazyColumn(
           modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 440.dp),
-          verticalArrangement = Arrangement.spacedBy(10.dp)
+            .fillMaxSize()
+            .padding(innerPadding)
+            .padding(horizontal = 16.dp),
+          verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
           item {
+            Spacer(modifier = Modifier.height(4.dp))
             OutlinedTextField(
               value = pollTitle,
               onValueChange = { pollTitle = it },
@@ -306,17 +357,16 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
               modifier = Modifier
                 .fillMaxWidth()
                 .testTag("poll_question_input"),
-              maxLines = 3
+              minLines = 3,
+              shape = RoundedCornerShape(14.dp)
             )
           }
 
           item {
-            Text("Category", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            LazyColumn(
-              modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 100.dp),
-              verticalArrangement = Arrangement.spacedBy(4.dp)
+            Text("Category", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            LazyRow(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
               items(categoryChoices) { cat ->
                 FilterChip(
@@ -329,7 +379,7 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
           }
 
           item {
-            Text("Duration", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("Poll Duration", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
               listOf(Pair("24 Hours", 24), Pair("3 Days", 72), Pair("7 Days", 168)).forEach { (lbl, hrs) ->
                 FilterChip(
@@ -342,7 +392,7 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
           }
 
           item {
-            Text("Poll Options", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("Poll Options", fontSize = 13.sp, fontWeight = FontWeight.Bold)
           }
 
           items(pollOptions.indices.toList()) { index ->
@@ -359,7 +409,8 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
                 },
                 label = { Text("Option ${index + 1}") },
                 modifier = Modifier.weight(1f),
-                singleLine = true
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp)
               )
               if (pollOptions.size > 2) {
                 IconButton(
@@ -377,44 +428,50 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
 
           if (pollOptions.size < 4) {
             item {
-              TextButton(
+              OutlinedButton(
                 onClick = {
                   pollOptions = pollOptions + "New Option ${pollOptions.size + 1}"
-                }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
               ) {
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(6.dp))
                 Text("Add Another Option", fontSize = 12.sp)
               }
             }
           }
-        }
-      },
-      confirmButton = {
-        Button(
-          onClick = {
-            if (pollTitle.isNotBlank() && pollOptions.all { it.isNotBlank() }) {
-              viewModel.createPredictionPoll(
-                title = pollTitle.trim(),
-                category = pollCategory,
-                durationHours = pollDurationHours,
-                options = pollOptions.map { it.trim() }
-              )
-              showCreatePollDialog = false
+
+          item {
+            Button(
+              onClick = {
+                if (pollTitle.isNotBlank() && pollOptions.all { it.isNotBlank() }) {
+                  viewModel.createPredictionPoll(
+                    title = pollTitle.trim(),
+                    category = pollCategory,
+                    durationHours = pollDurationHours,
+                    options = pollOptions.map { it.trim() }
+                  )
+                  showCreatePollDialog = false
+                }
+              },
+              enabled = pollTitle.isNotBlank() && pollOptions.all { it.isNotBlank() },
+              colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+              shape = RoundedCornerShape(14.dp),
+              modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .testTag("publish_poll_large_button")
+            ) {
+              Text("Publish Audience Poll", fontWeight = FontWeight.Bold, fontSize = 14.sp)
             }
-          },
-          enabled = pollTitle.isNotBlank() && pollOptions.all { it.isNotBlank() },
-          colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-          modifier = Modifier.testTag("publish_poll_button")
-        ) {
-          Text("Publish Poll", fontWeight = FontWeight.Bold)
-        }
-      },
-      dismissButton = {
-        TextButton(onClick = { showCreatePollDialog = false }) {
-          Text("Cancel")
+          }
+
+          item {
+            Spacer(modifier = Modifier.height(30.dp))
+          }
         }
       }
-    )
+    }
   }
 }
