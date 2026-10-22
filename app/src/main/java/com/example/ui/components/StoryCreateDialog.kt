@@ -92,9 +92,9 @@ fun StoryCreateDialog(
   var selectedLocation by remember { mutableStateOf<String?>(null) }
   var showLocationPicker by remember { mutableStateOf(false) }
 
+  val context = androidx.compose.ui.platform.LocalContext.current
   // Photo / Media state (starts clean without default pre-selected photo)
   var pickedMediaUri by remember { mutableStateOf<Uri?>(null) }
-  var samplePhotoUrl by remember { mutableStateOf<String?>(null) }
 
   // Text mode state
   var textBackgroundKey by remember { mutableStateOf("NEON_PURPLE") }
@@ -109,7 +109,8 @@ fun StoryCreateDialog(
     contract = ActivityResultContracts.PickVisualMedia()
   ) { uri ->
     if (uri != null) {
-      pickedMediaUri = uri
+      val localPath = com.example.util.MediaUtils.copyUriToLocalCache(context, uri, "story_media")
+      pickedMediaUri = Uri.parse(localPath)
     }
   }
 
@@ -172,7 +173,7 @@ fun StoryCreateDialog(
           Row(
             modifier = Modifier
               .fillMaxWidth()
-              .navigationBarsPadding()
+              .windowInsetsPadding(WindowInsets.navigationBars)
               .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
           ) {
@@ -184,7 +185,7 @@ fun StoryCreateDialog(
                   mode = selectedMode,
                   audience = StoryAudience.VYBE_MATCHES,
                   caption = captionText,
-                  mediaUri = pickedMediaUri?.toString() ?: samplePhotoUrl,
+                  mediaUri = pickedMediaUri?.toString() ?: "",
                   textBgKey = textBackgroundKey,
                   musicTitle = selectedTrack.first,
                   location = selectedLocation,
@@ -198,6 +199,7 @@ fun StoryCreateDialog(
               shape = RoundedCornerShape(24.dp),
               modifier = Modifier
                 .weight(1f)
+                .height(48.dp)
                 .testTag("publish_vybe_matches_button")
             ) {
               Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFF2ECC71), modifier = Modifier.size(16.dp))
@@ -213,7 +215,7 @@ fun StoryCreateDialog(
                   mode = selectedMode,
                   audience = StoryAudience.EVERYONE,
                   caption = captionText,
-                  mediaUri = pickedMediaUri?.toString() ?: samplePhotoUrl,
+                  mediaUri = pickedMediaUri?.toString() ?: "",
                   textBgKey = textBackgroundKey,
                   musicTitle = selectedTrack.first,
                   location = selectedLocation,
@@ -229,6 +231,7 @@ fun StoryCreateDialog(
               shape = RoundedCornerShape(24.dp),
               modifier = Modifier
                 .weight(1f)
+                .height(48.dp)
                 .testTag("publish_your_story_button")
             ) {
               Icon(Icons.Default.ArrowForward, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
@@ -315,13 +318,6 @@ fun StoryCreateDialog(
                   contentScale = ContentScale.Crop,
                   modifier = Modifier.fillMaxSize()
                 )
-              } else if (samplePhotoUrl != null) {
-                AsyncImage(
-                  model = samplePhotoUrl,
-                  contentDescription = "Sample photo",
-                  contentScale = ContentScale.Crop,
-                  modifier = Modifier.fillMaxSize()
-                )
               } else {
                 Box(
                   modifier = Modifier
@@ -346,7 +342,7 @@ fun StoryCreateDialog(
               }
 
               // Gallery Picker Overlay button
-              if (pickedMediaUri != null || samplePhotoUrl != null) {
+              if (pickedMediaUri != null) {
                 Box(
                   modifier = Modifier
                     .align(Alignment.BottomEnd)

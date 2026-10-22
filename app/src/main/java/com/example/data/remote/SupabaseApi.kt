@@ -68,6 +68,22 @@ interface SupabaseRestApi {
     @Query("select") select: String = "*"
   ): Response<List<SupabaseProfileDto>>
 
+  @GET("profiles")
+  suspend fun getProfileByPhone(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String,
+    @Query("phone") phoneFilter: String,
+    @Query("select") select: String = "*"
+  ): Response<List<SupabaseProfileDto>>
+
+  @GET("profiles")
+  suspend fun getProfiles(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String,
+    @Query("select") select: String = "*",
+    @Query("limit") limit: Int = 100
+  ): Response<List<SupabaseProfileDto>>
+
   @POST("profiles")
   suspend fun upsertProfile(
     @Header("apikey") apiKey: String,

@@ -37,15 +37,18 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
 
   val posts by viewModel.posts.collectAsState()
   val conversations by viewModel.conversations.collectAsState()
+  val allUsers by viewModel.allUsers.collectAsState()
   var isPlaying by remember { mutableStateOf(true) }
   var isMuted by remember { mutableStateOf(false) }
   var showShareInboxSheet by remember { mutableStateOf(false) }
+  var showCommentsSheet by remember { mutableStateOf(false) }
+  var reelCommentText by remember { mutableStateOf("") }
+  var shareSearchQuery by remember { mutableStateOf("") }
   var sharedFeedback by remember { mutableStateOf<String?>(null) }
 
-  // Filter only video posts (Never show static text/feed posts)
+  // Filter strictly only video reels (Never show static text or feed posts)
   val videoPosts = remember(posts) {
-    val vids = posts.filter { it.mediaType == com.example.data.model.MediaType.REEL || it.mediaType == com.example.data.model.MediaType.VIDEO || it.isVybesReel }
-    if (vids.isNotEmpty()) vids else posts.filter { it.mediaUrls.isNotEmpty() }
+    posts.filter { it.mediaType == com.example.data.model.MediaType.REEL || it.mediaType == com.example.data.model.MediaType.VIDEO || it.isVybesReel }
   }
 
   if (videoPosts.isEmpty()) {
@@ -171,7 +174,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
           // Comments
           Column(horizontalAlignment = Alignment.CenterHorizontally) {
             IconButton(
-              onClick = { /* Comments dialog */ },
+              onClick = { showCommentsSheet = true },
               modifier = Modifier
                 .size(46.dp)
                 .clip(CircleShape)
@@ -294,8 +297,18 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
     // Share to Inbox Sheet
     if (showShareInboxSheet) {
       val currentReel = videoPosts[pagerState.currentPage]
+      val filteredUsers = remember(shareSearchQuery, allUsers) {
+        if (shareSearchQuery.isBlank()) allUsers else {
+          val q = shareSearchQuery.trim().lowercase().replace("@", "")
+          allUsers.filter { it.displayName.lowercase().contains(q) || it.username.lowercase().contains(q) }
+        }
+      }
+
       ModalBottomSheet(
-        onDismissRequest = { showShareInboxSheet = false },
+        onDismissRequest = {
+          showShareInboxSheet = false
+          shareSearchQuery = ""
+        },
         containerColor = MaterialTheme.colorScheme.surface
       ) {
         Column(
@@ -310,53 +323,39 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
             fontWeight = FontWeight.Bold
           )
           Text(
-            text = "Select a friend or group to send this reel instantly.",
+            text = "Send this reel directly to any friend or group.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
           )
-          Spacer(modifier = Modifier.height(14.dp))
+          Spacer(modifier = Modifier.height(10.dp))
+
+          OutlinedTextField(
+            value = shareSearchQuery,
+            onValueChange = { shareSearchQuery = it },
+            placeholder = { Text("Search friends by name or @userid...", fontSize = 12.sp) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
+            singleLine = true,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+          )
+          Spacer(modifier = Modifier.height(12.dp))
 
           androidx.compose.foundation.lazy.LazyColumn(
-            modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
           ) {
-            items(conversations) { conv ->
-              Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .clickable {
-                    viewModel.sendExtendedDirectMessage(
-                      convId = conv.id,
-                      text = "🎬 Shared Reel from @${currentReel.author.username}: ${currentReel.caption}",
-                      mediaUrl = currentReel.mediaUrls.firstOrNull(),
-                      mediaType = "VIDEO"
-                    )
-                    sharedFeedback = "Reel sent to ${conv.groupName ?: conv.peerUser.displayName}! 🚀"
-                    showShareInboxSheet = false
-                  }
-              ) {
-                Row(
-                  modifier = Modifier.padding(12.dp),
-                  verticalAlignment = Alignment.CenterVertically
-                ) {
-                  VybeAvatar(user = conv.peerUser, size = 36.dp)
-                  Spacer(modifier = Modifier.width(10.dp))
-                  Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                      text = conv.groupName ?: conv.peerUser.displayName,
-                      fontWeight = FontWeight.Bold,
-                      fontSize = 13.sp
-                    )
-                    Text(
-                      text = "@${conv.peerUser.username}",
-                      fontSize = 11.sp,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                  }
-                  Button(
-                    onClick = {
+            // First list active conversations
+            if (conversations.isNotEmpty() && shareSearchQuery.isBlank()) {
+              item {
+                Text("Recent Conversations", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              }
+              items(conversations) { conv ->
+                Surface(
+                  shape = RoundedCornerShape(12.dp),
+                  color = MaterialTheme.colorScheme.surfaceVariant,
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
                       viewModel.sendExtendedDirectMessage(
                         convId = conv.id,
                         text = "🎬 Shared Reel from @${currentReel.author.username}: ${currentReel.caption}",
@@ -364,6 +363,83 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                         mediaType = "VIDEO"
                       )
                       sharedFeedback = "Reel sent to ${conv.groupName ?: conv.peerUser.displayName}! 🚀"
+                      showShareInboxSheet = false
+                    }
+                ) {
+                  Row(
+                    modifier = Modifier.padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    VybeAvatar(user = conv.peerUser, size = 36.dp)
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                      Text(conv.groupName ?: conv.peerUser.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                      Text("@${conv.peerUser.username}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Button(
+                      onClick = {
+                        viewModel.sendExtendedDirectMessage(
+                          convId = conv.id,
+                          text = "🎬 Shared Reel from @${currentReel.author.username}: ${currentReel.caption}",
+                          mediaUrl = currentReel.mediaUrls.firstOrNull(),
+                          mediaType = "VIDEO"
+                        )
+                        sharedFeedback = "Reel sent to ${conv.groupName ?: conv.peerUser.displayName}! 🚀"
+                        showShareInboxSheet = false
+                      },
+                      shape = RoundedCornerShape(16.dp),
+                      colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                      contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+                    ) {
+                      Text("Send", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                  }
+                }
+              }
+            }
+
+            // Next list community members/friends
+            item {
+              Text("Community Contacts", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            items(filteredUsers) { targetUser ->
+              Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .clickable {
+                    val conv = viewModel.getOrCreateConversation(targetUser)
+                    viewModel.sendExtendedDirectMessage(
+                      convId = conv.id,
+                      text = "🎬 Shared Reel from @${currentReel.author.username}: ${currentReel.caption}",
+                      mediaUrl = currentReel.mediaUrls.firstOrNull(),
+                      mediaType = "VIDEO"
+                    )
+                    sharedFeedback = "Reel sent to ${targetUser.displayName}! 🚀"
+                    showShareInboxSheet = false
+                  }
+              ) {
+                Row(
+                  modifier = Modifier.padding(10.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  VybeAvatar(user = targetUser, size = 36.dp)
+                  Spacer(modifier = Modifier.width(10.dp))
+                  Column(modifier = Modifier.weight(1f)) {
+                    Text(targetUser.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text("@${targetUser.username}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  }
+                  Button(
+                    onClick = {
+                      val conv = viewModel.getOrCreateConversation(targetUser)
+                      viewModel.sendExtendedDirectMessage(
+                        convId = conv.id,
+                        text = "🎬 Shared Reel from @${currentReel.author.username}: ${currentReel.caption}",
+                        mediaUrl = currentReel.mediaUrls.firstOrNull(),
+                        mediaType = "VIDEO"
+                      )
+                      sharedFeedback = "Reel sent to ${targetUser.displayName}! 🚀"
                       showShareInboxSheet = false
                     },
                     shape = RoundedCornerShape(16.dp),
@@ -377,6 +453,91 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
             }
           }
           Spacer(modifier = Modifier.height(16.dp))
+        }
+      }
+    }
+
+    // Reel Comments Sheet
+    if (showCommentsSheet) {
+      val currentReel = videoPosts[pagerState.currentPage]
+      ModalBottomSheet(
+        onDismissRequest = { showCommentsSheet = false },
+        containerColor = MaterialTheme.colorScheme.surface
+      ) {
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp)
+            .navigationBarsPadding()
+        ) {
+          Text(
+            text = "Comments (${currentReel.comments.size})",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+          )
+          Spacer(modifier = Modifier.height(10.dp))
+
+          if (currentReel.comments.isEmpty()) {
+            Box(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+              contentAlignment = Alignment.Center
+            ) {
+              Text("No comments yet. Be the first to vibe on this reel!", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+          } else {
+            androidx.compose.foundation.lazy.LazyColumn(
+              modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp),
+              verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+              items(currentReel.comments) { c ->
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  verticalAlignment = Alignment.Top
+                ) {
+                  VybeAvatar(user = c.author, size = 32.dp)
+                  Spacer(modifier = Modifier.width(10.dp))
+                  Column(modifier = Modifier.weight(1f)) {
+                    Text(c.author.displayName, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text(c.content, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                    Text(c.timestamp, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  }
+                }
+              }
+            }
+          }
+
+          Spacer(modifier = Modifier.height(8.dp))
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            OutlinedTextField(
+              value = reelCommentText,
+              onValueChange = { reelCommentText = it },
+              placeholder = { Text("Comment on this reel...") },
+              shape = RoundedCornerShape(24.dp),
+              modifier = Modifier.weight(1f),
+              singleLine = true
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            IconButton(
+              onClick = {
+                if (reelCommentText.isNotBlank()) {
+                  viewModel.addComment(currentReel.id, reelCommentText.trim())
+                  reelCommentText = ""
+                }
+              },
+              modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(VybeViolet)
+            ) {
+              Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(18.dp))
+            }
+          }
+          Spacer(modifier = Modifier.height(10.dp))
         }
       }
     }
@@ -396,5 +557,4 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
       }
     }
   }
-}
 }

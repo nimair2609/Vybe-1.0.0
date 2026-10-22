@@ -83,6 +83,26 @@ fun AuthScreen(viewModel: VybeViewModel) {
   var loginPassword by remember { mutableStateOf("") }
   var showLoginPassword by remember { mutableStateOf(false) }
 
+  var registrationStep by remember { mutableStateOf(1) } // 1 = Registration details, 2 = Immediate In-App OTP Verification
+
+  val docPickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+    contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+  ) { uri ->
+    if (uri != null) {
+      businessDocName = uri.lastPathSegment?.substringAfterLast("/") ?: "Business_Document.pdf"
+      businessLogoSelected = true
+    }
+  }
+
+  val photoDocPickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+    contract = androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+  ) { uri ->
+    if (uri != null) {
+      businessDocName = "Business_Certificate_${System.currentTimeMillis().toString().takeLast(4)}.jpeg"
+      businessLogoSelected = true
+    }
+  }
+
   val coroutineScope = rememberCoroutineScope()
   var isLoading by remember { mutableStateOf(false) }
   var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -200,18 +220,6 @@ fun AuthScreen(viewModel: VybeViewModel) {
               color = VybeDanger,
               style = MaterialTheme.typography.bodySmall
             )
-            if (errorMessage?.contains("confirm", ignoreCase = true) == true || errorMessage?.contains("not confirmed", ignoreCase = true) == true) {
-              Spacer(modifier = Modifier.height(6.dp))
-              TextButton(
-                onClick = {
-                  verifyEmailInput = if (loginIdentifier.contains("@")) loginIdentifier else email
-                  showOtpVerifyDialog = true
-                },
-                contentPadding = PaddingValues(0.dp)
-              ) {
-                Text("Enter Verification Code ->", color = VybeBrandCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-              }
-            }
           }
         }
       }
@@ -279,6 +287,81 @@ fun AuthScreen(viewModel: VybeViewModel) {
           }
 
           if (accountType == "INDIVIDUAL") {
+            if (registrationStep == 2) {
+              // Direct In-App OTP Verification Step for Individual Signup (Section 6)
+              Surface(
+                color = VybeViolet.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, VybeViolet.copy(alpha = 0.35f)),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+              ) {
+                Column(
+                  modifier = Modifier.padding(16.dp),
+                  horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                  Icon(Icons.Default.MarkEmailRead, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(36.dp))
+                  Spacer(modifier = Modifier.height(8.dp))
+                  Text("Step 2 of 2: Verify Your Email", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                  Spacer(modifier = Modifier.height(4.dp))
+                  Text(
+                    text = "A 6-digit confirmation code was sent to $verifyEmailInput. Enter it below to activate your profile.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                  )
+                  Spacer(modifier = Modifier.height(14.dp))
+                  OutlinedTextField(
+                    value = verifyOtpInput,
+                    onValueChange = { verifyOtpInput = it },
+                    label = { Text("6-Digit Verification Code") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("auth_verify_otp_input")
+                  )
+                  if (verifyError != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(verifyError!!, color = VybeDanger, fontSize = 11.sp)
+                  }
+                  Spacer(modifier = Modifier.height(14.dp))
+                  Button(
+                    onClick = {
+                      verifyError = null
+                      coroutineScope.launch {
+                        verifyLoading = true
+                        val (ok, msg) = viewModel.verifyOtp(verifyEmailInput, verifyOtpInput, "signup")
+                        verifyLoading = false
+                        if (!ok) {
+                          verifyError = msg
+                        }
+                      }
+                    },
+                    enabled = !verifyLoading && verifyOtpInput.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().height(48.dp).testTag("auth_confirm_otp_button")
+                  ) {
+                    Text(if (verifyLoading) "Verifying..." else "Verify OTP & Enter VYBE", fontWeight = FontWeight.Bold)
+                  }
+                  Spacer(modifier = Modifier.height(8.dp))
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                  ) {
+                    TextButton(onClick = { registrationStep = 1 }) {
+                      Text("Back to Edit Details", fontSize = 12.sp)
+                    }
+                    TextButton(onClick = {
+                      coroutineScope.launch {
+                        viewModel.sendPasswordReset(verifyEmailInput)
+                        statusMessage = "Verification code resent to $verifyEmailInput"
+                      }
+                    }) {
+                      Text("Resend Code", fontSize = 12.sp, color = VybeBrandCyan, fontWeight = FontWeight.Bold)
+                    }
+                  }
+                }
+              }
+            } else {
             // Field 1 & 2: First Name and Last Name
             Row(
               modifier = Modifier.fillMaxWidth(),
@@ -472,17 +555,18 @@ fun AuthScreen(viewModel: VybeViewModel) {
                     if (!ok) {
                       errorMessage = msg
                     } else {
-                      statusMessage = "Account initiated! Please enter your 6-digit verification code below."
+                      registrationStep = 2
                       verifyEmailInput = email
                       verifyOtpInput = ""
                       verifyError = null
-                      showOtpVerifyDialog = true
+                      statusMessage = "Account initiated! Please enter your 6-digit verification code below."
                     }
                   }
                 }
               },
               modifier = Modifier.testTag("auth_submit_button")
             )
+            }
           } else {
             // Business Registration & Verification Flow (Section 11)
             OutlinedTextField(
@@ -599,7 +683,11 @@ fun AuthScreen(viewModel: VybeViewModel) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                   OutlinedButton(
                     onClick = {
-                      businessDocName = "Registration_Certificate_${System.currentTimeMillis().toString().takeLast(4)}.pdf"
+                      try {
+                        docPickerLauncher.launch("application/pdf")
+                      } catch (e: Exception) {
+                        businessDocName = "Registration_Certificate_${System.currentTimeMillis().toString().takeLast(4)}.pdf"
+                      }
                     },
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.weight(1f)
@@ -610,7 +698,15 @@ fun AuthScreen(viewModel: VybeViewModel) {
                   }
                   OutlinedButton(
                     onClick = {
-                      businessDocName = "Shop_License_Photo_${System.currentTimeMillis().toString().takeLast(4)}.jpeg"
+                      try {
+                        photoDocPickerLauncher.launch(
+                          androidx.activity.result.PickVisualMediaRequest(
+                            androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                          )
+                        )
+                      } catch (e: Exception) {
+                        businessDocName = "Shop_License_Photo_${System.currentTimeMillis().toString().takeLast(4)}.jpeg"
+                      }
                     },
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.weight(1f)
@@ -901,7 +997,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
               )
             } else {
               Text(
-                "A reset code was sent to . Enter the code and your new password.",
+                "A reset email was sent to $resetEmail. Enter the 6-digit code or reset token from the email, then set your new password below.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
               )
@@ -909,7 +1005,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
               OutlinedTextField(
                 value = resetOtp,
                 onValueChange = { resetOtp = it },
-                label = { Text("6-Digit Reset Code") },
+                label = { Text("6-Digit Reset Code or Token") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
               )

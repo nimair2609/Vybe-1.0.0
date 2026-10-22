@@ -525,8 +525,13 @@ class SupabaseRepository {
 
   suspend fun resolveEmailForIdentifier(identifier: String): String? = withContext(Dispatchers.IO) {
     if (!isConfigured) return@withContext null
-    val clean = identifier.trim().lowercase().removePrefix("@")
+    val trimmed = identifier.trim()
+    val clean = trimmed.lowercase().removePrefix("@")
     if (clean.contains("@")) return@withContext clean
+
+    val phoneClean = trimmed.replace(" ", "").replace("-", "")
+
+    // Try username
     try {
       val resp = SupabaseNetworkClient.restApi.getProfileByUsername(
         apiKey = SupabaseConfig.supabaseAnonKey,
@@ -534,12 +539,88 @@ class SupabaseRepository {
         usernameFilter = "eq.$clean"
       )
       if (resp.isSuccessful && !resp.body().isNullOrEmpty()) {
-        return@withContext resp.body()!!.first().email
+        val em = resp.body()!!.first().email
+        if (!em.isNullOrBlank()) return@withContext em
       }
     } catch (e: Exception) {
       Log.w(TAG, "Username resolution error: ${e.message}")
     }
+
+    // Try phone
+    try {
+      val phoneResp = SupabaseNetworkClient.restApi.getProfileByPhone(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = "Bearer ${SupabaseConfig.supabaseAnonKey}",
+        phoneFilter = "eq.$trimmed"
+      )
+      if (phoneResp.isSuccessful && !phoneResp.body().isNullOrEmpty()) {
+        val em = phoneResp.body()!!.first().email
+        if (!em.isNullOrBlank()) return@withContext em
+      }
+    } catch (e: Exception) {
+      Log.w(TAG, "Phone resolution error: ${e.message}")
+    }
+
+    // Fallback: search all profiles for matching username, phone or id
+    try {
+      val allResp = SupabaseNetworkClient.restApi.getProfiles(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = "Bearer ${SupabaseConfig.supabaseAnonKey}"
+      )
+      if (allResp.isSuccessful && !allResp.body().isNullOrEmpty()) {
+        val matched = allResp.body()!!.firstOrNull {
+          it.username.equals(clean, true) ||
+          it.id.equals(clean, true) ||
+          (!it.phone.isNullOrBlank() && (it.phone.replace(" ", "").replace("-", "") == phoneClean || it.phone == trimmed))
+        }
+        if (matched != null && !matched.email.isNullOrBlank()) {
+          return@withContext matched.email
+        }
+      }
+    } catch (e: Exception) {
+      Log.w(TAG, "All profiles search error: ${e.message}")
+    }
+
     null
+  }
+
+  suspend fun fetchAllProfiles(): List<User> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext emptyList()
+    try {
+      val resp = SupabaseNetworkClient.restApi.getProfiles(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = "Bearer ${SupabaseConfig.supabaseAnonKey}"
+      )
+      if (resp.isSuccessful && resp.body() != null) {
+        return@withContext resp.body()!!.map { p ->
+          User(
+            id = p.id,
+            username = p.username,
+            displayName = p.displayName,
+            firstName = p.firstName ?: "",
+            lastName = p.lastName ?: "",
+            bio = p.bio ?: "",
+            avatarUrl = p.avatarUrl ?: "",
+            coverUrl = p.coverUrl ?: "",
+            email = p.email ?: "",
+            phone = p.phone ?: "",
+            dateOfBirth = p.dateOfBirth ?: "2000-01-01",
+            age = p.age ?: 20,
+            isUnder18 = p.isUnder18 ?: false,
+            role = try { UserRole.valueOf(p.role ?: "USER") } catch (e: Exception) { UserRole.USER },
+            isVerified = p.isVerified ?: false,
+            isVip = p.isVip ?: false,
+            followersCount = p.followersCount ?: 0,
+            followingCount = p.followingCount ?: 0,
+            postsCount = p.postsCount ?: 0,
+            isOnboardingCompleted = true
+          )
+        }
+      }
+    } catch (e: Exception) {
+      Log.w(TAG, "fetchAllProfiles exception: ${e.message}")
+    }
+    emptyList()
   }
 
   suspend fun sendMessage(

@@ -92,11 +92,33 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
     }
   }
 
-  val launchCameraSafely = {
-    try {
-      cameraLauncher.launch(null)
-    } catch (_: Exception) {
+  val cameraPermissionLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.RequestPermission()
+  ) { isGranted ->
+    if (isGranted) {
+      try {
+        cameraLauncher.launch(null)
+      } catch (e: Exception) {
+        photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+      }
+    } else {
       photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    }
+  }
+
+  val launchCameraSafely = {
+    if (androidx.core.content.ContextCompat.checkSelfPermission(
+        context,
+        android.Manifest.permission.CAMERA
+      ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    ) {
+      try {
+        cameraLauncher.launch(null)
+      } catch (e: Exception) {
+        photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+      }
+    } else {
+      cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
     }
   }
 

@@ -44,4 +44,20 @@ object MediaUtils {
       Uri.fromFile(file)
     }
   }
+
+  fun copyUriToLocalCache(context: Context, uri: Uri, prefix: String = "vybe_media"): String {
+    return try {
+      val dir = File(context.filesDir, "user_media").apply { mkdirs() }
+      val ext = if (uri.toString().contains(".png", true)) "png" else "jpg"
+      val destFile = File(dir, "${prefix}_${System.currentTimeMillis()}.$ext")
+      context.contentResolver.openInputStream(uri)?.use { input ->
+        destFile.outputStream().use { output ->
+          input.copyTo(output)
+        }
+      }
+      Uri.fromFile(destFile).toString()
+    } catch (e: Exception) {
+      uri.toString()
+    }
+  }
 }

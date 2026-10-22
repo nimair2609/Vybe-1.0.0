@@ -295,6 +295,20 @@ class VybeRepository private constructor() {
 
   init {
     seedInitialData()
+    if (supabaseRepo.isConfigured) {
+      CoroutineScope(Dispatchers.IO).launch {
+        try {
+          val profiles = supabaseRepo.fetchAllProfiles()
+          if (profiles.isNotEmpty()) {
+            val existingIds = _allUsers.value.map { it.id }.toSet()
+            val newProfiles = profiles.filter { it.id !in existingIds }
+            _allUsers.value = newProfiles + _allUsers.value
+          }
+        } catch (e: Exception) {
+          Log.w("VybeRepo", "Sync profiles error: ${e.message}")
+        }
+      }
+    }
   }
 
   private fun seedInitialData() {
@@ -2345,13 +2359,39 @@ class VybeRepository private constructor() {
   }
 
   fun searchUserByVybeId(query: String): User? {
+    val list = searchUsers(query)
+    return list.firstOrNull()
+  }
+
+  fun searchUsers(query: String): List<User> {
     val clean = query.trim().lowercase().replace("@", "")
-    return _allUsers.value.firstOrNull {
-      it.publicVybeId.lowercase() == clean ||
-      it.username.lowercase() == clean ||
-      it.id.lowercase() == clean ||
-      it.displayName.lowercase() == clean
+    if (clean.isBlank()) return emptyList()
+    return _allUsers.value.filter {
+      it.displayName.lowercase().contains(clean) ||
+      it.username.lowercase().contains(clean) ||
+      it.publicVybeId.lowercase().contains(clean) ||
+      it.id.lowercase().contains(clean)
     }
+  }
+
+  fun hasHiddenChatPinSet(): Boolean {
+    return hiddenChatPinHash.isNotBlank() && hiddenChatPinHash != "1234".hashCode().toString()
+  }
+
+  fun getOrCreateConversation(peerUser: User): Conversation {
+    val existing = _conversations.value.firstOrNull { !it.isGroup && it.peerUser.id == peerUser.id }
+    if (existing != null) return existing
+
+    val newConv = Conversation(
+      id = "conv_${System.currentTimeMillis()}_${peerUser.id}",
+      peerUser = peerUser,
+      lastMessage = "Say hi to ${peerUser.displayName}! 👋",
+      lastMessageTimestamp = "Just now",
+      messages = emptyList(),
+      unreadCount = 0
+    )
+    _conversations.value = listOf(newConv) + _conversations.value
+    return newConv
   }
 
   fun addVybeMatch(user: User) {

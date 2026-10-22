@@ -83,7 +83,11 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
     contract = ActivityResultContracts.PickVisualMedia()
   ) { uri: Uri? ->
     if (uri != null) {
-      val uriStr = uri.toString()
+      val uriStr = com.example.util.MediaUtils.copyUriToLocalCache(
+        context,
+        uri,
+        prefix = if (photoActionTarget == "AVATAR") "avatar" else "banner"
+      )
       if (photoActionTarget == "AVATAR") {
         viewModel.updateProfilePhoto(uriStr)
       } else if (photoActionTarget == "BANNER") {
@@ -119,7 +123,7 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
     contract = ActivityResultContracts.PickVisualMedia()
   ) { uri: Uri? ->
     if (uri != null) {
-      editAvatarUrl = uri.toString()
+      editAvatarUrl = com.example.util.MediaUtils.copyUriToLocalCache(context, uri, "avatar_edit")
     }
   }
 
@@ -128,7 +132,7 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
     contract = ActivityResultContracts.PickVisualMedia()
   ) { uri: Uri? ->
     if (uri != null) {
-      editCoverUrl = uri.toString()
+      editCoverUrl = com.example.util.MediaUtils.copyUriToLocalCache(context, uri, "banner_edit")
     }
   }
 
@@ -702,19 +706,16 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
 
   // Edit Profile Full Screen (Section 11 & 12)
   if (showEditProfileModal) {
-    androidx.compose.ui.window.Dialog(
-      onDismissRequest = { showEditProfileModal = false },
-      properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-      Scaffold(
-        topBar = {
-          TopAppBar(
-            title = { Text("Edit Profile", fontWeight = FontWeight.Bold) },
-            navigationIcon = {
-              IconButton(onClick = { showEditProfileModal = false }) {
-                Icon(Icons.Default.Close, contentDescription = "Close")
-              }
-            },
+    BackHandler { showEditProfileModal = false }
+    Scaffold(
+      topBar = {
+        TopAppBar(
+          title = { Text("Edit Profile", fontWeight = FontWeight.Bold) },
+          navigationIcon = {
+            IconButton(onClick = { showEditProfileModal = false }) {
+              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+          },
             actions = {
               Button(
                 onClick = {
@@ -899,7 +900,7 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
           Spacer(modifier = Modifier.height(24.dp))
         }
       }
-    }
+    return
   }
 
   // Go Live Modal (Requirement L)

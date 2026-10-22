@@ -245,10 +245,10 @@ class VybeViewModel : ViewModel() {
   fun toggleBlockUser(userId: String) = repository.toggleBlockUser(userId)
   fun unblockUser(userId: String) = repository.unblockUser(userId)
   fun toggleRestrictUser(userId: String) = repository.toggleRestrictUser(userId)
-  fun updateChatTheme(convId: String, theme: String) = repository.updateChatTheme(convId, theme)
   fun searchUserByVybeId(query: String): User? = repository.searchUserByVybeId(query)
-
-  fun retrySendMessage(convId: String, messageId: String) = repository.retrySendMessage(convId, messageId)
+  fun searchUsers(query: String): List<User> = repository.searchUsers(query)
+  fun hasHiddenChatPinSet(): Boolean = repository.hasHiddenChatPinSet()
+  fun getOrCreateConversation(peerUser: User): Conversation = repository.getOrCreateConversation(peerUser)
   fun syncMessagesForConversation(convId: String) = repository.syncMessagesForConversation(convId)
   fun toggleFollowUser(targetUserId: String): Boolean = repository.toggleFollowUser(targetUserId)
   val followingUserIds = repository.followingUserIds

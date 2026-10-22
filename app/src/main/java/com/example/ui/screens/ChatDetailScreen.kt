@@ -170,18 +170,61 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
             VybeAvatar(user = conv.peerUser, size = 36.dp)
             Spacer(modifier = Modifier.width(8.dp))
             Column {
-              Row(verticalAlignment = Alignment.CenterVertically) {
+              Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                   text = conv.customNickname ?: conv.peerUser.displayName,
                   style = MaterialTheme.typography.titleMedium,
                   fontWeight = FontWeight.Bold,
                   maxLines = 1
                 )
-                Spacer(modifier = Modifier.width(4.dp))
                 VerificationBadge(user = conv.peerUser)
+
+                if (conv.isBlocked) {
+                  Surface(
+                    color = VybeDanger.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(6.dp)
+                  ) {
+                    Text(
+                      text = "Blocked",
+                      color = VybeDanger,
+                      fontSize = 9.sp,
+                      fontWeight = FontWeight.Bold,
+                      modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                    )
+                  }
+                }
+                if (conv.isMuted) {
+                  Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(6.dp)
+                  ) {
+                    Row(
+                      verticalAlignment = Alignment.CenterVertically,
+                      modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                    ) {
+                      Icon(Icons.Default.NotificationsOff, contentDescription = "Muted", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(10.dp))
+                      Spacer(modifier = Modifier.width(2.dp))
+                      Text(text = "Muted", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                  }
+                }
+                if (conv.isRestricted) {
+                  Surface(
+                    color = Color(0xFFFF9800).copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(6.dp)
+                  ) {
+                    Text(
+                      text = "Restricted",
+                      color = Color(0xFFFF9800),
+                      fontSize = 9.sp,
+                      fontWeight = FontWeight.Bold,
+                      modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                    )
+                  }
+                }
               }
               Text(
-                text = conv.typingIndicator ?: if (conv.isBlocked) "Blocked" else if (conv.isMuted) "Muted • @${conv.peerUser.username}" else "Active Now • @${conv.peerUser.username}",
+                text = conv.typingIndicator ?: if (conv.isBlocked) "Blocked • Tap options to unblock" else if (conv.isMuted) "Notifications Muted • @${conv.peerUser.username}" else "Active Now • @${conv.peerUser.username}",
                 style = MaterialTheme.typography.bodySmall,
                 color = if (conv.typingIndicator != null) themeAccent else MaterialTheme.colorScheme.onSurfaceVariant
               )
@@ -1296,7 +1339,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                   }
                 }
 
-                if (isGroupAdmin && member.id != currentUser?.id) {
+                if (member.id != currentUser?.id) {
                   OutlinedButton(
                     onClick = {
                       viewModel.removeGroupMember(conv.id, member.id)
@@ -1311,11 +1354,10 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
             }
           }
 
-          if (isGroupAdmin) {
-            item {
-              HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-              Text("Add User to Group", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            }
+          item {
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            Text("Add User to Group", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+          }
 
             item {
               Row(
@@ -1374,11 +1416,9 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                       },
                       label = { Text("+ @$uname", fontSize = 9.sp) }
                     )
-                  }
                 }
               }
             }
-          }
         }
       },
       confirmButton = {

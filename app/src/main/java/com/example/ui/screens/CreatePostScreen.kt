@@ -61,7 +61,7 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
     contract = ActivityResultContracts.PickVisualMedia()
   ) { uri ->
     if (uri != null) {
-      selectedImage = uri.toString()
+      selectedImage = com.example.util.MediaUtils.copyUriToLocalCache(context, uri, "post_photo")
       selectedMediaType = MediaType.IMAGE
     }
   }
@@ -70,7 +70,7 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
     contract = ActivityResultContracts.PickVisualMedia()
   ) { uri ->
     if (uri != null) {
-      selectedImage = uri.toString()
+      selectedImage = com.example.util.MediaUtils.copyUriToLocalCache(context, uri, "post_video")
       selectedMediaType = if (publishDestination == PublishDestination.VYBES_REEL) MediaType.REEL else MediaType.VIDEO
     }
   }
