@@ -44,6 +44,10 @@ BEGIN
 
   BEGIN
     assigned_role := COALESCE((NEW.raw_user_meta_data->>'role')::public.user_role_enum, 'USER'::public.user_role_enum);
+    -- Zero-Trust Security: ADMIN role can never be self-assigned during user registration
+    IF assigned_role = 'ADMIN'::public.user_role_enum THEN
+      assigned_role := 'USER'::public.user_role_enum;
+    END IF;
   EXCEPTION WHEN OTHERS THEN
     assigned_role := 'USER'::public.user_role_enum;
   END;

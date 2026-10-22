@@ -32,6 +32,9 @@ class VybeCoreUnitTest {
 
   @Test
   fun testPostLikeToggle() {
+    if (repository.posts.value.isEmpty()) {
+      repository.createPost(caption = "Initial test post", mood = MoodType.HEALING)
+    }
     val initialPosts = repository.posts.value
     assertTrue(initialPosts.isNotEmpty())
     val targetPost = initialPosts.first()

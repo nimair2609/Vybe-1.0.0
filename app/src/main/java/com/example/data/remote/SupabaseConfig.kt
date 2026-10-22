@@ -22,7 +22,7 @@ object SupabaseConfig {
   val supabaseUrl: String
     get() = try {
       val url = BuildConfig.SUPABASE_URL.trim().removeSuffix("/")
-      if (url.isNotBlank() && !url.contains("placeholder.supabase.co")) url else LIVE_SUPABASE_URL
+      if (url.isNotBlank() && url.startsWith("https://") && !url.contains("placeholder")) url else LIVE_SUPABASE_URL
     } catch (e: Throwable) {
       LIVE_SUPABASE_URL
     }
@@ -30,7 +30,7 @@ object SupabaseConfig {
   val supabaseAnonKey: String
     get() = try {
       val key = BuildConfig.SUPABASE_ANON_KEY.trim()
-      if (key.isNotBlank() && !key.contains("placeholder_supabase_anon_key")) key else LIVE_SUPABASE_ANON_KEY
+      if (key.isNotBlank() && !key.contains("placeholder")) key else LIVE_SUPABASE_ANON_KEY
     } catch (e: Throwable) {
       LIVE_SUPABASE_ANON_KEY
     }
@@ -42,9 +42,10 @@ object SupabaseConfig {
     val url = supabaseUrl
     val key = supabaseAnonKey
     return url.isNotBlank() &&
-      !url.contains("placeholder.supabase.co") &&
+      url.startsWith("https://") &&
+      !url.contains("placeholder") &&
       key.isNotBlank() &&
-      !key.contains("placeholder_supabase_anon_key")
+      !key.contains("placeholder")
   }
 
   fun getAuthBaseUrl(): String {

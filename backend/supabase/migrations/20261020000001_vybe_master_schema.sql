@@ -523,8 +523,28 @@ CREATE POLICY "Business owners can update their own shop profile" ON public.busi
 -- Ensure non-admins cannot elevate their own role to ADMIN or VERIFIED
 CREATE OR REPLACE FUNCTION public.check_profile_elevation()
 RETURNS TRIGGER AS $$
+DECLARE
+    jwt_role TEXT;
 BEGIN
-    IF (OLD.role <> NEW.role OR OLD.is_verified <> NEW.is_verified OR OLD.is_vip <> NEW.is_vip) THEN
+    IF (OLD.role IS DISTINCT FROM NEW.role OR 
+        OLD.is_verified IS DISTINCT FROM NEW.is_verified OR 
+        OLD.is_vip IS DISTINCT FROM NEW.is_vip) THEN
+        
+        -- Check if request is coming from PostgREST / Supabase Client API
+        BEGIN
+            jwt_role := current_setting('request.jwt.claim.role', true);
+        EXCEPTION WHEN OTHERS THEN
+            jwt_role := NULL;
+        END;
+
+        -- If executed directly by database administrator in SQL Editor / migrations
+        -- (where jwt_role is NULL) or via backend service_role, allow elevation
+        IF jwt_role IS NULL OR jwt_role = 'service_role' OR current_user IN ('postgres', 'supabase_admin') THEN
+            RETURN NEW;
+        END IF;
+
+        -- For client-initiated updates (authenticated users via API):
+        -- Caller MUST be an authenticated ADMIN
         IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'ADMIN') THEN
             RAISE EXCEPTION 'Only administrators can modify verification badges or role status.';
         END IF;

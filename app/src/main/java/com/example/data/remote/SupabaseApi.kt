@@ -61,6 +61,14 @@ interface SupabaseRestApi {
   ): Response<List<SupabaseProfileDto>>
 
   @GET("profiles")
+  suspend fun getProfileByEmail(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String,
+    @Query("email") emailFilter: String,
+    @Query("select") select: String = "*"
+  ): Response<List<SupabaseProfileDto>>
+
+  @GET("profiles")
   suspend fun getProfileByUsername(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String,

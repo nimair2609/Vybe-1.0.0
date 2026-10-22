@@ -823,7 +823,53 @@ fun AuthScreen(viewModel: VybeViewModel) {
             }
           }
 
-          Spacer(modifier = Modifier.height(20.dp))
+          if (errorMessage != null) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Surface(
+              color = VybeDanger.copy(alpha = 0.15f),
+              shape = RoundedCornerShape(10.dp),
+              modifier = Modifier.fillMaxWidth().testTag("auth_login_error_banner")
+            ) {
+              Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = VybeDanger, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                  text = errorMessage ?: "Unable to log in. Please check credentials.",
+                  color = VybeDanger,
+                  fontSize = 12.sp,
+                  fontWeight = FontWeight.Medium
+                )
+              }
+            }
+          }
+
+          if (statusMessage != null) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Surface(
+              color = VybeOnlineGreen.copy(alpha = 0.15f),
+              shape = RoundedCornerShape(10.dp),
+              modifier = Modifier.fillMaxWidth().testTag("auth_login_status_banner")
+            ) {
+              Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = VybeOnlineGreen, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                  text = statusMessage ?: "",
+                  color = VybeOnlineGreen,
+                  fontSize = 12.sp,
+                  fontWeight = FontWeight.Medium
+                )
+              }
+            }
+          }
+
+          Spacer(modifier = Modifier.height(16.dp))
 
           VybeGradientButton(
             text = if (isLoading) "Logging in..." else "Log In to VYBE",

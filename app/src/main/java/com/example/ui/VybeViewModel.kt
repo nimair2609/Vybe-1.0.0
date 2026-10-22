@@ -264,7 +264,12 @@ class VybeViewModel : ViewModel() {
   init {
     viewModelScope.launch {
       delay(1500) // Brief polished startup animation
-      _currentScreen.value = if (repository.isLoggedIn.value) Screen.MAIN else Screen.AUTH
+      if (repository.isLoggedIn.value) {
+        val verifiedRole = repository.refreshCurrentUserRole()
+        _currentScreen.value = if (verifiedRole == com.example.data.model.UserRole.ADMIN) Screen.ADMIN_CONSOLE else Screen.MAIN
+      } else {
+        _currentScreen.value = Screen.AUTH
+      }
     }
   }
 
@@ -432,10 +437,18 @@ class VybeViewModel : ViewModel() {
   val isSupabaseConfigured: Boolean
     get() = repository.isSupabaseConfigured
 
+  fun refreshCurrentUserRole(onComplete: ((com.example.data.model.UserRole) -> Unit)? = null) {
+    viewModelScope.launch {
+      val verifiedRole = repository.refreshCurrentUserRole()
+      onComplete?.invoke(verifiedRole)
+    }
+  }
+
   suspend fun verifyOtp(email: String, token: String, type: String = "signup"): Pair<Boolean, String> {
     val result = repository.verifyOtp(email, token, type)
     if (result.first) {
-      _currentScreen.value = Screen.MAIN
+      val verifiedRole = repository.currentUser.value?.role ?: com.example.data.model.UserRole.USER
+      _currentScreen.value = if (verifiedRole == com.example.data.model.UserRole.ADMIN) Screen.ADMIN_CONSOLE else Screen.MAIN
     }
     return result
   }
@@ -451,7 +464,8 @@ class VybeViewModel : ViewModel() {
   suspend fun loginWithSupabase(identifier: String, pass: String): Pair<Boolean, String> {
     val result = repository.loginWithSupabase(identifier, pass)
     if (result.first) {
-      _currentScreen.value = Screen.MAIN
+      val verifiedRole = repository.currentUser.value?.role ?: com.example.data.model.UserRole.USER
+      _currentScreen.value = if (verifiedRole == com.example.data.model.UserRole.ADMIN) Screen.ADMIN_CONSOLE else Screen.MAIN
     }
     return result
   }
@@ -476,8 +490,9 @@ class VybeViewModel : ViewModel() {
       birthDateStr = dob,
       termsAccepted = termsAccepted
     )
-    if (result.first) {
-      _currentScreen.value = Screen.MAIN
+    if (result.first && !result.second.startsWith("NEEDS_OTP")) {
+      val verifiedRole = repository.currentUser.value?.role ?: com.example.data.model.UserRole.USER
+      _currentScreen.value = if (verifiedRole == com.example.data.model.UserRole.ADMIN) Screen.ADMIN_CONSOLE else Screen.MAIN
     }
     return result
   }
@@ -492,7 +507,8 @@ class VybeViewModel : ViewModel() {
   ): Pair<Boolean, String> {
     val result = repository.registerAccount(firstName, lastName, username, email, phone, dob)
     if (result.first) {
-      _currentScreen.value = Screen.MAIN
+      val verifiedRole = repository.currentUser.value?.role ?: com.example.data.model.UserRole.USER
+      _currentScreen.value = if (verifiedRole == com.example.data.model.UserRole.ADMIN) Screen.ADMIN_CONSOLE else Screen.MAIN
     }
     return result
   }
@@ -500,7 +516,8 @@ class VybeViewModel : ViewModel() {
   fun login(identifier: String, pass: String): Boolean {
     val success = repository.loginUser(identifier, pass)
     if (success) {
-      _currentScreen.value = Screen.MAIN
+      val verifiedRole = repository.currentUser.value?.role ?: com.example.data.model.UserRole.USER
+      _currentScreen.value = if (verifiedRole == com.example.data.model.UserRole.ADMIN) Screen.ADMIN_CONSOLE else Screen.MAIN
     }
     return success
   }

@@ -172,41 +172,7 @@ class SupabaseRepository {
           Exception("No user record returned from Supabase.")
         )
 
-        var userProfile: User? = null
-        try {
-          val profilesResp = SupabaseNetworkClient.restApi.getProfileById(
-            apiKey = SupabaseConfig.supabaseAnonKey,
-            authHeader = "Bearer $token",
-            idFilter = "eq.${userDto.id}"
-          )
-          if (profilesResp.isSuccessful && !profilesResp.body().isNullOrEmpty()) {
-            val p = profilesResp.body()!!.first()
-            userProfile = User(
-              id = p.id,
-              username = p.username,
-              displayName = p.displayName,
-              firstName = p.firstName ?: "",
-              lastName = p.lastName ?: "",
-              email = p.email ?: userDto.email ?: "",
-              phone = p.phone ?: userDto.phone ?: "",
-              bio = p.bio ?: "",
-              avatarUrl = p.avatarUrl ?: "",
-              coverUrl = p.coverUrl ?: "",
-              dateOfBirth = p.dateOfBirth ?: "2000-01-01",
-              age = p.age ?: 20,
-              isUnder18 = p.isUnder18 ?: false,
-              role = try { UserRole.valueOf(p.role ?: "USER") } catch (e: Exception) { UserRole.USER },
-              isVerified = p.isVerified ?: false,
-              isVip = p.isVip ?: false,
-              followersCount = p.followersCount ?: 0,
-              followingCount = p.followingCount ?: 0,
-              postsCount = p.postsCount ?: 0,
-              isOnboardingCompleted = true
-            )
-          }
-        } catch (e: Exception) {
-          Log.w(TAG, "Could not fetch profile from rest/v1/profiles: ${e.message}")
-        }
+        var userProfile = fetchUserProfile(userDto.id, token, userDto.email ?: email.trim())
 
         if (userProfile == null) {
           val meta = userDto.userMetadata ?: emptyMap()
@@ -276,41 +242,7 @@ class SupabaseRepository {
           Exception("OTP verified, but user data was missing.")
         )
 
-        var userProfile: User? = null
-        try {
-          val profilesResp = SupabaseNetworkClient.restApi.getProfileById(
-            apiKey = SupabaseConfig.supabaseAnonKey,
-            authHeader = "Bearer $accessToken",
-            idFilter = "eq.${userDto.id}"
-          )
-          if (profilesResp.isSuccessful && !profilesResp.body().isNullOrEmpty()) {
-            val p = profilesResp.body()!!.first()
-            userProfile = User(
-              id = p.id,
-              username = p.username,
-              displayName = p.displayName,
-              firstName = p.firstName ?: "",
-              lastName = p.lastName ?: "",
-              email = p.email ?: userDto.email ?: "",
-              phone = p.phone ?: userDto.phone ?: "",
-              bio = p.bio ?: "",
-              avatarUrl = p.avatarUrl ?: "",
-              coverUrl = p.coverUrl ?: "",
-              dateOfBirth = p.dateOfBirth ?: "2000-01-01",
-              age = p.age ?: 20,
-              isUnder18 = p.isUnder18 ?: false,
-              role = try { UserRole.valueOf(p.role ?: "USER") } catch (e: Exception) { UserRole.USER },
-              isVerified = p.isVerified ?: false,
-              isVip = p.isVip ?: false,
-              followersCount = p.followersCount ?: 0,
-              followingCount = p.followingCount ?: 0,
-              postsCount = p.postsCount ?: 0,
-              isOnboardingCompleted = true
-            )
-          }
-        } catch (e: Exception) {
-          Log.w(TAG, "Profile fetch after OTP verify: ${e.message}")
-        }
+        var userProfile = fetchUserProfile(userDto.id, accessToken, userDto.email ?: email.trim())
 
         if (userProfile == null) {
           val meta = userDto.userMetadata ?: emptyMap()
@@ -502,6 +434,77 @@ class SupabaseRepository {
     } catch (e: Exception) {
       Result.failure(e)
     }
+  }
+
+  fun mapProfileDtoToUser(p: SupabaseProfileDto, fallbackEmail: String? = null): User {
+    val rawRole = (p.role ?: "USER").trim().uppercase()
+    val parsedRole = try {
+      UserRole.valueOf(rawRole)
+    } catch (e: Exception) {
+      UserRole.USER
+    }
+    val isAdmin = parsedRole == UserRole.ADMIN
+
+    return User(
+      id = p.id,
+      username = p.username,
+      displayName = p.displayName,
+      firstName = p.firstName ?: "",
+      lastName = p.lastName ?: "",
+      email = p.email ?: fallbackEmail ?: "",
+      phone = p.phone ?: "",
+      bio = p.bio ?: "",
+      avatarUrl = p.avatarUrl ?: "",
+      coverUrl = p.coverUrl ?: "",
+      dateOfBirth = p.dateOfBirth ?: "2000-01-01",
+      age = p.age ?: 20,
+      isUnder18 = p.isUnder18 ?: false,
+      role = parsedRole,
+      isVerified = if (isAdmin) true else (p.isVerified ?: false),
+      isVip = if (isAdmin) true else (p.isVip ?: false),
+      followersCount = p.followersCount ?: 0,
+      followingCount = p.followingCount ?: 0,
+      postsCount = p.postsCount ?: 0,
+      isOnboardingCompleted = true
+    )
+  }
+
+  suspend fun fetchUserProfile(userId: String, token: String? = null, email: String? = null): User? = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext null
+    val authToken = if (!token.isNullOrBlank()) token else SupabaseConfig.supabaseAnonKey
+    val authHeader = "Bearer $authToken"
+
+    // 1. Primary lookup: by ID
+    try {
+      val resp = SupabaseNetworkClient.restApi.getProfileById(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        idFilter = "eq.$userId"
+      )
+      if (resp.isSuccessful && !resp.body().isNullOrEmpty()) {
+        return@withContext mapProfileDtoToUser(resp.body()!!.first(), email)
+      }
+    } catch (e: Exception) {
+      Log.w(TAG, "getProfileById failed: ${e.message}")
+    }
+
+    // 2. Secondary lookup: by Email if provided
+    if (!email.isNullOrBlank()) {
+      try {
+        val emailResp = SupabaseNetworkClient.restApi.getProfileByEmail(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          emailFilter = "eq.${email.trim()}"
+        )
+        if (emailResp.isSuccessful && !emailResp.body().isNullOrEmpty()) {
+          return@withContext mapProfileDtoToUser(emailResp.body()!!.first(), email)
+        }
+      } catch (e: Exception) {
+        Log.w(TAG, "getProfileByEmail failed: ${e.message}")
+      }
+    }
+
+    return@withContext null
   }
 
   suspend fun checkUsernameAvailable(username: String): Boolean = withContext(Dispatchers.IO) {

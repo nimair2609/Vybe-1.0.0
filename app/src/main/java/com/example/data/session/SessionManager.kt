@@ -32,6 +32,7 @@ class SessionManager private constructor(context: Context) {
     private const val KEY_BIO = "bio"
     private const val KEY_ROLE = "role"
     private const val KEY_IS_VERIFIED = "is_verified"
+    private const val KEY_IS_VIP = "is_vip"
 
     @Volatile
     private var instance: SessionManager? = null
@@ -78,6 +79,7 @@ class SessionManager private constructor(context: Context) {
       putString(KEY_BIO, user.bio)
       putString(KEY_ROLE, user.role.name)
       putBoolean(KEY_IS_VERIFIED, user.isVerified)
+      putBoolean(KEY_IS_VIP, user.isVip)
       apply()
     }
   }
@@ -119,6 +121,7 @@ class SessionManager private constructor(context: Context) {
     val bio = prefs.getString(KEY_BIO, "") ?: ""
     val roleStr = prefs.getString(KEY_ROLE, UserRole.USER.name) ?: UserRole.USER.name
     val isVerified = prefs.getBoolean(KEY_IS_VERIFIED, false)
+    val isVip = prefs.getBoolean(KEY_IS_VIP, false)
 
     val role = try {
       UserRole.valueOf(roleStr)
@@ -142,6 +145,7 @@ class SessionManager private constructor(context: Context) {
       bio = bio,
       role = role,
       isVerified = isVerified,
+      isVip = isVip,
       isOnboardingCompleted = true
     )
   }

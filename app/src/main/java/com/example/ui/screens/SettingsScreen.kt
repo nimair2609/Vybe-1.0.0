@@ -316,6 +316,29 @@ fun SettingsScreen(viewModel: VybeViewModel) {
             }
           }
 
+          if (currentUser?.role == com.example.data.model.UserRole.ADMIN) {
+            item {
+              Text("Platform Administration", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            }
+            item {
+              Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, VybeVerifiedGold.copy(alpha = 0.5f))
+              ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                  SettingsListItem(
+                    icon = Icons.Default.AdminPanelSettings,
+                    iconTint = VybeVerifiedGold,
+                    title = "Admin & Trust Safety Console",
+                    subtitle = "Review moderation reports, verified badges, and age compliance",
+                    onClick = { viewModel.navigateTo(com.example.ui.Screen.ADMIN_CONSOLE) }
+                  )
+                }
+              }
+            }
+          }
+
           // Section D: Account Actions (Logout / Deactivate)
           item {
             Card(

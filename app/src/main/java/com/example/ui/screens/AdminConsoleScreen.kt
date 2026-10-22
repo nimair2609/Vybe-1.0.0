@@ -34,6 +34,36 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
 
   val reports by viewModel.adminReports.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
+  var isVerifyingRole by remember { mutableStateOf(currentUser == null) }
+
+  LaunchedEffect(currentUser?.id) {
+    if (currentUser == null || currentUser?.role != com.example.data.model.UserRole.ADMIN) {
+      isVerifyingRole = true
+      viewModel.refreshCurrentUserRole {
+        isVerifyingRole = false
+      }
+    } else {
+      isVerifyingRole = false
+    }
+  }
+
+  if (isVerifyingRole) {
+    Box(
+      modifier = Modifier.fillMaxSize(),
+      contentAlignment = Alignment.Center
+    ) {
+      Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        CircularProgressIndicator(color = VybeVerifiedGold)
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+          "Verifying administrator authorization...",
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+      }
+    }
+    return
+  }
 
   if (currentUser?.role != com.example.data.model.UserRole.ADMIN) {
     Box(

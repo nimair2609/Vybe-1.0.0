@@ -144,7 +144,7 @@ class VybeRepository private constructor() {
     if (session.isLoggedIn) {
       val user = session.loadCurrentUser()
       if (user != null) {
-        val latestUser = savedUsers.firstOrNull { it.id == user.id } ?: user
+        val latestUser = if (user.role == UserRole.ADMIN) user.copy(isVerified = true, isVip = true) else (savedUsers.firstOrNull { it.id == user.id } ?: user)
         _currentUser.value = latestUser
         _isLoggedIn.value = true
         if (_allUsers.value.none { it.id == latestUser.id }) {
@@ -167,6 +167,22 @@ class VybeRepository private constructor() {
     if (savedConvs.isNotEmpty()) {
       _conversations.value = savedConvs
     }
+  }
+
+  suspend fun refreshCurrentUserRole(): UserRole {
+    val current = _currentUser.value ?: return UserRole.USER
+    val token = SessionManager.get()?.accessToken
+    if (supabaseRepo.isConfigured && current.id.isNotBlank()) {
+      val updated = supabaseRepo.fetchUserProfile(current.id, token, current.email)
+      if (updated != null) {
+        _currentUser.value = updated
+        _allUsers.value = _allUsers.value.map { if (it.id == updated.id) updated else it }
+        SessionManager.get()?.saveSession(updated, token ?: "")
+        VybeLocalStore.get()?.saveUser(updated)
+        return updated.role
+      }
+    }
+    return current.role
   }
 
   // Registered Community Users (Searchable by username and public VYBE ID)
@@ -1271,13 +1287,21 @@ class VybeRepository private constructor() {
       )
       return if (res.isSuccess) {
         val (user, token) = res.getOrThrow()
-        _currentUser.value = user
-        _isLoggedIn.value = true
-        if (_allUsers.value.none { it.id == user.id }) {
-          _allUsers.value = listOf(user) + _allUsers.value
+        if (token.isNotEmpty()) {
+          _currentUser.value = user
+          _isLoggedIn.value = true
+          if (_allUsers.value.none { it.id == user.id }) {
+            _allUsers.value = listOf(user) + _allUsers.value
+          } else {
+            _allUsers.value = _allUsers.value.map { if (it.id == user.id) user else it }
+          }
+          SessionManager.get()?.saveSession(user, token)
+          VybeLocalStore.get()?.saveUser(user)
+          Pair(true, "Account created with Supabase Auth! ${if (user.isUnder18) "Teen Safety Protected Mode active." else "Standard Verified Mode active."}")
+        } else {
+          // Supabase Auth requires email OTP confirmation before session activation
+          Pair(true, "NEEDS_OTP: Verification code sent to ${user.email}. Enter it to activate your account.")
         }
-        SessionManager.get()?.saveSession(user, token)
-        Pair(true, "Account created with Supabase Auth! ${if (user.isUnder18) "Teen Safety Protected Mode active." else "Standard Verified Mode active."}")
       } else {
         Pair(false, res.exceptionOrNull()?.message ?: "Supabase registration failed.")
       }
@@ -1359,6 +1383,9 @@ class VybeRepository private constructor() {
       } else {
         supabaseRepo.resolveEmailForIdentifier(identifier) ?: identifier.trim().lowercase()
       }
+      if (!resolvedEmail.contains("@")) {
+        return Pair(false, "Could not resolve User ID '$identifier'. Please enter your registered email address.")
+      }
       val res = supabaseRepo.signInWithEmail(resolvedEmail, pass)
       return if (res.isSuccess) {
         val (user, token) = res.getOrThrow()
@@ -1366,8 +1393,11 @@ class VybeRepository private constructor() {
         _isLoggedIn.value = true
         if (_allUsers.value.none { it.id == user.id }) {
           _allUsers.value = listOf(user) + _allUsers.value
+        } else {
+          _allUsers.value = _allUsers.value.map { if (it.id == user.id) user else it }
         }
         SessionManager.get()?.saveSession(user, token)
+        VybeLocalStore.get()?.saveUser(user)
         Pair(true, "Logged in to Supabase!")
       } else {
         Pair(false, res.exceptionOrNull()?.message ?: "Invalid email, User ID, phone number or password.")
