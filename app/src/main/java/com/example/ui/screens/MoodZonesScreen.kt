@@ -38,7 +38,7 @@ fun MoodZonesScreen(viewModel: VybeViewModel) {
   var chosenPulse by remember { mutableStateOf(currentUser?.livePulse ?: LivePulseStatus.OPEN_TO_CHAT) }
 
   val zonePosts = remember(posts, selectedMood) {
-    if (selectedMood != null) {
+    if (selectedMood != null && selectedMood != MoodType.GENERAL) {
       posts.filter { it.moodZone == selectedMood }
     } else {
       posts
@@ -137,7 +137,7 @@ fun MoodZonesScreen(viewModel: VybeViewModel) {
       // Zone Switcher Grid
       item {
         Text(
-          text = "Explore 5 Mood Portals",
+          text = "Explore 6 Mood Portals",
           style = MaterialTheme.typography.titleMedium,
           fontWeight = FontWeight.Bold,
           modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)

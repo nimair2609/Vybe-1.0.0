@@ -62,6 +62,7 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
   val unfilteredPosts by viewModel.unfilteredPosts.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
 
+  val context = LocalContext.current
   var showCreateSheet by remember { mutableStateOf(false) }
   var postCaption by remember { mutableStateOf("") }
   var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
@@ -99,26 +100,36 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
       try {
         cameraLauncher.launch(null)
       } catch (e: Exception) {
-        photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        try {
+          photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        } catch (_: Exception) {}
       }
     } else {
-      photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+      try {
+        photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+      } catch (_: Exception) {}
     }
   }
 
   val launchCameraSafely = {
-    if (androidx.core.content.ContextCompat.checkSelfPermission(
-        context,
-        android.Manifest.permission.CAMERA
-      ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-    ) {
-      try {
-        cameraLauncher.launch(null)
-      } catch (e: Exception) {
-        photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    try {
+      if (androidx.core.content.ContextCompat.checkSelfPermission(
+          context,
+          android.Manifest.permission.CAMERA
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+      ) {
+        try {
+          cameraLauncher.launch(null)
+        } catch (e: Exception) {
+          photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        }
+      } else {
+        cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
       }
-    } else {
-      cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+    } catch (e: Exception) {
+      try {
+        photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+      } catch (_: Exception) {}
     }
   }
 

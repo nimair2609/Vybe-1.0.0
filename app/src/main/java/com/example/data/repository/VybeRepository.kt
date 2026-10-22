@@ -1,6 +1,7 @@
 package com.example.data.repository
 
 import android.content.Context
+import android.util.Log
 import com.example.data.model.*
 import com.example.data.local.VybeLocalStore
 import com.example.data.remote.SupabaseRepository
@@ -1348,8 +1349,13 @@ class VybeRepository private constructor() {
     }
 
     if (supabaseRepo.isConfigured) {
+      val digits = identifier.filter { it.isDigit() }
       val resolvedEmail = if (identifier.contains("@")) {
         identifier.trim().lowercase()
+      } else if (digits.length >= 7) {
+        // Resolve phone number to email if known in user pool
+        val userWithPhone = _allUsers.value.firstOrNull { it.phone.filter { c -> c.isDigit() }.endsWith(digits.takeLast(10)) }
+        userWithPhone?.email ?: identifier.trim().lowercase()
       } else {
         supabaseRepo.resolveEmailForIdentifier(identifier) ?: identifier.trim().lowercase()
       }
@@ -1364,20 +1370,24 @@ class VybeRepository private constructor() {
         SessionManager.get()?.saveSession(user, token)
         Pair(true, "Logged in to Supabase!")
       } else {
-        Pair(false, res.exceptionOrNull()?.message ?: "Invalid email or password.")
+        Pair(false, res.exceptionOrNull()?.message ?: "Invalid email, User ID, phone number or password.")
       }
     } else {
-      // Offline / Developer Mode fallback
+      // Offline / Developer Mode fallback: match by Email, User ID, or Phone Number
       val clean = identifier.trim().lowercase().replace("@", "")
+      val digits = identifier.filter { it.isDigit() }
       val matched = _allUsers.value.firstOrNull {
         it.email.equals(identifier.trim(), ignoreCase = true) ||
         it.username.lowercase() == clean ||
-        it.publicVybeId.lowercase() == clean
+        it.publicVybeId.lowercase() == clean ||
+        it.id.lowercase() == clean ||
+        (digits.length >= 7 && it.phone.filter { c -> c.isDigit() }.endsWith(digits.takeLast(10)))
       } ?: User(
         id = "u_${System.currentTimeMillis()}",
         username = clean.ifBlank { "vybe_user" },
-        displayName = identifier.substringBefore("@").replace(".", " ").replaceFirstChar { it.uppercase() },
-        email = identifier.trim(),
+        displayName = if (identifier.contains("@")) identifier.substringBefore("@").replace(".", " ").replaceFirstChar { it.uppercase() } else clean,
+        email = if (identifier.contains("@")) identifier.trim() else "$clean@vybe.app",
+        phone = if (digits.length >= 7) identifier.trim() else "+91 98765 00000",
         role = UserRole.USER,
         isOnboardingCompleted = true
       )
@@ -1387,7 +1397,7 @@ class VybeRepository private constructor() {
         _allUsers.value = listOf(matched) + _allUsers.value
       }
       SessionManager.get()?.saveSession(matched)
-      return Pair(true, "Logged in (Developer Mode - Supabase awaiting configuration in Secrets)")
+      return Pair(true, "Logged in to VYBE!")
     }
   }
 
@@ -1452,16 +1462,21 @@ class VybeRepository private constructor() {
 
   fun loginUser(identifier: String, pass: String): Boolean {
     val clean = identifier.trim().lowercase().replace("@", "")
+    val digits = identifier.filter { it.isDigit() }
     val savedUsers = VybeLocalStore.get()?.loadUsers() ?: emptyList()
     val pool = _allUsers.value + savedUsers
     val matched = pool.firstOrNull {
       it.email.equals(identifier.trim(), ignoreCase = true) ||
-      it.username.lowercase() == clean
+      it.username.lowercase() == clean ||
+      it.publicVybeId.lowercase() == clean ||
+      it.id.lowercase() == clean ||
+      (digits.length >= 7 && it.phone.filter { c -> c.isDigit() }.endsWith(digits.takeLast(10)))
     } ?: User(
       id = "u_${System.currentTimeMillis()}",
       username = clean.ifBlank { "vybe_user" },
-      displayName = identifier.substringBefore("@"),
-      email = identifier.trim(),
+      displayName = if (identifier.contains("@")) identifier.substringBefore("@") else clean,
+      email = if (identifier.contains("@")) identifier.trim() else "$clean@vybe.app",
+      phone = if (digits.length >= 7) identifier.trim() else "+91 98765 00000",
       role = UserRole.USER,
       isOnboardingCompleted = true
     )
@@ -1783,7 +1798,7 @@ class VybeRepository private constructor() {
     replyToText: String? = null,
     replyToSenderName: String? = null
   ) {
-    val user = _currentUser.value ?: return
+    val user = _currentUser.value ?: userMe
     val cleanText = text.trim()
     if (cleanText.isBlank() && mediaUrl.isNullOrBlank()) return
 

@@ -288,8 +288,9 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
     }
   }
 
-  // Create Audience Poll Full-Page Dialog
+  // Create Audience Poll Full-Page Screen
   if (showCreatePollDialog) {
+    BackHandler { showCreatePollDialog = false }
     Dialog(
       onDismissRequest = { showCreatePollDialog = false },
       properties = DialogProperties(
@@ -298,6 +299,7 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
       )
     ) {
       Scaffold(
+        modifier = Modifier.fillMaxSize().imePadding(),
         topBar = {
           TopAppBar(
             navigationIcon = {

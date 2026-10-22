@@ -1416,19 +1416,20 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                       },
                       label = { Text("+ @$uname", fontSize = 9.sp) }
                     )
+                  }
                 }
               }
             }
+          }
+        },
+        confirmButton = {
+          Button(
+            onClick = { showGroupMembersDialog = false },
+            colors = ButtonDefaults.buttonColors(containerColor = themeAccent)
+          ) {
+            Text("Done")
+          }
         }
-      },
-      confirmButton = {
-        Button(
-          onClick = { showGroupMembersDialog = false },
-          colors = ButtonDefaults.buttonColors(containerColor = themeAccent)
-        ) {
-          Text("Done")
-        }
-      }
-    )
+      )
+    }
   }
-}

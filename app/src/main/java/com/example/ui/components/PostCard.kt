@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -27,6 +28,7 @@ import com.example.data.model.Post
 import com.example.data.model.User
 import com.example.ui.theme.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PostCard(
   post: Post,
@@ -265,8 +267,7 @@ fun PostCard(
     ModalBottomSheet(
       onDismissRequest = { showCommentDialog = false },
       dragHandle = { BottomSheetDefaults.DragHandle() },
-      containerColor = MaterialTheme.colorScheme.surface,
-      windowInsets = WindowInsets.ime.union(WindowInsets.navigationBars)
+      containerColor = MaterialTheme.colorScheme.surface
     ) {
       Column(
         modifier = Modifier

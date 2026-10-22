@@ -45,6 +45,7 @@ data class Conversation(
   val groupName: String? = null,
   val groupMembers: List<User> = emptyList(),
   val groupAdminId: String? = null,
+  val groupAdminIds: List<String> = if (groupAdminId != null) listOf(groupAdminId) else emptyList(),
   val messages: List<DirectMessage> = emptyList(),
   val isMessageRequest: Boolean = false,
   val isHidden: Boolean = false, // Protected behind user PIN lock (Part O)

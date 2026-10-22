@@ -119,6 +119,7 @@ fun StoryCreateDialog(
     properties = DialogProperties(usePlatformDefaultWidth = false)
   ) {
     Scaffold(
+      modifier = Modifier.fillMaxSize().imePadding(),
       topBar = {
         TopAppBar(
           title = {
@@ -168,14 +169,15 @@ fun StoryCreateDialog(
         Surface(
           color = MaterialTheme.colorScheme.surface,
           shadowElevation = 8.dp,
-          modifier = Modifier.fillMaxWidth()
+          tonalElevation = 4.dp,
+          modifier = Modifier.fillMaxWidth().navigationBarsPadding()
         ) {
           Row(
             modifier = Modifier
               .fillMaxWidth()
-              .windowInsetsPadding(WindowInsets.navigationBars)
               .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
           ) {
             // 1. VYBE Matches Button
             OutlinedButton(

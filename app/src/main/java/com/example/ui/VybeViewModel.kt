@@ -241,6 +241,8 @@ class VybeViewModel : ViewModel() {
   fun sendVoiceMessage(convId: String, duration: String = "0:08") = repository.sendVoiceMessage(convId, duration)
   fun createGroupConversation(name: String, members: List<User>) = repository.createGroupConversation(name, members)
   fun updateChatNickname(convId: String, nickname: String) = repository.updateChatNickname(convId, nickname)
+  fun updateChatTheme(convId: String, theme: String) = repository.updateChatTheme(convId, theme)
+  fun retrySendMessage(convId: String, messageIdOrClientId: String) = repository.retrySendMessage(convId, messageIdOrClientId)
   fun toggleMuteChat(convId: String) = repository.toggleMuteChat(convId)
   fun toggleBlockUser(userId: String) = repository.toggleBlockUser(userId)
   fun unblockUser(userId: String) = repository.unblockUser(userId)

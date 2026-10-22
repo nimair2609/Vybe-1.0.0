@@ -16,6 +16,7 @@ val VybeCyan = VybeBrandCyan
 
 // Mood Zone Signature Colors
 val MoodHeartbreak = Color(0xFF818CF8)
+val VybeHeartbreakRed = Color(0xFFEF4444)
 val MoodHappy = Color(0xFFFBBF24)
 val MoodChill = Color(0xFF34D399)
 val MoodHealing = Color(0xFF2DD4BF)
