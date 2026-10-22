@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,6 +71,15 @@ fun FeedScreen(viewModel: VybeViewModel) {
     coroutineScope.launch {
       delay(700)
       isRefreshing = false
+    }
+  }
+
+  val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+
+  LaunchedEffect(Unit) {
+    viewModel.feedRefreshTrigger.collect {
+      listState.animateScrollToItem(0)
+      triggerRefresh()
     }
   }
 
@@ -166,41 +176,20 @@ fun FeedScreen(viewModel: VybeViewModel) {
       }
     }
   ) { paddingValues ->
-    Box(
+    PullToRefreshBox(
+      isRefreshing = isRefreshing,
+      onRefresh = { triggerRefresh() },
       modifier = Modifier
         .fillMaxSize()
         .padding(paddingValues)
     ) {
       LazyColumn(
+        state = listState,
         modifier = Modifier
           .fillMaxSize()
           .testTag("feed_list")
       ) {
-        // Double-Tap to Refresh Feed Header gesture area
-        item {
-          Box(
-            modifier = Modifier
-              .fillMaxWidth()
-              .pointerInput(Unit) {
-                detectTapGestures(
-                  onDoubleTap = {
-                    triggerRefresh()
-                  }
-                )
-              }
-              .padding(horizontal = 16.dp, vertical = 4.dp),
-            contentAlignment = Alignment.Center
-          ) {
-            Text(
-              text = "Double-tap here anytime to refresh feed",
-              fontSize = 10.sp,
-              color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-              fontWeight = FontWeight.Medium
-            )
-          }
-        }
-
-        // Instagram-style Stories Carousel Tray
+        // Stories Carousel Tray
         item {
           StoryCarousel(
             stories = stories,
@@ -281,28 +270,69 @@ fun FeedScreen(viewModel: VybeViewModel) {
             Box(
               modifier = Modifier
                 .fillMaxWidth()
-                .padding(48.dp),
+                .padding(horizontal = 20.dp, vertical = 28.dp),
               contentAlignment = Alignment.Center
             ) {
-              Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                  imageVector = Icons.Default.FilterVintage,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                  modifier = Modifier.size(48.dp)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                  text = "No posts in this vibe yet.",
-                  style = MaterialTheme.typography.titleMedium,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                  text = "Be the first to share your energy with the community!",
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+              Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.fillMaxWidth()
+              ) {
+                Column(
+                  modifier = Modifier.padding(24.dp),
+                  horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                  Box(
+                    modifier = Modifier
+                      .size(60.dp)
+                      .clip(CircleShape)
+                      .background(VybeViolet.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                  ) {
+                    Icon(
+                      imageVector = Icons.Default.AutoAwesome,
+                      contentDescription = null,
+                      tint = VybeViolet,
+                      modifier = Modifier.size(30.dp)
+                    )
+                  }
+                  Spacer(modifier = Modifier.height(14.dp))
+                  Text(
+                    text = if (selectedMood != null) "No posts in this vibe yet" else "Welcome to VYBE",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                  )
+                  Spacer(modifier = Modifier.height(6.dp))
+                  Text(
+                    text = if (selectedMood != null)
+                      "Be the first to share an authentic moment in the ${selectedMood?.title} zone!"
+                    else
+                      "Your feed is clean and ready. Share your first moment, photo, or story with the community!",
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 18.sp
+                  )
+                  Spacer(modifier = Modifier.height(16.dp))
+                  Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                      onClick = { viewModel.navigateTo(Screen.CREATE_POST) },
+                      colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                      shape = RoundedCornerShape(12.dp)
+                    ) {
+                      Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(16.dp))
+                      Spacer(modifier = Modifier.width(6.dp))
+                      Text("Create Post", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                    OutlinedButton(
+                      onClick = { showStoryCreateSheet = true },
+                      shape = RoundedCornerShape(12.dp)
+                    ) {
+                      Text("Add Story", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    }
+                  }
+                }
               }
             }
           }

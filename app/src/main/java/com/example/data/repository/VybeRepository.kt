@@ -2,6 +2,7 @@ package com.example.data.repository
 
 import android.content.Context
 import com.example.data.model.*
+import com.example.data.local.VybeLocalStore
 import com.example.data.remote.SupabaseRepository
 import com.example.data.session.SessionManager
 import kotlinx.coroutines.CoroutineScope
@@ -127,16 +128,43 @@ class VybeRepository private constructor() {
   val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
 
   fun initSession(context: Context) {
+    val localStore = VybeLocalStore.getInstance(context)
+    val savedUsers = localStore.loadUsers()
+    if (savedUsers.isNotEmpty()) {
+      val existingIds = _allUsers.value.map { it.id }.toSet()
+      val toAdd = savedUsers.filter { !existingIds.contains(it.id) }
+      val updatedAll = _allUsers.value.map { existing ->
+        savedUsers.firstOrNull { it.id == existing.id } ?: existing
+      } + toAdd
+      _allUsers.value = updatedAll
+    }
+
     val session = SessionManager.getInstance(context)
     if (session.isLoggedIn) {
       val user = session.loadCurrentUser()
       if (user != null) {
-        _currentUser.value = user
+        val latestUser = savedUsers.firstOrNull { it.id == user.id } ?: user
+        _currentUser.value = latestUser
         _isLoggedIn.value = true
-        if (_allUsers.value.none { it.id == user.id }) {
-          _allUsers.value = listOf(user) + _allUsers.value
+        if (_allUsers.value.none { it.id == latestUser.id }) {
+          _allUsers.value = listOf(latestUser) + _allUsers.value
         }
       }
+    }
+
+    val savedPosts = localStore.loadPosts()
+    if (savedPosts.isNotEmpty()) {
+      _posts.value = savedPosts
+    }
+
+    val savedUnfiltered = localStore.loadUnfilteredPosts()
+    if (savedUnfiltered.isNotEmpty()) {
+      _unfilteredPosts.value = savedUnfiltered
+    }
+
+    val savedConvs = localStore.loadConversations()
+    if (savedConvs.isNotEmpty()) {
+      _conversations.value = savedConvs
     }
   }
 
@@ -270,165 +298,10 @@ class VybeRepository private constructor() {
   }
 
   private fun seedInitialData() {
-    _stories.value = listOf(
-      Story(
-        id = "s_1",
-        author = userAarav,
-        mediaUrl = "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600",
-        caption = "Midnight studio session in Bandra 🎶",
-        mediaType = StoryMediaType.MUSIC,
-        musicTrackTitle = "Midnight Tape 04 - Aarav",
-        location = "Bandra West, Mumbai",
-        timestamp = "45m ago",
-        isViewed = false
-      ),
-      Story(
-        id = "s_2",
-        author = userPriya,
-        mediaUrl = "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=600",
-        caption = "Filter coffee & wireframing morning ☕ Secret preview!",
-        mediaType = StoryMediaType.PHOTO,
-        audience = StoryAudience.CLOSE_FRIENDS,
-        location = "Indiranagar, Bengaluru",
-        timestamp = "2h ago",
-        isViewed = false
-      ),
-      Story(
-        id = "s_3",
-        author = userVikramCricket,
-        mediaUrl = "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=600",
-        caption = "Matchday net practice at Wankhede! 🏟️",
-        mediaType = StoryMediaType.VIDEO,
-        timestamp = "3h ago",
-        isViewed = false
-      ),
-      Story(
-        id = "s_4",
-        author = userPriya.copy(id = "u_ananya", username = "ananyadesign", displayName = "Ananya Sharma"),
-        mediaUrl = "",
-        caption = "Creativity is intelligence having fun. New drop coming Friday! ✨",
-        mediaType = StoryMediaType.TEXT,
-        textBackgroundColor = "NEON_PURPLE",
-        timestamp = "5h ago",
-        isViewed = false
-      ),
-      Story(
-        id = "s_5",
-        author = userAarav.copy(id = "u_rohan", username = "rohanroasts", displayName = "Rohan Mehta"),
-        mediaUrl = "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=600",
-        caption = "Fresh single-origin roast from Chikmagalur ☕",
-        mediaType = StoryMediaType.PHOTO,
-        timestamp = "8h ago",
-        isViewed = true
-      )
-    )
-
-    _posts.value = listOf(
-      Post(
-        id = "p_1",
-        author = userAarav,
-        caption = "Dropped a new Bombay Monsoons lo-fi groove. Crafted with tape saturation, rain captured in Colaba, and warm Rhodes chords. Tell me what mood you're in when listening! 🌧️🎧 #MumbaiLoFi #IndieMusic #ChillVybe",
-        mediaUrls = listOf("https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?w=800"),
-        mediaType = MediaType.IMAGE,
-        timestamp = "2 hours ago",
-        likesCount = 384,
-        commentsCount = 42,
-        savesCount = 95,
-        sharesCount = 18,
-        isLiked = false,
-        tags = listOf("MumbaiLoFi", "IndieMusic", "ChillVybe"),
-        moodZone = MoodType.CHILL,
-        audioTrackTitle = "Colaba Rain Tape - Aarav Beats",
-        userReaction = VybeReaction.DEEP_VIBE,
-        reactionsCount = mapOf(VybeReaction.DEEP_VIBE to 142, VybeReaction.CALM to 98, VybeReaction.PURE_ENERGY to 45),
-        comments = listOf(
-          PostComment("c_1", "p_1", userPriya, "Looping this while designing right now! Absolutely pristine mix ✨", "1h ago", 12, true),
-          PostComment("c_2", "p_1", userMe, "That snare sound is ridiculous. What mic did you use on the ambient rain?", "45m ago", 5, false)
-        )
-      ),
-      Post(
-        id = "p_2",
-        author = userPriya,
-        caption = "Reflecting on 5 years in UX: The best interfaces are the ones that respect human attention rather than exploiting dopamine loops. VYBE 2.0 is proof we can build social without cynicism 🌱 #DesignEthics #ProductDesign",
-        mediaUrls = listOf("https://images.unsplash.com/photo-1497215728101-856f4ea42174?w=800"),
-        mediaType = MediaType.IMAGE,
-        timestamp = "5 hours ago",
-        likesCount = 512,
-        commentsCount = 68,
-        savesCount = 143,
-        sharesCount = 31,
-        isLiked = true,
-        tags = listOf("DesignEthics", "ProductDesign", "Mindfulness"),
-        moodZone = MoodType.HEALING,
-        userReaction = VybeReaction.UPLIFT,
-        reactionsCount = mapOf(VybeReaction.UPLIFT to 210, VybeReaction.PURE_ENERGY to 88)
-      ),
-      Post(
-        id = "p_3",
-        author = userVikramCricket,
-        caption = "18 runs needed in the final over with 2 wickets remaining! What happens next? Prediction pool is live in What Next! ⚡🏏 Can the tailenders pull off a historic win?",
-        mediaUrls = listOf("https://images.unsplash.com/photo-1531415074868-036b107e775a?w=800"),
-        mediaType = MediaType.IMAGE,
-        timestamp = "7 hours ago",
-        likesCount = 1420,
-        commentsCount = 312,
-        savesCount = 88,
-        sharesCount = 205,
-        isLiked = false,
-        tags = listOf("CricketIndia", "Prediction", "IndVsAus"),
-        moodZone = MoodType.FUN,
-        userReaction = VybeReaction.HEAT,
-        reactionsCount = mapOf(VybeReaction.HEAT to 450, VybeReaction.PURE_ENERGY to 320)
-      ),
-      Post(
-        id = "p_4",
-        author = userMe,
-        caption = "Golden hour across Bandra-Worli Sea Link. Shot on 35mm film prime. Mumbai never stops moving, but if you look up for a second, the light is unreal ✨🌇",
-        mediaUrls = listOf("https://images.unsplash.com/photo-1570168007204-dfb528c6958f?w=800"),
-        mediaType = MediaType.IMAGE,
-        timestamp = "1 day ago",
-        likesCount = 295,
-        commentsCount = 19,
-        savesCount = 54,
-        sharesCount = 12,
-        isLiked = false,
-        tags = listOf("MumbaiPhotographers", "SeaLink", "StreetVibe"),
-        moodZone = MoodType.HAPPY,
-        isVybesReel = true,
-        reactionsCount = mapOf(VybeReaction.PURE_ENERGY to 110, VybeReaction.UPLIFT to 65)
-      )
-    )
-
-    // Dedicated UNFILTERED authentic moments ("Back to Real. Back to Us.")
-    _unfilteredPosts.value = listOf(
-      Post(
-        id = "uf_1",
-        author = userMe,
-        caption = "2:30 AM desk reality. Untangled headphones, three half-drunk chai cups, and open debugger tabs. No aesthetic filters, just real building.",
-        mediaUrls = listOf("https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800"),
-        mediaType = MediaType.IMAGE,
-        timestamp = "3 hours ago",
-        isUnfiltered = true,
-        commentsCount = 8,
-        comments = listOf(
-          PostComment("ufc_1", "uf_1", userAarav, "The cold chai cups are universal law ☕", "2h ago", 0, false),
-          PostComment("ufc_2", "uf_1", userPriya, "True engineering habitat! Proud of you Sid", "1h ago", 0, false)
-        )
-      ),
-      Post(
-        id = "uf_2",
-        author = userPriya,
-        caption = "Indiranagar afternoon thunderstorm hitting the balcony plants. Raw sound of thunder on terracotta tiles. No music, no color grading.",
-        mediaUrls = listOf("https://images.unsplash.com/photo-1534274988757-a28bf1a57c17?w=800"),
-        mediaType = MediaType.IMAGE,
-        timestamp = "6 hours ago",
-        isUnfiltered = true,
-        commentsCount = 5,
-        comments = listOf(
-          PostComment("ufc_3", "uf_2", userMe, "Petrichor through the screen 🌱", "5h ago", 0, false)
-        )
-      )
-    )
+    // Stories, feed posts and unfiltered authentic moments start clean for user-created content
+    _stories.value = emptyList()
+    _posts.value = emptyList()
+    _unfilteredPosts.value = emptyList()
 
     // 14.1 VYBE UNLOAD - 24/7 Live Listening Spaces
     _unloadRooms.value = listOf(
@@ -945,7 +818,16 @@ class VybeRepository private constructor() {
       moodZone = mood,
       tags = listOf("VybeCommunity")
     )
-    _posts.value = listOf(newPost) + _posts.value
+    val updatedPosts = listOf(newPost) + _posts.value
+    _posts.value = updatedPosts
+    VybeLocalStore.get()?.savePosts(updatedPosts)
+
+    // Increment author's post count
+    val updatedUser = user.copy(postsCount = user.postsCount + 1)
+    _currentUser.value = updatedUser
+    _allUsers.value = _allUsers.value.map { if (it.id == updatedUser.id) updatedUser else it }
+    SessionManager.get()?.saveSession(updatedUser)
+    VybeLocalStore.get()?.saveUser(updatedUser)
   }
 
   fun createUnfilteredPost(caption: String, imageUrl: String) {
@@ -960,7 +842,9 @@ class VybeRepository private constructor() {
       isUnfiltered = true, // Strict rules: No likes, No shares, No ranking
       commentsCount = 0
     )
-    _unfilteredPosts.value = listOf(newPost) + _unfilteredPosts.value
+    val updatedUnfiltered = listOf(newPost) + _unfilteredPosts.value
+    _unfilteredPosts.value = updatedUnfiltered
+    VybeLocalStore.get()?.saveUnfilteredPosts(updatedUnfiltered)
   }
 
   fun createStory(
@@ -1251,6 +1135,7 @@ class VybeRepository private constructor() {
     _currentUser.value = updated
     _allUsers.value = _allUsers.value.map { if (it.id == updated.id) updated else it }
     SessionManager.get()?.saveSession(updated)
+    VybeLocalStore.get()?.saveUser(updated)
 
     if (supabaseRepo.isConfigured) {
       CoroutineScope(Dispatchers.IO).launch {
@@ -1267,6 +1152,24 @@ class VybeRepository private constructor() {
         )
       }
     }
+  }
+
+  fun updateProfilePhoto(newAvatarUrl: String) {
+    val user = _currentUser.value ?: return
+    val updated = user.copy(avatarUrl = newAvatarUrl)
+    _currentUser.value = updated
+    _allUsers.value = _allUsers.value.map { if (it.id == updated.id) updated else it }
+    SessionManager.get()?.saveSession(updated)
+    VybeLocalStore.get()?.saveUser(updated)
+  }
+
+  fun updateProfileBanner(newCoverUrl: String) {
+    val user = _currentUser.value ?: return
+    val updated = user.copy(coverUrl = newCoverUrl)
+    _currentUser.value = updated
+    _allUsers.value = _allUsers.value.map { if (it.id == updated.id) updated else it }
+    SessionManager.get()?.saveSession(updated)
+    VybeLocalStore.get()?.saveUser(updated)
   }
 
   fun updateTimeManagement(breakMinutes: Int, isEnabled: Boolean) {
@@ -1535,7 +1438,9 @@ class VybeRepository private constructor() {
 
   fun loginUser(identifier: String, pass: String): Boolean {
     val clean = identifier.trim().lowercase().replace("@", "")
-    val matched = _allUsers.value.firstOrNull {
+    val savedUsers = VybeLocalStore.get()?.loadUsers() ?: emptyList()
+    val pool = _allUsers.value + savedUsers
+    val matched = pool.firstOrNull {
       it.email.equals(identifier.trim(), ignoreCase = true) ||
       it.username.lowercase() == clean
     } ?: User(
@@ -1548,7 +1453,11 @@ class VybeRepository private constructor() {
     )
     _currentUser.value = matched
     _isLoggedIn.value = true
+    if (_allUsers.value.none { it.id == matched.id }) {
+      _allUsers.value = listOf(matched) + _allUsers.value
+    }
     SessionManager.get()?.saveSession(matched)
+    VybeLocalStore.get()?.saveUser(matched)
     return true
   }
 
@@ -1853,6 +1762,7 @@ class VybeRepository private constructor() {
         messages = conv.messages + optimisticMsg
       )
       _conversations.value = current
+      VybeLocalStore.get()?.saveConversations(current)
 
       // Performance measurement: Send-button to request start
       val startTime = System.currentTimeMillis()
@@ -1914,6 +1824,7 @@ class VybeRepository private constructor() {
               }
               updatedList[convIdx] = c.copy(messages = reconciled)
               _conversations.value = updatedList
+              VybeLocalStore.get()?.saveConversations(updatedList)
             }
           }
         } finally {

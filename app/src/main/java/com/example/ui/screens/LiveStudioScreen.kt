@@ -29,6 +29,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VybeAvatar
@@ -181,36 +187,55 @@ fun LiveStudioScreen(viewModel: VybeViewModel) {
           }
         }
       } else {
-        // Active Camera Preview Display
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-          Surface(
-            shape = CircleShape,
-            color = Color.Black.copy(alpha = 0.4f),
-            modifier = Modifier.size(80.dp)
-          ) {
-            Box(contentAlignment = Alignment.Center) {
-              Icon(
-                imageVector = if (isFrontCamera) Icons.Default.CameraFront else Icons.Default.CameraRear,
-                contentDescription = null,
-                tint = if (isBroadcasting) VybeOnlineGreen else Color.White.copy(alpha = 0.8f),
-                modifier = Modifier.size(40.dp)
-              )
+        // Real Live CameraX Viewfinder
+        val lifecycleOwner = LocalLifecycleOwner.current
+        AndroidView(
+          factory = { ctx ->
+            val previewView = PreviewView(ctx).apply {
+              scaleType = PreviewView.ScaleType.FILL_CENTER
             }
-          }
-          Spacer(modifier = Modifier.height(12.dp))
-          Text(
-            text = if (isBroadcasting) "LIVE BROADCAST ACTIVE" else "Host Camera Preview",
-            color = Color.White,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp,
-            fontSize = 13.sp
-          )
-          Text(
-            text = if (isFrontCamera) "Front Camera • 1080p60 • Stereo Audio" else "Main Camera • 1080p60 • Stereo Audio",
-            color = Color.White.copy(alpha = 0.6f),
-            fontSize = 11.sp
-          )
-        }
+            val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+            cameraProviderFuture.addListener({
+              try {
+                val cameraProvider = cameraProviderFuture.get()
+                val preview = Preview.Builder().build().also {
+                  it.setSurfaceProvider(previewView.surfaceProvider)
+                }
+                val cameraSelector = if (isFrontCamera) {
+                  CameraSelector.DEFAULT_FRONT_CAMERA
+                } else {
+                  CameraSelector.DEFAULT_BACK_CAMERA
+                }
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview)
+              } catch (e: Exception) {
+                e.printStackTrace()
+              }
+            }, ContextCompat.getMainExecutor(ctx))
+            previewView
+          },
+          update = { previewView ->
+            val cameraProviderFuture = ProcessCameraProvider.getInstance(previewView.context)
+            cameraProviderFuture.addListener({
+              try {
+                val cameraProvider = cameraProviderFuture.get()
+                val preview = Preview.Builder().build().also {
+                  it.setSurfaceProvider(previewView.surfaceProvider)
+                }
+                val cameraSelector = if (isFrontCamera) {
+                  CameraSelector.DEFAULT_FRONT_CAMERA
+                } else {
+                  CameraSelector.DEFAULT_BACK_CAMERA
+                }
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview)
+              } catch (e: Exception) {
+                e.printStackTrace()
+              }
+            }, ContextCompat.getMainExecutor(previewView.context))
+          },
+          modifier = Modifier.fillMaxSize()
+        )
       }
     }
 

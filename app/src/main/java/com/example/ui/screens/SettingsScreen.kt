@@ -18,10 +18,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
+import com.example.util.GitHubUpdater
+import com.example.util.GitHubReleaseInfo
 import com.example.data.model.AppThemeMode
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VerificationBadge
@@ -77,6 +81,13 @@ fun SettingsScreen(viewModel: VybeViewModel) {
   var userIdCheckStatus by remember { mutableStateOf<String?>(null) }
   var isUserIdAvailable by remember { mutableStateOf(true) }
   var profileSaveStatus by remember { mutableStateOf<String?>(null) }
+
+  // GitHub in-app updater state
+  val coroutineScope = rememberCoroutineScope()
+  val context = LocalContext.current
+  var githubRepoInput by remember { mutableStateOf("my-github-username/vybe") }
+  var isCheckingUpdate by remember { mutableStateOf(false) }
+  var updateResult by remember { mutableStateOf<Result<GitHubReleaseInfo>?>(null) }
 
   Scaffold(
     topBar = {
@@ -879,47 +890,193 @@ fun SettingsScreen(viewModel: VybeViewModel) {
 
       // SUBPAGE 9: ABOUT
       SettingsSubpage.ABOUT -> {
-        Column(
+        LazyColumn(
           modifier = Modifier
             .fillMaxSize()
             .padding(paddingValues)
-            .padding(24.dp),
-          horizontalAlignment = Alignment.CenterHorizontally
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-          Box(
-            modifier = Modifier
-              .size(90.dp)
-              .clip(RoundedCornerShape(22.dp))
-          ) {
-            androidx.compose.foundation.Image(
-              painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.vybe_app_icon_clean),
-              contentDescription = "VYBE Logo",
-              modifier = Modifier.fillMaxSize()
+          item {
+            Spacer(modifier = Modifier.height(8.dp))
+            Box(
+              modifier = Modifier
+                .size(80.dp)
+                .clip(RoundedCornerShape(22.dp))
+            ) {
+              androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.vybe_app_icon_clean),
+                contentDescription = "VYBE Logo",
+                modifier = Modifier.fillMaxSize()
+              )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+            Text("vybe", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+            Text("Version 2.0.0 • Production Build", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+              text = "Product of NR Next",
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold,
+              color = VybeBrandCyan,
+              letterSpacing = 1.sp
             )
           }
 
-          Spacer(modifier = Modifier.height(14.dp))
+          // GitHub In-App Live Updater Card
+          item {
+            Card(
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+              shape = RoundedCornerShape(18.dp),
+              border = androidx.compose.foundation.BorderStroke(1.dp, VybeViolet.copy(alpha = 0.4f)),
+              modifier = Modifier.fillMaxWidth().testTag("github_updater_card")
+            ) {
+              Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Icon(Icons.Default.CloudSync, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(24.dp))
+                  Spacer(modifier = Modifier.width(10.dp))
+                  Column {
+                    Text("GitHub Live Updates", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("Sync directly from your repository releases", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  }
+                }
 
-          Text("vybe", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
-          Text("Version 2.0.0", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-          Spacer(modifier = Modifier.height(6.dp))
-          Text(
-            text = "Product of NR Next",
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            color = VybeBrandCyan,
-            letterSpacing = 1.sp
-          )
+                Spacer(modifier = Modifier.height(12.dp))
 
-          Spacer(modifier = Modifier.height(24.dp))
+                OutlinedTextField(
+                  value = githubRepoInput,
+                  onValueChange = { githubRepoInput = it },
+                  label = { Text("GitHub Repo (owner/repo)") },
+                  placeholder = { Text("e.g. your-org/vybe") },
+                  singleLine = true,
+                  shape = RoundedCornerShape(12.dp),
+                  modifier = Modifier.fillMaxWidth().testTag("github_repo_input")
+                )
 
-          Text(
-            text = "VYBE is built around authentic connections, creativity, memories, and distinctive social experiences.\n\nConnect • Share • Be You",
-            fontSize = 13.sp,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            lineHeight = 18.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-          )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Text("Installed: v2.0.0", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                  Button(
+                    onClick = {
+                      isCheckingUpdate = true
+                      updateResult = null
+                      coroutineScope.launch {
+                        val res = GitHubUpdater.checkForUpdates(githubRepoInput)
+                        updateResult = res
+                        isCheckingUpdate = false
+                      }
+                    },
+                    enabled = !isCheckingUpdate && githubRepoInput.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.testTag("check_github_updates_button")
+                  ) {
+                    if (isCheckingUpdate) {
+                      CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                      Spacer(modifier = Modifier.width(6.dp))
+                      Text("Checking...", fontSize = 12.sp)
+                    } else {
+                      Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                      Spacer(modifier = Modifier.width(6.dp))
+                      Text("Check for Update", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                  }
+                }
+
+                // Update Result Feedback
+                updateResult?.let { res ->
+                  Spacer(modifier = Modifier.height(12.dp))
+                  res.onSuccess { release ->
+                    Surface(
+                      color = VybeOnlineGreen.copy(alpha = 0.15f),
+                      shape = RoundedCornerShape(10.dp),
+                      border = androidx.compose.foundation.BorderStroke(1.dp, VybeOnlineGreen.copy(alpha = 0.4f)),
+                      modifier = Modifier.fillMaxWidth()
+                    ) {
+                      Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                          Icon(Icons.Default.CheckCircle, contentDescription = null, tint = VybeOnlineGreen, modifier = Modifier.size(18.dp))
+                          Spacer(modifier = Modifier.width(8.dp))
+                          Text("New Release: ${release.tagName}", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = VybeOnlineGreen)
+                        }
+                        if (release.name.isNotBlank() && release.name != release.tagName) {
+                          Text(release.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp))
+                        }
+                        if (release.body.isNotBlank()) {
+                          Text(
+                            text = release.body.take(200) + if (release.body.length > 200) "..." else "",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp)
+                          )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                          onClick = {
+                            val targetUrl = release.downloadUrl ?: release.htmlUrl
+                            GitHubUpdater.openDownloadUrl(context, targetUrl)
+                          },
+                          colors = ButtonDefaults.buttonColors(containerColor = VybeOnlineGreen),
+                          shape = RoundedCornerShape(8.dp),
+                          modifier = Modifier.fillMaxWidth().testTag("download_update_button")
+                        ) {
+                          Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                          Spacer(modifier = Modifier.width(6.dp))
+                          Text("Download & Install Update", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                      }
+                    }
+                  }.onFailure { err ->
+                    Surface(
+                      color = VybeDanger.copy(alpha = 0.15f),
+                      shape = RoundedCornerShape(10.dp),
+                      border = androidx.compose.foundation.BorderStroke(1.dp, VybeDanger.copy(alpha = 0.4f)),
+                      modifier = Modifier.fillMaxWidth()
+                    ) {
+                      Column(modifier = Modifier.padding(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                          Icon(Icons.Default.Info, contentDescription = null, tint = VybeDanger, modifier = Modifier.size(16.dp))
+                          Spacer(modifier = Modifier.width(6.dp))
+                          Text("Release Status", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = VybeDanger)
+                        }
+                        Text(
+                          text = err.message ?: "Could not fetch release.",
+                          fontSize = 11.sp,
+                          color = MaterialTheme.colorScheme.onSurface,
+                          modifier = Modifier.padding(top = 4.dp)
+                        )
+                        Text(
+                          text = "Tip: When you push new code to GitHub and create a Release with an APK asset, tapping 'Check for Update' allows instant over-the-air updates.",
+                          fontSize = 10.sp,
+                          color = MaterialTheme.colorScheme.onSurfaceVariant,
+                          modifier = Modifier.padding(top = 4.dp)
+                        )
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          item {
+            Text(
+              text = "VYBE is built around authentic connections, creativity, memories, and distinctive social experiences.\n\nConnect • Share • Be You",
+              fontSize = 12.sp,
+              textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+              lineHeight = 17.sp,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(20.dp))
+          }
         }
       }
     }

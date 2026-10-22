@@ -27,16 +27,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.example.data.model.MoodType
 import com.example.data.model.Post
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VybeAvatar
 import com.example.ui.theme.*
+import com.example.util.MediaUtils
 
 /**
  * VYBE UNFILTERED 2.0
@@ -367,29 +371,86 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
     }
   }
 
-  // Raw Capture Publishing Sheet with Camera Preview / Retake / Mood Selection
+  // Raw Capture Publishing Full-Screen Page
   if (showCreateSheet) {
-    AlertDialog(
+    val context = LocalContext.current
+
+    Dialog(
       onDismissRequest = {
         showCreateSheet = false
         capturedBitmap = null
         pickedUri = null
       },
-      title = { Text("Publish UNFILTERED Moment", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
-      text = {
+      properties = DialogProperties(
+        usePlatformDefaultWidth = false,
+        dismissOnBackPress = true
+      )
+    ) {
+      Scaffold(
+        topBar = {
+          TopAppBar(
+            navigationIcon = {
+              IconButton(
+                onClick = {
+                  showCreateSheet = false
+                  capturedBitmap = null
+                  pickedUri = null
+                }
+              ) {
+                Icon(Icons.Default.Close, contentDescription = "Close")
+              }
+            },
+            title = {
+              Column {
+                Text("Publish UNFILTERED", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("Zero retouches • Pure reality", fontSize = 11.sp, color = VybeBrandCyan)
+              }
+            },
+            actions = {
+              Button(
+                onClick = {
+                  val realMediaUrl = pickedUri?.toString()
+                    ?: (capturedBitmap?.let { bmp ->
+                      MediaUtils.saveBitmapToCache(context, bmp, "unfilter_raw")?.toString()
+                    })
+                    ?: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=600"
+
+                  viewModel.createUnfilteredPost(postCaption.trim(), realMediaUrl)
+                  postCaption = ""
+                  capturedBitmap = null
+                  pickedUri = null
+                  showCreateSheet = false
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                  .padding(end = 8.dp)
+                  .testTag("unfiltered_publish_button")
+              ) {
+                Text("Publish", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+              }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+              containerColor = MaterialTheme.colorScheme.background
+            )
+          )
+        }
+      ) { innerPadding ->
         LazyColumn(
           modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 480.dp),
-          verticalArrangement = Arrangement.spacedBy(10.dp)
+            .fillMaxSize()
+            .padding(innerPadding)
+            .padding(horizontal = 16.dp),
+          verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
           // Preview of captured photo or picked media
           item {
+            Spacer(modifier = Modifier.height(4.dp))
             Box(
               modifier = Modifier
                 .fillMaxWidth()
-                .height(200.dp)
-                .clip(RoundedCornerShape(12.dp))
+                .height(340.dp)
+                .clip(RoundedCornerShape(18.dp))
                 .background(Color.Black),
               contentAlignment = Alignment.Center
             ) {
@@ -408,7 +469,25 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
                   modifier = Modifier.fillMaxSize()
                 )
               } else {
-                Text("No photo selected", color = Color.White, fontSize = 12.sp)
+                Text("No photo selected", color = Color.White, fontSize = 13.sp)
+              }
+
+              // RAW watermark indicator
+              Surface(
+                color = Color.Black.copy(alpha = 0.7f),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                  .padding(12.dp)
+                  .align(Alignment.BottomEnd)
+              ) {
+                Text(
+                  text = "AUTHENTIC RAW CAPTURE",
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.ExtraBold,
+                  color = Color.White,
+                  letterSpacing = 1.sp,
+                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
               }
             }
           }
@@ -417,30 +496,34 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
           item {
             Row(
               modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween
+              horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-              TextButton(
-                onClick = { cameraLauncher.launch(null) }
+              OutlinedButton(
+                onClick = { cameraLauncher.launch(null) },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp)
               ) {
-                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Retake Photo", fontSize = 12.sp)
+                Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(16.dp), tint = VybeViolet)
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Retake Camera", fontSize = 12.sp)
               }
-              TextButton(
+              OutlinedButton(
                 onClick = {
                   photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
-                }
+                },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp)
               ) {
                 Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Choose from Gallery", fontSize = 12.sp)
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("From Gallery", fontSize = 12.sp)
               }
             }
           }
 
           // Mood Zone selection
           item {
-            Text("Select Current Mood Zone", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("Select Current Mood Zone", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             LazyRow(
               horizontalArrangement = Arrangement.spacedBy(6.dp),
               modifier = Modifier.fillMaxWidth()
@@ -460,62 +543,72 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
             OutlinedTextField(
               value = postCaption,
               onValueChange = { postCaption = it },
-              placeholder = { Text("What happened just now? No show-off, just life...", fontSize = 12.sp) },
+              label = { Text("Add caption (Optional)") },
+              placeholder = { Text("What happened just now? No show-off, just life...", fontSize = 13.sp) },
               minLines = 3,
               modifier = Modifier
                 .fillMaxWidth()
-                .testTag("unfiltered_caption_input")
+                .testTag("unfiltered_caption_input"),
+              shape = RoundedCornerShape(14.dp)
             )
           }
 
           item {
             Surface(
-              color = VybeViolet.copy(alpha = 0.1f),
-              shape = RoundedCornerShape(8.dp)
+              color = VybeVioletDark.copy(alpha = 0.35f),
+              shape = RoundedCornerShape(12.dp),
+              border = androidx.compose.foundation.BorderStroke(1.dp, VybeViolet.copy(alpha = 0.3f))
             ) {
               Row(
-                modifier = Modifier.padding(8.dp),
+                modifier = Modifier.padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Icon(Icons.Default.Lock, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                  text = "0% Filter Policy: Images are published exactly as captured.",
-                  fontSize = 10.sp,
-                  color = VybeBrandCyan
-                )
+                Icon(Icons.Default.Lock, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                  Text("0% Filter Policy Enforced", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White)
+                  Text(
+                    text = "Images are published exactly as captured. No skin smoothing, reshaping, or deceptive alterations.",
+                    fontSize = 11.sp,
+                    color = VybeBrandCyan,
+                    lineHeight = 15.sp
+                  )
+                }
               }
             }
           }
-        }
-      },
-      confirmButton = {
-        Button(
-          onClick = {
-            val mediaUrl = pickedUri?.toString()
-              ?: (if (capturedBitmap != null) "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=600" else "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600")
 
-            viewModel.createUnfilteredPost(postCaption.trim(), mediaUrl)
-            postCaption = ""
-            capturedBitmap = null
-            pickedUri = null
-            showCreateSheet = false
-          },
-          colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-          modifier = Modifier.testTag("unfiltered_publish_button")
-        ) {
-          Text("Publish Raw Moment", fontWeight = FontWeight.Bold)
-        }
-      },
-      dismissButton = {
-        TextButton(onClick = {
-          showCreateSheet = false
-          capturedBitmap = null
-          pickedUri = null
-        }) {
-          Text("Cancel")
+          item {
+            Button(
+              onClick = {
+                val realMediaUrl = pickedUri?.toString()
+                  ?: (capturedBitmap?.let { bmp ->
+                    MediaUtils.saveBitmapToCache(context, bmp, "unfilter_raw")?.toString()
+                  })
+                  ?: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=600"
+
+                viewModel.createUnfilteredPost(postCaption.trim(), realMediaUrl)
+                postCaption = ""
+                capturedBitmap = null
+                pickedUri = null
+                showCreateSheet = false
+              },
+              colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+              shape = RoundedCornerShape(14.dp),
+              modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .testTag("unfiltered_publish_primary_button")
+            ) {
+              Text("Publish Raw Moment", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            }
+          }
+
+          item {
+            Spacer(modifier = Modifier.height(30.dp))
+          }
         }
       }
-    )
+    }
   }
 }

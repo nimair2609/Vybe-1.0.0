@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,6 +24,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.UnloadRoom
 import com.example.data.model.UnloadRoomMode
 import com.example.ui.VybeViewModel
@@ -611,19 +614,69 @@ fun UnloadScreen(viewModel: VybeViewModel) {
     )
   }
 
-  // Host a New Room Dialog
+  // Host a New Room Full-Screen Page
   if (showHostRoomDialog) {
-    AlertDialog(
+    Dialog(
       onDismissRequest = { showHostRoomDialog = false },
-      title = { Text("Host an Unload Room", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
-      text = {
+      properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = true)
+    ) {
+      Scaffold(
+        topBar = {
+          TopAppBar(
+            navigationIcon = {
+              IconButton(onClick = { showHostRoomDialog = false }) {
+                Icon(Icons.Default.Close, contentDescription = "Close")
+              }
+            },
+            title = {
+              Column {
+                Text("Host an Unload Room", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("Safe listening • Zero audio recording", fontSize = 11.sp, color = VybeBrandCyan)
+              }
+            },
+            actions = {
+              Button(
+                onClick = {
+                  if (formTitle.isNotBlank() && formTermsAgreed) {
+                    viewModel.createUnloadRoom(
+                      title = formTitle.trim(),
+                      description = formDesc.trim().ifBlank { "Live open listening space." },
+                      topicTag = formTopic,
+                      mode = formMode,
+                      durationMinutes = formDuration,
+                      capacity = formCapacity,
+                      scheduledTime = formSchedule,
+                      joinerMessage = formJoinerMsg.trim(),
+                      termsAgreed = formTermsAgreed
+                    )
+                    showHostRoomDialog = false
+                  }
+                },
+                enabled = formTitle.isNotBlank() && formTermsAgreed,
+                colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                  .padding(end = 8.dp)
+                  .testTag("submit_host_room_button")
+              ) {
+                Text("Launch", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+              }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+              containerColor = MaterialTheme.colorScheme.background
+            )
+          )
+        }
+      ) { innerPadding ->
         LazyColumn(
           modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 420.dp),
-          verticalArrangement = Arrangement.spacedBy(10.dp)
+            .fillMaxSize()
+            .padding(innerPadding)
+            .padding(horizontal = 16.dp),
+          verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
           item {
+            Spacer(modifier = Modifier.height(4.dp))
             OutlinedTextField(
               value = formTitle,
               onValueChange = { formTitle = it },
@@ -632,7 +685,8 @@ fun UnloadScreen(viewModel: VybeViewModel) {
               modifier = Modifier
                 .fillMaxWidth()
                 .testTag("host_room_title_input"),
-              singleLine = true
+              singleLine = true,
+              shape = RoundedCornerShape(14.dp)
             )
           }
           item {
@@ -642,11 +696,27 @@ fun UnloadScreen(viewModel: VybeViewModel) {
               label = { Text("Description") },
               placeholder = { Text("What is this session holding space for?") },
               modifier = Modifier.fillMaxWidth(),
-              maxLines = 3
+              minLines = 3,
+              shape = RoundedCornerShape(14.dp)
             )
           }
           item {
-            Text("Conversation Mode", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("Select Topic", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            LazyRow(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+              items(topicOptions) { topic ->
+                FilterChip(
+                  selected = formTopic == topic,
+                  onClick = { formTopic = topic },
+                  label = { Text(topic, fontSize = 11.sp) }
+                )
+              }
+            }
+          }
+          item {
+            Text("Conversation Mode", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -661,7 +731,7 @@ fun UnloadScreen(viewModel: VybeViewModel) {
             }
           }
           item {
-            Text("Duration & Capacity", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("Duration & Capacity", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -678,7 +748,7 @@ fun UnloadScreen(viewModel: VybeViewModel) {
                 FilterChip(
                   selected = formCapacity == cap,
                   onClick = { formCapacity = cap },
-                  label = { Text("$cap users", fontSize = 11.sp) }
+                  label = { Text("$cap listeners", fontSize = 11.sp) }
                 )
               }
             }
@@ -689,102 +759,203 @@ fun UnloadScreen(viewModel: VybeViewModel) {
               onValueChange = { formJoinerMsg = it },
               label = { Text("Joiner Welcome Message") },
               modifier = Modifier.fillMaxWidth(),
-              singleLine = true
+              singleLine = true,
+              shape = RoundedCornerShape(14.dp)
             )
           }
           item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              Checkbox(
-                checked = formTermsAgreed,
-                onCheckedChange = { formTermsAgreed = it },
-                modifier = Modifier.testTag("host_terms_agreed_checkbox")
-              )
-              Spacer(modifier = Modifier.width(6.dp))
-              Text("I agree to host under VYBE Safety Guidelines", fontSize = 11.sp)
+            Surface(
+              color = VybeVioletDark.copy(alpha = 0.35f),
+              shape = RoundedCornerShape(12.dp),
+              border = androidx.compose.foundation.BorderStroke(1.dp, VybeViolet.copy(alpha = 0.3f))
+            ) {
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Checkbox(
+                  checked = formTermsAgreed,
+                  onCheckedChange = { formTermsAgreed = it },
+                  modifier = Modifier.testTag("host_terms_agreed_checkbox")
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                  Text("I agree to host under VYBE Safety Guidelines", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                  Text("No hate speech, zero recordings, respect anonymity.", fontSize = 11.sp, color = VybeBrandCyan)
+                }
+              }
             }
           }
-        }
-      },
-      confirmButton = {
-        Button(
-          onClick = {
-            if (formTitle.isNotBlank() && formTermsAgreed) {
-              viewModel.createUnloadRoom(
-                title = formTitle.trim(),
-                description = formDesc.trim().ifBlank { "Live open listening space." },
-                topicTag = formTopic,
-                mode = formMode,
-                durationMinutes = formDuration,
-                capacity = formCapacity,
-                scheduledTime = formSchedule,
-                joinerMessage = formJoinerMsg.trim(),
-                termsAgreed = formTermsAgreed
-              )
-              showHostRoomDialog = false
+          item {
+            Button(
+              onClick = {
+                if (formTitle.isNotBlank() && formTermsAgreed) {
+                  viewModel.createUnloadRoom(
+                    title = formTitle.trim(),
+                    description = formDesc.trim().ifBlank { "Live open listening space." },
+                    topicTag = formTopic,
+                    mode = formMode,
+                    durationMinutes = formDuration,
+                    capacity = formCapacity,
+                    scheduledTime = formSchedule,
+                    joinerMessage = formJoinerMsg.trim(),
+                    termsAgreed = formTermsAgreed
+                  )
+                  showHostRoomDialog = false
+                }
+              },
+              enabled = formTitle.isNotBlank() && formTermsAgreed,
+              colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+              shape = RoundedCornerShape(14.dp),
+              modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .testTag("submit_host_room_large_button")
+            ) {
+              Text("Launch Listening Space", fontWeight = FontWeight.Bold, fontSize = 14.sp)
             }
-          },
-          enabled = formTitle.isNotBlank() && formTermsAgreed,
-          colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-          modifier = Modifier.testTag("submit_host_room_button")
-        ) {
-          Text("Launch Room", fontWeight = FontWeight.Bold)
-        }
-      },
-      dismissButton = {
-        TextButton(onClick = { showHostRoomDialog = false }) {
-          Text("Cancel")
+          }
+          item {
+            Spacer(modifier = Modifier.height(30.dp))
+          }
         }
       }
-    )
+    }
   }
 
-  // Edit Room Dialog (Host only)
+  // Edit Room Full-Screen Page (Host only)
   if (showEditRoomDialog && activeRoom != null) {
-    AlertDialog(
+    Dialog(
       onDismissRequest = { showEditRoomDialog = false },
-      title = { Text("Edit Room Details", fontWeight = FontWeight.Bold) },
-      text = {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          OutlinedTextField(
-            value = formTitle,
-            onValueChange = { formTitle = it },
-            label = { Text("Title") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-          )
-          OutlinedTextField(
-            value = formDesc,
-            onValueChange = { formDesc = it },
-            label = { Text("Description") },
-            modifier = Modifier.fillMaxWidth()
-          )
-        }
-      },
-      confirmButton = {
-        Button(
-          onClick = {
-            viewModel.updateUnloadRoom(
-              roomId = activeRoom!!.id,
-              title = formTitle.trim(),
-              description = formDesc.trim(),
-              topicTag = formTopic,
-              mode = formMode,
-              durationMinutes = formDuration,
-              capacity = formCapacity
+      properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = true)
+    ) {
+      Scaffold(
+        topBar = {
+          TopAppBar(
+            navigationIcon = {
+              IconButton(onClick = { showEditRoomDialog = false }) {
+                Icon(Icons.Default.Close, contentDescription = "Close")
+              }
+            },
+            title = {
+              Text("Edit Room Details", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            },
+            actions = {
+              Button(
+                onClick = {
+                  viewModel.updateUnloadRoom(
+                    roomId = activeRoom!!.id,
+                    title = formTitle.trim(),
+                    description = formDesc.trim(),
+                    topicTag = formTopic,
+                    mode = formMode,
+                    durationMinutes = formDuration,
+                    capacity = formCapacity
+                  )
+                  showEditRoomDialog = false
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.padding(end = 8.dp)
+              ) {
+                Text("Save", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+              }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+              containerColor = MaterialTheme.colorScheme.background
             )
-            showEditRoomDialog = false
-          },
-          colors = ButtonDefaults.buttonColors(containerColor = VybeViolet)
-        ) {
-          Text("Save Changes")
+          )
         }
-      },
-      dismissButton = {
-        TextButton(onClick = { showEditRoomDialog = false }) {
-          Text("Cancel")
+      ) { innerPadding ->
+        LazyColumn(
+          modifier = Modifier
+            .fillMaxSize()
+            .padding(innerPadding)
+            .padding(horizontal = 16.dp),
+          verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+          item {
+            Spacer(modifier = Modifier.height(4.dp))
+            OutlinedTextField(
+              value = formTitle,
+              onValueChange = { formTitle = it },
+              label = { Text("Title") },
+              modifier = Modifier.fillMaxWidth(),
+              singleLine = true,
+              shape = RoundedCornerShape(14.dp)
+            )
+          }
+          item {
+            OutlinedTextField(
+              value = formDesc,
+              onValueChange = { formDesc = it },
+              label = { Text("Description") },
+              modifier = Modifier.fillMaxWidth(),
+              minLines = 3,
+              shape = RoundedCornerShape(14.dp)
+            )
+          }
+          item {
+            Text("Select Topic", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            LazyRow(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+              items(topicOptions) { topic ->
+                FilterChip(
+                  selected = formTopic == topic,
+                  onClick = { formTopic = topic },
+                  label = { Text(topic, fontSize = 11.sp) }
+                )
+              }
+            }
+          }
+          item {
+            Text("Conversation Mode", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+              UnloadRoomMode.values().forEach { mode ->
+                FilterChip(
+                  selected = formMode == mode,
+                  onClick = { formMode = mode },
+                  label = { Text(mode.label, fontSize = 11.sp) }
+                )
+              }
+            }
+          }
+          item {
+            Button(
+              onClick = {
+                viewModel.updateUnloadRoom(
+                  roomId = activeRoom!!.id,
+                  title = formTitle.trim(),
+                  description = formDesc.trim(),
+                  topicTag = formTopic,
+                  mode = formMode,
+                  durationMinutes = formDuration,
+                  capacity = formCapacity
+                )
+                showEditRoomDialog = false
+              },
+              colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+              shape = RoundedCornerShape(14.dp),
+              modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+            ) {
+              Text("Save Changes", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            }
+          }
+          item {
+            Spacer(modifier = Modifier.height(30.dp))
+          }
         }
       }
-    )
+    }
   }
 
   // Safety & Moderation Controls Dialog

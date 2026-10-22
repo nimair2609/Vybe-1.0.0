@@ -48,18 +48,30 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
     viewModel.navigateBack()
   }
 
+  val context = androidx.compose.ui.platform.LocalContext.current
   val currentUser by viewModel.currentUser.collectAsState()
   var publishDestination by remember { mutableStateOf(PublishDestination.FEED_POST) }
   var postType by remember { mutableStateOf("Text & Photo") }
   var caption by remember { mutableStateOf("") }
   var selectedMood by remember { mutableStateOf<MoodType?>(null) }
   var selectedImage by remember { mutableStateOf<String?>(null) }
+  var selectedMediaType by remember { mutableStateOf<MediaType>(MediaType.IMAGE) }
 
   val photoPickerLauncher = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.PickVisualMedia()
   ) { uri ->
     if (uri != null) {
       selectedImage = uri.toString()
+      selectedMediaType = MediaType.IMAGE
+    }
+  }
+
+  val videoPickerLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.PickVisualMedia()
+  ) { uri ->
+    if (uri != null) {
+      selectedImage = uri.toString()
+      selectedMediaType = if (publishDestination == PublishDestination.VYBES_REEL) MediaType.REEL else MediaType.VIDEO
     }
   }
 
@@ -67,7 +79,9 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
     contract = ActivityResultContracts.TakePicturePreview()
   ) { bitmap ->
     if (bitmap != null) {
-      selectedImage = "https://images.unsplash.com/photo-1518770660439-4636190af475?w=600"
+      val uri = com.example.util.MediaUtils.saveBitmapToCache(context, bitmap, prefix = "post_photo")
+      selectedImage = uri.toString()
+      selectedMediaType = MediaType.IMAGE
     }
   }
 
@@ -103,8 +117,9 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
                   caption = caption,
                   mood = selectedMood,
                   imageUrl = selectedImage,
-                  mediaType = if (publishDestination == PublishDestination.VYBES_REEL) MediaType.REEL else MediaType.IMAGE
+                  mediaType = if (publishDestination == PublishDestination.VYBES_REEL) MediaType.REEL else selectedMediaType
                 )
+                viewModel.navigateBack()
               }
             },
             enabled = caption.isNotBlank() || selectedImage != null,
@@ -248,9 +263,9 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
 
       Spacer(modifier = Modifier.height(16.dp))
 
-      // Attach Photo/Media
+      // Attach Photo / Video / Camera
       Text(
-        text = if (publishDestination == PublishDestination.FEED_POST) "Add Photo or Visual Media:" else "Select VYBE Video Media:",
+        text = if (publishDestination == PublishDestination.FEED_POST) "Attach Media (Photo, Video, or Camera):" else "Select VYBES Video Media:",
         style = MaterialTheme.typography.labelMedium,
         fontWeight = FontWeight.SemiBold
       )
@@ -258,25 +273,34 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
 
       Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
       ) {
         OutlinedButton(
           onClick = {
             photoPickerLauncher.launch(
-              PickVisualMediaRequest(
-                if (publishDestination == PublishDestination.FEED_POST)
-                  ActivityResultContracts.PickVisualMedia.ImageOnly
-                else
-                  ActivityResultContracts.PickVisualMedia.ImageAndVideo
-              )
+              PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
             )
           },
           shape = RoundedCornerShape(12.dp),
-          modifier = Modifier.weight(1f).testTag("pick_gallery_media_btn")
+          modifier = Modifier.weight(1f).testTag("pick_gallery_photo_btn")
         ) {
-          Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(18.dp))
-          Spacer(modifier = Modifier.width(6.dp))
-          Text("Gallery", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+          Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(16.dp))
+          Spacer(modifier = Modifier.width(4.dp))
+          Text("Photo", fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+        }
+
+        OutlinedButton(
+          onClick = {
+            videoPickerLauncher.launch(
+              PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+            )
+          },
+          shape = RoundedCornerShape(12.dp),
+          modifier = Modifier.weight(1f).testTag("pick_gallery_video_btn")
+        ) {
+          Icon(Icons.Default.Videocam, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(16.dp))
+          Spacer(modifier = Modifier.width(4.dp))
+          Text("Video", fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
         }
 
         OutlinedButton(
@@ -284,9 +308,9 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
           shape = RoundedCornerShape(12.dp),
           modifier = Modifier.weight(1f).testTag("capture_camera_media_btn")
         ) {
-          Icon(Icons.Default.CameraAlt, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(18.dp))
-          Spacer(modifier = Modifier.width(6.dp))
-          Text("Camera", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+          Icon(Icons.Default.CameraAlt, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(16.dp))
+          Spacer(modifier = Modifier.width(4.dp))
+          Text("Camera", fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
         }
       }
 
@@ -306,6 +330,25 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
           )
+          if (selectedMediaType == MediaType.VIDEO || selectedMediaType == MediaType.REEL) {
+            Surface(
+              color = Color.Black.copy(alpha = 0.75f),
+              shape = RoundedCornerShape(8.dp),
+              modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(10.dp)
+            ) {
+              Row(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Icon(Icons.Default.PlayCircle, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Video Media Ready", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+              }
+            }
+          }
+
           IconButton(
             onClick = { selectedImage = null },
             modifier = Modifier

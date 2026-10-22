@@ -38,6 +38,7 @@ fun ExploreScreen(viewModel: VybeViewModel) {
   val shops by viewModel.shops.collectAsState()
   val posts by viewModel.posts.collectAsState()
   val allUsers by viewModel.allUsers.collectAsState()
+  val currentUser by viewModel.currentUser.collectAsState()
 
   val trendingTags = listOf("MumbaiLoFi", "CricketIndia", "DesignEthics", "MonsoonCoffee", "BangaloreTech", "IndieCinema")
 
@@ -414,37 +415,39 @@ fun ExploreScreen(viewModel: VybeViewModel) {
         }
       }
 
-      // Admin & Moderation Quick Bar
-      item {
-        Spacer(modifier = Modifier.height(8.dp))
-        Surface(
-          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-          shape = RoundedCornerShape(12.dp),
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clickable { viewModel.navigateTo(Screen.ADMIN_CONSOLE) }
-            .testTag("explore_admin_card")
-        ) {
-          Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+      // Admin & Moderation Quick Bar (Isolated to Admin accounts only)
+      if (currentUser?.role == com.example.data.model.UserRole.ADMIN) {
+        item {
+          Spacer(modifier = Modifier.height(8.dp))
+          Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 16.dp)
+              .clickable { viewModel.navigateTo(Screen.ADMIN_CONSOLE) }
+              .testTag("explore_admin_card")
           ) {
-            Icon(Icons.Default.Security, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-              text = "Moderation Queue & Safety Review",
-              fontSize = 12.sp,
-              fontWeight = FontWeight.SemiBold,
-              color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            Text(
-              text = "2 Pending",
-              fontSize = 11.sp,
-              fontWeight = FontWeight.Bold,
-              color = VybeVerifiedGold
-            )
+            Row(
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Icon(Icons.Default.Security, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(18.dp))
+              Spacer(modifier = Modifier.width(8.dp))
+              Text(
+                text = "Moderation Queue & Safety Review",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+              )
+              Spacer(modifier = Modifier.weight(1f))
+              Text(
+                text = "2 Pending",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = VybeVerifiedGold
+              )
+            }
           }
         }
       }

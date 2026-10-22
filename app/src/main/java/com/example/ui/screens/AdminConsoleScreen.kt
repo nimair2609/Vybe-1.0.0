@@ -33,6 +33,27 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
   }
 
   val reports by viewModel.adminReports.collectAsState()
+  val currentUser by viewModel.currentUser.collectAsState()
+
+  if (currentUser?.role != com.example.data.model.UserRole.ADMIN) {
+    Box(
+      modifier = Modifier.fillMaxSize(),
+      contentAlignment = Alignment.Center
+    ) {
+      Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
+        Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(48.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Admin Access Restricted", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(8.dp))
+        Text("This portal is reserved for authorized platform administrators and trust & safety moderators.", textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = { viewModel.navigateBack() }) {
+          Text("Go Back")
+        }
+      }
+    }
+    return
+  }
 
   Scaffold(
     topBar = {

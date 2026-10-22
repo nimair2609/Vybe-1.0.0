@@ -35,11 +35,7 @@ import com.example.ui.VybeViewModel
 import com.example.ui.components.PostCard
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VybeAvatar
-import com.example.ui.theme.VybeBrandCyan
-import com.example.ui.theme.VybeDanger
-import com.example.ui.theme.VybeMagenta
-import com.example.ui.theme.VybeOnlineGreen
-import com.example.ui.theme.VybeViolet
+import com.example.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,6 +76,44 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
   var isMicMuted by remember { mutableStateOf(false) }
   var isFrontCamera by remember { mutableStateOf(true) }
 
+  var photoActionTarget by remember { mutableStateOf<String?>(null) } // "AVATAR" or "BANNER"
+  var showPhotoActionSheet by remember { mutableStateOf(false) }
+
+  val galleryPickerLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.PickVisualMedia()
+  ) { uri: Uri? ->
+    if (uri != null) {
+      val uriStr = uri.toString()
+      if (photoActionTarget == "AVATAR") {
+        viewModel.updateProfilePhoto(uriStr)
+      } else if (photoActionTarget == "BANNER") {
+        viewModel.updateProfileBanner(uriStr)
+      }
+      showPhotoActionSheet = false
+      photoActionTarget = null
+    }
+  }
+
+  val cameraCaptureLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.TakePicturePreview()
+  ) { bitmap: android.graphics.Bitmap? ->
+    if (bitmap != null) {
+      val uri = com.example.util.MediaUtils.saveBitmapToCache(
+        context,
+        bitmap,
+        prefix = if (photoActionTarget == "AVATAR") "avatar" else "banner"
+      )
+      val uriStr = uri.toString()
+      if (photoActionTarget == "AVATAR") {
+        viewModel.updateProfilePhoto(uriStr)
+      } else if (photoActionTarget == "BANNER") {
+        viewModel.updateProfileBanner(uriStr)
+      }
+      showPhotoActionSheet = false
+      photoActionTarget = null
+    }
+  }
+
   // Profile photo: still image only (Requirement L)
   val avatarPickerLauncher = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.PickVisualMedia()
@@ -89,7 +123,7 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
     }
   }
 
-  // Banner photo: photo or short video (Requirement L)
+  // Banner photo: photo only
   val bannerPickerLauncher = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.PickVisualMedia()
   ) { uri: Uri? ->
@@ -98,18 +132,22 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
     }
   }
 
-  if (profileUser == null) {
+  if (profileUser == null && currentUser == null) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
       Text("User not found")
     }
     return
   }
 
-  val user = profileUser!!
-  val isMe = currentUser?.id == user.id
+  val user = if (profileUser != null && currentUser != null && (profileUser!!.id == currentUser!!.id || profileUser!!.username.equals(currentUser!!.username, ignoreCase = true))) {
+    currentUser!!
+  } else {
+    profileUser ?: currentUser!!
+  }
+  val isMe = currentUser?.id == user.id || currentUser?.username.equals(user.username, ignoreCase = true)
 
   val userPosts = remember(posts, user) {
-    posts.filter { it.author.id == user.id }
+    posts.filter { it.author.id == user.id || it.author.username.equals(user.username, ignoreCase = true) }
   }
 
   Scaffold(
@@ -147,11 +185,21 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
     ) {
       // Cover & Avatar
       item {
-        Box(modifier = Modifier.fillMaxWidth().height(160.dp)) {
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .height(170.dp)
+            .then(
+              if (isMe) Modifier.clickable {
+                photoActionTarget = "BANNER"
+                showPhotoActionSheet = true
+              } else Modifier
+            )
+        ) {
           if (user.coverUrl.isNotEmpty()) {
             AsyncImage(
               model = user.coverUrl,
-              contentDescription = "Cover",
+              contentDescription = "Cover Banner",
               contentScale = ContentScale.Crop,
               modifier = Modifier.fillMaxSize()
             )
@@ -159,48 +207,76 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
             Box(
               modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .background(
+                  androidx.compose.ui.graphics.Brush.horizontalGradient(
+                    listOf(VybeVioletDark, ObsidianSurface, VybeVioletDark)
+                  )
+                )
             )
           }
 
-          // Avatar with 5-second video tap action
-          Box(
-            modifier = Modifier
-              .align(Alignment.BottomStart)
-              .offset(x = 16.dp, y = 40.dp)
-          ) {
-            VybeAvatar(
-              user = user,
-              size = 80.dp,
-              onClick = {
-                if (!user.profileVideoUrl.isNullOrEmpty()) {
-                  showVideoPlayerModal = true
-                }
-              }
-            )
-          }
-
-          // 5-Second Video Badge button
-          if (!user.profileVideoUrl.isNullOrEmpty()) {
+          // Edit banner overlay button if owner
+          if (isMe) {
             Surface(
-              color = VybeMagenta,
-              shape = RoundedCornerShape(12.dp),
+              color = Color.Black.copy(alpha = 0.65f),
+              shape = CircleShape,
               modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(12.dp)
-                .clickable { showVideoPlayerModal = true }
+                .clickable {
+                  photoActionTarget = "BANNER"
+                  showPhotoActionSheet = true
+                }
+                .testTag("edit_banner_button")
             ) {
               Row(
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Text("▶ 5s Video", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                Icon(Icons.Default.CameraAlt, contentDescription = "Edit Banner", tint = Color.White, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Edit Banner", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+              }
+            }
+          }
+
+          // Avatar with tap action
+          Box(
+            modifier = Modifier
+              .align(Alignment.BottomStart)
+              .offset(x = 16.dp, y = 42.dp)
+          ) {
+            VybeAvatar(
+              user = user,
+              size = 84.dp,
+              onClick = {
+                if (isMe) {
+                  photoActionTarget = "AVATAR"
+                  showPhotoActionSheet = true
+                }
+              }
+            )
+            if (isMe) {
+              Box(
+                modifier = Modifier
+                  .align(Alignment.BottomEnd)
+                  .size(28.dp)
+                  .clip(CircleShape)
+                  .background(VybeViolet)
+                  .clickable {
+                    photoActionTarget = "AVATAR"
+                    showPhotoActionSheet = true
+                  }
+                  .testTag("edit_avatar_badge"),
+                contentAlignment = Alignment.Center
+              ) {
+                Icon(Icons.Default.CameraAlt, contentDescription = "Edit Avatar", tint = Color.White, modifier = Modifier.size(15.dp))
               }
             }
           }
         }
 
-        Spacer(modifier = Modifier.height(44.dp))
+        Spacer(modifier = Modifier.height(48.dp))
 
         // Name, Bio, Badges
         Column(modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -220,15 +296,24 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
           )
 
-          Spacer(modifier = Modifier.height(4.dp))
+          Spacer(modifier = Modifier.height(6.dp))
 
-          // Public VYBE ID (Section 3 requirement)
+          // Public VYBE ID (Copyable with feedback)
           Surface(
             color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = RoundedCornerShape(8.dp)
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier
+              .clip(RoundedCornerShape(8.dp))
+              .clickable {
+                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                val clip = android.content.ClipData.newPlainText("VYBE Public ID", user.publicVybeId)
+                clipboard.setPrimaryClip(clip)
+                android.widget.Toast.makeText(context, "Copied Public ID: ${user.publicVybeId}", android.widget.Toast.LENGTH_SHORT).show()
+              }
+              .testTag("copy_public_id_chip")
           ) {
             Row(
-              modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+              modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
               verticalAlignment = Alignment.CenterVertically
             ) {
               Text(
@@ -241,8 +326,8 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
               Icon(
                 imageVector = Icons.Default.ContentCopy,
                 contentDescription = "Copy Public VYBE ID",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(13.dp)
+                tint = VybeBrandCyan,
+                modifier = Modifier.size(14.dp)
               )
             }
           }
@@ -374,27 +459,31 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
 
                 OutlinedButton(
                   onClick = {
-                    if (!user.profileVideoUrl.isNullOrEmpty()) {
-                      showVideoPlayerModal = true
-                    } else {
-                      editDisplayName = user.displayName
-                      editFirstName = user.firstName
-                      editLastName = user.lastName
-                      editUsername = user.username
-                      editBio = user.bio
-                      editAvatarUrl = user.avatarUrl
-                      editCoverUrl = user.coverUrl
-                      editVideoUrl = "https://assets.mixkit.co/videos/preview/mixkit-urban-city-traffic-at-night-42861-large.mp4"
-                      showEditProfileModal = true
-                    }
+                    photoActionTarget = "AVATAR"
+                    showPhotoActionSheet = true
                   },
                   shape = RoundedCornerShape(12.dp),
-                  modifier = Modifier.weight(1f)
+                  modifier = Modifier.weight(1f).testTag("change_profile_photo_btn")
                 ) {
-                  Icon(Icons.Default.Videocam, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(16.dp))
+                  Icon(Icons.Default.CameraAlt, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(16.dp))
                   Spacer(modifier = Modifier.width(6.dp))
-                  Text(if (user.profileVideoUrl.isNullOrEmpty()) "+ 5s Video" else "View 5s Video", fontWeight = FontWeight.Bold)
+                  Text("Change Photo", fontWeight = FontWeight.Bold)
                 }
+              }
+
+              Spacer(modifier = Modifier.height(8.dp))
+
+              OutlinedButton(
+                onClick = {
+                  photoActionTarget = "BANNER"
+                  showPhotoActionSheet = true
+                },
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().testTag("change_banner_btn")
+              ) {
+                Icon(Icons.Default.Panorama, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Change Banner", fontWeight = FontWeight.Bold)
               }
 
               Spacer(modifier = Modifier.height(10.dp))
@@ -493,57 +582,122 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
     }
   }
 
-  // 5-Second Profile Video Player Preview Modal (Section 12)
-  if (showVideoPlayerModal) {
-    AlertDialog(
-      onDismissRequest = { showVideoPlayerModal = false },
-      title = {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          Text("5-Second Profile Video", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-          Spacer(modifier = Modifier.width(8.dp))
-          Surface(color = VybeMagenta.copy(alpha = 0.2f), shape = RoundedCornerShape(6.dp)) {
-            Text("5s Max", color = VybeMagenta, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
-          }
-        }
+  // Photo & Banner Action Bottom Sheet (Requirement: Tap profile pic or banner to Edit / Remove / Replace via Gallery or Camera)
+  if (showPhotoActionSheet && photoActionTarget != null) {
+    ModalBottomSheet(
+      onDismissRequest = {
+        showPhotoActionSheet = false
+        photoActionTarget = null
       },
-      text = {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-          Box(
-            modifier = Modifier
-              .size(200.dp)
-              .clip(CircleShape)
-              .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center
-          ) {
-            AsyncImage(
-              model = user.avatarUrl,
-              contentDescription = "Profile Video Still",
-              contentScale = ContentScale.Crop,
-              modifier = Modifier.fillMaxSize()
-            )
-            Box(
-              modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.6f)),
-              contentAlignment = Alignment.Center
-            ) {
-              Text("▶", fontSize = 24.sp, color = Color.White)
+      containerColor = MaterialTheme.colorScheme.surface
+    ) {
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 24.dp, vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+      ) {
+        Text(
+          text = if (photoActionTarget == "AVATAR") "Profile Photo" else "Profile Banner",
+          style = MaterialTheme.typography.titleMedium,
+          fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(18.dp))
+
+        // Take Photo (Camera)
+        Surface(
+          color = MaterialTheme.colorScheme.surfaceVariant,
+          shape = RoundedCornerShape(12.dp),
+          modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+              cameraCaptureLauncher.launch(null)
             }
+            .testTag("action_sheet_camera_button")
+        ) {
+          Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Icon(Icons.Default.CameraAlt, contentDescription = null, tint = VybeViolet)
+            Spacer(modifier = Modifier.width(12.dp))
+            Text("Take Photo with Camera", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
           }
-          Spacer(modifier = Modifier.height(12.dp))
-          Text(
-            text = "Living avatar video for @${user.username} plays automatically on profile visits without sound.",
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-          )
         }
-      },
-      confirmButton = {
-        TextButton(onClick = { showVideoPlayerModal = false }) { Text("Close") }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Choose from Gallery
+        Surface(
+          color = MaterialTheme.colorScheme.surfaceVariant,
+          shape = RoundedCornerShape(12.dp),
+          modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+              galleryPickerLauncher.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+              )
+            }
+            .testTag("action_sheet_gallery_button")
+        ) {
+          Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = VybeBrandCyan)
+            Spacer(modifier = Modifier.width(12.dp))
+            Text("Choose from Gallery", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+          }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Remove
+        Surface(
+          color = MaterialTheme.colorScheme.surfaceVariant,
+          shape = RoundedCornerShape(12.dp),
+          modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+              if (photoActionTarget == "AVATAR") {
+                viewModel.updateProfilePhoto("")
+              } else {
+                viewModel.updateProfileBanner("")
+              }
+              showPhotoActionSheet = false
+              photoActionTarget = null
+            }
+            .testTag("action_sheet_remove_button")
+        ) {
+          Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Icon(Icons.Default.Delete, contentDescription = null, tint = VybeDanger)
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+              text = if (photoActionTarget == "AVATAR") "Remove Profile Photo" else "Remove Banner",
+              fontWeight = FontWeight.SemiBold,
+              fontSize = 14.sp,
+              color = VybeDanger
+            )
+          }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        TextButton(
+          onClick = {
+            showPhotoActionSheet = false
+            photoActionTarget = null
+          },
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Text("Cancel", fontWeight = FontWeight.Medium)
+        }
+        Spacer(modifier = Modifier.height(16.dp))
       }
-    )
+    }
   }
 
   // Edit Profile Modal (Section 11 & 12)
@@ -630,21 +784,21 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
             }
           }
 
-          Text("Banner (Photo or Short Video):", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+          Text("Banner (Photo Only):", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
           ) {
             Text(
-              text = if (editCoverUrl.isNotBlank()) "Banner media attached" else "Default banner",
+              text = if (editCoverUrl.isNotBlank()) "Banner attached" else "Default banner",
               fontSize = 11.sp,
               color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             OutlinedButton(
               onClick = {
                 bannerPickerLauncher.launch(
-                  PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                  PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                 )
               },
               shape = RoundedCornerShape(10.dp)
@@ -652,32 +806,6 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
               Icon(Icons.Default.Panorama, contentDescription = null, modifier = Modifier.size(14.dp))
               Spacer(modifier = Modifier.width(4.dp))
               Text("Choose Banner", fontSize = 11.sp)
-            }
-          }
-
-          // 5-Second Video selector
-          Text("5-Second Profile Video:", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Text(
-              text = if (editVideoUrl.isNullOrEmpty()) "No video attached" else "Video clip linked (5s max)",
-              fontSize = 11.sp,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Row {
-              TextButton(onClick = {
-                editVideoUrl = "https://assets.mixkit.co/videos/preview/mixkit-urban-city-traffic-at-night-42861-large.mp4"
-              }) {
-                Text("Select Sample")
-              }
-              if (!editVideoUrl.isNullOrEmpty()) {
-                TextButton(onClick = { editVideoUrl = null }) {
-                  Text("Remove", color = VybeDanger)
-                }
-              }
             }
           }
         }

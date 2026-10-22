@@ -64,6 +64,39 @@ class VybeViewModel : ViewModel() {
   private val _selectedUserProfile = MutableStateFlow<User?>(null)
   val selectedUserProfile: StateFlow<User?> = _selectedUserProfile.asStateFlow()
 
+  private val _feedRefreshTrigger = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+  val feedRefreshTrigger = _feedRefreshTrigger
+
+  init {
+    viewModelScope.launch {
+      repository.conversations.collect { convs ->
+        val current = _selectedConversation.value
+        if (current != null) {
+          val updated = convs.firstOrNull { it.id == current.id }
+          if (updated != null) {
+            _selectedConversation.value = updated
+          }
+        }
+      }
+    }
+
+    viewModelScope.launch {
+      repository.currentUser.collect { user ->
+        val profile = _selectedUserProfile.value
+        if (user != null && profile != null && profile.id == user.id) {
+          _selectedUserProfile.value = user
+        }
+      }
+    }
+  }
+
+  fun triggerFeedRefresh() {
+    _feedRefreshTrigger.tryEmit(Unit)
+  }
+
+  fun updateProfilePhoto(avatarUrl: String) = repository.updateProfilePhoto(avatarUrl)
+  fun updateProfileBanner(coverUrl: String) = repository.updateProfileBanner(coverUrl)
+
   private val _searchQuery = MutableStateFlow("")
   val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
@@ -241,6 +274,9 @@ class VybeViewModel : ViewModel() {
   }
 
   fun selectTab(tab: MainTab) {
+    if (_selectedTab.value == tab && tab == MainTab.FEED && _currentScreen.value == Screen.MAIN) {
+      _feedRefreshTrigger.tryEmit(Unit)
+    }
     _selectedTab.value = tab
     if (_currentScreen.value != Screen.MAIN) {
       _currentScreen.value = Screen.MAIN
