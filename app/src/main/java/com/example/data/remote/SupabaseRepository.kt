@@ -1,10 +1,16 @@
 package com.example.data.remote
 
 import android.util.Log
+import com.example.data.model.MediaType
+import com.example.data.model.MoodType
+import com.example.data.model.Post
 import com.example.data.model.User
 import com.example.data.model.UserRole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
 /**
@@ -820,4 +826,225 @@ class SupabaseRepository {
       Result.failure(e)
     }
   }
+
+  /**
+   * Uploads raw media (JPEG/PNG/MP4) to Supabase Storage and returns the public CDN URL.
+   */
+  suspend fun uploadMediaFile(
+    bucket: String,
+    fileName: String,
+    bytes: ByteArray,
+    mimeType: String,
+    accessToken: String = ""
+  ): Result<String> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.failure(IllegalStateException("Supabase backend not configured"))
+    try {
+      val cleanBucket = bucket.trim()
+      val cleanFileName = fileName.trim().removePrefix("/")
+      val uploadUrl = "${SupabaseConfig.supabaseUrl}/storage/v1/object/$cleanBucket/$cleanFileName"
+      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
+
+      val body = bytes.toRequestBody(mimeType.toMediaTypeOrNull())
+      val request = Request.Builder()
+        .url(uploadUrl)
+        .addHeader("apikey", SupabaseConfig.supabaseAnonKey)
+        .addHeader("Authorization", authHeader)
+        .addHeader("Content-Type", mimeType)
+        .addHeader("x-upsert", "true")
+        .post(body)
+        .build()
+
+      val response = SupabaseNetworkClient.okHttpClient.newCall(request).execute()
+      if (response.isSuccessful) {
+        val publicUrl = "${SupabaseConfig.supabaseUrl}/storage/v1/object/public/$cleanBucket/$cleanFileName"
+        Result.success(publicUrl)
+      } else {
+        Result.failure(Exception("Storage upload error HTTP ${response.code}: ${response.message}"))
+      }
+    } catch (e: Exception) {
+      Log.e(TAG, "Storage upload failed: ${e.message}", e)
+      Result.failure(e)
+    }
+  }
+
+  /**
+   * Fetches posts from Supabase PostgREST, including post media and author profile.
+   */
+  suspend fun fetchPosts(accessToken: String = ""): Result<List<Post>> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(emptyList())
+    try {
+      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
+      val resp = SupabaseNetworkClient.restApi.getPosts(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        limit = 50
+      )
+      if (resp.isSuccessful && resp.body() != null) {
+        val dtos = resp.body()!!
+        val postsList = dtos.map { dto ->
+          val authorUser = if (dto.profiles != null) {
+            User(
+              id = dto.profiles.id,
+              username = dto.profiles.username,
+              displayName = dto.profiles.displayName,
+              avatarUrl = dto.profiles.avatarUrl ?: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400",
+              isVerified = dto.profiles.isVerified ?: false,
+              isVip = dto.profiles.isVip ?: false,
+              followersCount = dto.profiles.followersCount ?: 0,
+              followingCount = dto.profiles.followingCount ?: 0,
+              postsCount = dto.profiles.postsCount ?: 0
+            )
+          } else {
+            User(id = dto.authorId, username = "vyber", displayName = "Vyber")
+          }
+
+          val mediaUrls = dto.postMedia?.sortedBy { it.displayOrder }?.map { it.mediaUrl } ?: emptyList()
+          val mediaType = try {
+            MediaType.valueOf(dto.mediaType ?: "IMAGE")
+          } catch (e: Exception) {
+            if (mediaUrls.any { it.endsWith(".mp4", ignoreCase = true) }) MediaType.VIDEO else MediaType.IMAGE
+          }
+          val moodZone = if (!dto.moodZone.isNullOrBlank()) {
+            try { MoodType.valueOf(dto.moodZone) } catch (e: Exception) { null }
+          } else null
+
+          Post(
+            id = dto.id,
+            author = authorUser,
+            caption = dto.caption ?: "",
+            mediaUrls = mediaUrls,
+            mediaType = mediaType,
+            timestamp = dto.createdAt?.take(10) ?: "Recently",
+            likesCount = dto.likesCount ?: 0,
+            commentsCount = dto.commentsCount ?: 0,
+            savesCount = dto.savesCount ?: 0,
+            viewsCount = dto.viewsCount ?: 0,
+            isUnfiltered = dto.isUnfiltered ?: false,
+            isVybesReel = dto.isVybesReel ?: false,
+            moodZone = moodZone
+          )
+        }
+        Result.success(postsList)
+      } else {
+        Result.failure(Exception("Failed to fetch posts: HTTP ${resp.code()}"))
+      }
+    } catch (e: Exception) {
+      Log.e(TAG, "Error fetching posts from Supabase: ${e.message}", e)
+      Result.failure(e)
+    }
+  }
+
+  /**
+   * Creates a post in Supabase and inserts associated media items.
+   */
+  suspend fun createPostOnSupabase(
+    post: Post,
+    accessToken: String = ""
+  ): Result<Post> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(post)
+    try {
+      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
+      val insertDto = SupabasePostInsertDto(
+        authorId = post.author.id,
+        caption = post.caption,
+        mediaType = post.mediaType.name,
+        moodZone = post.moodZone?.name,
+        isUnfiltered = post.isUnfiltered,
+        isVybesReel = post.isVybesReel,
+        viewsCount = 0
+      )
+
+      val postResp = SupabaseNetworkClient.restApi.insertPost(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        post = insertDto
+      )
+
+      if (postResp.isSuccessful && !postResp.body().isNullOrEmpty()) {
+        val createdPostDto = postResp.body()!!.first()
+        val createdId = createdPostDto.id
+
+        // Insert media if present
+        if (post.mediaUrls.isNotEmpty()) {
+          post.mediaUrls.forEachIndexed { index, url ->
+            val mediaDto = SupabasePostMediaDto(
+              postId = createdId,
+              mediaUrl = url,
+              mediaType = post.mediaType.name,
+              displayOrder = index
+            )
+            try {
+              SupabaseNetworkClient.restApi.insertPostMedia(
+                apiKey = SupabaseConfig.supabaseAnonKey,
+                authHeader = authHeader,
+                media = mediaDto
+              )
+            } catch (mediaErr: Exception) {
+              Log.w(TAG, "Media insertion warning: ${mediaErr.message}")
+            }
+          }
+        }
+
+        Result.success(post.copy(id = createdId))
+      } else {
+        Result.failure(Exception("Post creation failed on Supabase: HTTP ${postResp.code()}"))
+      }
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed creating post on Supabase: ${e.message}", e)
+      Result.failure(e)
+    }
+  }
+
+  /**
+   * Deletes a post from Supabase by post ID.
+   */
+  suspend fun deletePostOnSupabase(
+    postId: String,
+    accessToken: String = ""
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    try {
+      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
+      val resp = SupabaseNetworkClient.restApi.deletePost(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        idFilter = "eq.$postId"
+      )
+      if (resp.isSuccessful) {
+        Result.success(Unit)
+      } else {
+        Result.failure(Exception("Failed to delete post on Supabase: HTTP ${resp.code()}"))
+      }
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed to delete post: ${e.message}", e)
+      Result.failure(e)
+    }
+  }
+
+  /**
+   * Increments post view count via Supabase RPC.
+   */
+  suspend fun recordPostView(
+    postId: String,
+    viewerId: String? = null,
+    accessToken: String = ""
+  ): Result<Int> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(1)
+    try {
+      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
+      val resp = SupabaseNetworkClient.restApi.incrementPostView(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        request = SupabaseRpcIncrementViewRequest(postId = postId, viewerId = viewerId)
+      )
+      if (resp.isSuccessful && resp.body() != null) {
+        Result.success(resp.body()!!)
+      } else {
+        Result.success(1)
+      }
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
 }
+

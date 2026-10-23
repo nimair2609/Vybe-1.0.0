@@ -19,7 +19,7 @@ object SupabaseNetworkClient {
       .build()
   }
 
-  private val okHttpClient: OkHttpClient by lazy {
+  val okHttpClient: OkHttpClient by lazy {
     val logging = HttpLoggingInterceptor { message ->
       // Avoid printing sensitive tokens or keys in logs
       if (!message.contains("apikey") && !message.contains("Authorization")) {

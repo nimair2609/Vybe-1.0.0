@@ -167,6 +167,22 @@ class VybeRepository private constructor() {
     if (savedConvs.isNotEmpty()) {
       _conversations.value = savedConvs
     }
+
+    val savedNotifs = localStore.loadNotifications()
+    if (savedNotifs.isNotEmpty()) {
+      _notifications.value = savedNotifs
+    }
+
+    val savedFollowing = localStore.loadFollowing()
+    if (savedFollowing.isNotEmpty()) {
+      _followingUserIds.value = savedFollowing
+    }
+
+    if (supabaseRepo.isConfigured) {
+      CoroutineScope(Dispatchers.IO).launch {
+        syncFeedFromSupabase()
+      }
+    }
   }
 
   suspend fun refreshCurrentUserRole(): UserRole {
@@ -578,80 +594,82 @@ class VybeRepository private constructor() {
       )
     )
 
-    _notifications.value = listOf(
-      NotificationItem(
-        id = "notif_1",
-        type = NotificationType.LIKE,
-        title = "Priya reacted to your post",
-        message = "Uplift reaction on Golden hour across Bandra-Worli Sea Link.",
-        timestamp = "15m ago",
-        actorUser = userPriya,
-        destinationScreen = "MAIN"
-      ),
-      NotificationItem(
-        id = "notif_2",
-        type = NotificationType.COMMENT_OR_REPLY,
-        title = "Vikram commented",
-        message = "'Incredible acoustic composition, truly peaceful.'",
-        timestamp = "32m ago",
-        actorUser = userVikramCricket,
-        destinationScreen = "MAIN"
-      ),
-      NotificationItem(
-        id = "notif_3",
-        type = NotificationType.TIME_CAPSULE_UNLOCK,
-        title = "Time Capsule Unlocked! ⏳",
-        message = "Aarav Mehta's sealed message 'Acoustic Demo Sealed' is now available to view.",
-        timestamp = "1h ago",
-        actorUser = userAarav,
-        destinationScreen = "TIME_CAPSULES_VIEW"
-      ),
-      NotificationItem(
-        id = "notif_4",
-        type = NotificationType.ROOM_INVITATION,
-        title = "Unload Room Invitation 🎙️",
-        message = "You're invited to join 'Tech Builders & Midnight Creative Unload' by Aarav.",
-        timestamp = "2h ago",
-        actorUser = userAarav,
-        destinationScreen = "UNLOAD_VIEW"
-      ),
-      NotificationItem(
-        id = "notif_5",
-        type = NotificationType.CROSSED_PATHS_INTERACTION,
-        title = "Crossed Paths Encounter 💫",
-        message = "Someone in Indiranagar noticed your presence and sent a private handshake request.",
-        timestamp = "3h ago",
-        actorUser = null,
-        destinationScreen = "CREATE_CROSSED_PATH"
-      ),
-      NotificationItem(
-        id = "notif_6",
-        type = NotificationType.DOUBLE_TAKE_RESPONSE,
-        title = "Double Take Answer Received 🎭",
-        message = "Priya answered YES to: 'Do you believe architecture shapes music?'",
-        timestamp = "5h ago",
-        actorUser = userPriya,
-        destinationScreen = "DOUBLE_TAKE_VIEW"
-      ),
-      NotificationItem(
-        id = "notif_7",
-        type = NotificationType.BUSINESS_VERIFICATION_UPDATE,
-        title = "Business Shop Verified ✅",
-        message = "Your shop 'Artisan Brews & Roastery' is now officially verified by NR Next Safety.",
-        timestamp = "1d ago",
-        actorUser = null,
-        destinationScreen = "SHOP_DETAIL"
-      ),
-      NotificationItem(
-        id = "notif_8",
-        type = NotificationType.SECURITY_ACCOUNT_UPDATE,
-        title = "Security & Session Alert 🛡️",
-        message = "New login from Pixel 9 Pro (Mumbai, India) verified successfully.",
-        timestamp = "2d ago",
-        actorUser = null,
-        destinationScreen = "SETTINGS"
+    if (_notifications.value.isEmpty()) {
+      _notifications.value = listOf(
+        NotificationItem(
+          id = "notif_1",
+          type = NotificationType.LIKE,
+          title = "Priya reacted to your post",
+          message = "Uplift reaction on Golden hour across Bandra-Worli Sea Link.",
+          timestamp = "15m ago",
+          actorUser = userPriya,
+          destinationScreen = "MAIN"
+        ),
+        NotificationItem(
+          id = "notif_2",
+          type = NotificationType.COMMENT_OR_REPLY,
+          title = "Vikram commented",
+          message = "'Incredible acoustic composition, truly peaceful.'",
+          timestamp = "32m ago",
+          actorUser = userVikramCricket,
+          destinationScreen = "MAIN"
+        ),
+        NotificationItem(
+          id = "notif_3",
+          type = NotificationType.TIME_CAPSULE_UNLOCK,
+          title = "Time Capsule Unlocked! ⏳",
+          message = "Aarav Mehta's sealed message 'Acoustic Demo Sealed' is now available to view.",
+          timestamp = "1h ago",
+          actorUser = userAarav,
+          destinationScreen = "TIME_CAPSULES_VIEW"
+        ),
+        NotificationItem(
+          id = "notif_4",
+          type = NotificationType.ROOM_INVITATION,
+          title = "Unload Room Invitation 🎙️",
+          message = "You're invited to join 'Tech Builders & Midnight Creative Unload' by Aarav.",
+          timestamp = "2h ago",
+          actorUser = userAarav,
+          destinationScreen = "UNLOAD_VIEW"
+        ),
+        NotificationItem(
+          id = "notif_5",
+          type = NotificationType.CROSSED_PATHS_INTERACTION,
+          title = "Crossed Paths Encounter 💫",
+          message = "Someone in Indiranagar noticed your presence and sent a private handshake request.",
+          timestamp = "3h ago",
+          actorUser = null,
+          destinationScreen = "CREATE_CROSSED_PATH"
+        ),
+        NotificationItem(
+          id = "notif_6",
+          type = NotificationType.DOUBLE_TAKE_RESPONSE,
+          title = "Double Take Answer Received 🎭",
+          message = "Priya answered YES to: 'Do you believe architecture shapes music?'",
+          timestamp = "5h ago",
+          actorUser = userPriya,
+          destinationScreen = "DOUBLE_TAKE_VIEW"
+        ),
+        NotificationItem(
+          id = "notif_7",
+          type = NotificationType.BUSINESS_VERIFICATION_UPDATE,
+          title = "Business Shop Verified ✅",
+          message = "Your shop 'Artisan Brews & Roastery' is now officially verified by NR Next Safety.",
+          timestamp = "1d ago",
+          actorUser = null,
+          destinationScreen = "SHOP_DETAIL"
+        ),
+        NotificationItem(
+          id = "notif_8",
+          type = NotificationType.SECURITY_ACCOUNT_UPDATE,
+          title = "Security & Session Alert 🛡️",
+          message = "New login from Pixel 9 Pro (Mumbai, India) verified successfully.",
+          timestamp = "2d ago",
+          actorUser = null,
+          destinationScreen = "SETTINGS"
+        )
       )
-    )
+    }
 
     _spiritualReflections.value = listOf(
       SpiritualReflection(
@@ -834,17 +852,25 @@ class VybeRepository private constructor() {
     isVybes: Boolean = false
   ) {
     val user = _currentUser.value ?: userMe
+    val effectiveMediaType = when {
+      isVybes -> MediaType.REEL
+      !imageUrl.isNullOrBlank() && (imageUrl.endsWith(".mp4", ignoreCase = true) || mediaType == MediaType.VIDEO) -> MediaType.VIDEO
+      !imageUrl.isNullOrBlank() -> MediaType.IMAGE
+      else -> mediaType
+    }
+
     val newPost = Post(
       id = "p_${System.currentTimeMillis()}",
       author = user,
       caption = caption,
       mediaUrls = if (!imageUrl.isNullOrBlank()) listOf(imageUrl) else emptyList(),
-      mediaType = if (!imageUrl.isNullOrBlank()) (if (isVybes) MediaType.REEL else MediaType.IMAGE) else mediaType,
+      mediaType = effectiveMediaType,
       timestamp = "Just now",
       likesCount = 0,
       commentsCount = 0,
       savesCount = 0,
       sharesCount = 0,
+      viewsCount = 0,
       isVybesReel = isVybes,
       moodZone = mood,
       tags = listOf("VybeCommunity")
@@ -859,7 +885,85 @@ class VybeRepository private constructor() {
     _allUsers.value = _allUsers.value.map { if (it.id == updatedUser.id) updatedUser else it }
     SessionManager.get()?.saveSession(updatedUser)
     VybeLocalStore.get()?.saveUser(updatedUser)
+
+    if (supabaseRepo.isConfigured) {
+      CoroutineScope(Dispatchers.IO).launch {
+        val token = SessionManager.get()?.accessToken ?: ""
+        val result = supabaseRepo.createPostOnSupabase(newPost, token)
+        if (result.isSuccess) {
+          val serverPost = result.getOrThrow()
+          // Update id with server-assigned UUID
+          _posts.value = _posts.value.map { if (it.id == newPost.id) it.copy(id = serverPost.id) else it }
+          VybeLocalStore.get()?.savePosts(_posts.value)
+        }
+      }
+    }
   }
+
+  fun deletePost(postId: String) {
+    val targetPost = _posts.value.firstOrNull { it.id == postId } ?: _unfilteredPosts.value.firstOrNull { it.id == postId }
+    val updatedPosts = _posts.value.filterNot { it.id == postId }
+    val updatedUnfiltered = _unfilteredPosts.value.filterNot { it.id == postId }
+    _posts.value = updatedPosts
+    _unfilteredPosts.value = updatedUnfiltered
+    VybeLocalStore.get()?.savePosts(updatedPosts)
+    VybeLocalStore.get()?.saveUnfilteredPosts(updatedUnfiltered)
+
+    // Decrement post count if author was current user
+    val current = _currentUser.value
+    if (current != null && targetPost != null && targetPost.author.id == current.id) {
+      val updatedUser = current.copy(postsCount = (current.postsCount - 1).coerceAtLeast(0))
+      _currentUser.value = updatedUser
+      _allUsers.value = _allUsers.value.map { if (it.id == updatedUser.id) updatedUser else it }
+      SessionManager.get()?.saveSession(updatedUser)
+      VybeLocalStore.get()?.saveUser(updatedUser)
+    }
+
+    if (supabaseRepo.isConfigured) {
+      CoroutineScope(Dispatchers.IO).launch {
+        val token = SessionManager.get()?.accessToken ?: ""
+        supabaseRepo.deletePostOnSupabase(postId, token)
+      }
+    }
+  }
+
+  fun recordPostView(postId: String) {
+    val current = _posts.value.toMutableList()
+    val index = current.indexOfFirst { it.id == postId }
+    if (index != -1) {
+      val p = current[index]
+      val newViews = p.viewsCount + 1
+      current[index] = p.copy(viewsCount = newViews)
+      _posts.value = current
+      VybeLocalStore.get()?.savePosts(current)
+
+      if (supabaseRepo.isConfigured) {
+        CoroutineScope(Dispatchers.IO).launch {
+          val token = SessionManager.get()?.accessToken ?: ""
+          val viewerId = _currentUser.value?.id
+          supabaseRepo.recordPostView(postId, viewerId, token)
+        }
+      }
+    }
+  }
+
+  suspend fun syncFeedFromSupabase() {
+    if (!supabaseRepo.isConfigured) return
+    val token = SessionManager.get()?.accessToken ?: ""
+    val res = supabaseRepo.fetchPosts(token)
+    if (res.isSuccess) {
+      val remotePosts = res.getOrThrow()
+      if (remotePosts.isNotEmpty()) {
+        val localList = _posts.value
+        val remoteIds = remotePosts.map { it.id }.toSet()
+        val uniqueLocal = localList.filterNot { remoteIds.contains(it.id) }
+        val merged = (remotePosts + uniqueLocal).distinctBy { it.id }
+        _posts.value = merged
+        VybeLocalStore.get()?.savePosts(merged)
+      }
+    }
+  }
+
 
   fun createUnfilteredPost(caption: String, imageUrl: String) {
     val user = _currentUser.value ?: userMe
@@ -1543,17 +1647,23 @@ class VybeRepository private constructor() {
 
   // Notification Operations (Part G)
   fun markNotificationAsRead(id: String) {
-    _notifications.value = _notifications.value.map {
+    val updated = _notifications.value.map {
       if (it.id == id) it.copy(isRead = true) else it
     }
+    _notifications.value = updated
+    VybeLocalStore.get()?.saveNotifications(updated)
   }
 
   fun markAllNotificationsAsRead() {
-    _notifications.value = _notifications.value.map { it.copy(isRead = true) }
+    val updated = _notifications.value.map { it.copy(isRead = true) }
+    _notifications.value = updated
+    VybeLocalStore.get()?.saveNotifications(updated)
   }
 
   fun addNotification(item: NotificationItem) {
-    _notifications.value = listOf(item) + _notifications.value
+    val updated = listOf(item) + _notifications.value
+    _notifications.value = updated
+    VybeLocalStore.get()?.saveNotifications(updated)
   }
 
   // Spiritual Mode Operations (Part F)
@@ -2344,6 +2454,11 @@ class VybeRepository private constructor() {
   }
 
   fun toggleFollowUser(targetUserId: String): Boolean {
+    val me = _currentUser.value
+    if (me != null && (me.id == targetUserId || me.username.equals(targetUserId, ignoreCase = true))) {
+      return false // Cannot follow oneself
+    }
+
     val currentFollowing = _followingUserIds.value.toMutableSet()
     val isNowFollowing = if (currentFollowing.contains(targetUserId)) {
       currentFollowing.remove(targetUserId)
@@ -2353,6 +2468,7 @@ class VybeRepository private constructor() {
       true
     }
     _followingUserIds.value = currentFollowing
+    VybeLocalStore.get()?.saveFollowing(currentFollowing)
 
     // Update target user's followersCount
     _allUsers.value = _allUsers.value.map { u ->
@@ -2363,7 +2479,6 @@ class VybeRepository private constructor() {
     }
 
     // Update my followingCount
-    val me = _currentUser.value
     if (me != null) {
       val updatedMe = me.copy(followingCount = (me.followingCount + if (isNowFollowing) 1 else -1).coerceAtLeast(0))
       _currentUser.value = updatedMe
@@ -2381,12 +2496,26 @@ class VybeRepository private constructor() {
   }
 
   fun deleteNotification(notificationId: String) {
-    _notifications.value = _notifications.value.filterNot { it.id == notificationId }
+    val updated = _notifications.value.filterNot { it.id == notificationId }
+    _notifications.value = updated
+    VybeLocalStore.get()?.saveNotifications(updated)
     if (supabaseRepo.isConfigured) {
       CoroutineScope(Dispatchers.IO).launch {
         val token = SessionManager.get()?.accessToken ?: ""
         supabaseRepo.deleteNotification(notificationId, token)
       }
+    }
+  }
+
+  fun toggleConversationUnread(conversationId: String) {
+    val current = _conversations.value.toMutableList()
+    val index = current.indexOfFirst { it.id == conversationId }
+    if (index != -1) {
+      val conv = current[index]
+      val newUnread = if (conv.unreadCount > 0) 0 else 1
+      current[index] = conv.copy(unreadCount = newUnread)
+      _conversations.value = current
+      VybeLocalStore.get()?.saveConversations(current)
     }
   }
 

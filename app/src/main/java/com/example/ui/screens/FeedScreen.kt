@@ -346,7 +346,10 @@ fun FeedScreen(viewModel: VybeViewModel) {
               onAddComment = { text -> viewModel.addComment(post.id, text) },
               onShareClick = { /* Share dialog */ },
               onUserClick = { user -> viewModel.openUserProfile(user) },
-              onRemixClick = { viewModel.navigateTo(Screen.REELS_VIEWER) }
+              onRemixClick = { viewModel.navigateTo(Screen.REELS_VIEWER) },
+              onDeleteClick = { viewModel.deletePost(post.id) },
+              onPostViewed = { viewModel.recordPostView(it) },
+              currentUserId = currentUser?.id
             )
           }
         }

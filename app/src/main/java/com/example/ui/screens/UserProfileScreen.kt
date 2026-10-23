@@ -408,11 +408,7 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
 
               OutlinedButton(
                 onClick = {
-                  val convs = viewModel.conversations.value
-                  val found = convs.firstOrNull { it.peerUser.id == user.id }
-                  if (found != null) {
-                    viewModel.openConversation(found)
-                  }
+                  viewModel.startConversationWithUser(user)
                 },
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.weight(1f).testTag("message_user_button")
@@ -579,7 +575,10 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
             onCommentClick = {},
             onAddComment = { text -> viewModel.addComment(post.id, text) },
             onShareClick = {},
-            onUserClick = {}
+            onUserClick = {},
+            onDeleteClick = { viewModel.deletePost(post.id) },
+            onPostViewed = { viewModel.recordPostView(it) },
+            currentUserId = currentUser?.id
           )
         }
       }

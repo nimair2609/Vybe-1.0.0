@@ -137,3 +137,51 @@ data class SupabaseFollowDto(
   @Json(name = "created_at") val createdAt: String? = null
 )
 
+@JsonClass(generateAdapter = true)
+data class SupabasePostDto(
+  val id: String,
+  @Json(name = "author_id") val authorId: String,
+  val caption: String? = "",
+  @Json(name = "media_type") val mediaType: String? = "TEXT",
+  @Json(name = "mood_zone") val moodZone: String? = null,
+  @Json(name = "is_unfiltered") val isUnfiltered: Boolean? = false,
+  @Json(name = "is_vybes_reel") val isVybesReel: Boolean? = false,
+  @Json(name = "is_spiritual") val isSpiritual: Boolean? = false,
+  @Json(name = "is_archived") val isArchived: Boolean? = false,
+  @Json(name = "likes_count") val likesCount: Int? = 0,
+  @Json(name = "comments_count") val commentsCount: Int? = 0,
+  @Json(name = "saves_count") val savesCount: Int? = 0,
+  @Json(name = "views_count") val viewsCount: Int? = 0,
+  @Json(name = "created_at") val createdAt: String? = null,
+  @Json(name = "post_media") val postMedia: List<SupabasePostMediaDto>? = null,
+  val profiles: SupabaseProfileDto? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class SupabasePostInsertDto(
+  val id: String? = null,
+  @Json(name = "author_id") val authorId: String,
+  val caption: String? = "",
+  @Json(name = "media_type") val mediaType: String? = "TEXT",
+  @Json(name = "mood_zone") val moodZone: String? = null,
+  @Json(name = "is_unfiltered") val isUnfiltered: Boolean? = false,
+  @Json(name = "is_vybes_reel") val isVybesReel: Boolean? = false,
+  @Json(name = "views_count") val viewsCount: Int? = 0
+)
+
+@JsonClass(generateAdapter = true)
+data class SupabasePostMediaDto(
+  val id: String? = null,
+  @Json(name = "post_id") val postId: String,
+  @Json(name = "media_url") val mediaUrl: String,
+  @Json(name = "thumbnail_url") val thumbnailUrl: String? = null,
+  @Json(name = "media_type") val mediaType: String = "IMAGE",
+  @Json(name = "display_order") val displayOrder: Int = 0
+)
+
+@JsonClass(generateAdapter = true)
+data class SupabaseRpcIncrementViewRequest(
+  @Json(name = "p_post_id") val postId: String,
+  @Json(name = "p_viewer_id") val viewerId: String? = null
+)
+

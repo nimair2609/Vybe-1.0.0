@@ -119,7 +119,6 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
                   imageUrl = selectedImage,
                   mediaType = if (publishDestination == PublishDestination.VYBES_REEL) MediaType.REEL else selectedMediaType
                 )
-                viewModel.navigateBack()
               }
             },
             enabled = caption.isNotBlank() || selectedImage != null,
@@ -587,7 +586,7 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
               caption = caption,
               mood = selectedMood,
               imageUrl = selectedImage,
-              mediaType = if (publishDestination == PublishDestination.VYBES_REEL) MediaType.REEL else MediaType.IMAGE
+              mediaType = if (publishDestination == PublishDestination.VYBES_REEL) MediaType.REEL else selectedMediaType
             )
           }
         },

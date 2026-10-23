@@ -26,10 +26,16 @@ class MainActivity : ComponentActivity() {
     enableEdgeToEdge()
     setContent {
       val viewModel: VybeViewModel = viewModel()
-      val isDarkMode by viewModel.isDarkMode.collectAsState()
+      val themeMode by viewModel.themeMode.collectAsState()
+      val systemInDark = androidx.compose.foundation.isSystemInDarkTheme()
+      val isDark = when (themeMode) {
+        com.example.data.model.AppThemeMode.DARK -> true
+        com.example.data.model.AppThemeMode.LIGHT -> false
+        com.example.data.model.AppThemeMode.SYSTEM -> systemInDark
+      }
       val currentScreen by viewModel.currentScreen.collectAsState()
 
-      VybeTheme(darkTheme = isDarkMode) {
+      VybeTheme(darkTheme = isDark) {
         Surface(modifier = Modifier.fillMaxSize()) {
           when (currentScreen) {
             Screen.SPLASH -> SplashScreen()

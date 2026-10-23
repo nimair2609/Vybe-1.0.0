@@ -16,6 +16,8 @@ class VybeLocalStore private constructor(context: Context) {
     private const val KEY_UNFILTERED = "saved_unfiltered_json"
     private const val KEY_STORIES = "saved_stories_json"
     private const val KEY_CONVERSATIONS = "saved_conversations_json"
+    private const val KEY_NOTIFICATIONS = "saved_notifications_json"
+    private const val KEY_FOLLOWING = "saved_following_json"
     private const val KEY_USERS = "saved_users_json"
     private const val KEY_GITHUB_REPO = "saved_github_repo"
 
@@ -208,6 +210,7 @@ class VybeLocalStore private constructor(context: Context) {
       put("commentsCount", p.commentsCount)
       put("savesCount", p.savesCount)
       put("sharesCount", p.sharesCount)
+      put("viewsCount", p.viewsCount)
       put("isLiked", p.isLiked)
       put("isSaved", p.isSaved)
       put("isUnfiltered", p.isUnfiltered)
@@ -244,6 +247,7 @@ class VybeLocalStore private constructor(context: Context) {
       commentsCount = obj.optInt("commentsCount", 0),
       savesCount = obj.optInt("savesCount", 0),
       sharesCount = obj.optInt("sharesCount", 0),
+      viewsCount = obj.optInt("viewsCount", 0),
       isLiked = obj.optBoolean("isLiked", false),
       isSaved = obj.optBoolean("isSaved", false),
       isUnfiltered = obj.optBoolean("isUnfiltered", false),
@@ -312,4 +316,77 @@ class VybeLocalStore private constructor(context: Context) {
       messages = msgsList
     )
   }
+
+  // --- Notifications Cache ---
+  fun saveNotifications(notifications: List<NotificationItem>) {
+    val array = JSONArray()
+    for (n in notifications) {
+      val obj = JSONObject().apply {
+        put("id", n.id)
+        put("type", n.type.name)
+        put("title", n.title)
+        put("message", n.message)
+        put("timestamp", n.timestamp)
+        put("isRead", n.isRead)
+        put("destinationScreen", n.destinationScreen)
+        n.actorUser?.let { put("actorUser", userToJson(it)) }
+      }
+      array.put(obj)
+    }
+    prefs.edit().putString(KEY_NOTIFICATIONS, array.toString()).apply()
+  }
+
+  fun loadNotifications(): List<NotificationItem> {
+    val raw = prefs.getString(KEY_NOTIFICATIONS, null) ?: return emptyList()
+    return try {
+      val array = JSONArray(raw)
+      val list = mutableListOf<NotificationItem>()
+      for (i in 0 until array.length()) {
+        val obj = array.getJSONObject(i)
+        val actorObj = obj.optJSONObject("actorUser")
+        val actor = if (actorObj != null) userFromJson(actorObj) else null
+        val typeStr = obj.optString("type", NotificationType.LIKE.name)
+        val type = try { NotificationType.valueOf(typeStr) } catch (e: Exception) { NotificationType.LIKE }
+        list.add(
+          NotificationItem(
+            id = obj.optString("id", "notif_${System.currentTimeMillis()}"),
+            type = type,
+            title = obj.optString("title", ""),
+            message = obj.optString("message", ""),
+            timestamp = obj.optString("timestamp", "Just now"),
+            isRead = obj.optBoolean("isRead", false),
+            actorUser = actor,
+            destinationScreen = obj.optString("destinationScreen", "MAIN")
+          )
+        )
+      }
+      list
+    } catch (e: Exception) {
+      emptyList()
+    }
+  }
+
+  // --- Following User IDs Cache ---
+  fun saveFollowing(followingIds: Set<String>) {
+    val array = JSONArray()
+    for (id in followingIds) {
+      array.put(id)
+    }
+    prefs.edit().putString(KEY_FOLLOWING, array.toString()).apply()
+  }
+
+  fun loadFollowing(): Set<String> {
+    val raw = prefs.getString(KEY_FOLLOWING, null) ?: return emptySet()
+    return try {
+      val array = JSONArray(raw)
+      val set = mutableSetOf<String>()
+      for (i in 0 until array.length()) {
+        set.add(array.getString(i))
+      }
+      set
+    } catch (e: Exception) {
+      emptySet()
+    }
+  }
 }
+

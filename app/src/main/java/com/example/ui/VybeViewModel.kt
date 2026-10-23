@@ -341,6 +341,13 @@ class VybeViewModel : ViewModel() {
     repository.createPost(caption, mood, mediaType, imageUrl)
     navigateBack()
   }
+  fun deletePost(postId: String) = repository.deletePost(postId)
+  fun recordPostView(postId: String) = repository.recordPostView(postId)
+  fun startConversationWithUser(user: User) {
+    val conv = repository.getOrCreateConversation(user)
+    openConversation(conv)
+  }
+  fun toggleConversationUnread(conversationId: String) = repository.toggleConversationUnread(conversationId)
   fun selectMoodFilter(mood: MoodType?) = repository.selectMoodFilter(mood)
   fun updateUserMoodAndPulse(mood: MoodType?, pulse: LivePulseStatus) = repository.updateUserMoodAndPulse(mood, pulse)
 

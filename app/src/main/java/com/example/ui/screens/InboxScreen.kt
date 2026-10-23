@@ -270,8 +270,8 @@ fun InboxScreen(viewModel: VybeViewModel) {
                     false
                   }
                   SwipeToDismissBoxValue.StartToEnd -> {
-                    // Pulled left to right -> mark as read
-                    viewModel.markConversationAsRead(conv.id)
+                    // Pulled left to right -> toggle read/unread status
+                    viewModel.toggleConversationUnread(conv.id)
                     false
                   }
                   else -> false
@@ -279,12 +279,16 @@ fun InboxScreen(viewModel: VybeViewModel) {
               }
             )
 
+            val isUnread = conv.unreadCount > 0
+            val startToEndLabel = if (isUnread) "Mark as Read" else "Mark as Unread"
+            val startToEndIcon = if (isUnread) Icons.Default.MarkEmailRead else Icons.Default.MarkEmailUnread
+
             SwipeToDismissBox(
               state = dismissState,
               backgroundContent = {
                 val direction = dismissState.dismissDirection
                 val color = when (direction) {
-                  SwipeToDismissBoxValue.StartToEnd -> VybeOnlineGreen.copy(alpha = 0.85f)
+                  SwipeToDismissBoxValue.StartToEnd -> if (isUnread) VybeOnlineGreen.copy(alpha = 0.85f) else VybeViolet.copy(alpha = 0.85f)
                   SwipeToDismissBoxValue.EndToStart -> VybeDanger.copy(alpha = 0.85f)
                   else -> Color.Transparent
                 }
@@ -293,7 +297,7 @@ fun InboxScreen(viewModel: VybeViewModel) {
                   else -> Alignment.CenterEnd
                 }
                 val icon = when (direction) {
-                  SwipeToDismissBoxValue.StartToEnd -> Icons.Default.MarkEmailRead
+                  SwipeToDismissBoxValue.StartToEnd -> startToEndIcon
                   else -> Icons.Default.Delete
                 }
 
@@ -310,7 +314,7 @@ fun InboxScreen(viewModel: VybeViewModel) {
                     Icon(icon, contentDescription = null, tint = Color.White)
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                      text = if (direction == SwipeToDismissBoxValue.StartToEnd) "Mark as Read" else "Delete Chat",
+                      text = if (direction == SwipeToDismissBoxValue.StartToEnd) startToEndLabel else "Delete Chat",
                       color = Color.White,
                       fontWeight = FontWeight.Bold,
                       fontSize = 12.sp

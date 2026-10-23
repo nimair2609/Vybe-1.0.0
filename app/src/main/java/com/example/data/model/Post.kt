@@ -33,6 +33,7 @@ data class Post(
   val commentsCount: Int = 0,
   val savesCount: Int = 0,
   val sharesCount: Int = 0,
+  val viewsCount: Int = 0,
   val isLiked: Boolean = false,
   val isSaved: Boolean = false,
   val isArchived: Boolean = false,

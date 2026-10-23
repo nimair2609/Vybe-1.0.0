@@ -217,5 +217,48 @@ interface SupabaseRestApi {
     @Header("Prefer") prefer: String = "return=representation",
     @Body body: SupabaseReportDto
   ): Response<List<SupabaseReportDto>>
+
+  // --- POSTS ---
+  @GET("posts")
+  suspend fun getPosts(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String,
+    @Query("select") select: String = "*,post_media(*),profiles(*)",
+    @Query("order") order: String = "created_at.desc",
+    @Query("limit") limit: Int = 50
+  ): Response<List<SupabasePostDto>>
+
+  @POST("posts")
+  suspend fun insertPost(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body post: SupabasePostInsertDto
+  ): Response<List<SupabasePostDto>>
+
+  @DELETE("posts")
+  suspend fun deletePost(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String,
+    @Query("id") idFilter: String
+  ): Response<Unit>
+
+  // --- POST MEDIA ---
+  @POST("post_media")
+  suspend fun insertPostMedia(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body media: SupabasePostMediaDto
+  ): Response<List<SupabasePostMediaDto>>
+
+  // --- RPC: INCREMENT POST VIEW ---
+  @POST("rpc/increment_post_view")
+  suspend fun incrementPostView(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String,
+    @Body request: SupabaseRpcIncrementViewRequest
+  ): Response<Int>
 }
+
 
