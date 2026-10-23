@@ -413,118 +413,97 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.weight(1f).testTag("message_user_button")
               ) {
-                Text("Message", fontWeight = FontWeight.Bold)
-              }
-
-              Spacer(modifier = Modifier.height(8.dp))
-              OutlinedButton(
-                onClick = {
-                  val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "VYBE - Follow @${user.username}")
-                    putExtra(Intent.EXTRA_TEXT, "Check out @${user.username} on VYBE! https://vybe.app/u/${user.username}")
-                  }
-                  context.startActivity(Intent.createChooser(shareIntent, "Share Profile"))
-                },
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth().testTag("share_peer_profile_button")
-              ) {
-                Icon(Icons.Default.Share, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.ChatBubbleOutline, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Share Profile", fontWeight = FontWeight.Bold)
+                Text("Message", fontWeight = FontWeight.Bold)
               }
             }
           } else {
-            Column(modifier = Modifier.fillMaxWidth()) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            var showGoalDialog by remember { mutableStateOf(false) }
+
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+              Button(
+                onClick = {
+                  editDisplayName = user.displayName
+                  editFirstName = user.firstName
+                  editLastName = user.lastName
+                  editUsername = user.username
+                  editBio = user.bio
+                  editAvatarUrl = user.avatarUrl
+                  editCoverUrl = user.coverUrl
+                  editVideoUrl = user.profileVideoUrl
+                  showEditProfileModal = true
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.weight(1f).testTag("edit_profile_button")
               ) {
-                Button(
-                  onClick = {
-                    editDisplayName = user.displayName
-                    editFirstName = user.firstName
-                    editLastName = user.lastName
-                    editUsername = user.username
-                    editBio = user.bio
-                    editAvatarUrl = user.avatarUrl
-                    editCoverUrl = user.coverUrl
-                    editVideoUrl = user.profileVideoUrl
-                    showEditProfileModal = true
-                  },
-                  colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                  shape = RoundedCornerShape(12.dp),
-                  modifier = Modifier.weight(1f).testTag("edit_profile_button")
-                ) {
-                  Icon(Icons.Default.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(16.dp))
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text("Edit Profile", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
-                }
-
-                OutlinedButton(
-                  onClick = {
-                    photoActionTarget = "AVATAR"
-                    showPhotoActionSheet = true
-                  },
-                  shape = RoundedCornerShape(12.dp),
-                  modifier = Modifier.weight(1f).testTag("change_profile_photo_btn")
-                ) {
-                  Icon(Icons.Default.CameraAlt, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(16.dp))
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text("Change Photo", fontWeight = FontWeight.Bold)
-                }
+                Icon(Icons.Default.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Edit Profile", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
               }
-
-              Spacer(modifier = Modifier.height(8.dp))
 
               OutlinedButton(
-                onClick = {
-                  photoActionTarget = "BANNER"
-                  showPhotoActionSheet = true
-                },
+                onClick = { showGoalDialog = true },
                 shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth().testTag("change_banner_btn")
+                modifier = Modifier.weight(1f).testTag("profile_goal_button")
               ) {
-                Icon(Icons.Default.Panorama, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.Flag, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Change Banner", fontWeight = FontWeight.Bold)
+                Text(
+                  text = "Goal: ${user.goalType.ifEmpty { "Creator" }}",
+                  fontWeight = FontWeight.Bold,
+                  maxLines = 1
+                )
               }
+            }
 
-              Spacer(modifier = Modifier.height(10.dp))
-
-              // Creator Actions: Go Live & Share VYBE (Requirement L)
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-              ) {
-                Button(
-                  onClick = { viewModel.navigateTo(Screen.LIVE_STUDIO) },
-                  colors = ButtonDefaults.buttonColors(containerColor = VybeMagenta),
-                  shape = RoundedCornerShape(12.dp),
-                  modifier = Modifier.weight(1f).testTag("profile_go_live_button")
-                ) {
-                  Icon(Icons.Default.Podcasts, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text("Go Live", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-
-                OutlinedButton(
-                  onClick = {
-                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                      type = "text/plain"
-                      putExtra(Intent.EXTRA_SUBJECT, "Connect on VYBE")
-                      putExtra(Intent.EXTRA_TEXT, "Join me on VYBE! Follow @${user.username} at https://vybe.app/u/${user.username}")
+            if (showGoalDialog) {
+              AlertDialog(
+                onDismissRequest = { showGoalDialog = false },
+                title = {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Flag, contentDescription = null, tint = VybeViolet)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Select Profile Goal", fontWeight = FontWeight.Bold)
+                  }
+                },
+                text = {
+                  Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                      "🎯 Creator Journey",
+                      "🚀 Reach 1K Followers",
+                      "🌊 Share Daily Chill Vybes",
+                      "✨ Community Builder",
+                      "🎧 Indie Artist Showcase",
+                      "🌱 Healing & Mindfulness"
+                    ).forEach { goalChoice ->
+                      Surface(
+                        color = if (user.goalType == goalChoice) VybeViolet.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                          .fillMaxWidth()
+                          .clickable {
+                            viewModel.updateGoalType(goalChoice)
+                            showGoalDialog = false
+                          }
+                      ) {
+                        Text(
+                          text = goalChoice,
+                          modifier = Modifier.padding(12.dp),
+                          fontWeight = if (user.goalType == goalChoice) FontWeight.Bold else FontWeight.Normal
+                        )
+                      }
                     }
-                    context.startActivity(Intent.createChooser(shareIntent, "Share VYBE Profile"))
-                  },
-                  shape = RoundedCornerShape(12.dp),
-                  modifier = Modifier.weight(1f).testTag("profile_share_vybe_button")
-                ) {
-                  Icon(Icons.Default.Share, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(16.dp))
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text("Share VYBE", fontWeight = FontWeight.Bold)
+                  }
+                },
+                confirmButton = {
+                  TextButton(onClick = { showGoalDialog = false }) { Text("Close") }
                 }
-              }
+              )
             }
           }
 

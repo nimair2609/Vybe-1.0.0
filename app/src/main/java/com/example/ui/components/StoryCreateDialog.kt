@@ -114,6 +114,16 @@ fun StoryCreateDialog(
     }
   }
 
+  // Video Picker Launcher
+  val videoPicker = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.PickVisualMedia()
+  ) { uri ->
+    if (uri != null) {
+      val localPath = com.example.util.MediaUtils.copyUriToLocalCache(context, uri, "story_video")
+      pickedMediaUri = Uri.parse(localPath)
+    }
+  }
+
   Dialog(
     onDismissRequest = onDismiss,
     properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -426,17 +436,54 @@ fun StoryCreateDialog(
             }
 
             StoryCreateMode.VIDEO -> {
-              Box(
-                modifier = Modifier
-                  .fillMaxSize()
-                  .background(Color(0xFF111827)),
-                contentAlignment = Alignment.Center
-              ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                  Icon(Icons.Default.PlayCircle, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(56.dp))
-                  Spacer(modifier = Modifier.height(8.dp))
-                  Text("Video Story Preview Ready", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                  Text("Disappears automatically in 24 hours", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
+              if (pickedMediaUri != null) {
+                Box(
+                  modifier = Modifier.fillMaxSize(),
+                  contentAlignment = Alignment.Center
+                ) {
+                  VideoPlayerView(
+                    videoUrl = pickedMediaUri.toString(),
+                    modifier = Modifier.fillMaxSize()
+                  )
+                  // Overlay to change video
+                  Box(
+                    modifier = Modifier
+                      .align(Alignment.BottomEnd)
+                      .padding(12.dp)
+                      .clip(RoundedCornerShape(12.dp))
+                      .background(Color.Black.copy(alpha = 0.6f))
+                      .clickable {
+                        videoPicker.launch(
+                          PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                        )
+                      }
+                      .padding(horizontal = 12.dp, vertical = 8.dp)
+                  ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                      Icon(Icons.Default.Videocam, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                      Spacer(modifier = Modifier.width(6.dp))
+                      Text("Change Video", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                  }
+                }
+              } else {
+                Box(
+                  modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF111827))
+                    .clickable {
+                      videoPicker.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                      )
+                    },
+                  contentAlignment = Alignment.Center
+                ) {
+                  Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.Videocam, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(56.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text("Tap to Select Story Video", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text("Select any MP4/WebM video from your device", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
+                  }
                 }
               }
             }

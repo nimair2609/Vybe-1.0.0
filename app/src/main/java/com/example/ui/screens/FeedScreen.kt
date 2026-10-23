@@ -73,7 +73,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
   }
 
   val filteredPosts = remember(posts, selectedMood, feedTab, followingUserIds) {
-    var list = posts
+    var list = posts.filter { !it.isVybesReel && it.mediaType != com.example.data.model.MediaType.REEL }
     if (selectedMood != null) {
       list = list.filter { it.moodZone == selectedMood }
     }
@@ -373,7 +373,14 @@ fun FeedScreen(viewModel: VybeViewModel) {
               onSaveClick = { viewModel.toggleSave(post.id) },
               onCommentClick = { viewModel.addComment(post.id, "Appreciating this vibe!") },
               onAddComment = { text -> viewModel.addComment(post.id, text) },
-              onShareClick = { /* Share dialog */ },
+              onShareClick = {
+                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                  type = "text/plain"
+                  putExtra(android.content.Intent.EXTRA_SUBJECT, "Check out this VYBE post")
+                  putExtra(android.content.Intent.EXTRA_TEXT, "${post.caption}\n\nhttps://vybe.app/p/${post.id}")
+                }
+                context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Post via"))
+              },
               onUserClick = { user -> viewModel.openUserProfile(user) },
               onRemixClick = { viewModel.navigateTo(Screen.REELS_VIEWER) },
               onDeleteClick = { viewModel.deletePost(post.id) },

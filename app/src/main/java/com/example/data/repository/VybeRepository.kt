@@ -128,7 +128,11 @@ class VybeRepository private constructor() {
   private val _isLoggedIn = MutableStateFlow(false)
   val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
 
+  private var appContext: Context? = null
+  private val viewedPostIdsInSession = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
   fun initSession(context: Context) {
+    appContext = context.applicationContext
     val localStore = VybeLocalStore.getInstance(context)
     val savedUsers = localStore.loadUsers()
     if (savedUsers.isNotEmpty()) {
@@ -859,6 +863,7 @@ class VybeRepository private constructor() {
       else -> mediaType
     }
 
+    val effectiveMood = mood ?: MoodType.GENERAL
     val newPost = Post(
       id = "p_${System.currentTimeMillis()}",
       author = user,
@@ -872,7 +877,7 @@ class VybeRepository private constructor() {
       sharesCount = 0,
       viewsCount = 0,
       isVybesReel = isVybes,
-      moodZone = mood,
+      moodZone = effectiveMood,
       tags = listOf("VybeCommunity")
     )
     val updatedPosts = listOf(newPost) + _posts.value
@@ -889,7 +894,28 @@ class VybeRepository private constructor() {
     if (supabaseRepo.isConfigured) {
       CoroutineScope(Dispatchers.IO).launch {
         val token = SessionManager.get()?.accessToken ?: ""
-        val result = supabaseRepo.createPostOnSupabase(newPost, token)
+        var postToCreate = newPost
+        val ctx = appContext
+        if (ctx != null && !imageUrl.isNullOrBlank() && !imageUrl.startsWith("http://") && !imageUrl.startsWith("https://")) {
+          val mediaInfo = com.example.util.MediaUtils.getBytesAndMimeType(ctx, imageUrl)
+          if (mediaInfo != null) {
+            val ext = if (effectiveMediaType == MediaType.VIDEO || effectiveMediaType == MediaType.REEL) "mp4" else "jpg"
+            val uploadRes = supabaseRepo.uploadMediaFile(
+              bucket = "posts",
+              fileName = "${user.id}/post_${System.currentTimeMillis()}.$ext",
+              bytes = mediaInfo.first,
+              mimeType = mediaInfo.second,
+              accessToken = token
+            )
+            if (uploadRes.isSuccess) {
+              val cdnUrl = uploadRes.getOrThrow()
+              postToCreate = postToCreate.copy(mediaUrls = listOf(cdnUrl))
+              _posts.value = _posts.value.map { if (it.id == newPost.id) it.copy(mediaUrls = listOf(cdnUrl)) else it }
+              VybeLocalStore.get()?.savePosts(_posts.value)
+            }
+          }
+        }
+        val result = supabaseRepo.createPostOnSupabase(postToCreate, token)
         if (result.isSuccess) {
           val serverPost = result.getOrThrow()
           // Update id with server-assigned UUID
@@ -928,6 +954,10 @@ class VybeRepository private constructor() {
   }
 
   fun recordPostView(postId: String) {
+    if (!viewedPostIdsInSession.add(postId)) {
+      // Deduplicated: user already viewed this post in current session
+      return
+    }
     val current = _posts.value.toMutableList()
     val index = current.indexOfFirst { it.id == postId }
     if (index != -1) {
@@ -1296,11 +1326,96 @@ class VybeRepository private constructor() {
     _allUsers.value = _allUsers.value.map { if (it.id == updated.id) updated else it }
     SessionManager.get()?.saveSession(updated)
     VybeLocalStore.get()?.saveUser(updated)
+
+    if (supabaseRepo.isConfigured) {
+      CoroutineScope(Dispatchers.IO).launch {
+        val token = SessionManager.get()?.accessToken ?: ""
+        var persistentUrl = newAvatarUrl
+        val ctx = appContext
+        if (ctx != null && !newAvatarUrl.startsWith("http://") && !newAvatarUrl.startsWith("https://")) {
+          val mediaInfo = com.example.util.MediaUtils.getBytesAndMimeType(ctx, newAvatarUrl)
+          if (mediaInfo != null) {
+            val uploadRes = supabaseRepo.uploadMediaFile(
+              bucket = "avatars",
+              fileName = "${user.id}/avatar_${System.currentTimeMillis()}.jpg",
+              bytes = mediaInfo.first,
+              mimeType = mediaInfo.second,
+              accessToken = token
+            )
+            if (uploadRes.isSuccess) {
+              persistentUrl = uploadRes.getOrThrow()
+              val cdnUpdated = user.copy(avatarUrl = persistentUrl)
+              _currentUser.value = cdnUpdated
+              _allUsers.value = _allUsers.value.map { if (it.id == cdnUpdated.id) cdnUpdated else it }
+              SessionManager.get()?.saveSession(cdnUpdated)
+              VybeLocalStore.get()?.saveUser(cdnUpdated)
+            }
+          }
+        }
+        supabaseRepo.updateUserProfile(
+          userId = user.id,
+          firstName = user.firstName,
+          lastName = user.lastName,
+          displayName = user.displayName,
+          bio = user.bio,
+          avatarUrl = persistentUrl,
+          coverUrl = user.coverUrl,
+          accessToken = token
+        )
+      }
+    }
   }
 
   fun updateProfileBanner(newCoverUrl: String) {
     val user = _currentUser.value ?: return
     val updated = user.copy(coverUrl = newCoverUrl)
+    _currentUser.value = updated
+    _allUsers.value = _allUsers.value.map { if (it.id == updated.id) updated else it }
+    SessionManager.get()?.saveSession(updated)
+    VybeLocalStore.get()?.saveUser(updated)
+
+    if (supabaseRepo.isConfigured) {
+      CoroutineScope(Dispatchers.IO).launch {
+        val token = SessionManager.get()?.accessToken ?: ""
+        var persistentUrl = newCoverUrl
+        val ctx = appContext
+        if (ctx != null && !newCoverUrl.startsWith("http://") && !newCoverUrl.startsWith("https://")) {
+          val mediaInfo = com.example.util.MediaUtils.getBytesAndMimeType(ctx, newCoverUrl)
+          if (mediaInfo != null) {
+            val uploadRes = supabaseRepo.uploadMediaFile(
+              bucket = "banners",
+              fileName = "${user.id}/banner_${System.currentTimeMillis()}.jpg",
+              bytes = mediaInfo.first,
+              mimeType = mediaInfo.second,
+              accessToken = token
+            )
+            if (uploadRes.isSuccess) {
+              persistentUrl = uploadRes.getOrThrow()
+              val cdnUpdated = user.copy(coverUrl = persistentUrl)
+              _currentUser.value = cdnUpdated
+              _allUsers.value = _allUsers.value.map { if (it.id == cdnUpdated.id) cdnUpdated else it }
+              SessionManager.get()?.saveSession(cdnUpdated)
+              VybeLocalStore.get()?.saveUser(cdnUpdated)
+            }
+          }
+        }
+        supabaseRepo.updateUserProfile(
+          userId = user.id,
+          firstName = user.firstName,
+          lastName = user.lastName,
+          displayName = user.displayName,
+          bio = user.bio,
+          avatarUrl = user.avatarUrl,
+          coverUrl = persistentUrl,
+          accessToken = token
+        )
+      }
+    }
+  }
+
+  fun updateGoalType(newGoal: String) {
+    val user = _currentUser.value ?: return
+    val updated = user.copy(goalType = newGoal)
     _currentUser.value = updated
     _allUsers.value = _allUsers.value.map { if (it.id == updated.id) updated else it }
     SessionManager.get()?.saveSession(updated)

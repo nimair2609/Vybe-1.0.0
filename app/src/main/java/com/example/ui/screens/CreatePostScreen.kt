@@ -14,9 +14,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import android.location.Address
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -119,12 +123,26 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
                   imageUrl = selectedImage,
                   mediaType = if (publishDestination == PublishDestination.VYBES_REEL) MediaType.REEL else selectedMediaType
                 )
+                viewModel.navigateBack()
               }
             },
             enabled = caption.isNotBlank() || selectedImage != null,
             modifier = Modifier.testTag("publish_post_button")
           ) {
-            Text("Publish", fontWeight = FontWeight.Bold, color = VybeViolet)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Icon(
+                imageVector = Icons.AutoMirrored.Filled.Send,
+                contentDescription = null,
+                tint = if (caption.isNotBlank() || selectedImage != null) VybeViolet else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.size(16.dp)
+              )
+              Spacer(modifier = Modifier.width(4.dp))
+              Text(
+                if (publishDestination == PublishDestination.VYBES_REEL) "Send Reel" else "Publish",
+                fontWeight = FontWeight.Bold,
+                color = if (caption.isNotBlank() || selectedImage != null) VybeViolet else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+              )
+            }
           }
         },
         colors = TopAppBarDefaults.topAppBarColors(
@@ -327,23 +345,32 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
           "16:9" -> 140.dp
           else -> 200.dp
         }
+        val isVideo = selectedMediaType == MediaType.VIDEO || selectedMediaType == MediaType.REEL || (selectedImage != null && selectedImage!!.endsWith(".mp4", ignoreCase = true))
+
         Box(
           modifier = Modifier
             .fillMaxWidth()
             .height(previewHeight)
             .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .background(Color.Black)
         ) {
-          AsyncImage(
-            model = selectedImage,
-            contentDescription = "Selected media preview",
-            contentScale = when (cropRatio) {
-              "16:9" -> ContentScale.FillWidth
-              "4:5" -> ContentScale.Crop
-              else -> ContentScale.Fit
-            },
-            modifier = Modifier.fillMaxSize()
-          )
+          if (isVideo) {
+            com.example.ui.components.VideoPlayerView(
+              videoUrl = selectedImage!!,
+              modifier = Modifier.fillMaxSize()
+            )
+          } else {
+            AsyncImage(
+              model = selectedImage,
+              contentDescription = "Selected media preview",
+              contentScale = when (cropRatio) {
+                "16:9" -> ContentScale.FillWidth
+                "4:5" -> ContentScale.Crop
+                else -> ContentScale.Fit
+              },
+              modifier = Modifier.fillMaxSize()
+            )
+          }
 
           // Preview button overlay
           Surface(
@@ -489,6 +516,35 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
             }
           },
           text = {
+            var geocodedList by remember { mutableStateOf<List<String>>(emptyList()) }
+            var isSearching by remember { mutableStateOf(false) }
+
+            LaunchedEffect(locationSearchQuery) {
+              if (locationSearchQuery.trim().length >= 3) {
+                isSearching = true
+                try {
+                  val geocoder = android.location.Geocoder(context)
+                  val addresses: List<Address> = withContext(Dispatchers.IO) {
+                    try {
+                      geocoder.getFromLocationName(locationSearchQuery, 5) ?: emptyList<Address>()
+                    } catch (e: Exception) {
+                      emptyList<Address>()
+                    }
+                  }
+                  geocodedList = addresses.mapNotNull { addr: Address ->
+                    val name = addr.featureName ?: addr.thoroughfare ?: addr.locality ?: ""
+                    val city = addr.locality ?: addr.adminArea ?: ""
+                    val country = addr.countryName ?: ""
+                    val label = listOfNotNull(name.ifBlank { null }, city.ifBlank { null }, country.ifBlank { null }).distinct().joinToString(", ")
+                    if (label.isNotBlank()) "📍 $label (${String.format(java.util.Locale.US, "%.4f, %.4f", addr.latitude, addr.longitude)})" else null
+                  }
+                } catch (_: Exception) {}
+                isSearching = false
+              } else {
+                geocodedList = emptyList()
+              }
+            }
+
             Column(
               modifier = Modifier.fillMaxWidth(),
               verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -496,20 +552,51 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
               OutlinedTextField(
                 value = locationSearchQuery,
                 onValueChange = { locationSearchQuery = it },
-                placeholder = { Text("Search location on Google Maps...") },
+                placeholder = { Text("Search any city, cafe, or landmark...") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
               )
 
-              Text("Popular Hotspots:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-              listOf(
-                "📍 Bandra West, Mumbai",
-                "📍 Indiranagar, Bengaluru",
-                "📍 Hauz Khas Social, Delhi",
-                "📍 Cyber Hub, Gurugram",
-                "📍 Koregaon Park, Pune"
-              ).forEach { spot ->
+              if (locationSearchQuery.isNotBlank()) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Text(
+                    text = if (isSearching) "Searching real coordinates..." else if (geocodedList.isNotEmpty()) "Matched Locations (${geocodedList.size}):" else "Search Result:",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = VybeViolet
+                  )
+                  TextButton(
+                    onClick = {
+                      val mapUri = android.net.Uri.parse("geo:0,0?q=${android.net.Uri.encode(locationSearchQuery)}")
+                      val mapIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, mapUri).apply {
+                        setPackage("com.google.android.apps.maps")
+                      }
+                      try {
+                        context.startActivity(mapIntent)
+                      } catch (e: Exception) {
+                        context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, mapUri))
+                      }
+                    }
+                  ) {
+                    Text("View in Google Maps 🗺️", fontSize = 11.sp)
+                  }
+                }
+              }
+
+              val displayList = if (geocodedList.isNotEmpty()) geocodedList else listOf(
+                "📍 Bandra West, Mumbai (19.0596, 72.8295)",
+                "📍 Indiranagar, Bengaluru (12.9784, 77.6408)",
+                "📍 Hauz Khas Social, Delhi (28.5494, 77.2001)",
+                "📍 Cyber Hub, Gurugram (28.4950, 77.0895)",
+                "📍 Koregaon Park, Pune (18.5362, 73.8940)"
+              )
+
+              displayList.forEach { spot ->
                 Surface(
                   shape = RoundedCornerShape(8.dp),
                   color = MaterialTheme.colorScheme.surfaceVariant,
@@ -579,7 +666,7 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
       Spacer(modifier = Modifier.height(28.dp))
 
       VybeGradientButton(
-        text = if (publishDestination == PublishDestination.FEED_POST) "Post to VYBE Feed" else "Upload to VYBES Reels",
+        text = if (publishDestination == PublishDestination.FEED_POST) "Post to VYBE Feed" else "Send & Publish VYBES Reel",
         onClick = {
           if (caption.isNotBlank() || selectedImage != null) {
             viewModel.createPost(
@@ -588,6 +675,7 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
               imageUrl = selectedImage,
               mediaType = if (publishDestination == PublishDestination.VYBES_REEL) MediaType.REEL else selectedMediaType
             )
+            viewModel.navigateBack()
           }
         },
         enabled = caption.isNotBlank() || selectedImage != null,

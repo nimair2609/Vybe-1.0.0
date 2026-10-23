@@ -54,19 +54,18 @@ fun PostCard(
   val isAuthor = currentUserId == post.author.id || (currentUserId != null && currentUserId == "u_me" && post.author.id == "u_me")
 
   LaunchedEffect(post.id) {
+    // Only count as view if user actually stops on the post for >= 2.5 seconds (prevents fast scroll counting)
+    kotlinx.coroutines.delay(2500)
     onPostViewed?.invoke(post.id)
   }
 
-  Card(
+  Surface(
     modifier = modifier
       .fillMaxWidth()
-      .padding(horizontal = 16.dp, vertical = 8.dp)
       .testTag("post_card_${post.id}"),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    shape = RoundedCornerShape(20.dp),
-    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+    color = MaterialTheme.colorScheme.background
   ) {
-    Column(modifier = Modifier.padding(14.dp)) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
       // Header: Author + Verified + Timestamp + Mood Tag
       Row(
         modifier = Modifier.fillMaxWidth(),
@@ -723,8 +722,10 @@ fun VideoPlayerView(
   videoUrl: String,
   modifier: Modifier = Modifier
 ) {
-  var isPlaying by remember { mutableStateOf(false) }
+  var isPlaying by remember { mutableStateOf(true) }
+  var isMuted by remember { mutableStateOf(true) }
   var videoViewRef by remember { mutableStateOf<android.widget.VideoView?>(null) }
+  var mediaPlayerRef by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
 
   Box(
     modifier = modifier,
@@ -735,8 +736,11 @@ fun VideoPlayerView(
         android.widget.VideoView(ctx).apply {
           setVideoURI(android.net.Uri.parse(videoUrl))
           setOnPreparedListener { mp ->
+            mediaPlayerRef = mp
             mp.isLooping = true
-            mp.setVolume(1.0f, 1.0f)
+            mp.setVolume(0.0f, 0.0f) // polite autoplay muted
+            start()
+            isPlaying = true
           }
           setOnCompletionListener {
             isPlaying = false
@@ -750,42 +754,60 @@ fun VideoPlayerView(
       modifier = Modifier.fillMaxSize()
     )
 
+    // Tap on media to play/pause
+    Box(
+      modifier = Modifier
+        .fillMaxSize()
+        .clickable {
+          if (isPlaying) {
+            videoViewRef?.pause()
+            isPlaying = false
+          } else {
+            videoViewRef?.start()
+            isPlaying = true
+          }
+        }
+    )
+
+    // Play button indicator if paused
     if (!isPlaying) {
       Box(
         modifier = Modifier
-          .fillMaxSize()
-          .background(Color.Black.copy(alpha = 0.35f)),
+          .size(52.dp)
+          .clip(CircleShape)
+          .background(Color.Black.copy(alpha = 0.6f)),
         contentAlignment = Alignment.Center
       ) {
-        Surface(
-          color = VybeViolet.copy(alpha = 0.9f),
-          shape = CircleShape,
-          modifier = Modifier
-            .size(54.dp)
-            .clickable {
-              videoViewRef?.start()
-              isPlaying = true
-            }
-        ) {
-          Box(contentAlignment = Alignment.Center) {
-            Icon(
-              imageVector = Icons.Default.PlayArrow,
-              contentDescription = "Play Video",
-              tint = Color.White,
-              modifier = Modifier.size(32.dp)
-            )
-          }
-        }
+        Icon(
+          imageVector = Icons.Default.PlayArrow,
+          contentDescription = "Play Video",
+          tint = Color.White,
+          modifier = Modifier.size(32.dp)
+        )
       }
-    } else {
-      Box(
-        modifier = Modifier
-          .fillMaxSize()
-          .clickable {
-            videoViewRef?.pause()
-            isPlaying = false
-          }
-      )
+    }
+
+    // Mute/Unmute control pill in bottom right
+    Surface(
+      color = Color.Black.copy(alpha = 0.6f),
+      shape = CircleShape,
+      modifier = Modifier
+        .align(Alignment.BottomEnd)
+        .padding(10.dp)
+        .clickable {
+          isMuted = !isMuted
+          val vol = if (isMuted) 0.0f else 1.0f
+          mediaPlayerRef?.setVolume(vol, vol)
+        }
+    ) {
+      Box(modifier = Modifier.padding(6.dp), contentAlignment = Alignment.Center) {
+        Icon(
+          imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+          contentDescription = if (isMuted) "Unmute" else "Mute",
+          tint = Color.White,
+          modifier = Modifier.size(16.dp)
+        )
+      }
     }
   }
 }

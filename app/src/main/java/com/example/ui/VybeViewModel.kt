@@ -96,6 +96,7 @@ class VybeViewModel : ViewModel() {
 
   fun updateProfilePhoto(avatarUrl: String) = repository.updateProfilePhoto(avatarUrl)
   fun updateProfileBanner(coverUrl: String) = repository.updateProfileBanner(coverUrl)
+  fun updateGoalType(goal: String) = repository.updateGoalType(goal)
 
   private val _searchQuery = MutableStateFlow("")
   val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()

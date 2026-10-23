@@ -84,19 +84,42 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
           .fillMaxSize()
           .background(Color.Black)
       ) {
-        // Media content
-        if (reelPost.mediaUrls.isNotEmpty()) {
-          AsyncImage(
-            model = reelPost.mediaUrls.first(),
-            contentDescription = "Reel content",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-              .fillMaxSize()
-              .clickable { isPlaying = !isPlaying }
-          )
+        // View counting policy: Genuine playback of active page for at least 3 seconds
+        LaunchedEffect(pageIndex, reelPost.id) {
+          if (pageIndex == pagerState.currentPage) {
+            kotlinx.coroutines.delay(3000)
+            if (pageIndex == pagerState.currentPage) {
+              viewModel.recordPostView(reelPost.id)
+            }
+          }
         }
 
-        // Top subtle gradient & Back Button
+        // Media content: Real video playback with VideoPlayerView or image fallback
+        if (reelPost.mediaUrls.isNotEmpty()) {
+          val mediaUrl = reelPost.mediaUrls.first()
+          val isVideo = reelPost.mediaType == com.example.data.model.MediaType.REEL ||
+                        reelPost.mediaType == com.example.data.model.MediaType.VIDEO ||
+                        reelPost.isVybesReel ||
+                        mediaUrl.endsWith(".mp4", ignoreCase = true)
+
+          if (isVideo) {
+            com.example.ui.components.VideoPlayerView(
+              videoUrl = mediaUrl,
+              modifier = Modifier.fillMaxSize()
+            )
+          } else {
+            AsyncImage(
+              model = mediaUrl,
+              contentDescription = "Reel content",
+              contentScale = ContentScale.Crop,
+              modifier = Modifier
+                .fillMaxSize()
+                .clickable { isPlaying = !isPlaying }
+            )
+          }
+        }
+
+        // Top subtle gradient & Controls
         Box(
           modifier = Modifier
             .fillMaxWidth()
@@ -127,15 +150,23 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
               color = Color.White
             )
 
-            IconButton(
-              onClick = { isMuted = !isMuted },
-              modifier = Modifier.testTag("reels_mute_button")
-            ) {
-              Icon(
-                imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
-                contentDescription = "Mute audio",
-                tint = Color.White
-              )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              IconButton(
+                onClick = { viewModel.navigateTo(com.example.ui.Screen.CREATE_POST) },
+                modifier = Modifier.testTag("reels_camera_create_button")
+              ) {
+                Icon(Icons.Default.CameraAlt, contentDescription = "Create Reel", tint = Color.White)
+              }
+              IconButton(
+                onClick = { isMuted = !isMuted },
+                modifier = Modifier.testTag("reels_mute_button")
+              ) {
+                Icon(
+                  imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                  contentDescription = "Mute audio",
+                  tint = Color.White
+                )
+              }
             }
           }
         }
