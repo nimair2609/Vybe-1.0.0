@@ -172,5 +172,61 @@ class VybeCoreUnitTest {
     val result = repository.initiateCall(offlineUser, isVideo = false)
     assertTrue("Offline user must return Offline result", result is com.example.data.model.CallAvailabilityResult.Offline)
   }
+
+  @Test
+  fun testRecordPostViewIncrementsCount() {
+    if (repository.posts.value.isEmpty()) {
+      repository.createPost(caption = "View tracking test post", mood = MoodType.CHILL)
+    }
+    val targetPost = repository.posts.value.first()
+    val initialViews = targetPost.viewsCount
+
+    repository.recordPostView(targetPost.id)
+    val updatedPost = repository.posts.value.first { it.id == targetPost.id }
+    assertEquals(initialViews + 1, updatedPost.viewsCount)
+  }
+
+  @Test
+  fun testDeleteOwnPostRemovesFromFeed() {
+    repository.createPost(caption = "Temporary post to delete", mood = MoodType.HEALING)
+    val createdPost = repository.posts.value.first { it.caption == "Temporary post to delete" }
+    val initialCount = repository.posts.value.size
+
+    repository.deletePost(createdPost.id)
+    val updatedPosts = repository.posts.value
+    assertEquals(initialCount - 1, updatedPosts.size)
+    assertNull(updatedPosts.firstOrNull { it.id == createdPost.id })
+  }
+
+  @Test
+  fun testStartConversationAndToggleUnread() {
+    val peerUser = repository.allUsers.value.first { it.id != repository.currentUser.value?.id }
+    val conversation = repository.getOrCreateConversation(peerUser)
+    assertNotNull(conversation)
+    assertEquals(peerUser.id, conversation.peerUser.id)
+
+    // Verify toggling unread
+    val initialUnread = conversation.unreadCount
+    repository.toggleConversationUnread(conversation.id)
+    val updated = repository.conversations.value.first { it.id == conversation.id }
+    val expected = if (initialUnread > 0) 0 else 1
+    assertEquals(expected, updated.unreadCount)
+  }
+
+  @Test
+  fun testGitHubUpdaterVersionComparison() {
+    assertTrue(com.example.util.GitHubUpdater.isNewerVersion("2.0.0", "v2.1.0"))
+    assertTrue(com.example.util.GitHubUpdater.isNewerVersion("v1.0.0", "v1.0.1"))
+    assertTrue(com.example.util.GitHubUpdater.isNewerVersion("2.0.0", "2.0.1"))
+    assertFalse(com.example.util.GitHubUpdater.isNewerVersion("2.1.0", "v2.0.9"))
+    assertFalse(com.example.util.GitHubUpdater.isNewerVersion("2.0.0", "v2.0.0"))
+  }
+
+  @Test
+  fun testGitHubUpdaterSlugCleaning() {
+    assertEquals("nrnext/vybe", com.example.util.GitHubUpdater.cleanRepoSlug("https://github.com/nrnext/vybe/"))
+    assertEquals("nrnext/vybe", com.example.util.GitHubUpdater.cleanRepoSlug("github.com/nrnext/vybe"))
+    assertEquals("owner/app", com.example.util.GitHubUpdater.cleanRepoSlug("owner/app"))
+  }
 }
 

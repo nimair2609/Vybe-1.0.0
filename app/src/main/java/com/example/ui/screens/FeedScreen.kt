@@ -54,6 +54,24 @@ fun FeedScreen(viewModel: VybeViewModel) {
   var storyTypeSelected by remember { mutableStateOf<String?>(null) }
   var storyCreatedFeedback by remember { mutableStateOf<String?>(null) }
 
+  val context = androidx.compose.ui.platform.LocalContext.current
+  var availableRelease by remember { mutableStateOf<com.example.util.GitHubReleaseInfo?>(null) }
+  var isUpdateBannerDismissed by remember { mutableStateOf(false) }
+
+  LaunchedEffect(Unit) {
+    try {
+      val repo = com.example.util.GitHubUpdater.getSavedRepo(context)
+      if (repo.isNotBlank()) {
+        val res = com.example.util.GitHubUpdater.checkForUpdates(repo, currentVersion = "2.0.0")
+        res.onSuccess { release ->
+          if (release.isUpdateAvailable) {
+            availableRelease = release
+          }
+        }
+      }
+    } catch (_: Exception) {}
+  }
+
   val filteredPosts = remember(posts, selectedMood, feedTab, followingUserIds) {
     var list = posts
     if (selectedMood != null) {
@@ -189,6 +207,17 @@ fun FeedScreen(viewModel: VybeViewModel) {
           .fillMaxSize()
           .testTag("feed_list")
       ) {
+        // In-App Git Update Banner
+        if (availableRelease != null && !isUpdateBannerDismissed) {
+          item {
+            com.example.ui.components.InAppUpdateBanner(
+              release = availableRelease!!,
+              onUpdateClick = { viewModel.navigateTo(Screen.SETTINGS) },
+              onDismiss = { isUpdateBannerDismissed = true }
+            )
+          }
+        }
+
         // Stories Carousel Tray
         item {
           StoryCarousel(

@@ -30,7 +30,11 @@ import com.example.data.model.AppThemeMode
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VybeAvatar
+import com.example.ui.components.UpdateInstallPermissionDialog
+import com.example.ui.components.DeveloperGitReleaseGuideDialog
 import com.example.ui.theme.*
+import java.io.File
+import java.util.Locale
 
 enum class SettingsSubpage {
   NONE,
@@ -85,9 +89,17 @@ fun SettingsScreen(viewModel: VybeViewModel) {
   // GitHub in-app updater state
   val coroutineScope = rememberCoroutineScope()
   val context = LocalContext.current
-  var githubRepoInput by remember { mutableStateOf("my-github-username/vybe") }
+  var githubRepoInput by remember { mutableStateOf(GitHubUpdater.getSavedRepo(context)) }
   var isCheckingUpdate by remember { mutableStateOf(false) }
   var updateResult by remember { mutableStateOf<Result<GitHubReleaseInfo>?>(null) }
+  var isDownloadingApk by remember { mutableStateOf(false) }
+  var downloadProgress by remember { mutableStateOf(0f) }
+  var downloadedBytes by remember { mutableStateOf(0L) }
+  var totalBytes by remember { mutableStateOf(0L) }
+  var downloadedApkFile by remember { mutableStateOf<File?>(null) }
+  var installErrorMessage by remember { mutableStateOf<String?>(null) }
+  var showInstallPermissionDialog by remember { mutableStateOf(false) }
+  var showGitGuideDialog by remember { mutableStateOf(false) }
 
   Scaffold(
     topBar = {
@@ -311,6 +323,25 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                   title = "About VYBE",
                   subtitle = "Version 2.0.0 • Product of NR Next",
                   onClick = { activeSubpage = SettingsSubpage.ABOUT }
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                SettingsListItem(
+                  icon = Icons.Default.SystemUpdate,
+                  iconTint = VybeOnlineGreen,
+                  title = "Check for Updates",
+                  subtitle = "Over-the-air updates from Git without reinstalling",
+                  onClick = {
+                    activeSubpage = SettingsSubpage.ABOUT
+                    if (githubRepoInput.isNotBlank()) {
+                      isCheckingUpdate = true
+                      updateResult = null
+                      coroutineScope.launch {
+                        val res = GitHubUpdater.checkForUpdates(githubRepoInput)
+                        updateResult = res
+                        isCheckingUpdate = false
+                      }
+                    }
+                  }
                 )
               }
             }
@@ -956,12 +987,28 @@ fun SettingsScreen(viewModel: VybeViewModel) {
               modifier = Modifier.fillMaxWidth().testTag("github_updater_card")
             ) {
               Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                  Icon(Icons.Default.CloudSync, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(24.dp))
-                  Spacer(modifier = Modifier.width(10.dp))
-                  Column {
-                    Text("GitHub Live Updates", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    Text("Sync directly from your repository releases", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                  ) {
+                    Icon(Icons.Default.CloudSync, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                      Text("GitHub Live Updates", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                      Text("Seamless in-place updates without uninstalling", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                  }
+
+                  IconButton(
+                    onClick = { showGitGuideDialog = true },
+                    modifier = Modifier.size(32.dp).testTag("git_release_guide_button")
+                  ) {
+                    Icon(Icons.Default.HelpOutline, contentDescription = "How to publish", tint = VybeBrandCyan, modifier = Modifier.size(20.dp))
                   }
                 }
 
@@ -969,7 +1016,10 @@ fun SettingsScreen(viewModel: VybeViewModel) {
 
                 OutlinedTextField(
                   value = githubRepoInput,
-                  onValueChange = { githubRepoInput = it },
+                  onValueChange = {
+                    githubRepoInput = it
+                    GitHubUpdater.saveRepo(context, it)
+                  },
                   label = { Text("GitHub Repo (owner/repo)") },
                   placeholder = { Text("e.g. your-org/vybe") },
                   singleLine = true,
@@ -991,7 +1041,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                       isCheckingUpdate = true
                       updateResult = null
                       coroutineScope.launch {
-                        val res = GitHubUpdater.checkForUpdates(githubRepoInput)
+                        val res = GitHubUpdater.checkForUpdates(githubRepoInput, currentVersion = "2.0.0")
                         updateResult = res
                         isCheckingUpdate = false
                       }
@@ -1018,42 +1068,193 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                   Spacer(modifier = Modifier.height(12.dp))
                   res.onSuccess { release ->
                     Surface(
-                      color = VybeOnlineGreen.copy(alpha = 0.15f),
-                      shape = RoundedCornerShape(10.dp),
-                      border = androidx.compose.foundation.BorderStroke(1.dp, VybeOnlineGreen.copy(alpha = 0.4f)),
-                      modifier = Modifier.fillMaxWidth()
+                      color = if (release.isUpdateAvailable) VybeOnlineGreen.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                      shape = RoundedCornerShape(12.dp),
+                      border = androidx.compose.foundation.BorderStroke(1.dp, if (release.isUpdateAvailable) VybeOnlineGreen.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                      modifier = Modifier.fillMaxWidth().testTag("release_info_card")
                     ) {
-                      Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                          Icon(Icons.Default.CheckCircle, contentDescription = null, tint = VybeOnlineGreen, modifier = Modifier.size(18.dp))
-                          Spacer(modifier = Modifier.width(8.dp))
-                          Text("New Release: ${release.tagName}", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = VybeOnlineGreen)
+                      Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                          modifier = Modifier.fillMaxWidth(),
+                          verticalAlignment = Alignment.CenterVertically,
+                          horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                          Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                              imageVector = if (release.isUpdateAvailable) Icons.Default.NewReleases else Icons.Default.CheckCircle,
+                              contentDescription = null,
+                              tint = if (release.isUpdateAvailable) VybeOnlineGreen else MaterialTheme.colorScheme.primary,
+                              modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                              text = if (release.isUpdateAvailable) "Update Available: ${release.tagName}" else "Up to Date (${release.tagName})",
+                              fontWeight = FontWeight.Bold,
+                              fontSize = 13.sp,
+                              color = if (release.isUpdateAvailable) VybeOnlineGreen else MaterialTheme.colorScheme.primary
+                            )
+                          }
+
+                          if (release.apkSize > 0) {
+                            val sizeMb = String.format(Locale.US, "%.1f MB", release.apkSize / (1024.0 * 1024.0))
+                            Surface(
+                              color = MaterialTheme.colorScheme.surfaceVariant,
+                              shape = RoundedCornerShape(6.dp)
+                            ) {
+                              Text(
+                                text = sizeMb,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                              )
+                            }
+                          }
                         }
+
                         if (release.name.isNotBlank() && release.name != release.tagName) {
                           Text(release.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp))
                         }
+
                         if (release.body.isNotBlank()) {
                           Text(
-                            text = release.body.take(200) + if (release.body.length > 200) "..." else "",
+                            text = release.body.take(240) + if (release.body.length > 240) "..." else "",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 4.dp)
                           )
                         }
 
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Button(
-                          onClick = {
-                            val targetUrl = release.downloadUrl ?: release.htmlUrl
-                            GitHubUpdater.openDownloadUrl(context, targetUrl)
-                          },
-                          colors = ButtonDefaults.buttonColors(containerColor = VybeOnlineGreen),
-                          shape = RoundedCornerShape(8.dp),
-                          modifier = Modifier.fillMaxWidth().testTag("download_update_button")
-                        ) {
-                          Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                          Spacer(modifier = Modifier.width(6.dp))
-                          Text("Download & Install Update", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        // Progress bar during download
+                        if (isDownloadingApk) {
+                          Spacer(modifier = Modifier.height(12.dp))
+                          LinearProgressIndicator(
+                            progress = { downloadProgress },
+                            modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                            color = VybeOnlineGreen,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant
+                          )
+                          Spacer(modifier = Modifier.height(6.dp))
+                          Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                          ) {
+                            val percent = (downloadProgress * 100).toInt()
+                            Text("Downloading update... $percent%", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = VybeOnlineGreen)
+                            if (totalBytes > 0) {
+                              val cur = String.format(Locale.US, "%.1f", downloadedBytes / (1024.0 * 1024.0))
+                              val tot = String.format(Locale.US, "%.1f MB", totalBytes / (1024.0 * 1024.0))
+                              Text("$cur / $tot", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                          }
+                        }
+
+                        // Error message during install/download
+                        installErrorMessage?.let { err ->
+                          Spacer(modifier = Modifier.height(8.dp))
+                          Text(
+                            text = "Error: $err",
+                            color = VybeDanger,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                          )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Actions: Install / Download
+                        val hasApk = release.apkFileName != null || (release.downloadUrl != null && release.downloadUrl.endsWith(".apk", ignoreCase = true))
+
+                        if (downloadedApkFile != null && downloadedApkFile!!.exists()) {
+                          // Already downloaded! Ready to install
+                          Button(
+                            onClick = {
+                              installErrorMessage = null
+                              if (GitHubUpdater.canRequestPackageInstalls(context)) {
+                                val installRes = GitHubUpdater.triggerApkInstall(context, downloadedApkFile!!)
+                                if (installRes.isFailure) {
+                                  installErrorMessage = installRes.exceptionOrNull()?.message
+                                }
+                              } else {
+                                showInstallPermissionDialog = true
+                              }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = VybeOnlineGreen),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("install_now_button")
+                          ) {
+                            Icon(Icons.Default.InstallMobile, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Install In-Place Update Now", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                          }
+                        } else if (hasApk) {
+                          // Download & install button
+                          Button(
+                            onClick = {
+                              val url = release.downloadUrl ?: release.htmlUrl
+                              installErrorMessage = null
+                              isDownloadingApk = true
+                              downloadProgress = 0f
+                              coroutineScope.launch {
+                                val targetFileName = "vybe-${release.tagName}.apk"
+                                val downloadRes = GitHubUpdater.downloadApk(context, url, targetFileName) { prog, down, tot ->
+                                  downloadProgress = prog
+                                  downloadedBytes = down
+                                  totalBytes = tot
+                                }
+                                isDownloadingApk = false
+                                downloadRes.onSuccess { file ->
+                                  downloadedApkFile = file
+                                  if (GitHubUpdater.canRequestPackageInstalls(context)) {
+                                    val installRes = GitHubUpdater.triggerApkInstall(context, file)
+                                    if (installRes.isFailure) {
+                                      installErrorMessage = installRes.exceptionOrNull()?.message
+                                    }
+                                  } else {
+                                    showInstallPermissionDialog = true
+                                  }
+                                }.onFailure { err ->
+                                  installErrorMessage = err.message ?: "Failed to download update APK"
+                                }
+                              }
+                            },
+                            enabled = !isDownloadingApk,
+                            colors = ButtonDefaults.buttonColors(containerColor = VybeOnlineGreen),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("download_update_button")
+                          ) {
+                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                              text = if (isDownloadingApk) "Downloading Update..." else "Download & Install Update",
+                              fontWeight = FontWeight.Bold,
+                              fontSize = 13.sp
+                            )
+                          }
+                        } else {
+                          // No APK asset attached to this git release
+                          Column {
+                            Surface(
+                              color = MaterialTheme.colorScheme.surfaceVariant,
+                              shape = RoundedCornerShape(8.dp),
+                              modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                            ) {
+                              Text(
+                                text = "Notice: This GitHub release does not have an attached .apk asset. Upload your built APK to this GitHub Release to enable in-app updates.",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(8.dp)
+                              )
+                            }
+                            OutlinedButton(
+                              onClick = { GitHubUpdater.openDownloadUrl(context, release.htmlUrl) },
+                              shape = RoundedCornerShape(8.dp),
+                              modifier = Modifier.fillMaxWidth()
+                            ) {
+                              Icon(Icons.Default.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
+                              Spacer(modifier = Modifier.width(6.dp))
+                              Text("View Release on GitHub", fontSize = 12.sp)
+                            }
+                          }
                         }
                       }
                     }
@@ -1064,23 +1265,23 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                       border = androidx.compose.foundation.BorderStroke(1.dp, VybeDanger.copy(alpha = 0.4f)),
                       modifier = Modifier.fillMaxWidth()
                     ) {
-                      Column(modifier = Modifier.padding(10.dp)) {
+                      Column(modifier = Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                           Icon(Icons.Default.Info, contentDescription = null, tint = VybeDanger, modifier = Modifier.size(16.dp))
                           Spacer(modifier = Modifier.width(6.dp))
                           Text("Release Status", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = VybeDanger)
                         }
                         Text(
-                          text = err.message ?: "Could not fetch release.",
+                          text = err.message ?: "Could not fetch release from repository.",
                           fontSize = 11.sp,
                           color = MaterialTheme.colorScheme.onSurface,
                           modifier = Modifier.padding(top = 4.dp)
                         )
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                          text = "Tip: When you push new code to GitHub and create a Release with an APK asset, tapping 'Check for Update' allows instant over-the-air updates.",
+                          text = "Tip: When you publish a new release in your GitHub repository with an APK asset, VYBE detects it and updates the app in-place without losing user data.",
                           fontSize = 10.sp,
-                          color = MaterialTheme.colorScheme.onSurfaceVariant,
-                          modifier = Modifier.padding(top = 4.dp)
+                          color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                       }
                     }
@@ -1171,6 +1372,23 @@ fun SettingsScreen(viewModel: VybeViewModel) {
       dismissButton = {
         TextButton(onClick = { showDeactivateModal = false }) { Text("Cancel") }
       }
+    )
+  }
+  // Install Permission Dialog for Android 8.0+
+  if (showInstallPermissionDialog) {
+    UpdateInstallPermissionDialog(
+      onGrantPermission = {
+        showInstallPermissionDialog = false
+        GitHubUpdater.openInstallPermissionSettings(context)
+      },
+      onDismiss = { showInstallPermissionDialog = false }
+    )
+  }
+
+  // Developer Git Release Guide Dialog
+  if (showGitGuideDialog) {
+    DeveloperGitReleaseGuideDialog(
+      onDismiss = { showGitGuideDialog = false }
     )
   }
 }
