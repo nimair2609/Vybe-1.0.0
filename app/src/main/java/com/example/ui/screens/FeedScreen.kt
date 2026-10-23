@@ -73,7 +73,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
   }
 
   val filteredPosts = remember(posts, selectedMood, feedTab, followingUserIds) {
-    var list = posts.filter { !it.isVybesReel && it.mediaType != com.example.data.model.MediaType.REEL }
+    var list = posts
     if (selectedMood != null) {
       list = list.filter { it.moodZone == selectedMood }
     }
@@ -93,6 +93,23 @@ fun FeedScreen(viewModel: VybeViewModel) {
   }
 
   val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+
+  // Smart Autoplay: Determine the most centered visible post in the feed viewport
+  val activePlayingPostId by remember {
+    derivedStateOf {
+      val layoutInfo = listState.layoutInfo
+      val visibleItems = layoutInfo.visibleItemsInfo
+      if (visibleItems.isEmpty()) null
+      else {
+        val viewportHeight = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
+        val viewportCenter = layoutInfo.viewportStartOffset + (viewportHeight / 2)
+        visibleItems.minByOrNull { item ->
+          val itemCenter = item.offset + (item.size / 2)
+          kotlin.math.abs(itemCenter - viewportCenter)
+        }?.key as? String
+      }
+    }
+  }
 
   LaunchedEffect(Unit) {
     viewModel.feedRefreshTrigger.collect {
@@ -367,8 +384,12 @@ fun FeedScreen(viewModel: VybeViewModel) {
           }
         } else {
           items(filteredPosts, key = { it.id }) { post ->
+            val isFollowed = followingUserIds.contains(post.author.id)
+            val isAutoPlayActive = (post.id == activePlayingPostId)
             PostCard(
               post = post,
+              isFollowing = isFollowed,
+              onFollowClick = { viewModel.toggleFollowUser(post.author.id) },
               onLikeClick = { viewModel.toggleLike(post.id) },
               onSaveClick = { viewModel.toggleSave(post.id) },
               onCommentClick = { viewModel.addComment(post.id, "Appreciating this vibe!") },
@@ -385,7 +406,8 @@ fun FeedScreen(viewModel: VybeViewModel) {
               onRemixClick = { viewModel.navigateTo(Screen.REELS_VIEWER) },
               onDeleteClick = { viewModel.deletePost(post.id) },
               onPostViewed = { viewModel.recordPostView(it) },
-              currentUserId = currentUser?.id
+              currentUserId = currentUser?.id,
+              isAutoPlayActive = isAutoPlayActive
             )
           }
         }

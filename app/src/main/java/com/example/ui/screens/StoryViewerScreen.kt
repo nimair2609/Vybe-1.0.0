@@ -38,6 +38,7 @@ import com.example.data.model.StoryMediaType
 import com.example.ui.VybeViewModel
 import com.example.ui.components.StoryGradients
 import com.example.ui.components.VerificationBadge
+import com.example.ui.components.VideoPlayerView
 import com.example.ui.theme.*
 import kotlinx.coroutines.delay
 

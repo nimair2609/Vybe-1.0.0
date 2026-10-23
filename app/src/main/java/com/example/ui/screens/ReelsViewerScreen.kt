@@ -78,9 +78,11 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
   Box(modifier = Modifier.fillMaxSize()) {
     androidx.compose.foundation.pager.VerticalPager(
       state = pagerState,
+      beyondViewportPageCount = 0,
       modifier = Modifier.fillMaxSize()
     ) { pageIndex ->
       val reelPost = videoPosts[pageIndex]
+      val isPageActive = (pageIndex == pagerState.currentPage)
 
       Box(
         modifier = Modifier
@@ -89,7 +91,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
       ) {
         // View counting policy: Genuine playback of active page for at least 3 seconds
         LaunchedEffect(pageIndex, reelPost.id) {
-          if (pageIndex == pagerState.currentPage) {
+          if (isPageActive) {
             kotlinx.coroutines.delay(3000)
             if (pageIndex == pagerState.currentPage) {
               viewModel.recordPostView(reelPost.id)
@@ -97,7 +99,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
           }
         }
 
-        // Media content: Real video playback with VideoPlayerView or image fallback
+        // Media content: Real video playback with SmartReelVideoPlayer (strictly 1 active video in memory)
         if (reelPost.mediaUrls.isNotEmpty()) {
           val mediaUrl = reelPost.mediaUrls.first()
           val isVideo = reelPost.mediaType == com.example.data.model.MediaType.REEL ||
@@ -106,8 +108,16 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                         mediaUrl.endsWith(".mp4", ignoreCase = true)
 
           if (isVideo) {
-            com.example.ui.components.VideoPlayerView(
+            com.example.ui.components.SmartReelVideoPlayer(
               videoUrl = mediaUrl,
+              isActive = isPageActive,
+              isMuted = isMuted,
+              onMuteToggle = { isMuted = !isMuted },
+              onDoubleTap = {
+                if (!reelPost.isLiked) {
+                  viewModel.toggleLike(reelPost.id)
+                }
+              },
               modifier = Modifier.fillMaxSize()
             )
           } else {
@@ -115,9 +125,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
               model = mediaUrl,
               contentDescription = "Reel content",
               contentScale = ContentScale.Crop,
-              modifier = Modifier
-                .fillMaxSize()
-                .clickable { isPlaying = !isPlaying }
+              modifier = Modifier.fillMaxSize()
             )
           }
         }

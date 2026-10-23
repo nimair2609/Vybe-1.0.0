@@ -244,8 +244,6 @@ class VybeViewModel : ViewModel() {
   fun updateChatTheme(convId: String, theme: String) = repository.updateChatTheme(convId, theme)
   fun createGroupConversation(name: String, members: List<User>) = repository.createGroupConversation(name, members)
   fun updateChatNickname(convId: String, nickname: String) = repository.updateChatNickname(convId, nickname)
-  fun updateChatTheme(convId: String, theme: String) = repository.updateChatTheme(convId, theme)
-  fun retrySendMessage(convId: String, messageIdOrClientId: String) = repository.retrySendMessage(convId, messageIdOrClientId)
   fun toggleMuteChat(convId: String) = repository.toggleMuteChat(convId)
   fun toggleBlockUser(userId: String) = repository.toggleBlockUser(userId)
   fun unblockUser(userId: String) = repository.unblockUser(userId)
@@ -255,7 +253,17 @@ class VybeViewModel : ViewModel() {
   fun hasHiddenChatPinSet(): Boolean = repository.hasHiddenChatPinSet()
   fun getOrCreateConversation(peerUser: User): Conversation = repository.getOrCreateConversation(peerUser)
   fun syncMessagesForConversation(convId: String) = repository.syncMessagesForConversation(convId)
-  fun toggleFollowUser(targetUserId: String): Boolean = repository.toggleFollowUser(targetUserId)
+  fun toggleFollowUser(targetUserId: String): Boolean {
+    val res = repository.toggleFollowUser(targetUserId)
+    val prof = _selectedUserProfile.value
+    if (prof != null && (prof.id == targetUserId || prof.username.equals(targetUserId, ignoreCase = true))) {
+      val updated = repository.allUsers.value.firstOrNull { it.id == targetUserId || it.username.equals(targetUserId, ignoreCase = true) }
+      if (updated != null) {
+        _selectedUserProfile.value = updated
+      }
+    }
+    return res
+  }
   val followingUserIds = repository.followingUserIds
   val blockedUserIds = repository.blockedUserIds
   val restrictedUserIds = repository.restrictedUserIds
@@ -341,7 +349,7 @@ class VybeViewModel : ViewModel() {
   fun reactToPost(postId: String, reaction: VybeReaction) = repository.reactToPost(postId, reaction)
   fun addComment(postId: String, text: String) = repository.addComment(postId, text)
   fun createPost(caption: String, mood: MoodType?, mediaType: MediaType = MediaType.TEXT, imageUrl: String? = null) {
-    repository.createPost(caption, mood, mediaType, imageUrl)
+    repository.createPost(caption, mood, mediaType, imageUrl, isVybes = (mediaType == MediaType.REEL))
     navigateBack()
   }
   fun deletePost(postId: String) = repository.deletePost(postId)

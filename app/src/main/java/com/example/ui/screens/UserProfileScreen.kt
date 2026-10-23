@@ -152,8 +152,13 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
   }
   val isMe = currentUser?.id == user.id || currentUser?.username.equals(user.username, ignoreCase = true)
 
-  val userPosts = remember(posts, user) {
-    posts.filter { it.author.id == user.id || it.author.username.equals(user.username, ignoreCase = true) }
+  val userPosts = remember(posts, user, selectedTab) {
+    val authorPosts = posts.filter { it.author.id == user.id || it.author.username.equals(user.username, ignoreCase = true) }
+    when (selectedTab) {
+      "Reels" -> authorPosts.filter { it.isVybesReel || it.mediaType == com.example.data.model.MediaType.REEL || it.mediaType == com.example.data.model.MediaType.VIDEO }
+      "Saved" -> posts.filter { it.isSaved }
+      else -> authorPosts
+    }
   }
 
   Scaffold(
@@ -387,14 +392,15 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
             val isFollowed = followingUserIds.contains(user.id)
             Row(
               modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.spacedBy(10.dp)
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+              verticalAlignment = Alignment.CenterVertically
             ) {
               Button(
                 onClick = { viewModel.toggleFollowUser(user.id) },
                 colors = ButtonDefaults.buttonColors(
                   containerColor = if (isFollowed) MaterialTheme.colorScheme.surfaceVariant else VybeViolet
                 ),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.weight(1f).testTag("follow_user_button")
               ) {
                 Text(
@@ -406,19 +412,14 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
 
               OutlinedButton(
                 onClick = {
-                  val convs = viewModel.conversations.value
-                  val found = convs.firstOrNull { it.peerUser.id == user.id }
-                  if (found != null) {
-                    viewModel.openConversation(found)
-                  }
+                  viewModel.startConversationWithUser(user)
                 },
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.weight(1f).testTag("message_user_button")
               ) {
                 Text("Message", fontWeight = FontWeight.Bold)
               }
 
-              Spacer(modifier = Modifier.height(8.dp))
               OutlinedButton(
                 onClick = {
                   val shareIntent = Intent(Intent.ACTION_SEND).apply {
@@ -428,12 +429,11 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
                   }
                   context.startActivity(Intent.createChooser(shareIntent, "Share Profile"))
                 },
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth().testTag("share_peer_profile_button")
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                modifier = Modifier.testTag("share_peer_profile_button")
               ) {
-                Icon(Icons.Default.Share, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Share Profile", fontWeight = FontWeight.Bold)
+                Icon(Icons.Default.Share, contentDescription = "Share Profile", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
               }
             }
           } else {

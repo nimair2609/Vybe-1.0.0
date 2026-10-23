@@ -21,7 +21,6 @@ val MoodHappy = Color(0xFFFBBF24)
 val MoodChill = Color(0xFF34D399)
 val MoodHealing = Color(0xFF2DD4BF)
 val MoodFun = Color(0xFFF43F5E)
-val VybeHeartbreakRed = Color(0xFFE74C3C)
 
 // Dark Theme Surfaces (matching Official Dark Brand Sheet)
 val ObsidianBackground = Color(0xFF060714)

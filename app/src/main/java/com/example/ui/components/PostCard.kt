@@ -1,9 +1,15 @@
 package com.example.ui.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -17,14 +23,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
-import androidx.compose.foundation.lazy.items
 import com.example.data.model.MediaType
 import com.example.data.model.Post
 import com.example.data.model.User
@@ -44,6 +55,9 @@ fun PostCard(
   onDeleteClick: (() -> Unit)? = null,
   onPostViewed: ((String) -> Unit)? = null,
   currentUserId: String? = null,
+  isFollowing: Boolean = false,
+  onFollowClick: (() -> Unit)? = null,
+  isAutoPlayActive: Boolean = true,
   modifier: Modifier = Modifier
 ) {
   var showCommentDialog by remember { mutableStateOf(false) }
@@ -51,7 +65,36 @@ fun PostCard(
   var showAnalyticsSheet by remember { mutableStateOf(false) }
   var showDeleteConfirm by remember { mutableStateOf(false) }
   var commentText by remember { mutableStateOf("") }
+  var isCaptionExpanded by remember { mutableStateOf(false) }
   val isAuthor = currentUserId == post.author.id || (currentUserId != null && currentUserId == "u_me" && post.author.id == "u_me")
+
+  // Instagram-style double tap heart pop animation
+  var showHeartPop by remember { mutableStateOf(false) }
+  val heartScale = remember { Animatable(0.2f) }
+  val heartAlpha = remember { Animatable(0f) }
+
+  LaunchedEffect(showHeartPop) {
+    if (showHeartPop) {
+      heartScale.snapTo(0.2f)
+      heartAlpha.snapTo(1f)
+      heartScale.animateTo(
+        targetValue = 1.35f,
+        animationSpec = spring(
+          dampingRatio = Spring.DampingRatioMediumBouncy,
+          stiffness = Spring.StiffnessLow
+        )
+      )
+      heartScale.animateTo(
+        targetValue = 1.0f,
+        animationSpec = tween(140)
+      )
+      heartAlpha.animateTo(
+        targetValue = 0f,
+        animationSpec = tween(280)
+      )
+      showHeartPop = false
+    }
+  }
 
   LaunchedEffect(post.id) {
     // Only count as view if user actually stops on the post for >= 2.5 seconds (prevents fast scroll counting)
@@ -65,13 +108,15 @@ fun PostCard(
       .testTag("post_card_${post.id}"),
     color = MaterialTheme.colorScheme.background
   ) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-      // Header: Author + Verified + Timestamp + Mood Tag
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+      // Header: Author + Verified + Follow button + Timestamp + Mood Tag
       Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 4.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
       ) {
-        VybeAvatar(user = post.author, size = 42.dp, onClick = { onUserClick(post.author) })
+        VybeAvatar(user = post.author, size = 40.dp, onClick = { onUserClick(post.author) })
 
         Spacer(modifier = Modifier.width(10.dp))
 
@@ -85,6 +130,26 @@ fun PostCard(
             )
             Spacer(modifier = Modifier.width(4.dp))
             VerificationBadge(user = post.author)
+
+            // Instagram-style Follow Button right in feed header
+            if (!isAuthor && onFollowClick != null) {
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(
+                text = "•",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(
+                text = if (isFollowing) "Following" else "Follow",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isFollowing) MaterialTheme.colorScheme.onSurfaceVariant else VybeViolet,
+                modifier = Modifier
+                  .clickable { onFollowClick() }
+                  .testTag("follow_header_${post.id}")
+              )
+            }
           }
           Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -100,7 +165,7 @@ fun PostCard(
           }
         }
 
-        // Mood Zone Pill
+        // Mood Zone Pill (Preserved VYBE Flagship Core Feature)
         if (post.moodZone != null) {
           Surface(
             color = post.moodZone.accentColor.copy(alpha = 0.18f),
@@ -175,10 +240,11 @@ fun PostCard(
 
       // Audio Track Pill if any
       if (post.audioTrackTitle != null) {
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(4.dp))
         Surface(
           color = MaterialTheme.colorScheme.surfaceVariant,
-          shape = RoundedCornerShape(8.dp)
+          shape = RoundedCornerShape(8.dp),
+          modifier = Modifier.padding(horizontal = 4.dp)
         ) {
           Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
@@ -200,37 +266,99 @@ fun PostCard(
         }
       }
 
-      // Caption
-      Spacer(modifier = Modifier.height(10.dp))
-      Text(
-        text = post.caption,
-        style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurface,
-        lineHeight = 22.sp
-      )
-
-      // Media Image or Video Player
+      // Media Image or Video Player with Instagram Double-Tap to Like Gesture
       if (post.mediaUrls.isNotEmpty()) {
         val mediaUrl = post.mediaUrls.first()
         val isVideo = post.mediaType == MediaType.VIDEO || post.isVybesReel || mediaUrl.endsWith(".mp4", ignoreCase = true)
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
         if (isVideo) {
-          VideoPlayerView(
-            videoUrl = mediaUrl,
+          Box(
             modifier = Modifier
               .fillMaxWidth()
-              .height(260.dp)
-              .clip(RoundedCornerShape(16.dp))
+              .height(280.dp)
+              .clip(RoundedCornerShape(12.dp))
               .background(Color.Black)
-          )
+              .pointerInput(post.id, post.isLiked) {
+                detectTapGestures(
+                  onDoubleTap = {
+                    if (!post.isLiked) onLikeClick()
+                    showHeartPop = true
+                  }
+                )
+              }
+          ) {
+            VideoPlayerView(
+              videoUrl = mediaUrl,
+              isActive = isAutoPlayActive,
+              modifier = Modifier.fillMaxSize()
+            )
+
+            // Reel Badge if post is a Reel
+            if (post.isVybesReel || post.mediaType == MediaType.REEL) {
+              Surface(
+                color = Color.Black.copy(alpha = 0.65f),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                  .align(Alignment.TopStart)
+                  .padding(8.dp)
+              ) {
+                Row(
+                  modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Icon(
+                    imageVector = Icons.Default.PlayCircle,
+                    contentDescription = null,
+                    tint = VybeMagenta,
+                    modifier = Modifier.size(13.dp)
+                  )
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text(
+                    text = "REEL",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                  )
+                }
+              }
+            }
+
+            // Double tap scaling heart animation overlay
+            if (heartAlpha.value > 0.01f) {
+              Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+              ) {
+                Icon(
+                  imageVector = Icons.Filled.Favorite,
+                  contentDescription = null,
+                  tint = Color.White.copy(alpha = heartAlpha.value),
+                  modifier = Modifier
+                    .size(90.dp)
+                    .graphicsLayer(
+                      scaleX = heartScale.value,
+                      scaleY = heartScale.value
+                    )
+                )
+              }
+            }
+          }
         } else {
           Box(
             modifier = Modifier
               .fillMaxWidth()
-              .height(240.dp)
-              .clip(RoundedCornerShape(16.dp))
+              .height(280.dp)
+              .clip(RoundedCornerShape(12.dp))
               .background(MaterialTheme.colorScheme.surfaceVariant)
+              .pointerInput(post.id, post.isLiked) {
+                detectTapGestures(
+                  onDoubleTap = {
+                    if (!post.isLiked) onLikeClick()
+                    showHeartPop = true
+                  }
+                )
+              }
           ) {
             AsyncImage(
               model = mediaUrl,
@@ -238,88 +366,101 @@ fun PostCard(
               contentScale = ContentScale.Crop,
               modifier = Modifier.fillMaxSize()
             )
+
+            // Double tap scaling heart animation overlay
+            if (heartAlpha.value > 0.01f) {
+              Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+              ) {
+                Icon(
+                  imageVector = Icons.Filled.Favorite,
+                  contentDescription = null,
+                  tint = Color.White.copy(alpha = heartAlpha.value),
+                  modifier = Modifier
+                    .size(90.dp)
+                    .graphicsLayer(
+                      scaleX = heartScale.value,
+                      scaleY = heartScale.value
+                    )
+                )
+              }
+            }
           }
         }
       }
 
-      // Action Bar: Likes, Comments, Views, Saves, Remix, Share
-      Spacer(modifier = Modifier.height(12.dp))
+      // Instagram-style Action Bar: Likes, Comments, Share, Views, Remix, Save
+      Spacer(modifier = Modifier.height(6.dp))
       Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 2.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-          // Like Button
-          Surface(
-            color = if (post.isLiked) VybeMagenta.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.clickable { onLikeClick() }
+          // Like Button (Heart)
+          IconButton(
+            onClick = {
+              onLikeClick()
+              if (!post.isLiked) showHeartPop = true
+            },
+            modifier = Modifier.size(38.dp).testTag("like_button_${post.id}")
           ) {
-            Row(
-              modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Icon(
-                imageVector = if (post.isLiked) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
-                contentDescription = "Like",
-                tint = if (post.isLiked) VybeMagenta else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(17.dp).testTag("like_button_${post.id}")
-              )
-              Spacer(modifier = Modifier.width(5.dp))
-              Text(
-                text = "${post.likesCount}",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-              )
-            }
+            Icon(
+              imageVector = if (post.isLiked) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
+              contentDescription = "Like",
+              tint = if (post.isLiked) VybeMagenta else MaterialTheme.colorScheme.onSurface,
+              modifier = Modifier.size(24.dp)
+            )
           }
 
-          Spacer(modifier = Modifier.width(8.dp))
+          Spacer(modifier = Modifier.width(4.dp))
 
-          // Comment Button
-          Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.clickable { showCommentDialog = true }
+          // Comment Button (Speech bubble)
+          IconButton(
+            onClick = { showCommentDialog = true },
+            modifier = Modifier.size(38.dp).testTag("comment_button_${post.id}")
           ) {
-            Row(
-              modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Icon(
-                imageVector = Icons.Outlined.ChatBubbleOutline,
-                contentDescription = "Comment",
-                tint = VybeViolet,
-                modifier = Modifier.size(17.dp).testTag("comment_button_${post.id}")
-              )
-              Spacer(modifier = Modifier.width(5.dp))
-              Text(
-                text = "${post.commentsCount}",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-              )
-            }
+            Icon(
+              imageVector = Icons.Outlined.ChatBubbleOutline,
+              contentDescription = "Comment",
+              tint = MaterialTheme.colorScheme.onSurface,
+              modifier = Modifier.size(23.dp)
+            )
           }
 
-          Spacer(modifier = Modifier.width(8.dp))
+          Spacer(modifier = Modifier.width(4.dp))
 
-          // Views Pill (displays views count)
+          // Share / Direct Message (Paper plane)
+          IconButton(
+            onClick = onShareClick,
+            modifier = Modifier.size(38.dp).testTag("share_button_${post.id}")
+          ) {
+            Icon(
+              imageVector = Icons.AutoMirrored.Filled.Send,
+              contentDescription = "Share",
+              tint = MaterialTheme.colorScheme.onSurface,
+              modifier = Modifier.size(21.dp)
+            )
+          }
+
+          // VYBE Core Feature: Views Telemetry Pill
+          Spacer(modifier = Modifier.width(6.dp))
           Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-            shape = RoundedCornerShape(14.dp)
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            shape = RoundedCornerShape(12.dp)
           ) {
             Row(
-              modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+              modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
               verticalAlignment = Alignment.CenterVertically
             ) {
               Icon(
                 imageVector = Icons.Default.Visibility,
                 contentDescription = "Views",
                 tint = VybeCyan,
-                modifier = Modifier.size(15.dp)
+                modifier = Modifier.size(13.dp)
               )
               Spacer(modifier = Modifier.width(4.dp))
               Text(
@@ -333,75 +474,125 @@ fun PostCard(
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-          // Remix Action
-          IconButton(
-            onClick = { onRemixClick?.invoke() },
-            modifier = Modifier.size(34.dp).testTag("remix_button_${post.id}")
-          ) {
-            Icon(
-              imageVector = Icons.Default.Transform,
-              contentDescription = "Remix chain",
-              tint = VybeCyan,
-              modifier = Modifier.size(18.dp)
-            )
+          // VYBE Core Feature: Remix Chain
+          if (onRemixClick != null) {
+            IconButton(
+              onClick = { onRemixClick() },
+              modifier = Modifier.size(36.dp).testTag("remix_button_${post.id}")
+            ) {
+              Icon(
+                imageVector = Icons.Default.Transform,
+                contentDescription = "Remix chain",
+                tint = VybeCyan,
+                modifier = Modifier.size(19.dp)
+              )
+            }
           }
 
           // Bookmark Save Button
           IconButton(
             onClick = onSaveClick,
-            modifier = Modifier.size(34.dp).testTag("save_button_${post.id}")
+            modifier = Modifier.size(38.dp).testTag("save_button_${post.id}")
           ) {
             Icon(
               imageVector = if (post.isSaved) Icons.Default.Bookmark else Icons.Outlined.BookmarkBorder,
               contentDescription = "Save",
-              tint = if (post.isSaved) VybeViolet else MaterialTheme.colorScheme.onSurfaceVariant,
-              modifier = Modifier.size(18.dp)
-            )
-          }
-
-          // Share Button
-          IconButton(
-            onClick = onShareClick,
-            modifier = Modifier.size(34.dp).testTag("share_button_${post.id}")
-          ) {
-            Icon(
-              imageVector = Icons.Default.Share,
-              contentDescription = "Share",
-              tint = MaterialTheme.colorScheme.onSurfaceVariant,
-              modifier = Modifier.size(18.dp)
+              tint = if (post.isSaved) VybeViolet else MaterialTheme.colorScheme.onSurface,
+              modifier = Modifier.size(23.dp)
             )
           }
         }
       }
 
-      // Inline comments preview
-      if (post.comments.isNotEmpty()) {
-        Spacer(modifier = Modifier.height(8.dp))
-        val firstComment = post.comments.first()
-        Surface(
-          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-          shape = RoundedCornerShape(10.dp),
-          modifier = Modifier.fillMaxWidth().clickable { showCommentDialog = true }
-        ) {
-          Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
+      // Instagram-style Likes Count Line (e.g. "42 likes")
+      Text(
+        text = if (post.likesCount == 1) "1 like" else "${post.likesCount} likes",
+        style = MaterialTheme.typography.bodyMedium,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+      )
+
+      // Instagram-style Caption with Username
+      if (post.caption.isNotBlank()) {
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) {
+          Text(
+            buildAnnotatedString {
+              withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)) {
+                append(post.author.username)
+                append(" ")
+              }
+              withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurface)) {
+                append(post.caption)
+              }
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            lineHeight = 20.sp,
+            maxLines = if (isCaptionExpanded) Int.MAX_VALUE else 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.clickable { isCaptionExpanded = !isCaptionExpanded }
+          )
+          if (!isCaptionExpanded && post.caption.length > 80) {
             Text(
-              text = firstComment.author.displayName,
-              fontWeight = FontWeight.Bold,
-              fontSize = 12.sp,
-              color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-              text = firstComment.content,
+              text = "more",
               fontSize = 12.sp,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
-              maxLines = 1,
-              modifier = Modifier.weight(1f)
+              fontWeight = FontWeight.Medium,
+              modifier = Modifier.clickable { isCaptionExpanded = true }
             )
           }
+        }
+      }
+
+      // Instagram-style "View all X comments"
+      if (post.comments.isNotEmpty()) {
+        Text(
+          text = if (post.comments.size == 1) "View 1 comment" else "View all ${post.comments.size} comments",
+          fontSize = 13.sp,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          modifier = Modifier
+            .clickable { showCommentDialog = true }
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .testTag("view_comments_${post.id}")
+        )
+      }
+
+      // Instagram-style Quick Inline Reactions
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 8.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Text(
+          text = "Add a comment...",
+          fontSize = 13.sp,
+          color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+          modifier = Modifier
+            .weight(1f)
+            .clickable { showCommentDialog = true }
+            .padding(vertical = 4.dp)
+        )
+        IconButton(
+          onClick = {
+            onLikeClick()
+            if (!post.isLiked) showHeartPop = true
+          },
+          modifier = Modifier.size(28.dp)
+        ) {
+          Text("❤️", fontSize = 14.sp)
+        }
+        IconButton(
+          onClick = { onAddComment?.invoke("🙌 Amazing vibe!") },
+          modifier = Modifier.size(28.dp)
+        ) {
+          Text("🙌", fontSize = 14.sp)
+        }
+        IconButton(
+          onClick = { onAddComment?.invoke("🔥 Pure fire!") },
+          modifier = Modifier.size(28.dp)
+        ) {
+          Text("🔥", fontSize = 14.sp)
         }
       }
     }
@@ -720,12 +911,46 @@ fun PostCard(
 @Composable
 fun VideoPlayerView(
   videoUrl: String,
-  modifier: Modifier = Modifier
+  modifier: Modifier = Modifier,
+  isActive: Boolean = true
 ) {
   var isPlaying by remember { mutableStateOf(true) }
   var isMuted by remember { mutableStateOf(true) }
   var videoViewRef by remember { mutableStateOf<android.widget.VideoView?>(null) }
   var mediaPlayerRef by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
+  var isPrepared by remember { mutableStateOf(false) }
+
+  // Smart Autoplay / Pause: React to isActive changes when scrolled in or out of viewport
+  LaunchedEffect(isActive) {
+    val vv = videoViewRef
+    if (vv != null) {
+      if (isActive) {
+        if (!vv.isPlaying && isPlaying && isPrepared) {
+          try {
+            vv.start()
+          } catch (_: Exception) {}
+        }
+      } else {
+        if (vv.isPlaying) {
+          try {
+            vv.pause()
+          } catch (_: Exception) {}
+        }
+      }
+    }
+  }
+
+  // Safe resource disposal when scrolled away or post unmounted
+  DisposableEffect(videoUrl) {
+    onDispose {
+      try {
+        videoViewRef?.stopPlayback()
+        mediaPlayerRef?.release()
+        mediaPlayerRef = null
+        videoViewRef = null
+      } catch (_: Exception) {}
+    }
+  }
 
   Box(
     modifier = modifier,
@@ -738,9 +963,12 @@ fun VideoPlayerView(
           setOnPreparedListener { mp ->
             mediaPlayerRef = mp
             mp.isLooping = true
-            mp.setVolume(0.0f, 0.0f) // polite autoplay muted
-            start()
-            isPlaying = true
+            val vol = if (isMuted) 0.0f else 1.0f
+            mp.setVolume(vol, vol)
+            isPrepared = true
+            if (isActive && isPlaying) {
+              start()
+            }
           }
           setOnCompletionListener {
             isPlaying = false

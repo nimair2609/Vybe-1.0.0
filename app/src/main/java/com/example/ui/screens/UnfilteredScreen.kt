@@ -64,7 +64,6 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
   val unfilteredPosts by viewModel.unfilteredPosts.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
 
-  val context = LocalContext.current
   var showCreateSheet by remember { mutableStateOf(false) }
   var postCaption by remember { mutableStateOf("") }
   var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
