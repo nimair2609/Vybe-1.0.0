@@ -240,6 +240,8 @@ class VybeViewModel : ViewModel() {
   fun addGroupMember(convId: String, user: User) = repository.addGroupMember(convId, user)
   fun removeGroupMember(convId: String, userId: String) = repository.removeGroupMember(convId, userId)
   fun sendVoiceMessage(convId: String, duration: String = "0:08") = repository.sendVoiceMessage(convId, duration)
+  fun retrySendMessage(convId: String, msgId: String) = repository.retrySendMessage(convId, msgId)
+  fun updateChatTheme(convId: String, theme: String) = repository.updateChatTheme(convId, theme)
   fun createGroupConversation(name: String, members: List<User>) = repository.createGroupConversation(name, members)
   fun updateChatNickname(convId: String, nickname: String) = repository.updateChatNickname(convId, nickname)
   fun updateChatTheme(convId: String, theme: String) = repository.updateChatTheme(convId, theme)

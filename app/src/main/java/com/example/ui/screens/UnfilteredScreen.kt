@@ -55,6 +55,8 @@ import com.example.util.MediaUtils
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UnfilteredScreen(viewModel: VybeViewModel) {
+  val context = LocalContext.current
+
   BackHandler {
     viewModel.navigateBack()
   }

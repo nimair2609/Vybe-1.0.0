@@ -1432,4 +1432,4 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
         }
       )
     }
-  }
+}
