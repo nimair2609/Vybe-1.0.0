@@ -5,6 +5,7 @@ import android.graphics.SurfaceTexture
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.net.Uri
+import android.provider.Settings
 import android.view.Surface
 import android.view.TextureView
 import androidx.compose.foundation.background
@@ -17,7 +18,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
@@ -38,7 +38,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
 enum class VideoFitMode {
-  /** Scales proportionally inside container without cropping important content (ideal for landscape/portrait in stories & feed). */
+  /** Scales proportionally inside container without cropping important content (ideal for landscape/portrait in stories & reels). */
   FIT_CONTAIN,
   /** Fills container proportionally from center without stretching (ideal when container already matches aspect ratio). */
   COVER_PROPORTIONAL
@@ -47,6 +47,12 @@ enum class VideoFitMode {
 /**
  * Reusable, lifecycle-safe video player built on `TextureView` + `MediaPlayer` so it clips cleanly
  * inside Compose cards, reels, stories, and post-creation previews without `SurfaceView` Z-order black boxes.
+ *
+ * Enforces strict single-video viewport autoplay:
+ * - Starts automatically when [autoPlay] becomes true (muted by default in feed).
+ * - Immediately pauses when [autoPlay] becomes false, [isPausedExternal] becomes true, or lifecycle pauses.
+ * - Respects manual user pause ([manuallyPausedByUser]) and system reduced-motion preferences when [respectReducedMotion] is true.
+ * - Prevents repeated initialization and releases native decoders cleanly on dispose.
  */
 @Composable
 fun VybeVideoPlayer(
@@ -56,6 +62,7 @@ fun VybeVideoPlayer(
   isLooping: Boolean = true,
   initialMuted: Boolean = false,
   isPausedExternal: Boolean = false,
+  respectReducedMotion: Boolean = false,
   fitMode: VideoFitMode = VideoFitMode.FIT_CONTAIN,
   showControls: Boolean = true,
   onAspectRatioDetected: ((Float) -> Unit)? = null,
@@ -66,11 +73,30 @@ fun VybeVideoPlayer(
   val context = LocalContext.current
   val lifecycleOwner = LocalLifecycleOwner.current
 
+  val isSystemReducedMotion = remember(context, respectReducedMotion) {
+    if (!respectReducedMotion) {
+      false
+    } else {
+      try {
+        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+      } catch (_: Exception) {
+        false
+      }
+    }
+  }
+
   var isBuffering by remember(videoUrl) { mutableStateOf(true) }
-  var isPlaying by remember(videoUrl) { mutableStateOf(autoPlay) }
+  var isPrepared by remember(videoUrl) { mutableStateOf(false) }
+  var isPlaying by remember(videoUrl) { mutableStateOf(false) }
+  var manuallyPausedByUser by remember(videoUrl) { mutableStateOf(false) }
   var isMuted by remember(videoUrl) { mutableStateOf(initialMuted) }
   var playbackError by remember(videoUrl) { mutableStateOf<String?>(null) }
   var retryNonce by remember { mutableIntStateOf(0) }
+
+  // Keep latest state references accessible inside async MediaPlayer callbacks
+  val latestAutoPlay by rememberUpdatedState(autoPlay)
+  val latestPausedExternal by rememberUpdatedState(isPausedExternal)
+  val latestMuted by rememberUpdatedState(isMuted)
 
   var videoWidth by remember(videoUrl) { mutableIntStateOf(0) }
   var videoHeight by remember(videoUrl) { mutableIntStateOf(0) }
@@ -80,6 +106,7 @@ fun VybeVideoPlayer(
   val mediaPlayerRef = remember { mutableStateOf<MediaPlayer?>(null) }
   val textureViewRef = remember { mutableStateOf<TextureView?>(null) }
   val activeSurfaceRef = remember { mutableStateOf<Surface?>(null) }
+  val boundUrlRef = remember { mutableStateOf<String?>(null) }
 
   LaunchedEffect(initialMuted) {
     isMuted = initialMuted
@@ -110,7 +137,6 @@ fun VybeVideoPlayer(
         scaleY = viewRatio / videoRatio
       }
     } else {
-      // FIT_CONTAIN: zero distortion, zero cropping of important content
       if (videoRatio > viewRatio) {
         scaleX = 1f
         scaleY = viewRatio / videoRatio
@@ -125,12 +151,29 @@ fun VybeVideoPlayer(
     tv.setTransform(matrix)
   }
 
-  fun configureAndStartPlayer(surface: Surface) {
+  fun releaseCurrentPlayer() {
     mediaPlayerRef.value?.let { old ->
-      try { old.stop() } catch (_: Exception) {}
-      try { old.release() } catch (_: Exception) {}
+      try {
+        if (old.isPlaying) old.stop()
+      } catch (_: Exception) {}
+      try {
+        old.reset()
+      } catch (_: Exception) {}
+      try {
+        old.release()
+      } catch (_: Exception) {}
     }
     mediaPlayerRef.value = null
+    boundUrlRef.value = null
+    isPrepared = false
+    isPlaying = false
+  }
+
+  fun configureAndStartPlayer(surface: Surface, forceReload: Boolean = false) {
+    if (!forceReload && boundUrlRef.value == videoUrl && mediaPlayerRef.value != null && playbackError == null) {
+      return
+    }
+    releaseCurrentPlayer()
     isBuffering = true
     playbackError = null
 
@@ -143,6 +186,8 @@ fun VybeVideoPlayer(
     try {
       val mp = MediaPlayer()
       mediaPlayerRef.value = mp
+      boundUrlRef.value = videoUrl
+
       mp.setAudioAttributes(
         AudioAttributes.Builder()
           .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
@@ -151,7 +196,7 @@ fun VybeVideoPlayer(
       )
       mp.setSurface(surface)
       mp.isLooping = isLooping
-      val vol = if (isMuted) 0f else 1f
+      val vol = if (latestMuted) 0f else 1f
       mp.setVolume(vol, vol)
 
       mp.setOnVideoSizeChangedListener { _, w, h ->
@@ -174,6 +219,7 @@ fun VybeVideoPlayer(
       }
 
       mp.setOnPreparedListener { player ->
+        isPrepared = true
         isBuffering = false
         val w = player.videoWidth
         val h = player.videoHeight
@@ -187,13 +233,27 @@ fun VybeVideoPlayer(
         if (dur > 0) {
           onDurationDetected?.invoke(dur)
         }
-        val currentVol = if (isMuted) 0f else 1f
+        val currentVol = if (latestMuted) 0f else 1f
         player.setVolume(currentVol, currentVol)
-        if (autoPlay && !isPausedExternal) {
-          player.start()
-          isPlaying = true
+
+        val isLifecycleResumed = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        val shouldPlayNow = latestAutoPlay &&
+          !latestPausedExternal &&
+          !manuallyPausedByUser &&
+          !isSystemReducedMotion &&
+          isLifecycleResumed
+
+        if (shouldPlayNow) {
+          try {
+            player.start()
+            isPlaying = true
+          } catch (_: Exception) {
+            isPlaying = false
+          }
         } else {
-          player.seekTo(1)
+          try {
+            player.seekTo(1)
+          } catch (_: Exception) {}
           isPlaying = false
         }
       }
@@ -206,6 +266,7 @@ fun VybeVideoPlayer(
       }
 
       mp.setOnErrorListener { _, what, extra ->
+        isPrepared = false
         isBuffering = false
         isPlaying = false
         playbackError = "Unable to play video ($what/$extra)."
@@ -219,22 +280,34 @@ fun VybeVideoPlayer(
         mp.setDataSource(videoUrl)
       }
       mp.prepareAsync()
-    } catch (e: Exception) {
+    } catch (_: Exception) {
+      isPrepared = false
       isBuffering = false
       isPlaying = false
       playbackError = "Video could not be loaded."
     }
   }
 
-  // React to external pause (e.g., long-press hold on StoryViewer or dialog open)
-  LaunchedEffect(isPausedExternal) {
+  // React dynamically whenever viewport visibility (`autoPlay`) or external pause changes
+  LaunchedEffect(autoPlay, isPausedExternal, isPrepared) {
+    if (!autoPlay) {
+      // Leaving viewport resets manual pause so scrolling back later behaves predictably
+      manuallyPausedByUser = false
+    }
     val mp = mediaPlayerRef.value ?: return@LaunchedEffect
+    if (!isPrepared || playbackError != null) return@LaunchedEffect
+
     try {
-      if (isPausedExternal && mp.isPlaying) {
-        mp.pause()
+      val shouldPause = !autoPlay || isPausedExternal
+      if (shouldPause) {
+        if (mp.isPlaying) {
+          mp.pause()
+        }
         isPlaying = false
-      } else if (!isPausedExternal && autoPlay && !mp.isPlaying && playbackError == null && !isBuffering) {
-        mp.start()
+      } else if (!manuallyPausedByUser && !isSystemReducedMotion && lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+        if (!mp.isPlaying) {
+          mp.start()
+        }
         isPlaying = true
       }
     } catch (_: Exception) {}
@@ -244,27 +317,29 @@ fun VybeVideoPlayer(
   LaunchedEffect(videoUrl, retryNonce) {
     val surface = activeSurfaceRef.value
     if (surface != null && surface.isValid) {
-      configureAndStartPlayer(surface)
+      configureAndStartPlayer(surface, forceReload = retryNonce > 0)
     }
   }
 
-  // Pause cleanly when app moves to background
+  // Pause cleanly when app moves to background and release decoder on dispose
   DisposableEffect(lifecycleOwner) {
     val observer = LifecycleEventObserver { _, event ->
       val mp = mediaPlayerRef.value
       when (event) {
-        Lifecycle.Event.ON_PAUSE -> {
+        Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> {
           try {
-            if (mp?.isPlaying == true) {
+            if (isPrepared && mp?.isPlaying == true) {
               mp.pause()
-              isPlaying = false
             }
+            isPlaying = false
           } catch (_: Exception) {}
         }
         Lifecycle.Event.ON_RESUME -> {
           try {
-            if (autoPlay && !isPausedExternal && mp != null && !isBuffering && playbackError == null) {
-              mp.start()
+            if (isPrepared && latestAutoPlay && !latestPausedExternal && !manuallyPausedByUser && !isSystemReducedMotion && mp != null && playbackError == null) {
+              if (!mp.isPlaying) {
+                mp.start()
+              }
               isPlaying = true
             }
           } catch (_: Exception) {}
@@ -275,11 +350,7 @@ fun VybeVideoPlayer(
     lifecycleOwner.lifecycle.addObserver(observer)
     onDispose {
       lifecycleOwner.lifecycle.removeObserver(observer)
-      mediaPlayerRef.value?.let { player ->
-        try { player.stop() } catch (_: Exception) {}
-        try { player.release() } catch (_: Exception) {}
-      }
-      mediaPlayerRef.value = null
+      releaseCurrentPlayer()
       activeSurfaceRef.value?.let { s ->
         try { s.release() } catch (_: Exception) {}
       }
@@ -314,11 +385,7 @@ fun VybeVideoPlayer(
             }
 
             override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
-              mediaPlayerRef.value?.let { player ->
-                try { player.stop() } catch (_: Exception) {}
-                try { player.release() } catch (_: Exception) {}
-              }
-              mediaPlayerRef.value = null
+              releaseCurrentPlayer()
               activeSurfaceRef.value?.let { s ->
                 try { s.release() } catch (_: Exception) {}
               }
@@ -352,12 +419,14 @@ fun VybeVideoPlayer(
               indication = null
             ) {
               val mp = mediaPlayerRef.value
-              if (mp != null && playbackError == null && !isBuffering) {
+              if (mp != null && isPrepared && playbackError == null) {
                 try {
                   if (mp.isPlaying) {
                     mp.pause()
                     isPlaying = false
+                    manuallyPausedByUser = true
                   } else {
+                    manuallyPausedByUser = false
                     mp.start()
                     isPlaying = true
                   }
@@ -397,7 +466,7 @@ fun VybeVideoPlayer(
         OutlinedButton(
           onClick = { retryNonce += 1 },
           contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
-          modifier = Modifier.defaultMinSize(minHeight = 36.dp)
+          modifier = Modifier.defaultMinSize(minHeight = 40.dp)
         ) {
           Icon(Icons.Default.Refresh, contentDescription = "Retry video", tint = Color.White, modifier = Modifier.size(16.dp))
           Spacer(Modifier.width(6.dp))
@@ -414,10 +483,13 @@ fun VybeVideoPlayer(
             .background(Color.Black.copy(alpha = 0.55f))
             .clickable {
               val mp = mediaPlayerRef.value
-              try {
-                mp?.start()
-                isPlaying = true
-              } catch (_: Exception) {}
+              if (mp != null && isPrepared) {
+                try {
+                  manuallyPausedByUser = false
+                  mp.start()
+                  isPlaying = true
+                } catch (_: Exception) {}
+              }
             },
           contentAlignment = Alignment.Center
         ) {

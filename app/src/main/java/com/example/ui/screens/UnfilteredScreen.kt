@@ -41,6 +41,7 @@ import com.example.ui.VybeViewModel
 import com.example.ui.components.VybeAvatar
 import com.example.ui.theme.*
 import com.example.util.MediaUtils
+import com.example.util.rememberRelativeTimestamp
 
 /**
  * VYBE UNFILTERED 2.0
@@ -277,8 +278,9 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
                 VybeAvatar(user = post.author, size = 36.dp)
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
+                  val relativePostTime = rememberRelativeTimestamp(post.createdAtIso, post.timestamp)
                   Text(post.author.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                  Text("@${post.author.username} • ${post.timestamp}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  Text("@${post.author.username} • $relativePostTime", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
               }
               if (post.moodZone != null) {
@@ -370,10 +372,16 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
                   .padding(12.dp)
               ) {
                 post.comments.forEach { c ->
-                  Row(modifier = Modifier.padding(vertical = 4.dp)) {
+                  val relativeCommentTime = rememberRelativeTimestamp(c.createdAtIso, c.timestamp)
+                  Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
                     Text(c.author.displayName, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = VybeViolet)
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(c.content, fontSize = 11.sp)
+                    Text(c.content, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(relativeCommentTime, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                   }
                 }
                 Spacer(modifier = Modifier.height(6.dp))
@@ -455,7 +463,10 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
                     ?: (capturedBitmap?.let { bmp ->
                       MediaUtils.saveBitmapToCache(context, bmp, "unfilter_raw")?.toString()
                     })
-                    ?: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=600"
+                  if (realMediaUrl.isNullOrBlank()) {
+                    viewModel.postBannerMessage("Capture or select an authentic photo before publishing.")
+                    return@Button
+                  }
 
                   viewModel.createUnfilteredPost(postCaption.trim(), realMediaUrl)
                   postCaption = ""
@@ -627,7 +638,10 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
                   ?: (capturedBitmap?.let { bmp ->
                     MediaUtils.saveBitmapToCache(context, bmp, "unfilter_raw")?.toString()
                   })
-                  ?: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=600"
+                if (realMediaUrl.isNullOrBlank()) {
+                  viewModel.postBannerMessage("Capture or select an authentic photo before publishing.")
+                  return@Button
+                }
 
                 viewModel.createUnfilteredPost(postCaption.trim(), realMediaUrl)
                 postCaption = ""

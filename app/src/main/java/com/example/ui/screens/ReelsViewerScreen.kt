@@ -37,8 +37,10 @@ import com.example.ui.VybeViewModel
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VideoFitMode
 import com.example.ui.components.VybeAvatar
+import com.example.ui.components.VybeLikeIcon
 import com.example.ui.components.VybeVideoPlayer
 import com.example.ui.theme.*
+import com.example.util.rememberRelativeTimestamp
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,7 +65,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
   }
 
   var isPlaying by remember { mutableStateOf(true) }
-  var isMuted by remember { mutableStateOf(false) }
+  var isMuted by remember { mutableStateOf(true) }
   var showShareInboxSheet by remember { mutableStateOf(false) }
   var showCommentsSheet by remember { mutableStateOf(false) }
   var reelCommentText by remember { mutableStateOf("") }
@@ -73,7 +75,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
   // Strictly render real video reels only
   val videoPosts = remember(posts) {
     posts.filter { post ->
-      post.mediaUrls.isNotEmpty() && (
+      !post.isArchived && post.mediaUrls.isNotEmpty() && (
         post.mediaType == MediaType.REEL ||
           post.mediaType == MediaType.VIDEO ||
           post.isVybesReel
@@ -149,8 +151,8 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
 
   val pagerState = rememberPagerState(pageCount = { videoPosts.size })
 
-  LaunchedEffect(pagerState.currentPage, videoPosts.size) {
-    val activeReel = videoPosts.getOrNull(pagerState.currentPage) ?: return@LaunchedEffect
+  LaunchedEffect(pagerState.settledPage, videoPosts.size) {
+    val activeReel = videoPosts.getOrNull(pagerState.settledPage) ?: return@LaunchedEffect
     isPlaying = true
     viewModel.recordPostView(activeReel.id)
     viewModel.loadCommentsForPost(activeReel.id)
@@ -164,10 +166,12 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
   ) {
     VerticalPager(
       state = pagerState,
+      beyondViewportPageCount = 0,
       modifier = Modifier.fillMaxSize()
     ) { pageIndex ->
       val reelPost = videoPosts[pageIndex]
-      val isCurrentPage = pageIndex == pagerState.currentPage
+      val isCurrentPage = pageIndex == pagerState.settledPage
+      val reelRelativeTime = rememberRelativeTimestamp(reelPost.createdAtIso, reelPost.timestamp)
 
       Box(
         modifier = Modifier
@@ -232,9 +236,10 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
 
             Text(
               text = "VYBES",
-              style = MaterialTheme.typography.titleMedium,
+              fontFamily = SyneFontFamily,
+              fontSize = 19.sp,
               fontWeight = FontWeight.ExtraBold,
-              letterSpacing = 1.sp,
+              letterSpacing = 1.4.sp,
               color = Color.White
             )
 
@@ -272,10 +277,10 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                 .background(Color.Black.copy(alpha = 0.5f))
                 .testTag("reel_like_button")
             ) {
-              Icon(
-                imageVector = if (reelPost.isLiked) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
-                contentDescription = "Like reel",
-                tint = if (reelPost.isLiked) VybeMagenta else Color.White
+              VybeLikeIcon(
+                isLiked = reelPost.isLiked,
+                size = 22.dp,
+                inactiveTint = Color.White
               )
             }
             Text(
@@ -377,6 +382,13 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                   )
                   Spacer(modifier = Modifier.width(4.dp))
                   VerificationBadge(user = reelPost.author)
+                  if (reelRelativeTime.isNotBlank()) {
+                    Text(
+                      text = " • $reelRelativeTime",
+                      color = Color.White.copy(alpha = 0.75f),
+                      fontSize = 12.sp
+                    )
+                  }
                 }
                 if (!reelPost.locationName.isNullOrBlank()) {
                   Text(
@@ -637,6 +649,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                 verticalArrangement = Arrangement.spacedBy(10.dp)
               ) {
                 items(currentReel.comments, key = { it.id }) { c ->
+                  val commentTime = rememberRelativeTimestamp(c.createdAtIso, c.timestamp)
                   Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.Top
@@ -646,7 +659,9 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                     Column(modifier = Modifier.weight(1f)) {
                       Text(c.author.displayName, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                       Text(c.content, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
-                      Text(c.timestamp, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      if (commentTime.isNotBlank()) {
+                        Text(commentTime, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      }
                     }
                   }
                 }

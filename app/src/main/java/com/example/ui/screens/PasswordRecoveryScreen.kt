@@ -132,6 +132,15 @@ fun PasswordRecoveryScreen(viewModel: VybeViewModel) {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
           )
+          Spacer(Modifier.height(24.dp))
+          TextButton(
+            onClick = { viewModel.exitPasswordRecoveryToLogin() },
+            modifier = Modifier
+              .heightIn(min = 48.dp)
+              .testTag("recovery_cancel_validating_login_button")
+          ) {
+            Text("Cancel & Back to Login")
+          }
         }
 
         is PasswordRecoveryState.ReadyForNewPassword,
@@ -251,6 +260,7 @@ fun PasswordRecoveryScreen(viewModel: VybeViewModel) {
 
           Button(
             onClick = {
+              if (isSubmitting) return@Button
               if (newPassword.length < 8) {
                 inlineError = "New password must be at least 8 characters long."
                 return@Button
@@ -262,10 +272,13 @@ fun PasswordRecoveryScreen(viewModel: VybeViewModel) {
               isBusy = true
               inlineError = null
               scope.launch {
-                val (ok, msg) = viewModel.submitRecoveredNewPassword(newPassword, confirmPassword)
-                isBusy = false
-                if (!ok) {
-                  inlineError = msg
+                try {
+                  val (ok, msg) = viewModel.submitRecoveredNewPassword(newPassword, confirmPassword)
+                  if (!ok) {
+                    inlineError = msg
+                  }
+                } finally {
+                  isBusy = false
                 }
               }
             },
@@ -285,8 +298,22 @@ fun PasswordRecoveryScreen(viewModel: VybeViewModel) {
               Spacer(Modifier.width(10.dp))
               Text("Updating Password...")
             } else {
-              Text("Update Password & Return to Login", fontWeight = FontWeight.Bold)
+              Text("Update Password", fontWeight = FontWeight.Bold)
             }
+          }
+
+          Spacer(Modifier.height(12.dp))
+
+          OutlinedButton(
+            onClick = { viewModel.exitPasswordRecoveryToLogin() },
+            enabled = !isSubmitting,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier
+              .fillMaxWidth()
+              .heightIn(min = 48.dp)
+              .testTag("recovery_return_to_login_button")
+          ) {
+            Text("Back to Login", fontWeight = FontWeight.SemiBold)
           }
         }
 
@@ -436,23 +463,49 @@ fun PasswordRecoveryScreen(viewModel: VybeViewModel) {
 
           TextButton(
             onClick = { viewModel.exitPasswordRecoveryToLogin() },
-            modifier = Modifier.heightIn(min = 48.dp)
+            enabled = !isBusy,
+            modifier = Modifier
+              .heightIn(min = 48.dp)
+              .testTag("recovery_return_to_login_button")
           ) {
-            Text("Return to Login")
+            Text("Back to Login", fontWeight = FontWeight.SemiBold)
           }
         }
 
         is PasswordRecoveryState.Completed -> {
           Spacer(Modifier.height(24.dp))
-          Text(state.message, style = MaterialTheme.typography.bodyLarge)
-          Spacer(Modifier.height(16.dp))
+          Surface(
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Row(
+              modifier = Modifier.padding(16.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Icon(
+                Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+              )
+              Spacer(Modifier.width(12.dp))
+              Text(
+                text = state.message,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium
+              )
+            }
+          }
+          Spacer(Modifier.height(20.dp))
           Button(
             onClick = { viewModel.exitPasswordRecoveryToLogin() },
+            shape = RoundedCornerShape(14.dp),
             modifier = Modifier
               .fillMaxWidth()
-              .heightIn(min = 48.dp)
+              .heightIn(min = 52.dp)
+              .testTag("recovery_completed_login_button")
           ) {
-            Text("Continue to Login")
+            Text("Login with New Password", fontWeight = FontWeight.Bold)
           }
         }
       }

@@ -29,6 +29,7 @@ import com.example.data.model.MediaType
 import com.example.data.model.Post
 import com.example.data.model.User
 import com.example.ui.theme.*
+import com.example.util.rememberRelativeTimestamp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,6 +47,7 @@ fun PostCard(
   onReportPost: ((String) -> Unit)? = null,
   onPostViewed: ((String) -> Unit)? = null,
   currentUserId: String? = null,
+  shouldAutoPlay: Boolean = false,
   modifier: Modifier = Modifier
 ) {
   var showCommentDialog by remember { mutableStateOf(false) }
@@ -58,6 +60,7 @@ fun PostCard(
   var detectedMediaRatio by remember(post.id, post.mediaAspectRatio) { mutableStateOf(post.mediaAspectRatio) }
 
   val isAuthor = currentUserId != null && currentUserId == post.author.id
+  val relativeTimestamp = rememberRelativeTimestamp(post.createdAtIso, post.timestamp)
 
   LaunchedEffect(post.id) {
     onPostViewed?.invoke(post.id)
@@ -79,7 +82,7 @@ fun PostCard(
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
   ) {
     Column(modifier = Modifier.padding(14.dp)) {
-      // Header: Author + Verified + Timestamp + Location + Mood Tag + Menu
+      // Header: Author + Verified + Relative Timestamp + Location + Mood Tag + Menu
       Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -113,12 +116,14 @@ fun PostCard(
               maxLines = 1,
               overflow = TextOverflow.Ellipsis
             )
-            Text(
-              text = " • ${post.timestamp}",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-              maxLines = 1
-            )
+            if (relativeTimestamp.isNotBlank()) {
+              Text(
+                text = " • $relativeTimestamp",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                maxLines = 1
+              )
+            }
           }
           if (!post.locationName.isNullOrBlank()) {
             Spacer(modifier = Modifier.height(2.dp))
@@ -270,9 +275,9 @@ fun PostCard(
         val isVideo = post.mediaType == MediaType.VIDEO ||
           post.mediaType == MediaType.REEL ||
           post.isVybesReel ||
-          mediaUrl.endsWith(".mp4", ignoreCase = true) ||
-          mediaUrl.endsWith(".mov", ignoreCase = true) ||
-          mediaUrl.endsWith(".webm", ignoreCase = true)
+          mediaUrl.contains(".mp4", ignoreCase = true) ||
+          mediaUrl.contains(".mov", ignoreCase = true) ||
+          mediaUrl.contains(".webm", ignoreCase = true)
 
         val containerRatio = resolveFeedContainerAspectRatio(
           rawRatio = detectedMediaRatio ?: post.mediaAspectRatio,
@@ -281,11 +286,14 @@ fun PostCard(
 
         Spacer(modifier = Modifier.height(12.dp))
         if (isVideo) {
+          val anySheetOpen = showCommentDialog || showAnalyticsSheet || showDeleteConfirm || showReportDialog
           VybeVideoPlayer(
             videoUrl = mediaUrl,
-            autoPlay = false,
+            autoPlay = shouldAutoPlay,
             isLooping = true,
-            initialMuted = false,
+            initialMuted = true,
+            isPausedExternal = !shouldAutoPlay || anySheetOpen,
+            respectReducedMotion = true,
             fitMode = VideoFitMode.COVER_PROPORTIONAL,
             onAspectRatioDetected = { ratio ->
               detectedMediaRatio = ratio
@@ -321,7 +329,7 @@ fun PostCard(
         }
       }
 
-      // Action Bar: Likes, Comments, Views, Remix, Save, Share
+      // Action Bar: VYBE Resonance Like, Comments, Views, Remix, Save, Share
       Spacer(modifier = Modifier.height(12.dp))
       Row(
         modifier = Modifier.fillMaxWidth(),
@@ -329,27 +337,26 @@ fun PostCard(
         verticalAlignment = Alignment.CenterVertically
       ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-          // Like Button
+          // Unique VYBE Resonance Like Button (Replaces standard heart)
           Surface(
-            color = if (post.isLiked) VybeMagenta.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            color = if (post.isLiked) VybeViolet.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
             shape = RoundedCornerShape(14.dp),
             modifier = Modifier
+              .heightIn(min = 40.dp)
               .clip(RoundedCornerShape(14.dp))
               .clickable { onLikeClick() }
           ) {
             Row(
-              modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+              modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
               verticalAlignment = Alignment.CenterVertically
             ) {
-              Icon(
-                imageVector = if (post.isLiked) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
-                contentDescription = "Like",
-                tint = if (post.isLiked) VybeMagenta else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                  .size(17.dp)
-                  .testTag("like_button_${post.id}")
+              VybeLikeIcon(
+                isLiked = post.isLiked,
+                size = 18.dp,
+                inactiveTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("like_button_${post.id}")
               )
-              Spacer(modifier = Modifier.width(5.dp))
+              Spacer(modifier = Modifier.width(6.dp))
               Text(
                 text = "${post.likesCount}",
                 style = MaterialTheme.typography.labelMedium,
@@ -367,6 +374,7 @@ fun PostCard(
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
             shape = RoundedCornerShape(14.dp),
             modifier = Modifier
+              .heightIn(min = 40.dp)
               .clip(RoundedCornerShape(14.dp))
               .clickable { showCommentDialog = true }
           ) {
@@ -425,7 +433,7 @@ fun PostCard(
             IconButton(
               onClick = { onRemixClick.invoke() },
               modifier = Modifier
-                .size(40.dp)
+                .size(44.dp)
                 .testTag("remix_button_${post.id}")
             ) {
               Icon(
@@ -440,7 +448,7 @@ fun PostCard(
           IconButton(
             onClick = onSaveClick,
             modifier = Modifier
-              .size(40.dp)
+              .size(44.dp)
               .testTag("save_button_${post.id}")
           ) {
             Icon(
@@ -454,7 +462,7 @@ fun PostCard(
           IconButton(
             onClick = onShareClick,
             modifier = Modifier
-              .size(40.dp)
+              .size(44.dp)
               .testTag("share_button_${post.id}")
           ) {
             Icon(
@@ -570,6 +578,7 @@ fun PostCard(
               verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
               items(post.comments, key = { it.id }) { comment ->
+                val commentRelativeTime = rememberRelativeTimestamp(comment.createdAtIso, comment.timestamp)
                 Row(
                   modifier = Modifier.fillMaxWidth(),
                   verticalAlignment = Alignment.Top
@@ -579,8 +588,10 @@ fun PostCard(
                   Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                       Text(comment.author.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                      Spacer(modifier = Modifier.width(6.dp))
-                      Text(comment.timestamp, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      if (commentRelativeTime.isNotBlank()) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(commentRelativeTime, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      }
                     }
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
@@ -706,13 +717,31 @@ fun PostCard(
             iconTint = VybeCyan,
             modifier = Modifier.weight(1f)
           )
-          AnalyticsMetricCard(
-            title = "Likes",
-            value = "${post.likesCount}",
-            icon = Icons.Default.Favorite,
-            iconTint = VybeMagenta,
+          Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
             modifier = Modifier.weight(1f)
-          )
+          ) {
+            Column(
+              modifier = Modifier.padding(10.dp),
+              horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+              VybeLikeIcon(isLiked = true, size = 18.dp, contentDescriptionText = null)
+              Spacer(modifier = Modifier.height(4.dp))
+              Text(
+                text = "${post.likesCount}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+              )
+              Text(
+                text = "Likes",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
+          }
           AnalyticsMetricCard(
             title = "Comments",
             value = "${maxOf(post.commentsCount, post.comments.size)}",

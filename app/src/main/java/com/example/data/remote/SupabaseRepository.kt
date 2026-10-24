@@ -3,6 +3,7 @@ package com.example.data.remote
 import android.util.Log
 import com.example.data.model.Conversation
 import com.example.data.model.DirectMessage
+import com.example.data.model.LivePulseStatus
 import com.example.data.model.MediaType
 import com.example.data.model.MessageStatus
 import com.example.data.model.MoodType
@@ -16,6 +17,7 @@ import com.example.data.model.User
 import com.example.data.model.UserRole
 import com.example.data.model.VybeReaction
 import com.example.data.session.SessionManager
+import com.example.util.TimestampUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -27,6 +29,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.ConcurrentHashMap
 
 data class AuthSessionPayload(
   val user: User,
@@ -66,6 +69,21 @@ class SupabaseRepository {
 
   val isConfigured: Boolean
     get() = SupabaseConfig.isConfigured()
+
+  private val signedUrlCache = ConcurrentHashMap<String, Pair<String, Long>>()
+
+  fun normalizePhoneE164(raw: String): String {
+    val trimmed = raw.trim()
+    if (trimmed.isBlank()) return ""
+    val hasPlus = trimmed.startsWith("+")
+    val digits = trimmed.filter { it.isDigit() }
+    if (digits.isBlank()) return ""
+    return when {
+      hasPlus -> "+$digits"
+      digits.length == 10 -> "+1$digits"
+      else -> "+$digits"
+    }
+  }
 
   /**
    * Resolves a fresh valid JWT access token from explicit parameter or SessionManager,
@@ -132,22 +150,25 @@ class SupabaseRepository {
     }
 
     try {
-      val cleanUsername = username.trim().lowercase().removePrefix("@")
-      val displayName = if (firstName.isNotBlank()) "$firstName $lastName".trim() else cleanUsername
+      val cleanUsername = username.trim().lowercase().removePrefix("@").replace(" ", "_")
+      val cleanFirst = firstName.trim()
+      val cleanLast = lastName.trim()
+      val normalizedPhone = normalizePhoneE164(phone).ifBlank { phone.trim() }
+      val displayName = if (cleanFirst.isNotBlank()) "$cleanFirst $cleanLast".trim() else cleanUsername
       val metadata = mapOf(
         "username" to cleanUsername,
         "display_name" to displayName,
-        "first_name" to firstName,
-        "last_name" to lastName,
-        "phone" to phone,
-        "date_of_birth" to dateOfBirth
+        "first_name" to cleanFirst,
+        "last_name" to cleanLast,
+        "phone" to normalizedPhone,
+        "date_of_birth" to dateOfBirth.trim()
       )
 
       val response = SupabaseNetworkClient.authApi.signUp(
         apiKey = SupabaseConfig.supabaseAnonKey,
         redirectTo = "vybe://auth-callback",
         request = SupabaseSignUpRequest(
-          email = email.trim(),
+          email = email.trim().lowercase(),
           password = password,
           data = metadata
         )
@@ -164,21 +185,27 @@ class SupabaseRepository {
         val token = authBody.accessToken ?: ""
         val refresh = authBody.refreshToken ?: ""
         val expiresIn = authBody.expiresIn ?: 3600L
+        val emailVerifiedNow = !userDto.emailConfirmedAt.isNullOrBlank()
+        val phoneVerifiedNow = !userDto.phoneConfirmedAt.isNullOrBlank()
+        val createdIso = userDto.createdAt ?: TimestampUtils.nowIsoUtc()
 
         val createdUser = User(
           id = userDto.id,
           username = cleanUsername,
           displayName = displayName,
-          firstName = firstName,
-          lastName = lastName,
-          email = email.trim(),
-          phone = phone,
-          isEmailVerified = !userDto.emailConfirmedAt.isNullOrBlank(),
-          isPhoneVerified = false,
-          dateOfBirth = dateOfBirth,
+          firstName = cleanFirst,
+          lastName = cleanLast,
+          email = email.trim().lowercase(),
+          phone = normalizedPhone,
+          isEmailVerified = emailVerifiedNow,
+          isPhoneVerified = phoneVerifiedNow,
+          dateOfBirth = dateOfBirth.trim(),
           age = age,
           isUnder18 = isUnder18,
           role = UserRole.USER,
+          createdAtIso = createdIso,
+          joinedDate = TimestampUtils.formatJoinedMonthYear(createdIso),
+          isOnline = true,
           isOnboardingCompleted = false
         )
 
@@ -188,11 +215,13 @@ class SupabaseRepository {
               id = userDto.id,
               username = cleanUsername,
               displayName = displayName,
-              firstName = firstName,
-              lastName = lastName,
-              email = email.trim(),
-              phone = phone,
-              dateOfBirth = dateOfBirth,
+              firstName = cleanFirst,
+              lastName = cleanLast,
+              email = email.trim().lowercase(),
+              phone = normalizedPhone,
+              isEmailVerified = emailVerifiedNow,
+              isPhoneVerified = phoneVerifiedNow,
+              dateOfBirth = dateOfBirth.trim(),
               age = age,
               isUnder18 = isUnder18,
               role = "USER"
@@ -279,6 +308,198 @@ class SupabaseRepository {
     }
   }
 
+  suspend fun signInWithPhone(
+    phone: String,
+    password: String
+  ): Result<AuthSessionPayload> = withContext(Dispatchers.IO) {
+    if (!isConfigured) {
+      return@withContext Result.failure(IllegalStateException("Supabase backend is not configured."))
+    }
+    try {
+      val normalized = normalizePhoneE164(phone).ifBlank { phone.trim() }
+      val response = SupabaseNetworkClient.authApi.signInWithPhone(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        request = SupabasePhoneSignInRequest(phone = normalized, password = password)
+      )
+      if (response.isSuccessful && response.body() != null) {
+        val authBody = response.body()!!
+        val token = authBody.accessToken ?: return@withContext Result.failure(
+          Exception("No access token returned. Please verify your phone/email first.")
+        )
+        val refresh = authBody.refreshToken ?: ""
+        val expiresIn = authBody.expiresIn ?: 3600L
+        val userDto = authBody.user ?: return@withContext Result.failure(
+          Exception("No user account returned from Supabase.")
+        )
+        val userProfile = fetchUserProfile(userDto.id, token, userDto.email.orEmpty())
+          ?: buildFallbackUserFromAuthDto(userDto, userDto.email.orEmpty())
+        Result.success(AuthSessionPayload(userProfile, token, refresh, expiresIn))
+      } else {
+        val errorBody = response.errorBody()?.string() ?: ""
+        Result.failure(Exception(parseErrorMessage(errorBody, "Invalid phone number or password.")))
+      }
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Unable to sign in with phone.")))
+    }
+  }
+
+  suspend fun resendEmailOtp(email: String, type: String = "signup"): Result<String> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.failure(IllegalStateException("Supabase not configured."))
+    val cleanEmail = email.trim().lowercase()
+    if (cleanEmail.isBlank() || !cleanEmail.contains("@")) {
+      return@withContext Result.failure(IllegalArgumentException("Enter a valid email address."))
+    }
+    try {
+      val resp = SupabaseNetworkClient.authApi.resendOtp(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        request = SupabaseResendOtpRequest(type = type, email = cleanEmail)
+      )
+      if (resp.isSuccessful) {
+        Result.success("Verification code resent to $cleanEmail.")
+      } else {
+        // Fallback to /auth/v1/otp if account was already confirmed or created via email OTP
+        val otpResp = SupabaseNetworkClient.authApi.sendOtp(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          request = SupabaseOtpSendRequest(email = cleanEmail, createUser = false)
+        )
+        if (otpResp.isSuccessful) {
+          Result.success("Verification code sent to $cleanEmail.")
+        } else {
+          val err = parseErrorMessage(resp.errorBody()?.string().orEmpty(), "Please wait before requesting another email code.")
+          Result.failure(Exception(err))
+        }
+      }
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Unable to resend email verification code.")))
+    }
+  }
+
+  suspend fun sendPhoneVerificationOtp(
+    phone: String,
+    accessToken: String? = null
+  ): Result<String> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.failure(IllegalStateException("Supabase not configured."))
+    val normalized = normalizePhoneE164(phone)
+    if (normalized.length < 8) {
+      return@withContext Result.failure(IllegalArgumentException("Enter a valid phone number with country code (e.g. +14155550123)."))
+    }
+    try {
+      val validJwt = resolveValidAccessToken(accessToken)
+      if (!validJwt.isNullOrBlank()) {
+        // Attach phone to authenticated account & trigger Supabase Phone Change / SMS OTP
+        val updateResp = SupabaseNetworkClient.authApi.updateUser(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = "Bearer $validJwt",
+          request = SupabaseUpdateUserRequest(phone = normalized)
+        )
+        if (updateResp.isSuccessful) {
+          return@withContext Result.success("SMS verification code sent to $normalized.")
+        }
+        val updateErr = updateResp.errorBody()?.string().orEmpty()
+        if (updateErr.contains("sms_send_failed", true) ||
+          updateErr.contains("Phone provider", true) ||
+          updateErr.contains("Unsupported phone provider", true) ||
+          updateErr.contains("phone_provider_disabled", true)
+        ) {
+          return@withContext Result.failure(
+            Exception("SMS OTP requires enabling the Phone provider (Twilio/MessageBird/Vonage) in your Supabase Auth settings.")
+          )
+        }
+      }
+
+      val otpResp = SupabaseNetworkClient.authApi.sendOtp(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        request = SupabaseOtpSendRequest(phone = normalized, createUser = false)
+      )
+      if (otpResp.isSuccessful) {
+        Result.success("SMS verification code sent to $normalized.")
+      } else {
+        val rawErr = otpResp.errorBody()?.string().orEmpty()
+        val msg = if (rawErr.contains("Phone", true) || rawErr.contains("sms", true) || otpResp.code() == 422 || otpResp.code() == 400) {
+          parseErrorMessage(
+            rawErr,
+            "SMS OTP could not be dispatched. Verify Phone Auth & SMS provider (Twilio/Vonage) are enabled in Supabase Auth."
+          )
+        } else {
+          parseErrorMessage(rawErr, "Unable to send SMS code (${otpResp.code()}).")
+        }
+        Result.failure(Exception(msg))
+      }
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Network error while requesting SMS verification code.")))
+    }
+  }
+
+  suspend fun verifyPhoneOtp(
+    phone: String,
+    token: String,
+    userId: String? = null,
+    accessToken: String? = null
+  ): Result<AuthSessionPayload?> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.failure(IllegalStateException("Supabase not configured."))
+    val normalized = normalizePhoneE164(phone)
+    val cleanCode = token.trim()
+    if (cleanCode.length < 4) {
+      return@withContext Result.failure(IllegalArgumentException("Enter the 6-digit SMS verification code."))
+    }
+    try {
+      // Try `phone_change` first if authenticated session updated phone, then fallback to `sms`
+      var verifyResp = SupabaseNetworkClient.authApi.verifyOtp(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        request = SupabaseVerifyOtpRequest(
+          type = "phone_change",
+          token = cleanCode,
+          phone = normalized
+        )
+      )
+      if (!verifyResp.isSuccessful) {
+        verifyResp = SupabaseNetworkClient.authApi.verifyOtp(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          request = SupabaseVerifyOtpRequest(
+            type = "sms",
+            token = cleanCode,
+            phone = normalized
+          )
+        )
+      }
+
+      if (verifyResp.isSuccessful) {
+        val body = verifyResp.body()
+        val jwt = body?.accessToken ?: resolveValidAccessToken(accessToken).orEmpty()
+        val uid = body?.user?.id ?: userId.orEmpty()
+        if (uid.isNotBlank() && jwt.isNotBlank()) {
+          try {
+            SupabaseNetworkClient.restApi.patchProfile(
+              apiKey = SupabaseConfig.supabaseAnonKey,
+              authHeader = "Bearer $jwt",
+              idFilter = "eq.$uid",
+              patch = SupabaseProfilePatchDto(phone = normalized, isPhoneVerified = true)
+            )
+          } catch (_: Exception) {}
+        }
+        if (body?.user != null && !body.accessToken.isNullOrBlank()) {
+          val profile = fetchUserProfile(body.user.id, body.accessToken, body.user.email.orEmpty())
+            ?.copy(isPhoneVerified = true, phone = normalized)
+            ?: buildFallbackUserFromAuthDto(body.user, body.user.email.orEmpty()).copy(isPhoneVerified = true, phone = normalized)
+          return@withContext Result.success(
+            AuthSessionPayload(
+              user = profile,
+              accessToken = body.accessToken,
+              refreshToken = body.refreshToken.orEmpty(),
+              expiresInSeconds = body.expiresIn ?: 3600L
+            )
+          )
+        }
+        return@withContext Result.success(null)
+      } else {
+        val err = parseErrorMessage(verifyResp.errorBody()?.string().orEmpty(), "Invalid or expired SMS verification code.")
+        Result.failure(Exception(err))
+      }
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Network error while verifying SMS code.")))
+    }
+  }
+
   suspend fun verifyOtp(
     email: String,
     token: String,
@@ -288,15 +509,26 @@ class SupabaseRepository {
       return@withContext Result.failure(IllegalStateException("Supabase not configured."))
     }
     try {
-      val request = SupabaseVerifyOtpRequest(
-        type = type,
-        token = token.trim(),
-        email = email.trim().ifBlank { null }
-      )
-      val response = SupabaseNetworkClient.authApi.verifyOtp(
+      val cleanEmail = email.trim().lowercase().ifBlank { null }
+      var response = SupabaseNetworkClient.authApi.verifyOtp(
         apiKey = SupabaseConfig.supabaseAnonKey,
-        request = request
+        request = SupabaseVerifyOtpRequest(
+          type = type,
+          token = token.trim(),
+          email = cleanEmail
+        )
       )
+      if (!response.isSuccessful && type == "signup") {
+        // Fallback to `email` OTP type if user requested resend via /otp
+        response = SupabaseNetworkClient.authApi.verifyOtp(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          request = SupabaseVerifyOtpRequest(
+            type = "email",
+            token = token.trim(),
+            email = cleanEmail
+          )
+        )
+      }
       if (response.isSuccessful && response.body() != null) {
         val authBody = response.body()!!
         val accessToken = authBody.accessToken ?: return@withContext Result.failure(
@@ -308,13 +540,22 @@ class SupabaseRepository {
           Exception("Verification succeeded, but user account details were missing.")
         )
 
-        val userProfile = fetchUserProfile(userDto.id, accessToken, userDto.email ?: email.trim())
-          ?: buildFallbackUserFromAuthDto(userDto, email.trim())
+        try {
+          SupabaseNetworkClient.restApi.patchProfile(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = "Bearer $accessToken",
+            idFilter = "eq.${userDto.id}",
+            patch = SupabaseProfilePatchDto(isEmailVerified = true)
+          )
+        } catch (_: Exception) {}
+
+        val userProfile = (fetchUserProfile(userDto.id, accessToken, userDto.email ?: email.trim())
+          ?: buildFallbackUserFromAuthDto(userDto, email.trim())).copy(isEmailVerified = true)
 
         Result.success(AuthSessionPayload(userProfile, accessToken, refresh, expiresIn))
       } else {
         val errorBody = response.errorBody()?.string() ?: ""
-        Result.failure(Exception(parseErrorMessage(errorBody, "Invalid or expired verification token.")))
+        Result.failure(Exception(parseErrorMessage(errorBody, "Invalid or expired verification code.")))
       }
     } catch (e: Exception) {
       Result.failure(Exception(friendlyNetworkMessage(e, "Network error while verifying token.")))
@@ -496,28 +737,48 @@ class SupabaseRepository {
   // 2. PROFILES, PRIVACY & SOCIAL GRAPH
   // =========================================================================
 
+  private fun sanitizeUsername(raw: String?, userId: String, fallbackEmail: String? = null): String {
+    val cleaned = raw?.trim()?.lowercase()?.removePrefix("@").orEmpty()
+    if (cleaned.isNotBlank() && cleaned != "null" && cleaned != "undefined") {
+      return cleaned
+    }
+    val emailPrefix = fallbackEmail?.substringBefore("@")?.lowercase()
+      ?.replace(Regex("[^a-z0-9_.]"), "")
+      ?.takeIf { it.length >= 3 }
+    if (emailPrefix != null) return emailPrefix
+    val suffix = userId.replace("-", "").take(6).lowercase().ifBlank { "member" }
+    return "vyber_$suffix"
+  }
+
   private fun buildFallbackUserFromAuthDto(userDto: SupabaseUserDto, fallbackEmail: String): User {
     val meta = userDto.userMetadata ?: emptyMap()
-    val username = (meta["username"] as? String) ?: fallbackEmail.substringBefore("@").lowercase()
-    val displayName = (meta["display_name"] as? String) ?: username
-    val firstName = (meta["first_name"] as? String) ?: ""
-    val lastName = (meta["last_name"] as? String) ?: ""
-    val phone = (meta["phone"] as? String) ?: userDto.phone ?: ""
-    val dob = (meta["date_of_birth"] as? String) ?: "2000-01-01"
+    val rawUsername = meta["username"] as? String
+    val safeUsername = sanitizeUsername(rawUsername, userDto.id, userDto.email ?: fallbackEmail)
+    val firstName = (meta["first_name"] as? String)?.takeIf { it != "null" } ?: ""
+    val lastName = (meta["last_name"] as? String)?.takeIf { it != "null" } ?: ""
+    val rawDisplay = (meta["display_name"] as? String)?.takeIf { it.isNotBlank() && it != "null" }
+    val displayName = rawDisplay ?: "$firstName $lastName".trim().ifBlank { safeUsername }
+    val phone = (meta["phone"] as? String)?.takeIf { it != "null" } ?: userDto.phone ?: ""
+    val dob = (meta["date_of_birth"] as? String)?.takeIf { it.isNotBlank() && it != "null" } ?: ""
     val age = calculateAge(dob)
+    val createdIso = userDto.createdAt
     return User(
       id = userDto.id,
-      username = username,
+      username = safeUsername,
       displayName = displayName,
       firstName = firstName,
       lastName = lastName,
       email = userDto.email ?: fallbackEmail,
       phone = phone,
       isEmailVerified = !userDto.emailConfirmedAt.isNullOrBlank(),
+      isPhoneVerified = !userDto.phoneConfirmedAt.isNullOrBlank(),
       dateOfBirth = dob,
       age = age,
       isUnder18 = age in 16..17,
       role = UserRole.USER,
+      createdAtIso = createdIso,
+      joinedDate = TimestampUtils.formatJoinedMonthYear(createdIso),
+      isOnline = true,
       isOnboardingCompleted = true
     )
   }
@@ -530,19 +791,36 @@ class SupabaseRepository {
       UserRole.USER
     }
     val isAdmin = parsedRole == UserRole.ADMIN
+    val safeUsername = sanitizeUsername(p.username, p.id, p.email ?: fallbackEmail)
+    val safeFirst = p.firstName?.takeIf { it != "null" }?.trim().orEmpty()
+    val safeLast = p.lastName?.takeIf { it != "null" }?.trim().orEmpty()
+    val safeDisplay = p.displayName
+      ?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+      ?.trim()
+      ?: "$safeFirst $safeLast".trim().ifBlank { safeUsername }
+
+    val parsedPulse = if (!p.livePulse.isNullOrBlank()) {
+      try { LivePulseStatus.valueOf(p.livePulse.trim().uppercase()) } catch (_: Exception) { LivePulseStatus.NONE }
+    } else {
+      LivePulseStatus.NONE
+    }
+    val onlineNow = TimestampUtils.isRecentlyOnline(p.lastSeenAt) ||
+      (parsedPulse != LivePulseStatus.NONE && parsedPulse != LivePulseStatus.QUIET_TIME)
 
     return User(
       id = p.id,
-      username = p.username,
-      displayName = p.displayName.ifBlank { p.username },
-      firstName = p.firstName ?: "",
-      lastName = p.lastName ?: "",
-      email = p.email ?: fallbackEmail ?: "",
-      phone = p.phone ?: "",
-      bio = p.bio ?: "",
-      avatarUrl = p.avatarUrl ?: "",
-      coverUrl = p.coverUrl ?: "",
-      dateOfBirth = p.dateOfBirth ?: "2000-01-01",
+      username = safeUsername,
+      displayName = safeDisplay,
+      firstName = safeFirst,
+      lastName = safeLast,
+      email = p.email?.takeIf { it != "null" } ?: fallbackEmail ?: "",
+      phone = p.phone?.takeIf { it != "null" } ?: "",
+      isEmailVerified = p.isEmailVerified ?: false,
+      isPhoneVerified = p.isPhoneVerified ?: false,
+      bio = p.bio?.takeIf { it != "null" } ?: "",
+      avatarUrl = p.avatarUrl?.takeIf { it != "null" } ?: "",
+      coverUrl = p.coverUrl?.takeIf { it != "null" } ?: "",
+      dateOfBirth = p.dateOfBirth?.takeIf { it != "null" } ?: "",
       age = p.age ?: 20,
       isUnder18 = p.isUnder18 ?: false,
       role = parsedRole,
@@ -550,9 +828,14 @@ class SupabaseRepository {
       isVip = if (isAdmin) true else (p.isVip ?: false),
       isPrivate = p.isPrivateAccount ?: false,
       messagePrivacy = p.messagePrivacy ?: "EVERYONE",
-      followersCount = p.followersCount ?: 0,
-      followingCount = p.followingCount ?: 0,
-      postsCount = p.postsCount ?: 0,
+      livePulse = parsedPulse,
+      isOnline = onlineNow,
+      lastSeenAtIso = p.lastSeenAt,
+      createdAtIso = p.createdAt,
+      joinedDate = TimestampUtils.formatJoinedMonthYear(p.createdAt),
+      followersCount = (p.followersCount ?: 0).coerceAtLeast(0),
+      followingCount = (p.followingCount ?: 0).coerceAtLeast(0),
+      postsCount = (p.postsCount ?: 0).coerceAtLeast(0),
       isOnboardingCompleted = true
     )
   }
@@ -599,6 +882,9 @@ class SupabaseRepository {
     bio: String,
     avatarUrl: String,
     coverUrl: String,
+    username: String? = null,
+    email: String? = null,
+    phone: String? = null,
     isPrivate: Boolean? = null,
     messagePrivacy: String? = null,
     accessToken: String = ""
@@ -608,12 +894,15 @@ class SupabaseRepository {
       ?: return@withContext Result.failure(Exception("Authentication required to edit profile."))
     try {
       val patch = SupabaseProfilePatchDto(
+        username = username?.trim()?.lowercase()?.removePrefix("@")?.takeIf { it.isNotBlank() && it != "null" },
         displayName = displayName,
         firstName = firstName,
         lastName = lastName,
         bio = bio,
         avatarUrl = avatarUrl,
         coverUrl = coverUrl,
+        email = email?.trim()?.takeIf { it.isNotBlank() },
+        phone = phone?.trim()?.takeIf { it.isNotBlank() },
         isPrivateAccount = isPrivate,
         messagePrivacy = messagePrivacy
       )
@@ -623,13 +912,22 @@ class SupabaseRepository {
         idFilter = "eq.$userId",
         patch = patch
       )
-      // Fallback if message_privacy column is not yet migrated in live DB
-      if (!resp.isSuccessful && resp.code() == 400 && messagePrivacy != null) {
+      // Fallback if newer columns are not yet migrated in live DB
+      if (!resp.isSuccessful && resp.code() == 400) {
         resp = SupabaseNetworkClient.restApi.patchProfile(
           apiKey = SupabaseConfig.supabaseAnonKey,
           authHeader = authHeader,
           idFilter = "eq.$userId",
-          patch = patch.copy(messagePrivacy = null)
+          patch = SupabaseProfilePatchDto(
+            username = patch.username,
+            displayName = displayName,
+            firstName = firstName,
+            lastName = lastName,
+            bio = bio,
+            avatarUrl = avatarUrl,
+            coverUrl = coverUrl,
+            isPrivateAccount = isPrivate
+          )
         )
       }
       if (resp.isSuccessful) {
@@ -679,12 +977,28 @@ class SupabaseRepository {
   }
 
   suspend fun checkUsernameAvailable(username: String): Boolean = withContext(Dispatchers.IO) {
+    val clean = username.trim().lowercase().removePrefix("@")
+    if (clean.length < 3 || clean == "null" || clean == "admin" || clean == "vybe" || clean == "support") {
+      return@withContext false
+    }
     if (!isConfigured) return@withContext true
+    val authHeader = authHeaderFor()
+    try {
+      val rpcResp = SupabaseNetworkClient.restApi.checkUsernameAvailableRpc(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        request = SupabaseRpcCheckUsernameRequest(username = clean)
+      )
+      if (rpcResp.isSuccessful && rpcResp.body() != null) {
+        return@withContext rpcResp.body()!!
+      }
+    } catch (_: Exception) {}
+
     try {
       val resp = SupabaseNetworkClient.restApi.getProfileByUsername(
         apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = authHeaderFor(),
-        usernameFilter = "eq.${username.trim().lowercase()}"
+        authHeader = authHeader,
+        usernameFilter = "eq.$clean"
       )
       if (resp.isSuccessful) {
         (resp.body() ?: emptyList()).isEmpty()
@@ -696,14 +1010,67 @@ class SupabaseRepository {
     }
   }
 
-  suspend fun resolveEmailForIdentifier(identifier: String): String? = withContext(Dispatchers.IO) {
-    if (!isConfigured) return@withContext null
+  /**
+   * Resolves Email, Phone Number, or @Username / VYBE ID via trusted server-side SECURITY DEFINER RPC
+   * (`resolve_login_identifier`) first so client code never scrapes user emails/phones.
+   */
+  suspend fun resolveIdentifierSecurely(identifier: String): SupabaseResolvedIdentifierDto = withContext(Dispatchers.IO) {
     val trimmed = identifier.trim()
-    val clean = trimmed.lowercase().removePrefix("@")
-    if (clean.contains("@")) return@withContext clean
+    if (trimmed.isBlank()) return@withContext SupabaseResolvedIdentifierDto(found = false)
+    if (trimmed.contains("@") && trimmed.indexOf('@') > 0 && trimmed.contains(".")) {
+      return@withContext SupabaseResolvedIdentifierDto(
+        found = true,
+        mode = "EMAIL",
+        email = trimmed.lowercase()
+      )
+    }
+
+    if (!isConfigured) {
+      return@withContext SupabaseResolvedIdentifierDto(found = false)
+    }
 
     val authHeader = authHeaderFor()
-    val phoneClean = trimmed.replace(" ", "").replace("-", "")
+    try {
+      val rpcResp = SupabaseNetworkClient.restApi.resolveLoginIdentifier(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        request = SupabaseRpcResolveIdentifierRequest(identifier = trimmed)
+      )
+      if (rpcResp.isSuccessful && rpcResp.body() != null) {
+        val dto = rpcResp.body()!!
+        if (dto.found) return@withContext dto
+      }
+    } catch (e: Exception) {
+      Log.w(TAG, "resolveLoginIdentifier RPC notice: ${e.message}")
+    }
+
+    // Safe fallback if migration 0005 RPC is not yet deployed on target Supabase project
+    val clean = trimmed.lowercase().removePrefix("@").removePrefix("vybe:")
+    val phoneClean = trimmed.filter { it.isDigit() }
+    if (phoneClean.length >= 7 && trimmed.all { it.isDigit() || it == '+' || it == ' ' || it == '-' || it == '(' || it == ')' }) {
+      val normalized = normalizePhoneE164(trimmed)
+      try {
+        val phoneResp = SupabaseNetworkClient.restApi.getProfileByPhone(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          phoneFilter = "eq.$normalized"
+        )
+        if (phoneResp.isSuccessful && !phoneResp.body().isNullOrEmpty()) {
+          val p = phoneResp.body()!!.first()
+          return@withContext SupabaseResolvedIdentifierDto(
+            found = true,
+            mode = if (!p.email.isNullOrBlank()) "EMAIL" else "PHONE",
+            email = p.email,
+            phone = p.phone ?: normalized
+          )
+        }
+      } catch (_: Exception) {}
+      return@withContext SupabaseResolvedIdentifierDto(
+        found = true,
+        mode = "PHONE",
+        phone = normalized
+      )
+    }
 
     try {
       val resp = SupabaseNetworkClient.restApi.getProfileByUsername(
@@ -712,45 +1079,19 @@ class SupabaseRepository {
         usernameFilter = "eq.$clean"
       )
       if (resp.isSuccessful && !resp.body().isNullOrEmpty()) {
-        val em = resp.body()!!.first().email
-        if (!em.isNullOrBlank()) return@withContext em
-      }
-    } catch (e: Exception) {
-      Log.w(TAG, "Username resolution warning: ${e.message}")
-    }
-
-    try {
-      val phoneResp = SupabaseNetworkClient.restApi.getProfileByPhone(
-        apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = authHeader,
-        phoneFilter = "eq.$trimmed"
-      )
-      if (phoneResp.isSuccessful && !phoneResp.body().isNullOrEmpty()) {
-        val em = phoneResp.body()!!.first().email
-        if (!em.isNullOrBlank()) return@withContext em
-      }
-    } catch (e: Exception) {
-      Log.w(TAG, "Phone resolution warning: ${e.message}")
-    }
-
-    try {
-      val allResp = SupabaseNetworkClient.restApi.getProfiles(
-        apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = authHeader
-      )
-      if (allResp.isSuccessful && !allResp.body().isNullOrEmpty()) {
-        val matched = allResp.body()!!.firstOrNull {
-          it.username.equals(clean, true) ||
-            it.id.equals(clean, true) ||
-            (!it.phone.isNullOrBlank() && (it.phone.replace(" ", "").replace("-", "") == phoneClean || it.phone == trimmed))
-        }
-        if (matched != null && !matched.email.isNullOrBlank()) {
-          return@withContext matched.email
+        val p = resp.body()!!.first()
+        if (!p.email.isNullOrBlank()) {
+          return@withContext SupabaseResolvedIdentifierDto(found = true, mode = "EMAIL", email = p.email, phone = p.phone)
         }
       }
     } catch (_: Exception) {}
 
-    null
+    SupabaseResolvedIdentifierDto(found = false)
+  }
+
+  suspend fun resolveEmailForIdentifier(identifier: String): String? {
+    val resolved = resolveIdentifierSecurely(identifier)
+    return resolved.email?.takeIf { it.isNotBlank() }
   }
 
   suspend fun fetchAllProfiles(accessToken: String? = null): List<User> = withContext(Dispatchers.IO) {
@@ -1018,7 +1359,7 @@ class SupabaseRepository {
       val resp = SupabaseNetworkClient.restApi.submitReport(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
-        body = SupabaseReportDto(
+        body = SupabaseReportInsertDto(
           reporterId = reporterId,
           targetType = targetType,
           targetId = targetId,
@@ -1126,6 +1467,13 @@ class SupabaseRepository {
     val publicUrl = "${SupabaseConfig.supabaseUrl}/storage/v1/object/public/$bucket/$objectPath"
     if (bucket == "avatars") return@withContext publicUrl
 
+    val cacheKey = "$bucket/$objectPath"
+    val now = System.currentTimeMillis()
+    val cached = signedUrlCache[cacheKey]
+    if (cached != null && cached.second > now) {
+      return@withContext cached.first
+    }
+
     val validJwt = resolveValidAccessToken(accessToken) ?: return@withContext publicUrl
     try {
       val signEndpoint = "${SupabaseConfig.supabaseUrl}/storage/v1/object/sign/$bucket/$objectPath"
@@ -1142,13 +1490,16 @@ class SupabaseRepository {
           val json = JSONObject(resp.body?.string().orEmpty())
           val signedPath = json.optString("signedURL", "").ifBlank { json.optString("signedUrl", "") }
           if (signedPath.isNotBlank()) {
-            return@withContext if (signedPath.startsWith("http")) {
+            val fullSigned = if (signedPath.startsWith("http")) {
               signedPath
             } else if (signedPath.startsWith("/storage/v1")) {
               "${SupabaseConfig.supabaseUrl}$signedPath"
             } else {
               "${SupabaseConfig.supabaseUrl}/storage/v1$signedPath"
             }
+            // Cache signed URL for 6 hours to keep feed & story loads instantaneous
+            signedUrlCache[cacheKey] = Pair(fullSigned, now + 6L * 3_600_000L)
+            return@withContext fullSigned
           }
         }
       }
@@ -1218,7 +1569,9 @@ class SupabaseRepository {
 
   suspend fun fetchPosts(
     currentUserId: String? = null,
-    accessToken: String = ""
+    accessToken: String = "",
+    offset: Int = 0,
+    limit: Int = 40
   ): Result<List<Post>> = withContext(Dispatchers.IO) {
     if (!isConfigured) return@withContext Result.success(emptyList())
     try {
@@ -1226,7 +1579,8 @@ class SupabaseRepository {
       val resp = SupabaseNetworkClient.restApi.getPosts(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
-        limit = 60
+        offset = offset,
+        limit = limit
       )
       if (!resp.isSuccessful || resp.body() == null) {
         val err = parseErrorMessage(resp.errorBody()?.string().orEmpty(), "Failed to load feed (HTTP ${resp.code()}).")
@@ -1316,11 +1670,12 @@ class SupabaseRepository {
       caption = dto.caption ?: "",
       mediaUrls = mediaUrls,
       mediaType = mediaType,
-      timestamp = formatRelativeTimestamp(dto.createdAt),
-      likesCount = dto.likesCount ?: 0,
-      commentsCount = dto.commentsCount ?: 0,
-      savesCount = dto.savesCount ?: 0,
-      viewsCount = dto.viewsCount ?: 0,
+      timestamp = TimestampUtils.formatRelative(dto.createdAt, "Recently"),
+      createdAtIso = dto.createdAt,
+      likesCount = (dto.likesCount ?: 0).coerceAtLeast(0),
+      commentsCount = (dto.commentsCount ?: 0).coerceAtLeast(0),
+      savesCount = (dto.savesCount ?: 0).coerceAtLeast(0),
+      viewsCount = (dto.viewsCount ?: 0).coerceAtLeast(0),
       isLiked = myReaction != null,
       isSaved = mySavedIds.contains(dto.id),
       isArchived = dto.isArchived ?: false,
@@ -1385,7 +1740,16 @@ class SupabaseRepository {
         post = insertDto
       )
 
-      // Backward-compatible fallback if migration 0004 columns aren't applied yet
+      // Fallback 1: If DB's mood_type_enum hasn't run migration 0005 yet (e.g. GENERAL/MOTIVATIONAL), retry with moodZone = null
+      if (!postResp.isSuccessful && postResp.code() == 400 && insertDto.moodZone != null) {
+        postResp = SupabaseNetworkClient.restApi.insertPost(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          post = insertDto.copy(moodZone = null)
+        )
+      }
+
+      // Fallback 2: Backward-compatible fallback if migration 0004 columns aren't applied yet
       if (!postResp.isSuccessful && postResp.code() == 400) {
         postResp = SupabaseNetworkClient.restApi.insertPostLegacy(
           apiKey = SupabaseConfig.supabaseAnonKey,
@@ -1394,7 +1758,7 @@ class SupabaseRepository {
             authorId = post.author.id,
             caption = post.caption,
             mediaType = post.mediaType.name,
-            moodZone = post.moodZone?.name,
+            moodZone = null,
             isUnfiltered = post.isUnfiltered,
             isVybesReel = post.isVybesReel,
             viewsCount = 0
@@ -1403,13 +1767,15 @@ class SupabaseRepository {
       }
 
       if (postResp.isSuccessful && !postResp.body().isNullOrEmpty()) {
-        val createdId = postResp.body()!!.first().id
+        val createdRow = postResp.body()!!.first()
+        val createdId = createdRow.id
+        val createdIso = createdRow.createdAt ?: TimestampUtils.nowIsoUtc()
 
         if (post.mediaUrls.isNotEmpty()) {
           val mediaTypeStr = if (post.mediaType == MediaType.VIDEO || post.mediaType == MediaType.REEL) "VIDEO" else "IMAGE"
           post.mediaUrls.forEachIndexed { index, url ->
             val sp = post.storagePaths.getOrNull(index)
-            val mediaDto = SupabasePostMediaDto(
+            val mediaDto = SupabasePostMediaInsertDto(
               postId = createdId,
               mediaUrl = url,
               mediaType = mediaTypeStr,
@@ -1448,7 +1814,13 @@ class SupabaseRepository {
           }
         }
 
-        Result.success(post.copy(id = createdId, timestamp = "Just now"))
+        Result.success(
+          post.copy(
+            id = createdId,
+            createdAtIso = createdIso,
+            timestamp = TimestampUtils.formatRelative(createdIso, "Just now")
+          )
+        )
       } else {
         val err = parseErrorMessage(postResp.errorBody()?.string().orEmpty(), "Post creation failed (HTTP ${postResp.code()}).")
         Result.failure(Exception(err))
@@ -1486,6 +1858,26 @@ class SupabaseRepository {
       }
     } catch (e: Exception) {
       Result.failure(Exception(friendlyNetworkMessage(e, "Network error while deleting post.")))
+    }
+  }
+
+  suspend fun setPostArchived(
+    postId: String,
+    archived: Boolean,
+    accessToken: String = ""
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken) ?: return@withContext Result.failure(Exception("Authentication required."))
+    try {
+      val resp = SupabaseNetworkClient.restApi.patchPost(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        idFilter = "eq.$postId",
+        body = mapOf("is_archived" to archived)
+      )
+      if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to update post archive state."))
+    } catch (e: Exception) {
+      Result.failure(e)
     }
   }
 
@@ -1568,7 +1960,8 @@ class SupabaseRepository {
             postId = dto.postId,
             author = author,
             content = dto.content,
-            timestamp = formatRelativeTimestamp(dto.createdAt)
+            timestamp = TimestampUtils.formatRelative(dto.createdAt, "Just now"),
+            createdAtIso = dto.createdAt
           )
         }
         Result.success(mapped)
@@ -1593,7 +1986,7 @@ class SupabaseRepository {
       val resp = SupabaseNetworkClient.restApi.insertComment(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
-        comment = SupabaseCommentDto(postId = postId, authorId = authorId, content = content)
+        comment = SupabaseCommentInsertDto(postId = postId, authorId = authorId, content = content)
       )
       if (resp.isSuccessful && !resp.body().isNullOrEmpty()) {
         Result.success(resp.body()!!.first())
@@ -1704,7 +2097,7 @@ class SupabaseRepository {
           mediaType = mediaType,
           audience = audience,
           musicTrackTitle = dto.musicTitle,
-          timestamp = formatRelativeTimestamp(dto.createdAt),
+          timestamp = TimestampUtils.formatRelative(dto.createdAt, "Recently"),
           expiresHoursRemaining = remainingHours,
           isViewed = viewedStoryIds.contains(id),
           reactionsCount = 0,
@@ -1739,7 +2132,7 @@ class SupabaseRepository {
         else -> "EVERYONE"
       }
 
-      val dto = SupabaseStoryDto(
+      val dto = SupabaseStoryInsertDto(
         authorId = story.author.id,
         mediaUrl = story.mediaUrl.ifBlank { "text://story" },
         mediaType = story.mediaType.name,
@@ -1774,13 +2167,14 @@ class SupabaseRepository {
 
       if (resp.isSuccessful && !resp.body().isNullOrEmpty()) {
         val created = resp.body()!!.first()
+        val createdIso = created.createdAt ?: TimestampUtils.nowIsoUtc()
         Result.success(
           story.copy(
             id = created.id ?: story.id,
-            timestamp = "Just now",
+            timestamp = TimestampUtils.formatRelative(createdIso, "Just now"),
             expiresHoursRemaining = 24,
-            createdAtIso = created.createdAt,
-            expiresAtIso = created.expiresAt
+            createdAtIso = createdIso,
+            expiresAtIso = created.expiresAt ?: expiresIso
           )
         )
       } else {
@@ -1958,7 +2352,8 @@ class SupabaseRepository {
             id = m.id ?: "m_${System.currentTimeMillis()}",
             senderId = m.senderId,
             text = if (m.isDeletedForEveryone == true) "Message unsent" else m.content,
-            timestamp = formatShortClock(m.createdAt),
+            timestamp = TimestampUtils.formatMessageTime(m.createdAt, "Now"),
+            createdAtIso = m.createdAt,
             isMe = m.senderId == myUserId,
             mediaUrl = m.mediaUrl,
             mediaType = m.mediaType ?: "TEXT",
@@ -1968,12 +2363,14 @@ class SupabaseRepository {
           )
         }
         val lastMsg = mappedMessages.lastOrNull()
+        val lastIso = lastMsg?.createdAtIso ?: convMeta?.updatedAt ?: convMeta?.createdAt
 
         Conversation(
           id = convId,
           peerUser = peerUser,
           lastMessage = lastMsg?.text ?: "Conversation started",
-          lastMessageTimestamp = lastMsg?.timestamp ?: formatRelativeTimestamp(convMeta?.createdAt),
+          lastMessageTimestamp = TimestampUtils.formatRelative(lastIso, lastMsg?.timestamp ?: "Recently"),
+          lastMessageCreatedAtIso = lastIso,
           unreadCount = 0,
           isGroup = isGroup,
           groupName = convMeta?.groupName,
@@ -2029,7 +2426,7 @@ class SupabaseRepository {
       val convResp = SupabaseNetworkClient.restApi.insertConversation(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
-        conversation = SupabaseConversationDto(isGroup = false)
+        conversation = SupabaseConversationInsertDto(isGroup = false)
       )
       if (convResp.isSuccessful && !convResp.body().isNullOrEmpty()) {
         val convId = convResp.body()!!.first().id ?: return@withContext Result.failure(Exception("Missing conversation ID."))
@@ -2064,7 +2461,7 @@ class SupabaseRepository {
     val authHeader = authHeaderFor(accessToken)
       ?: return@withContext Result.failure(Exception("Please sign in again to send messages."))
     try {
-      val dto = SupabaseMessageDto(
+      val dto = SupabaseMessageInsertDto(
         conversationId = conversationId,
         senderId = senderId,
         content = content,
@@ -2158,7 +2555,8 @@ class SupabaseRepository {
             type = notifType,
             title = dto.title,
             message = dto.message,
-            timestamp = formatRelativeTimestamp(dto.createdAt),
+            timestamp = TimestampUtils.formatRelative(dto.createdAt, "Recently"),
+            createdAtIso = dto.createdAt,
             isRead = dto.isRead ?: false,
             actorUser = actorStub,
             destinationScreen = dest,
@@ -2189,7 +2587,7 @@ class SupabaseRepository {
       SupabaseNetworkClient.restApi.insertNotification(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
-        notification = SupabaseNotificationDto(
+        notification = SupabaseNotificationInsertDto(
           recipientId = recipientId,
           actorId = actorId,
           type = type,

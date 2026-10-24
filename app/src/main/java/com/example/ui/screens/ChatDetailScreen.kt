@@ -46,6 +46,8 @@ import com.example.ui.components.VybeAvatar
 import com.example.ui.components.VybeVideoPlayer
 import com.example.ui.theme.*
 import com.example.util.MediaUtils
+import com.example.util.TimestampUtils
+import com.example.util.rememberMessageTimestamp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -221,16 +223,35 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                   }
                 }
               }
-              Text(
-                text = conv.typingIndicator
-                  ?: if (conv.isBlocked) "Blocked • Unblock in options"
-                  else if (conv.isGroup) "${conv.groupMembers.size} participants"
-                  else "@${conv.peerUser.username}",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (conv.typingIndicator != null) themeAccent else MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-              )
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+              ) {
+                val showOnlineDot = conv.typingIndicator == null && !conv.isBlocked && !conv.isGroup && conv.peerUser.isOnline
+                if (showOnlineDot) {
+                  Box(
+                    modifier = Modifier
+                      .size(7.dp)
+                      .clip(CircleShape)
+                      .background(VybeOnlineGreen)
+                  )
+                }
+                Text(
+                  text = conv.typingIndicator
+                    ?: if (conv.isBlocked) "Blocked • Unblock in options"
+                    else if (conv.isGroup) "${conv.groupMembers.size} participants"
+                    else if (conv.peerUser.isOnline) "Online • @${conv.peerUser.username}"
+                    else "@${conv.peerUser.username}",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = when {
+                    conv.typingIndicator != null -> themeAccent
+                    showOnlineDot -> VybeOnlineGreen
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                  },
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis
+                )
+              }
             }
           }
         },
@@ -670,8 +691,9 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                       fontSize = 9.sp
                     )
                   }
+                  val dynamicMsgTimestamp = rememberMessageTimestamp(msg.createdAtIso, msg.timestamp)
                   Text(
-                    text = msg.timestamp,
+                    text = dynamicMsgTimestamp,
                     color = if (isMe) Color.White.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 9.sp
                   )
@@ -1059,7 +1081,11 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                   Text(m.mediaType, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                  Text("Shared ${m.timestamp}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  Text(
+                    "Shared ${TimestampUtils.formatMessageTimestamp(m.createdAtIso, m.timestamp)}",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
                 }
               }
             }

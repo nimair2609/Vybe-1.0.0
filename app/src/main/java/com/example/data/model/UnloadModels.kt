@@ -12,18 +12,24 @@ data class UnloadMessage(
   val isAnonymous: Boolean,
   val text: String,
   val timestamp: String,
+  val createdAtIso: String? = null,
   val isMe: Boolean = false
 )
 
 data class UnloadRoom(
   val id: String,
+  val roomCode: String = "VYB-${id.filter { it.isLetterOrDigit() }.takeLast(8).uppercase().padStart(8, 'X').chunked(4).joinToString("-")}",
   val title: String,
   val description: String,
   val topicTag: String, // e.g. "Work Burnout", "Silent Company", "Late Night Overthinking", "Post-Breakup Healing"
   val mode: UnloadRoomMode = UnloadRoomMode.VOICE_AND_TEXT,
-  val activeListenersCount: Int = 12,
+  val activeListenersCount: Int = 0,
   val isHostOnline: Boolean = true,
   val is24hAvailable: Boolean = true,
+  val isActive: Boolean = true,
+  val isPrivateRoom: Boolean = false,
+  val expiresAtIso: String? = null,
+  val createdAtIso: String? = null,
   val safetyNotice: String = "Zero voice recording. Conversations are ephemeral. Hate speech or romantic harassment will result in immediate removal.",
   val recentMessages: List<UnloadMessage> = emptyList(),
   val hostId: String = "u_host",

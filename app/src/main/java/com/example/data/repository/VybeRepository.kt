@@ -4,16 +4,23 @@ import android.content.Context
 import android.util.Log
 import com.example.data.local.VybeLocalStore
 import com.example.data.model.*
+import com.example.data.remote.SupabaseConfig
 import com.example.data.remote.SupabaseRepository
+import com.example.data.remote.SupabaseRoomsAndCallsRemote
 import com.example.data.session.SessionManager
 import com.example.util.MediaUtils
 import com.example.util.NetworkMonitor
+import com.example.util.TimestampUtils
+import com.example.util.VybeCallEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -48,6 +55,7 @@ private sealed class PendingUploadOperation {
     val mediaType: MediaType,
     val localOrRemoteMediaUri: String?,
     val isVybes: Boolean,
+    val isUnfiltered: Boolean = false,
     val locationName: String?,
     val latitude: Double?,
     val longitude: Double?,
@@ -85,6 +93,11 @@ class VybeRepository private constructor() {
   private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   private val supabaseRepo = SupabaseRepository.getInstance()
   private var appContext: Context? = null
+  private var callEngine: VybeCallEngine? = null
+  private var presenceLoopJob: Job? = null
+  private var callSignalingPollJob: Job? = null
+
+  private val feedPageSize = 30
 
   val isSupabaseConfigured: Boolean
     get() = supabaseRepo.isConfigured
@@ -99,9 +112,26 @@ class VybeRepository private constructor() {
   private var lastFailedUpload: PendingUploadOperation? = null
   private var isUploadInFlight = false
 
-  // --- Password Recovery Session State ---
+  // --- Password Recovery & Dual OTP Verification State ---
   private val _passwordRecoveryState = MutableStateFlow<PasswordRecoveryState>(PasswordRecoveryState.Inactive)
   val passwordRecoveryState: StateFlow<PasswordRecoveryState> = _passwordRecoveryState.asStateFlow()
+
+  private val _lastRecoveredEmailHint = MutableStateFlow("")
+  val lastRecoveredEmailHint: StateFlow<String> = _lastRecoveredEmailHint.asStateFlow()
+
+  private val _pendingVerificationEmail = MutableStateFlow("")
+  val pendingVerificationEmail: StateFlow<String> = _pendingVerificationEmail.asStateFlow()
+
+  private val _pendingVerificationPhone = MutableStateFlow("")
+  val pendingVerificationPhone: StateFlow<String> = _pendingVerificationPhone.asStateFlow()
+
+  private val _isEmailOtpVerified = MutableStateFlow(false)
+  val isEmailOtpVerified: StateFlow<Boolean> = _isEmailOtpVerified.asStateFlow()
+
+  private val _isPhoneOtpVerified = MutableStateFlow(false)
+  val isPhoneOtpVerified: StateFlow<Boolean> = _isPhoneOtpVerified.asStateFlow()
+
+  private var pendingSessionPayload: com.example.data.remote.AuthSessionPayload? = null
 
   // --- Authenticated Session State ---
   private val _currentUser = MutableStateFlow<User?>(null)
@@ -123,12 +153,18 @@ class VybeRepository private constructor() {
   private val _themeMode = MutableStateFlow(AppThemeMode.DARK)
   val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
 
-  // --- Feed, Unfiltered & Stories (No sample stories or fake posts) ---
+  // --- Feed, Pagination, Unfiltered & Stories ---
   private val _posts = MutableStateFlow<List<Post>>(emptyList())
   val posts: StateFlow<List<Post>> = _posts.asStateFlow()
 
   private val _isSyncingFeed = MutableStateFlow(false)
   val isSyncingFeed: StateFlow<Boolean> = _isSyncingFeed.asStateFlow()
+
+  private val _hasMoreFeedPosts = MutableStateFlow(false)
+  val hasMoreFeedPosts: StateFlow<Boolean> = _hasMoreFeedPosts.asStateFlow()
+
+  private val _isLoadingMorePosts = MutableStateFlow(false)
+  val isLoadingMorePosts: StateFlow<Boolean> = _isLoadingMorePosts.asStateFlow()
 
   private val _unfilteredPosts = MutableStateFlow<List<Post>>(emptyList())
   val unfilteredPosts: StateFlow<List<Post>> = _unfilteredPosts.asStateFlow()
@@ -250,6 +286,7 @@ class VybeRepository private constructor() {
     _unloadRooms.value = listOf(
       UnloadRoom(
         id = "ul_1",
+        roomCode = "VYB-LOFI-2401",
         title = "Late Night Overthinking & Lo-Fi Space",
         description = "A calm listening room for quiet reflection. Text and voice available.",
         topicTag = "Late Night Reflection",
@@ -259,6 +296,7 @@ class VybeRepository private constructor() {
       ),
       UnloadRoom(
         id = "ul_2",
+        roomCode = "VYB-CALM-2402",
         title = "Work Burnout & Reset",
         description = "Share openly about demanding schedules and workplace balance.",
         topicTag = "Work Balance",
@@ -351,6 +389,7 @@ class VybeRepository private constructor() {
         _notifications.value = localStore.loadNotifications()
         _followingUserIds.value = localStore.loadFollowing()
         rebuildVybeMatchesList()
+        startPresenceAndIncomingCallLoops()
       }
     }
 
@@ -430,15 +469,16 @@ class VybeRepository private constructor() {
         rebuildVybeMatchesList()
       }
 
-      // 5. Sync Feed Posts (respecting private profiles & blocked users)
+      // 5. Sync Shared Feed Posts (available immediately to new & returning users)
       syncFeedFromSupabase(validToken)
 
-      // 6. Sync Stories & Viewed State
-      if (myId.isNotBlank()) {
-        syncStoriesFromSupabase(myId, validToken)
-      }
+      // 6. Sync Stories & Viewed State (public stories visible even to newly created users)
+      syncStoriesFromSupabase(myId, validToken)
 
-      // 7. Sync Conversations & Notifications for authenticated user
+      // 7. Sync Persistent Live Rooms
+      syncRoomsFromSupabase(validToken)
+
+      // 8. Sync Conversations & Notifications for authenticated user
       if (myId.isNotBlank() && validToken.isNotBlank()) {
         val convRes = supabaseRepo.fetchConversationsForUser(
           myUserId = myId,
@@ -500,10 +540,19 @@ class VybeRepository private constructor() {
     if (!supabaseRepo.isConfigured) return
     val token = explicitToken ?: supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
     val myId = _currentUser.value?.id
-    val res = supabaseRepo.fetchPosts(currentUserId = myId, accessToken = token)
+    val res = supabaseRepo.fetchPosts(
+      currentUserId = myId,
+      accessToken = token,
+      offset = 0,
+      limit = feedPageSize
+    )
     if (res.isSuccess) {
+      val rawFetched = res.getOrThrow()
+      _hasMoreFeedPosts.value = rawFetched.size >= feedPageSize
+
       val usersMap = _allUsers.value.associateBy { it.id }
-      val visiblePosts = res.getOrThrow()
+      val visiblePosts = rawFetched
+        .distinctBy { it.id }
         .map { p ->
           val fullAuthor = usersMap[p.author.id]?.let { decorateUserRelationshipFlags(it) } ?: p.author
           p.copy(author = fullAuthor)
@@ -513,56 +562,134 @@ class VybeRepository private constructor() {
       _posts.value = visiblePosts
       VybeLocalStore.get()?.savePosts(visiblePosts)
 
-      // Recalculate accurate postsCount for known profiles if DB trigger wasn't installed yet
-      if (myId != null) {
-        val myActualPosts = visiblePosts.count { it.author.id == myId && !it.isArchived }
-        val me = _currentUser.value
-        if (me != null && myActualPosts > me.postsCount) {
-          val syncedMe = me.copy(postsCount = myActualPosts)
+      val remoteUnfiltered = visiblePosts.filter { it.isUnfiltered }
+      if (remoteUnfiltered.isNotEmpty() || _unfilteredPosts.value.none { it.id.startsWith("uf_") }) {
+        _unfilteredPosts.value = remoteUnfiltered
+        VybeLocalStore.get()?.saveUnfilteredPosts(remoteUnfiltered)
+      }
+
+      // Reconcile exact persisted postsCount (including 0 when user has 0 persisted posts!)
+      reconcilePersistedPostCounts(visiblePosts, isCompleteList = !_hasMoreFeedPosts.value)
+    }
+  }
+
+  suspend fun loadMoreFeedPosts() {
+    if (!supabaseRepo.isConfigured || !_hasMoreFeedPosts.value || _isLoadingMorePosts.value || _isSyncingFeed.value) {
+      return
+    }
+    _isLoadingMorePosts.value = true
+    try {
+      val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+      val myId = _currentUser.value?.id
+      val currentSize = _posts.value.size
+      val res = supabaseRepo.fetchPosts(
+        currentUserId = myId,
+        accessToken = token,
+        offset = currentSize,
+        limit = feedPageSize
+      )
+      if (res.isSuccess) {
+        val nextBatch = res.getOrThrow()
+        _hasMoreFeedPosts.value = nextBatch.size >= feedPageSize
+        if (nextBatch.isNotEmpty()) {
+          val usersMap = _allUsers.value.associateBy { it.id }
+          val enrichedBatch = nextBatch
+            .map { p ->
+              val fullAuthor = usersMap[p.author.id]?.let { decorateUserRelationshipFlags(it) } ?: p.author
+              p.copy(author = fullAuthor)
+            }
+            .filter { p -> canViewUserContent(p.author) }
+
+          val merged = (_posts.value + enrichedBatch).distinctBy { it.id }
+          _posts.value = merged
+          VybeLocalStore.get()?.savePosts(merged)
+          reconcilePersistedPostCounts(merged, isCompleteList = !_hasMoreFeedPosts.value)
+        }
+      }
+    } finally {
+      _isLoadingMorePosts.value = false
+    }
+  }
+
+  private fun reconcilePersistedPostCounts(loadedPosts: List<Post>, isCompleteList: Boolean) {
+    val myId = _currentUser.value?.id
+    if (!myId.isNullOrBlank()) {
+      val myActualPosts = loadedPosts.count { it.author.id == myId && !it.isArchived }
+      val me = _currentUser.value
+      if (me != null) {
+        val authoritativeCount = if (isCompleteList) myActualPosts else maxOf(myActualPosts, me.postsCount)
+        if (authoritativeCount != me.postsCount) {
+          val syncedMe = me.copy(postsCount = authoritativeCount)
           _currentUser.value = syncedMe
+          _allUsers.value = _allUsers.value.map { if (it.id == syncedMe.id) decorateUserRelationshipFlags(syncedMe) else it }
           SessionManager.get()?.updateCurrentUser(syncedMe)
+          VybeLocalStore.get()?.saveUser(syncedMe)
         }
       }
     }
   }
 
   suspend fun syncStoriesFromSupabase(myUserId: String, explicitToken: String? = null) {
-    if (!supabaseRepo.isConfigured || myUserId.isBlank()) return
+    if (!supabaseRepo.isConfigured) return
     val token = explicitToken ?: supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
     val res = supabaseRepo.fetchActiveStories(myUserId, token)
     if (res.isSuccess) {
       val usersMap = _allUsers.value.associateBy { it.id }
-      val localViewed = VybeLocalStore.get()?.loadViewedStoryIds(myUserId).orEmpty()
+      val localViewed = if (myUserId.isNotBlank()) VybeLocalStore.get()?.loadViewedStoryIds(myUserId).orEmpty() else emptySet()
       viewedStoryIdsLocal = viewedStoryIdsLocal + localViewed
 
       val filteredAndSorted = res.getOrThrow()
+        .distinctBy { it.id }
         .map { s ->
           val fullAuthor = usersMap[s.author.id]?.let { decorateUserRelationshipFlags(it) } ?: s.author
           val viewed = s.isViewed || viewedStoryIdsLocal.contains(s.id)
           s.copy(author = fullAuthor, isViewed = viewed)
         }
         .filter { s ->
-          // Enforce creator privacy & audience rules:
-          // Show own stories + stories from accounts we follow (or public stories if allowed)
-          if (s.author.id == myUserId) {
+          if (myUserId.isNotBlank() && s.author.id == myUserId) {
             true
           } else if (_blockedUserIds.value.contains(s.author.id)) {
             false
           } else if (s.author.isPrivate && !_followingUserIds.value.contains(s.author.id)) {
             false
           } else {
-            // Show followed accounts' stories immediately; also keep unblocked public stories accessible
             _followingUserIds.value.contains(s.author.id) || !s.author.isPrivate
           }
         }
-        // Unviewed stories appear first in the tray; already-viewed stories move to the viewed section
-        .sortedWith(compareBy<Story> { it.isViewed }.thenByDescending { it.author.id == myUserId })
+        .sortedWith(
+          compareBy<Story> { it.isViewed && it.author.id != myUserId }
+            .thenByDescending { myUserId.isNotBlank() && it.author.id == myUserId }
+            .thenByDescending { TimestampUtils.parseIsoMillis(it.createdAtIso) ?: 0L }
+        )
 
       _stories.value = filteredAndSorted
-      val allMarkedViewed = filteredAndSorted.filter { it.isViewed }.map { it.id }.toSet()
-      if (allMarkedViewed.isNotEmpty()) {
-        viewedStoryIdsLocal = viewedStoryIdsLocal + allMarkedViewed
-        VybeLocalStore.get()?.saveViewedStoryIds(myUserId, viewedStoryIdsLocal)
+      if (myUserId.isNotBlank()) {
+        val allMarkedViewed = filteredAndSorted.filter { it.isViewed }.map { it.id }.toSet()
+        if (allMarkedViewed.isNotEmpty()) {
+          viewedStoryIdsLocal = viewedStoryIdsLocal + allMarkedViewed
+          VybeLocalStore.get()?.saveViewedStoryIds(myUserId, viewedStoryIdsLocal)
+        }
+      }
+    }
+  }
+
+  suspend fun syncRoomsFromSupabase(explicitToken: String? = null) {
+    if (!supabaseRepo.isConfigured) return
+    val token = explicitToken ?: supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+    val myId = _currentUser.value?.id.orEmpty()
+    val res = SupabaseRoomsAndCallsRemote.fetchActiveRooms(myId, token)
+    if (res.isSuccess) {
+      val remoteRooms = res.getOrThrow()
+      if (remoteRooms.isNotEmpty()) {
+        val localFallbacks = _unloadRooms.value.filter { it.id.startsWith("ul_") }
+        val merged = (remoteRooms + localFallbacks).distinctBy { it.roomCode.ifBlank { it.id } }
+        _unloadRooms.value = merged
+        val active = _activeUnloadRoom.value
+        if (active != null) {
+          merged.firstOrNull { it.id == active.id || (it.roomCode.isNotBlank() && it.roomCode == active.roomCode) }?.let {
+            _activeUnloadRoom.value = it
+          }
+        }
       }
     }
   }
@@ -604,6 +731,39 @@ class VybeRepository private constructor() {
     }
   }
 
+  suspend fun publishPostAwait(
+    caption: String,
+    mood: MoodType?,
+    mediaType: MediaType = MediaType.TEXT,
+    imageUrl: String? = null,
+    isVybes: Boolean = false,
+    isUnfiltered: Boolean = false,
+    locationName: String? = null,
+    latitude: Double? = null,
+    longitude: Double? = null,
+    audioTrackTitle: String? = null,
+    preferredAspectRatio: Float? = null
+  ): Result<Post> {
+    if (isUploadInFlight) {
+      return Result.failure(IllegalStateException("An upload is already in progress."))
+    }
+    val job = PendingUploadOperation.PostUpload(
+      clientUploadId = UUID.randomUUID().toString(),
+      caption = caption.trim(),
+      mood = mood,
+      mediaType = mediaType,
+      localOrRemoteMediaUri = imageUrl?.takeIf { it.isNotBlank() },
+      isVybes = isVybes,
+      isUnfiltered = isUnfiltered,
+      locationName = locationName?.takeIf { it.isNotBlank() },
+      latitude = latitude,
+      longitude = longitude,
+      audioTrackTitle = audioTrackTitle?.takeIf { it.isNotBlank() },
+      preferredAspectRatio = preferredAspectRatio
+    )
+    return executePostUpload(job)
+  }
+
   fun createPost(
     caption: String,
     mood: MoodType?,
@@ -616,6 +776,7 @@ class VybeRepository private constructor() {
     audioTrackTitle: String? = null,
     preferredAspectRatio: Float? = null
   ) {
+    if (isUploadInFlight) return
     val job = PendingUploadOperation.PostUpload(
       clientUploadId = UUID.randomUUID().toString(),
       caption = caption.trim(),
@@ -623,6 +784,7 @@ class VybeRepository private constructor() {
       mediaType = mediaType,
       localOrRemoteMediaUri = imageUrl?.takeIf { it.isNotBlank() },
       isVybes = isVybes,
+      isUnfiltered = false,
       locationName = locationName?.takeIf { it.isNotBlank() },
       latitude = latitude,
       longitude = longitude,
@@ -634,25 +796,24 @@ class VybeRepository private constructor() {
     }
   }
 
-  private suspend fun executePostUpload(op: PendingUploadOperation.PostUpload) {
+  private suspend fun executePostUpload(op: PendingUploadOperation.PostUpload): Result<Post> {
     val user = _currentUser.value
     if (user == null) {
-      _uploadStatus.value = UploadStatus.Failed("Please sign in before publishing.", canRetry = false)
-      return
+      val msg = "Please sign in before publishing."
+      _uploadStatus.value = UploadStatus.Failed(msg, canRetry = false)
+      return Result.failure(IllegalStateException(msg))
     }
 
     val ctx = appContext
     if (supabaseRepo.isConfigured && ctx != null && !NetworkMonitor.checkCurrentlyOnline(ctx)) {
       lastFailedUpload = op
-      _uploadStatus.value = UploadStatus.Failed(
-        "No internet connection. Your post media is preserved — tap Retry once reconnected.",
-        canRetry = true
-      )
-      return
+      val msg = "No internet connection. Your post media is preserved — tap Retry once reconnected."
+      _uploadStatus.value = UploadStatus.Failed(msg, canRetry = true)
+      return Result.failure(IllegalStateException(msg))
     }
 
     isUploadInFlight = true
-    try {
+    return try {
       val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
       var finalMediaUrls: List<String> = emptyList()
       var finalStoragePaths: List<String> = emptyList()
@@ -712,6 +873,9 @@ class VybeRepository private constructor() {
           finalMediaUrls = listOf(rawUri)
         }
       } else {
+        if (op.caption.isBlank()) {
+          throw IllegalArgumentException("Write a caption or select media before publishing.")
+        }
         resolvedMediaType = MediaType.TEXT
       }
 
@@ -720,6 +884,7 @@ class VybeRepository private constructor() {
       }
 
       _uploadStatus.value = UploadStatus.Processing("Publishing post...")
+      val nowIso = TimestampUtils.nowIsoUtc()
 
       val draftPost = Post(
         id = "p_${op.clientUploadId}",
@@ -728,6 +893,8 @@ class VybeRepository private constructor() {
         mediaUrls = finalMediaUrls,
         mediaType = resolvedMediaType,
         timestamp = "Just now",
+        createdAtIso = nowIso,
+        isUnfiltered = op.isUnfiltered,
         isVybesReel = op.isVybes || resolvedMediaType == MediaType.REEL,
         moodZone = op.mood,
         audioTrackTitle = op.audioTrackTitle,
@@ -741,21 +908,31 @@ class VybeRepository private constructor() {
 
       val publishedPost = if (supabaseRepo.isConfigured) {
         supabaseRepo.createPostOnSupabase(draftPost, token).getOrElse { err ->
-          // Clean up orphaned Storage object if DB row creation failed cleanly and won't be reused
+          // Clean up orphaned Storage object if DB row creation failed
+          finalStoragePaths.forEach { sp ->
+            supabaseRepo.deleteStorageObject(sp, token)
+          }
           throw err
         }
       } else {
         draftPost
       }
 
-      // Only mark as published AFTER both Storage upload and DB insert succeeded!
-      val deduplicatedList = listOf(publishedPost) + _posts.value.filterNot {
+      // Only add to feed & calculate persisted count AFTER Storage upload AND DB insert succeeded!
+      val deduplicatedList = (listOf(publishedPost) + _posts.value.filterNot {
         it.id == publishedPost.id || (!it.clientUploadId.isNullOrBlank() && it.clientUploadId == op.clientUploadId)
-      }
+      }).distinctBy { it.id }
       _posts.value = deduplicatedList
       VybeLocalStore.get()?.savePosts(deduplicatedList)
 
-      val updatedUser = user.copy(postsCount = user.postsCount + 1)
+      if (publishedPost.isUnfiltered) {
+        val nextUnfiltered = (listOf(publishedPost) + _unfilteredPosts.value.filterNot { it.id == publishedPost.id }).distinctBy { it.id }
+        _unfilteredPosts.value = nextUnfiltered
+        VybeLocalStore.get()?.saveUnfilteredPosts(nextUnfiltered)
+      }
+
+      val persistedMyPostsCount = deduplicatedList.count { it.author.id == user.id && !it.isArchived }
+      val updatedUser = user.copy(postsCount = persistedMyPostsCount)
       _currentUser.value = updatedUser
       _allUsers.value = _allUsers.value.map { if (it.id == updatedUser.id) decorateUserRelationshipFlags(updatedUser) else it }
       SessionManager.get()?.updateCurrentUser(updatedUser)
@@ -766,14 +943,26 @@ class VybeRepository private constructor() {
         MediaUtils.cleanupStagedFileIfOwned(ctx, rawUri)
       }
       _uploadStatus.value = UploadStatus.Published(
-        if (publishedPost.isVybesReel) "Reel published successfully!" else "Post published successfully!"
+        when {
+          publishedPost.isVybesReel -> "Reel published successfully!"
+          publishedPost.isUnfiltered -> "Unfiltered moment published!"
+          else -> "Post published successfully!"
+        }
       )
+
+      // Revalidate feed from Supabase so author counts, signed URLs, and ordering are 100% authoritative
+      if (supabaseRepo.isConfigured) {
+        syncFeedFromSupabase(token)
+      }
+      Result.success(publishedPost)
     } catch (e: Exception) {
       lastFailedUpload = op
+      val errMsg = e.message ?: "Upload failed. Your media is preserved — tap Retry."
       _uploadStatus.value = UploadStatus.Failed(
-        errorMessage = e.message ?: "Upload failed. Your media is preserved — tap Retry.",
+        errorMessage = errMsg,
         canRetry = true
       )
+      Result.failure(e)
     } finally {
       isUploadInFlight = false
     }
@@ -786,6 +975,47 @@ class VybeRepository private constructor() {
     _posts.value = deduplicated
   }
 
+  suspend fun publishStoryAwait(
+    mediaUrl: String,
+    caption: String,
+    mediaType: StoryMediaType = StoryMediaType.PHOTO,
+    audience: StoryAudience = StoryAudience.EVERYONE,
+    musicTrackTitle: String? = null,
+    location: String? = null,
+    textBackgroundColor: String? = null
+  ): Result<Story> {
+    if (isUploadInFlight) {
+      return Result.failure(IllegalStateException("Another upload is currently in progress."))
+    }
+    if ((audience == StoryAudience.VYBE_MATCHES || audience == StoryAudience.CLOSE_FRIENDS) && _vybeMatches.value.isEmpty()) {
+      val msg = "No VYBE Matches selected. Add at least one person to VYBE Matches before sharing a restricted story."
+      _uploadStatus.value = UploadStatus.Failed(msg, canRetry = false)
+      return Result.failure(IllegalArgumentException(msg))
+    }
+    if (mediaType != StoryMediaType.TEXT && mediaUrl.isBlank()) {
+      val msg = "Select a photo or video before publishing your story."
+      _uploadStatus.value = UploadStatus.Failed(msg, canRetry = false)
+      return Result.failure(IllegalArgumentException(msg))
+    }
+    if (mediaType == StoryMediaType.TEXT && caption.trim().isBlank()) {
+      val msg = "Type your story message before sharing."
+      _uploadStatus.value = UploadStatus.Failed(msg, canRetry = false)
+      return Result.failure(IllegalArgumentException(msg))
+    }
+
+    val op = PendingUploadOperation.StoryUpload(
+      clientUploadId = UUID.randomUUID().toString(),
+      localOrRemoteMediaUri = mediaUrl,
+      caption = caption.trim(),
+      mediaType = mediaType,
+      audience = audience,
+      musicTrackTitle = musicTrackTitle?.takeIf { it.isNotBlank() },
+      location = location?.takeIf { it.isNotBlank() },
+      textBackgroundColor = textBackgroundColor
+    )
+    return executeStoryUpload(op)
+  }
+
   fun createStory(
     mediaUrl: String,
     caption: String,
@@ -795,7 +1025,6 @@ class VybeRepository private constructor() {
     location: String? = null,
     textBackgroundColor: String? = null
   ) {
-    // Enforce VYBE Matches non-empty audience guard at repository level too
     if ((audience == StoryAudience.VYBE_MATCHES || audience == StoryAudience.CLOSE_FRIENDS) && _vybeMatches.value.isEmpty()) {
       _uploadStatus.value = UploadStatus.Failed(
         "No VYBE Matches selected. Add at least one person to VYBE Matches before sharing a restricted story.",
@@ -819,25 +1048,24 @@ class VybeRepository private constructor() {
     }
   }
 
-  private suspend fun executeStoryUpload(op: PendingUploadOperation.StoryUpload) {
+  private suspend fun executeStoryUpload(op: PendingUploadOperation.StoryUpload): Result<Story> {
     val user = _currentUser.value
     if (user == null) {
-      _uploadStatus.value = UploadStatus.Failed("Please sign in to publish a story.", canRetry = false)
-      return
+      val msg = "Please sign in to publish a story."
+      _uploadStatus.value = UploadStatus.Failed(msg, canRetry = false)
+      return Result.failure(IllegalStateException(msg))
     }
 
     val ctx = appContext
     if (supabaseRepo.isConfigured && ctx != null && !NetworkMonitor.checkCurrentlyOnline(ctx)) {
       lastFailedUpload = op
-      _uploadStatus.value = UploadStatus.Failed(
-        "No internet connection. Your story is preserved — tap Retry once reconnected.",
-        canRetry = true
-      )
-      return
+      val msg = "No internet connection. Your story is preserved — tap Retry once reconnected."
+      _uploadStatus.value = UploadStatus.Failed(msg, canRetry = true)
+      return Result.failure(IllegalStateException(msg))
     }
 
     isUploadInFlight = true
-    try {
+    return try {
       val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
       var resolvedUrl = op.localOrRemoteMediaUri
       var resolvedStoragePath: String? = null
@@ -854,6 +1082,9 @@ class VybeRepository private constructor() {
         val payload = MediaUtils.readMediaPayload(ctx, op.localOrRemoteMediaUri)
           ?: throw IllegalStateException("Unable to read story media file. Please select it again.")
 
+        if (payload.bytes.isEmpty()) {
+          throw IllegalStateException("Selected media file is empty or corrupted.")
+        }
         if (payload.isVideo) {
           resolvedMediaType = StoryMediaType.VIDEO
         }
@@ -880,6 +1111,7 @@ class VybeRepository private constructor() {
       }
 
       _uploadStatus.value = UploadStatus.Processing("Publishing story...")
+      val nowIso = TimestampUtils.nowIsoUtc()
 
       val draftStory = Story(
         id = "s_${op.clientUploadId}",
@@ -892,6 +1124,7 @@ class VybeRepository private constructor() {
         location = op.location,
         textBackgroundColor = op.textBackgroundColor,
         timestamp = "Just now",
+        createdAtIso = nowIso,
         expiresHoursRemaining = 24,
         isViewed = false,
         storagePath = resolvedStoragePath,
@@ -899,14 +1132,23 @@ class VybeRepository private constructor() {
       )
 
       val publishedStory = if (supabaseRepo.isConfigured) {
-        supabaseRepo.createStoryOnSupabase(draftStory, token).getOrElse { throw it }
+        supabaseRepo.createStoryOnSupabase(draftStory, token).getOrElse { err ->
+          if (!resolvedStoragePath.isNullOrBlank()) {
+            supabaseRepo.deleteStorageObject(resolvedStoragePath, token)
+          }
+          throw err
+        }
       } else {
         draftStory
       }
 
       val nextStories = (listOf(publishedStory) + _stories.value.filterNot {
         it.id == publishedStory.id || (!it.clientUploadId.isNullOrBlank() && it.clientUploadId == op.clientUploadId)
-      }).sortedWith(compareBy<Story> { it.isViewed }.thenByDescending { it.author.id == user.id })
+      }).distinctBy { it.id }
+        .sortedWith(
+          compareBy<Story> { it.isViewed && it.author.id != user.id }
+            .thenByDescending { it.author.id == user.id }
+        )
       _stories.value = nextStories
 
       lastFailedUpload = null
@@ -914,12 +1156,19 @@ class VybeRepository private constructor() {
         MediaUtils.cleanupStagedFileIfOwned(ctx, op.localOrRemoteMediaUri)
       }
       _uploadStatus.value = UploadStatus.Published("Story published!")
+
+      if (supabaseRepo.isConfigured) {
+        syncStoriesFromSupabase(user.id, token)
+      }
+      Result.success(publishedStory)
     } catch (e: Exception) {
       lastFailedUpload = op
+      val errMsg = e.message ?: "Story upload failed. Tap Retry."
       _uploadStatus.value = UploadStatus.Failed(
-        errorMessage = e.message ?: "Story upload failed. Tap Retry.",
+        errorMessage = errMsg,
         canRetry = true
       )
+      Result.failure(e)
     } finally {
       isUploadInFlight = false
     }
@@ -1024,6 +1273,9 @@ class VybeRepository private constructor() {
       VybeLocalStore.get()?.clearUserScopedCaches()
       _currentUser.value = null
       _isLoggedIn.value = false
+      if (readyState.email.isNotBlank()) {
+        _lastRecoveredEmailHint.value = readyState.email
+      }
       val msg = result.getOrThrow()
       _passwordRecoveryState.value = PasswordRecoveryState.Completed(msg)
       Pair(true, msg)
@@ -1158,6 +1410,13 @@ class VybeRepository private constructor() {
     if (index != -1) {
       current[index] = current[index].copy(isArchived = true)
       _posts.value = current
+      VybeLocalStore.get()?.savePosts(current)
+      reconcilePersistedPostCounts(current, isCompleteList = !_hasMoreFeedPosts.value)
+      if (supabaseRepo.isConfigured) {
+        ioScope.launch {
+          supabaseRepo.setPostArchived(postId, true, SessionManager.get()?.accessToken.orEmpty())
+        }
+      }
     }
   }
 
@@ -1167,6 +1426,13 @@ class VybeRepository private constructor() {
     if (index != -1) {
       current[index] = current[index].copy(isArchived = false)
       _posts.value = current
+      VybeLocalStore.get()?.savePosts(current)
+      reconcilePersistedPostCounts(current, isCompleteList = !_hasMoreFeedPosts.value)
+      if (supabaseRepo.isConfigured) {
+        ioScope.launch {
+          supabaseRepo.setPostArchived(postId, false, SessionManager.get()?.accessToken.orEmpty())
+        }
+      }
     }
   }
 
@@ -1325,19 +1591,41 @@ class VybeRepository private constructor() {
 
   fun createUnfilteredPost(caption: String, imageUrl: String) {
     val user = _currentUser.value ?: return
-    val newPost = Post(
-      id = "uf_${System.currentTimeMillis()}",
-      author = user,
-      caption = caption,
-      mediaUrls = listOf(imageUrl),
-      mediaType = MediaType.IMAGE,
-      timestamp = "Just now",
-      isUnfiltered = true,
-      commentsCount = 0
-    )
-    val updatedUnfiltered = listOf(newPost) + _unfilteredPosts.value
-    _unfilteredPosts.value = updatedUnfiltered
-    VybeLocalStore.get()?.saveUnfilteredPosts(updatedUnfiltered)
+    if (supabaseRepo.isConfigured) {
+      val job = PendingUploadOperation.PostUpload(
+        clientUploadId = UUID.randomUUID().toString(),
+        caption = caption.trim(),
+        mood = null,
+        mediaType = MediaType.IMAGE,
+        localOrRemoteMediaUri = imageUrl.takeIf { it.isNotBlank() },
+        isVybes = false,
+        isUnfiltered = true,
+        locationName = null,
+        latitude = null,
+        longitude = null,
+        audioTrackTitle = null,
+        preferredAspectRatio = 0.75f
+      )
+      ioScope.launch {
+        executePostUpload(job)
+      }
+    } else {
+      val nowIso = TimestampUtils.nowIsoUtc()
+      val newPost = Post(
+        id = "uf_${System.currentTimeMillis()}",
+        author = user,
+        caption = caption,
+        mediaUrls = listOf(imageUrl),
+        mediaType = MediaType.IMAGE,
+        timestamp = "Just now",
+        createdAtIso = nowIso,
+        isUnfiltered = true,
+        commentsCount = 0
+      )
+      val updatedUnfiltered = listOf(newPost) + _unfilteredPosts.value
+      _unfilteredPosts.value = updatedUnfiltered
+      VybeLocalStore.get()?.saveUnfilteredPosts(updatedUnfiltered)
+    }
   }
 
   /**
@@ -1578,6 +1866,9 @@ class VybeRepository private constructor() {
           bio = bio,
           avatarUrl = finalAvatar,
           coverUrl = finalCover,
+          username = cleanUsername,
+          email = email,
+          phone = phone,
           isPrivate = updated.isPrivate,
           messagePrivacy = updated.messagePrivacy,
           accessToken = token
@@ -2098,7 +2389,8 @@ class VybeRepository private constructor() {
               id = dtoId,
               senderId = dto.senderId,
               text = if (dto.isDeletedForEveryone == true) "Message unsent" else dto.content,
-              timestamp = "Synced",
+              timestamp = TimestampUtils.formatMessageTime(dto.createdAt, "Now"),
+              createdAtIso = dto.createdAt,
               isMe = dto.senderId == user.id,
               mediaUrl = dto.mediaUrl,
               mediaType = dto.mediaType ?: "TEXT",
@@ -2109,9 +2401,12 @@ class VybeRepository private constructor() {
           }
           val remoteIds = mappedRemote.map { it.id }.toSet()
           val merged = mappedRemote + inFlightMsgs.filterNot { remoteIds.contains(it.id) }
+          val lastRemoteIso = mappedRemote.lastOrNull()?.createdAtIso ?: conv.lastMessageCreatedAtIso
           current[convIdx] = conv.copy(
             messages = merged,
-            lastMessage = merged.lastOrNull()?.text ?: conv.lastMessage
+            lastMessage = merged.lastOrNull()?.text ?: conv.lastMessage,
+            lastMessageCreatedAtIso = lastRemoteIso,
+            lastMessageTimestamp = TimestampUtils.formatRelative(lastRemoteIso, conv.lastMessageTimestamp)
           )
           _conversations.value = current
           VybeLocalStore.get()?.saveConversations(current)
@@ -2126,27 +2421,65 @@ class VybeRepository private constructor() {
 
   fun checkAgeRequirement(birthDateStr: String): Pair<Boolean, String> {
     return try {
-      val parts = birthDateStr.split("-")
+      val parts = birthDateStr.trim().split("-")
       if (parts.size == 3) {
         val y = parts[0].toInt()
         val m = parts[1].toInt()
         val d = parts[2].toInt()
+        if (y < 1900 || m !in 1..12 || d !in 1..31) {
+          return Pair(false, "Please enter a valid calendar date (YYYY-MM-DD).")
+        }
         val cal = java.util.Calendar.getInstance()
         val cy = cal.get(java.util.Calendar.YEAR)
         val cm = cal.get(java.util.Calendar.MONTH) + 1
         val cd = cal.get(java.util.Calendar.DAY_OF_MONTH)
+        // Strict calendar validation (prevents Feb 30, etc.)
+        val testCal = java.util.Calendar.getInstance().apply {
+          isLenient = false
+          set(y, m - 1, d)
+        }
+        testCal.timeInMillis // throws if invalid day for month
+
         var age = cy - y
         if (cm < m || (cm == m && cd < d)) age--
-        if (age < 16) {
-          Pair(false, "VYBE is strictly for individuals aged 16 and above. Access cannot be granted.")
-        } else {
-          Pair(true, "Eligible")
+        when {
+          age < 0 -> Pair(false, "Date of birth cannot be in the future.")
+          age < 16 -> Pair(false, "VYBE is strictly for individuals aged 16 and above. Access cannot be granted.")
+          age > 120 -> Pair(false, "Please enter a valid date of birth.")
+          else -> Pair(true, "Eligible")
         }
       } else {
         Pair(false, "Invalid date format. Use YYYY-MM-DD.")
       }
     } catch (_: Exception) {
-      Pair(false, "Invalid date format. Use YYYY-MM-DD.")
+      Pair(false, "Invalid calendar date. Use YYYY-MM-DD.")
+    }
+  }
+
+  suspend fun checkUsernameAvailabilityRemote(requestedUsername: String): Pair<Boolean, String> {
+    val clean = requestedUsername.trim().lowercase().removePrefix("@")
+    if (clean.length < 3) {
+      return Pair(false, "Username must be at least 3 characters.")
+    }
+    if (!Regex("^[a-z0-9_.]{3,24}$").matches(clean)) {
+      return Pair(false, "Use 3–24 lowercase letters, numbers, underscores, or periods.")
+    }
+    if (clean in setOf("null", "undefined", "admin", "vybe", "nrnext", "support")) {
+      return Pair(false, "This username is reserved.")
+    }
+    val me = _currentUser.value
+    if (me != null && me.username.equals(clean, ignoreCase = true)) {
+      return Pair(true, "This is your current username.")
+    }
+    val available = if (supabaseRepo.isConfigured) {
+      supabaseRepo.checkUsernameAvailable(clean)
+    } else {
+      _allUsers.value.none { it.username.equals(clean, ignoreCase = true) }
+    }
+    return if (available) {
+      Pair(true, "@$clean is available")
+    } else {
+      Pair(false, "@$clean is already taken. Choose another.")
     }
   }
 
@@ -2163,6 +2496,27 @@ class VybeRepository private constructor() {
     if (!termsAccepted) {
       return Pair(false, "You must agree to the Terms of Service and Privacy Policy to register.")
     }
+    val cleanFirst = firstName.trim()
+    val cleanLast = lastName.trim()
+    val cleanUsername = username.trim().lowercase().removePrefix("@")
+    val cleanEmail = email.trim().lowercase()
+    val cleanPhone = supabaseRepo.normalizePhoneE164(phone)
+
+    if (cleanFirst.length < 2) {
+      return Pair(false, "First name is required (at least 2 characters).")
+    }
+    if (cleanLast.isBlank()) {
+      return Pair(false, "Last name is required.")
+    }
+    if (!Regex("^[a-z0-9_.]{3,24}$").matches(cleanUsername) || cleanUsername == "null") {
+      return Pair(false, "Username must be 3–24 characters using letters, numbers, '_' or '.'.")
+    }
+    if (!cleanEmail.contains("@") || !cleanEmail.substringAfter("@").contains(".")) {
+      return Pair(false, "Enter a valid email address.")
+    }
+    if (cleanPhone.filter { it.isDigit() }.length < 8) {
+      return Pair(false, "Enter a valid phone number with country code (e.g. +14155550123).")
+    }
     val ageCheck = checkAgeRequirement(birthDateStr)
     if (!ageCheck.first) return ageCheck
     if (password.length < 8) {
@@ -2170,28 +2524,52 @@ class VybeRepository private constructor() {
     }
 
     if (supabaseRepo.isConfigured) {
+      val usernameAvailable = supabaseRepo.checkUsernameAvailable(cleanUsername)
+      if (!usernameAvailable) {
+        return Pair(false, "Username @$cleanUsername is already taken. Please choose another.")
+      }
+
       val res = supabaseRepo.signUpWithEmail(
-        username = username,
-        email = email,
+        username = cleanUsername,
+        email = cleanEmail,
         password = password,
-        firstName = firstName,
-        lastName = lastName,
-        phone = phone,
-        dateOfBirth = birthDateStr
+        firstName = cleanFirst,
+        lastName = cleanLast,
+        phone = cleanPhone,
+        dateOfBirth = birthDateStr.trim()
       )
       return if (res.isSuccess) {
         val payload = res.getOrThrow()
-        if (payload.accessToken.isNotEmpty()) {
+        pendingSessionPayload = payload
+        _pendingVerificationEmail.value = payload.user.email
+        _pendingVerificationPhone.value = payload.user.phone
+        _isEmailOtpVerified.value = payload.user.isEmailVerified
+        _isPhoneOtpVerified.value = payload.user.isPhoneVerified
+
+        // Trigger SMS OTP if email is already verified and we have an access token, or prompt dual OTP step
+        if (payload.accessToken.isNotEmpty() && payload.user.isEmailVerified && !payload.user.isPhoneVerified) {
+          supabaseRepo.sendPhoneVerificationOtp(cleanPhone, payload.accessToken)
+          Pair(
+            true,
+            "NEEDS_OTP: Email confirmed! Please verify your phone number ($cleanPhone) via SMS code to complete verification."
+          )
+        } else if (payload.accessToken.isNotEmpty() && payload.user.isEmailVerified && payload.user.isPhoneVerified) {
           activateAuthenticatedSession(payload.user, payload.accessToken, payload.refreshToken, payload.expiresInSeconds)
-          Pair(true, "Account created! ${if (payload.user.isUnder18) "Teen Safety Protected Mode active." else "Welcome to VYBE."}")
+          Pair(true, "Account created & verified! Welcome to VYBE.")
         } else {
-          Pair(true, "NEEDS_OTP: Verification email sent to ${payload.user.email}. Open the confirmation link or enter your verification token.")
+          if (payload.accessToken.isNotEmpty()) {
+            supabaseRepo.sendPhoneVerificationOtp(cleanPhone, payload.accessToken)
+          }
+          Pair(
+            true,
+            "NEEDS_OTP: Verify your email ($cleanEmail) and phone number ($cleanPhone) to activate your VYBE account."
+          )
         }
       } else {
         Pair(false, res.exceptionOrNull()?.message ?: "Registration failed.")
       }
     } else {
-      return registerAccount(firstName, lastName, username, email, phone, birthDateStr)
+      return registerAccount(cleanFirst, cleanLast, cleanUsername, cleanEmail, cleanPhone, birthDateStr.trim())
     }
   }
 
@@ -2206,7 +2584,11 @@ class VybeRepository private constructor() {
     val ageCheck = checkAgeRequirement(birthDateStr)
     if (!ageCheck.first) return ageCheck
     return try {
-      val parts = birthDateStr.split("-")
+      val cleanUsername = username.trim().lowercase().removePrefix("@").replace(" ", "_")
+      if (cleanUsername.isBlank() || cleanUsername == "null") {
+        return Pair(false, "Valid username is required.")
+      }
+      val parts = birthDateStr.trim().split("-")
       val y = parts[0].toInt()
       val m = parts[1].toInt()
       val d = parts[2].toInt()
@@ -2216,19 +2598,24 @@ class VybeRepository private constructor() {
         ((cal.get(java.util.Calendar.MONTH) + 1) == m && cal.get(java.util.Calendar.DAY_OF_MONTH) < d)
       ) age--
 
+      val nowIso = TimestampUtils.nowIsoUtc()
       val newUser = User(
         id = "u_${System.currentTimeMillis()}",
-        username = username.lowercase().replace(" ", "_"),
-        displayName = "$firstName $lastName".trim().ifBlank { username },
-        firstName = firstName,
-        lastName = lastName,
-        email = email,
-        phone = phone,
+        username = cleanUsername,
+        displayName = "$firstName $lastName".trim().ifBlank { cleanUsername },
+        firstName = firstName.trim(),
+        lastName = lastName.trim(),
+        email = email.trim().lowercase(),
+        phone = phone.trim(),
         isEmailVerified = true,
-        dateOfBirth = birthDateStr,
+        isPhoneVerified = phone.isNotBlank(),
+        dateOfBirth = birthDateStr.trim(),
         age = age,
         isUnder18 = age in 16..17,
         role = UserRole.USER,
+        createdAtIso = nowIso,
+        joinedDate = TimestampUtils.formatJoinedMonthYear(nowIso),
+        isOnline = true,
         isOnboardingCompleted = false
       )
       _currentUser.value = newUser
@@ -2242,7 +2629,7 @@ class VybeRepository private constructor() {
   }
 
   fun registerAccount(username: String, email: String, birthDateStr: String): Pair<Boolean, String> {
-    return registerAccount(username, "", username, email, "", birthDateStr)
+    return registerAccount(username, "Member", username, email, "+15550000000", birthDateStr)
   }
 
   private suspend fun activateAuthenticatedSession(
@@ -2251,7 +2638,6 @@ class VybeRepository private constructor() {
     refreshToken: String,
     expiresInSeconds: Long
   ) {
-    // Isolate previous user's local inbox/notifications before switching accounts
     val previousUserId = SessionManager.get()?.userId
     if (!previousUserId.isNullOrBlank() && previousUserId != user.id) {
       VybeLocalStore.get()?.clearUserScopedCaches()
@@ -2262,55 +2648,73 @@ class VybeRepository private constructor() {
       _followingUserIds.value = emptySet()
     }
 
-    _currentUser.value = user
+    val onlineUser = user.copy(isOnline = true)
+    _currentUser.value = onlineUser
     _isLoggedIn.value = true
-    viewedStoryIdsLocal = VybeLocalStore.get()?.loadViewedStoryIds(user.id).orEmpty()
-    vybeMatchIdsCache = VybeLocalStore.get()?.loadVybeMatches(user.id).orEmpty()
+    pendingSessionPayload = null
+    viewedStoryIdsLocal = VybeLocalStore.get()?.loadViewedStoryIds(onlineUser.id).orEmpty()
+    vybeMatchIdsCache = VybeLocalStore.get()?.loadVybeMatches(onlineUser.id).orEmpty()
 
     SessionManager.get()?.saveSession(
-      user = user,
+      user = onlineUser,
       accessToken = accessToken,
       refreshToken = refreshToken,
       expiresInSeconds = expiresInSeconds
     )
-    VybeLocalStore.get()?.saveUser(user)
+    VybeLocalStore.get()?.saveUser(onlineUser)
 
-    // Immediately sync profiles, feed, stories, inbox, and notifications for this user!
+    startPresenceAndIncomingCallLoops()
     syncAllFromSupabase()
   }
 
   suspend fun loginWithSupabase(identifier: String, pass: String): Pair<Boolean, String> {
-    if (identifier.isBlank() || pass.isBlank()) {
-      return Pair(false, "Please enter your email/username and password.")
+    val cleanId = identifier.trim()
+    if (cleanId.isBlank() || pass.isBlank()) {
+      return Pair(false, "Please enter your email, phone number, or @username and password.")
     }
 
     if (supabaseRepo.isConfigured) {
-      val digits = identifier.filter { it.isDigit() }
-      val resolvedEmail = when {
-        identifier.contains("@") -> identifier.trim().lowercase()
-        digits.length >= 7 -> {
-          val userWithPhone = _allUsers.value.firstOrNull {
-            it.phone.filter { c -> c.isDigit() }.endsWith(digits.takeLast(10))
+      val resolved = supabaseRepo.resolveIdentifierSecurely(cleanId)
+      if (!resolved.found) {
+        return Pair(false, "Invalid login credentials. Check your identifier and password.")
+      }
+
+      val authResult = when (resolved.mode) {
+        "PHONE" -> {
+          val phoneToTry = resolved.phone ?: supabaseRepo.normalizePhoneE164(cleanId)
+          val phoneRes = supabaseRepo.signInWithPhone(phoneToTry, pass)
+          if (phoneRes.isSuccess || resolved.email.isNullOrBlank()) {
+            phoneRes
+          } else {
+            supabaseRepo.signInWithEmail(resolved.email, pass)
           }
-          userWithPhone?.email ?: supabaseRepo.resolveEmailForIdentifier(identifier) ?: identifier.trim().lowercase()
         }
-        else -> supabaseRepo.resolveEmailForIdentifier(identifier) ?: identifier.trim().lowercase()
+        else -> {
+          val emailToTry = resolved.email?.trim()?.lowercase().orEmpty()
+          if (emailToTry.contains("@")) {
+            val emailRes = supabaseRepo.signInWithEmail(emailToTry, pass)
+            if (emailRes.isSuccess || resolved.phone.isNullOrBlank()) {
+              emailRes
+            } else {
+              supabaseRepo.signInWithPhone(resolved.phone, pass)
+            }
+          } else if (!resolved.phone.isNullOrBlank()) {
+            supabaseRepo.signInWithPhone(resolved.phone, pass)
+          } else {
+            Result.failure(Exception("Invalid login credentials. Check your identifier and password."))
+          }
+        }
       }
 
-      if (!resolvedEmail.contains("@")) {
-        return Pair(false, "Could not resolve '$identifier'. Please sign in using your registered email address.")
-      }
-
-      val res = supabaseRepo.signInWithEmail(resolvedEmail, pass)
-      return if (res.isSuccess) {
-        val payload = res.getOrThrow()
+      return if (authResult.isSuccess) {
+        val payload = authResult.getOrThrow()
         activateAuthenticatedSession(payload.user, payload.accessToken, payload.refreshToken, payload.expiresInSeconds)
         Pair(true, "Signed in successfully.")
       } else {
-        Pair(false, res.exceptionOrNull()?.message ?: "Invalid login credentials.")
+        Pair(false, authResult.exceptionOrNull()?.message ?: "Invalid login credentials.")
       }
     } else {
-      val ok = loginUser(identifier, pass)
+      val ok = loginUser(cleanId, pass)
       return Pair(ok, if (ok) "Signed in." else "Invalid credentials.")
     }
   }
@@ -2320,17 +2724,95 @@ class VybeRepository private constructor() {
       val res = supabaseRepo.verifyOtp(email, token, type)
       return if (res.isSuccess) {
         val payload = res.getOrThrow()
-        activateAuthenticatedSession(payload.user, payload.accessToken, payload.refreshToken, payload.expiresInSeconds)
-        Pair(true, "Email verified!")
+        pendingSessionPayload = payload
+        _isEmailOtpVerified.value = true
+        _pendingVerificationEmail.value = payload.user.email
+        val phoneToVerify = payload.user.phone.ifBlank { _pendingVerificationPhone.value }
+        if (phoneToVerify.isNotBlank() && !payload.user.isPhoneVerified && !_isPhoneOtpVerified.value) {
+          // Trigger SMS OTP now that we have an authenticated JWT session for the new user
+          val smsSend = supabaseRepo.sendPhoneVerificationOtp(phoneToVerify, payload.accessToken)
+          val smsHint = smsSend.getOrElse { it.message ?: "Request SMS code below to verify your phone." }
+          Pair(true, "EMAIL_VERIFIED_NEEDS_PHONE: Email verified! $smsHint")
+        } else {
+          activateAuthenticatedSession(payload.user, payload.accessToken, payload.refreshToken, payload.expiresInSeconds)
+          Pair(true, "Email verified!")
+        }
       } else {
-        Pair(false, res.exceptionOrNull()?.message ?: "Verification token invalid or expired.")
+        Pair(false, res.exceptionOrNull()?.message ?: "Verification code invalid or expired.")
       }
     }
+    _isEmailOtpVerified.value = true
     return Pair(true, "Email verified!")
   }
 
+  suspend fun resendEmailVerificationCode(email: String): Pair<Boolean, String> {
+    if (!supabaseRepo.isConfigured) return Pair(true, "Verification code resent.")
+    val res = supabaseRepo.resendEmailOtp(email)
+    return if (res.isSuccess) Pair(true, res.getOrThrow())
+    else Pair(false, res.exceptionOrNull()?.message ?: "Unable to resend email code.")
+  }
+
+  suspend fun requestPhoneVerificationCode(phone: String): Pair<Boolean, String> {
+    val cleanPhone = phone.trim().ifBlank { _pendingVerificationPhone.value }
+    if (cleanPhone.isBlank()) return Pair(false, "Enter your phone number with country code first.")
+    _pendingVerificationPhone.value = supabaseRepo.normalizePhoneE164(cleanPhone)
+    if (!supabaseRepo.isConfigured) return Pair(true, "SMS code sent to ${_pendingVerificationPhone.value}.")
+
+    val token = pendingSessionPayload?.accessToken ?: SessionManager.get()?.accessToken
+    val res = supabaseRepo.sendPhoneVerificationOtp(_pendingVerificationPhone.value, token)
+    return if (res.isSuccess) Pair(true, res.getOrThrow())
+    else Pair(false, res.exceptionOrNull()?.message ?: "Unable to send SMS code.")
+  }
+
+  suspend fun verifyPhoneOtpCode(phone: String, code: String): Pair<Boolean, String> {
+    val cleanPhone = supabaseRepo.normalizePhoneE164(phone.ifBlank { _pendingVerificationPhone.value })
+    if (cleanPhone.isBlank()) return Pair(false, "Phone number is missing.")
+    if (!supabaseRepo.isConfigured) {
+      _isPhoneOtpVerified.value = true
+      return Pair(true, "Phone number verified!")
+    }
+
+    val pending = pendingSessionPayload
+    val activeUser = _currentUser.value
+    val uid = pending?.user?.id ?: activeUser?.id
+    val token = pending?.accessToken ?: SessionManager.get()?.accessToken
+
+    val res = supabaseRepo.verifyPhoneOtp(cleanPhone, code, uid, token)
+    return if (res.isSuccess) {
+      _isPhoneOtpVerified.value = true
+      val freshPayload = res.getOrNull()
+      if (freshPayload != null && (_isEmailOtpVerified.value || freshPayload.user.isEmailVerified)) {
+        activateAuthenticatedSession(
+          freshPayload.user.copy(isEmailVerified = true, isPhoneVerified = true),
+          freshPayload.accessToken,
+          freshPayload.refreshToken,
+          freshPayload.expiresInSeconds
+        )
+        Pair(true, "Account fully verified! Welcome to VYBE.")
+      } else if (pending != null && pending.accessToken.isNotBlank() && (_isEmailOtpVerified.value || pending.user.isEmailVerified)) {
+        activateAuthenticatedSession(
+          pending.user.copy(isEmailVerified = true, isPhoneVerified = true, phone = cleanPhone),
+          pending.accessToken,
+          pending.refreshToken,
+          pending.expiresInSeconds
+        )
+        Pair(true, "Account fully verified! Welcome to VYBE.")
+      } else if (activeUser != null) {
+        val updated = activeUser.copy(phone = cleanPhone, isPhoneVerified = true)
+        _currentUser.value = updated
+        SessionManager.get()?.updateCurrentUser(updated)
+        VybeLocalStore.get()?.saveUser(updated)
+        Pair(true, "Phone number verified!")
+      } else {
+        Pair(true, "PHONE_VERIFIED_NEEDS_EMAIL: Phone verified! Now enter your email verification code.")
+      }
+    } else {
+      Pair(false, res.exceptionOrNull()?.message ?: "Invalid or expired SMS code.")
+    }
+  }
+
   suspend fun sendPasswordReset(email: String): Pair<Boolean, String> {
-    val clean = email.trim()
+    val clean = email.trim().lowercase()
     if (clean.isBlank() || !clean.contains("@")) {
       return Pair(false, "Please enter your registered email address.")
     }
@@ -2356,14 +2838,18 @@ class VybeRepository private constructor() {
 
   fun loginUser(identifier: String, pass: String): Boolean {
     val clean = identifier.trim().lowercase().replace("@", "")
+    val digits = identifier.filter { it.isDigit() }
     val matched = _allUsers.value.firstOrNull {
-      it.email.equals(identifier.trim(), ignoreCase = true) || it.username.lowercase() == clean
+      it.email.equals(identifier.trim(), ignoreCase = true) ||
+        it.username.lowercase() == clean ||
+        (digits.length >= 7 && it.phone.filter { c -> c.isDigit() }.endsWith(digits.takeLast(8)))
     } ?: User(
       id = "u_${System.currentTimeMillis()}",
       username = clean.ifBlank { "vybe_user" },
       displayName = clean.ifBlank { "VYBE Member" },
       email = if (identifier.contains("@")) identifier.trim() else "$clean@vybe.app",
       role = UserRole.USER,
+      isOnline = true,
       isOnboardingCompleted = true
     )
     _currentUser.value = matched
@@ -2374,6 +2860,11 @@ class VybeRepository private constructor() {
   }
 
   fun logout() {
+    presenceLoopJob?.cancel()
+    callSignalingPollJob?.cancel()
+    callEngine?.stopSession()
+    callEngine = null
+    _activeCall.value = null
     val token = SessionManager.get()?.accessToken.orEmpty()
     ioScope.launch {
       supabaseRepo.signOut(token)
@@ -2384,7 +2875,6 @@ class VybeRepository private constructor() {
     _isLoggedIn.value = false
     _conversations.value = emptyList()
     _notifications.value = emptyList()
-    _stories.value = emptyList()
     _vybeMatches.value = emptyList()
     _followingUserIds.value = emptySet()
     _requestedFollowUserIds.value = emptySet()
@@ -2649,8 +3139,28 @@ class VybeRepository private constructor() {
   }
 
   fun markConversationAsRead(conversationId: String) {
+    val targetConv = _conversations.value.firstOrNull { it.id == conversationId }
     _conversations.value = _conversations.value.map {
-      if (it.id == conversationId) it.copy(unreadCount = 0) else it
+      if (it.id == conversationId) {
+        it.copy(
+          unreadCount = 0,
+          messages = it.messages.map { m -> if (!m.isMe) m.copy(isRead = true) else m }
+        )
+      } else it
+    }
+    val me = _currentUser.value
+    if (supabaseRepo.isConfigured && me != null && targetConv != null) {
+      val unreadPeerIds = targetConv.messages.filter { !it.isMe && !it.id.startsWith("c_") }.map { it.id }
+      if (unreadPeerIds.isNotEmpty()) {
+        ioScope.launch {
+          val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+          SupabaseRoomsAndCallsRemote.markMessagesRead(
+            userId = me.id,
+            messageIds = unreadPeerIds,
+            authHeader = SupabaseConfig.buildAuthHeader(token)
+          )
+        }
+      }
     }
   }
 
@@ -2701,64 +3211,494 @@ class VybeRepository private constructor() {
     }
   }
 
+  // --- Real Presence Heartbeat, Cross-Device Voice & Video Calls, and Persistent Live Rooms ---
+
+  private fun startPresenceAndIncomingCallLoops() {
+    presenceLoopJob?.cancel()
+    if (!supabaseRepo.isConfigured) return
+    presenceLoopJob = ioScope.launch {
+      var tick = 0
+      while (isActive && _isLoggedIn.value) {
+        try {
+          val me = _currentUser.value
+          val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+          val authHeader = SupabaseConfig.buildAuthHeader(token)
+          if (me != null && me.id.isNotBlank() && !authHeader.isNullOrBlank()) {
+            if (tick % 5 == 0) {
+              SupabaseRoomsAndCallsRemote.updatePresence(me.id, me.livePulse, authHeader)
+            }
+            // Check for incoming calls when idle
+            val active = _activeCall.value
+            if (active == null) {
+              val incoming = SupabaseRoomsAndCallsRemote.fetchIncomingCalls(me.id, authHeader)
+                .firstOrNull { !_blockedUserIds.value.contains(it.callerId) }
+              if (incoming != null) {
+                val incomingId = incoming.id ?: ""
+                if (incomingId.isNotBlank()) {
+                  val caller = _allUsers.value.firstOrNull { it.id == incoming.callerId }
+                    ?: supabaseRepo.fetchUserProfile(incoming.callerId, token)
+                    ?: User(id = incoming.callerId, username = "caller", displayName = "VYBE Member", isOnline = true)
+                  _activeCall.value = CallSession(
+                    callId = incomingId,
+                    peerUser = caller,
+                    isVideo = incoming.isVideo,
+                    state = CallState.INCOMING
+                  )
+                  attachCallEngineIfReady(incomingId, isVideo = incoming.isVideo, token = token)
+                  startCallStateWatcher(incomingId)
+                }
+              }
+            }
+            // Refresh active room messages if user is inside a live room
+            val openRoom = _activeUnloadRoom.value
+            if (openRoom != null && !openRoom.id.startsWith("ul_") && !openRoom.id.startsWith("room_")) {
+              refreshActiveRoomMessages(openRoom.id, token)
+            }
+          }
+        } catch (_: Exception) {}
+        tick++
+        delay(4500L)
+      }
+    }
+  }
+
+  private fun attachCallEngineIfReady(callId: String, isVideo: Boolean, token: String?) {
+    val ctx = appContext ?: return
+    val me = _currentUser.value ?: return
+    if (callId.isBlank() || callId.startsWith("local_")) return
+    if (callEngine != null) return
+
+    val engine = VybeCallEngine(appContext = ctx)
+    callEngine = engine
+    engine.startSession(
+      callId = callId,
+      myUserId = me.id,
+      accessToken = token.orEmpty(),
+      initialSpeakerOn = _activeCall.value?.isSpeakerOn ?: isVideo,
+      initialMuted = _activeCall.value?.isMuted ?: false,
+      callback = object : VybeCallEngine.Listener {
+        override fun onSignalingConnected(iceSummary: String) {
+          _activeCall.value = _activeCall.value?.copy(
+            isSignalingConnected = true,
+            iceCandidateSummary = iceSummary,
+            connectionStatusText = "Realtime signaling active"
+          )
+        }
+
+        override fun onRemoteAccepted() {
+          val cur = _activeCall.value
+          if (cur != null && cur.state != CallState.CONNECTED) {
+            _activeCall.value = cur.copy(
+              state = CallState.CONNECTED,
+              connectionStatusText = "Encrypted audio/video connected"
+            )
+            callEngine?.startMediaStreaming()
+          }
+        }
+
+        override fun onRemoteDeclined() {
+          _activeCall.value = _activeCall.value?.copy(
+            state = CallState.DECLINED,
+            connectionStatusText = "Call declined"
+          )
+          callEngine?.stopSession()
+          callEngine = null
+        }
+
+        override fun onRemoteEnded() {
+          _activeCall.value = _activeCall.value?.copy(
+            state = CallState.ENDED,
+            connectionStatusText = "Call ended"
+          )
+          callEngine?.stopSession()
+          callEngine = null
+        }
+
+        override fun onRemoteMuteChanged(isMuted: Boolean) {
+          _activeCall.value = _activeCall.value?.copy(isPeerMuted = isMuted)
+        }
+
+        override fun onRemoteCameraChanged(isCameraOff: Boolean) {
+          _activeCall.value = _activeCall.value?.copy(isPeerCameraOff = isCameraOff)
+        }
+
+        override fun onRemoteVideoFrame(jpegBase64: String) {
+          _activeCall.value = _activeCall.value?.copy(remoteVideoFrameBase64 = jpegBase64)
+        }
+
+        override fun onError(message: String) {
+          _activeCall.value = _activeCall.value?.copy(connectionStatusText = message)
+        }
+      }
+    )
+  }
+
+  private fun startCallStateWatcher(callId: String) {
+    callSignalingPollJob?.cancel()
+    if (!supabaseRepo.isConfigured || callId.startsWith("local_")) return
+    callSignalingPollJob = ioScope.launch {
+      val startedMs = System.currentTimeMillis()
+      while (isActive) {
+        val current = _activeCall.value ?: break
+        if (current.callId != callId) break
+        if (current.state in setOf(CallState.ENDED, CallState.DECLINED, CallState.MISSED, CallState.FAILED)) break
+
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        val authHeader = SupabaseConfig.buildAuthHeader(token)
+        val remoteSession = SupabaseRoomsAndCallsRemote.fetchCallSessionById(callId, authHeader)
+        if (remoteSession != null) {
+          when ((remoteSession.status ?: "").uppercase()) {
+            "CONNECTED" -> {
+              if (current.state != CallState.CONNECTED) {
+                _activeCall.value = current.copy(
+                  state = CallState.CONNECTED,
+                  connectionStatusText = "Connected"
+                )
+                callEngine?.startMediaStreaming()
+              }
+            }
+            "DECLINED" -> {
+              _activeCall.value = current.copy(state = CallState.DECLINED)
+              callEngine?.stopSession()
+              callEngine = null
+              break
+            }
+            "MISSED" -> {
+              _activeCall.value = current.copy(state = CallState.MISSED)
+              callEngine?.stopSession()
+              callEngine = null
+              break
+            }
+            "ENDED" -> {
+              _activeCall.value = null
+              callEngine?.stopSession()
+              callEngine = null
+              break
+            }
+          }
+        }
+        // Ringing timeout after 45 seconds if unanswered
+        if (current.state == CallState.OUTGOING && System.currentTimeMillis() - startedMs > 45_000L) {
+          SupabaseRoomsAndCallsRemote.patchCallSession(
+            callId = callId,
+            status = "MISSED",
+            endedAt = TimestampUtils.nowIsoUtc(),
+            authHeader = authHeader
+          )
+          _activeCall.value = current.copy(state = CallState.MISSED)
+          callEngine?.stopSession()
+          callEngine = null
+          break
+        }
+        delay(2500L)
+      }
+    }
+  }
+
   fun initiateCall(peerUser: User, isVideo: Boolean): CallAvailabilityResult {
-    if (_currentUser.value == null) return CallAvailabilityResult.Error("Please sign in first.")
+    val me = _currentUser.value ?: return CallAvailabilityResult.Error("Please sign in first.")
     if (_blockedUserIds.value.contains(peerUser.id)) {
       return CallAvailabilityResult.Blocked("Cannot call a blocked user.")
     }
-    val isPeerOnline = peerUser.livePulse != LivePulseStatus.NONE && peerUser.livePulse != LivePulseStatus.QUIET_TIME
+    val latestPeer = _allUsers.value.firstOrNull { it.id == peerUser.id } ?: peerUser
+    val isPeerOnline = latestPeer.isOnline ||
+      TimestampUtils.isRecentlyOnline(latestPeer.lastSeenAtIso) ||
+      (latestPeer.livePulse != LivePulseStatus.NONE && latestPeer.livePulse != LivePulseStatus.QUIET_TIME)
+
     if (!isPeerOnline) {
-      return CallAvailabilityResult.Offline("${peerUser.displayName} is currently offline. Send a message instead.")
+      return CallAvailabilityResult.Offline("${latestPeer.displayName} is currently offline. Send a message instead.")
     }
-    startCall(peerUser, isVideo)
+    startCall(latestPeer, isVideo, me.id)
     return CallAvailabilityResult.Available
   }
 
-  fun startCall(peerUser: User, isVideo: Boolean) {
-    _activeCall.value = CallSession(peerUser = peerUser, isVideo = isVideo, state = CallState.OUTGOING)
+  fun startCall(peerUser: User, isVideo: Boolean, explicitCallerId: String? = null) {
+    callEngine?.stopSession()
+    callEngine = null
+    val localId = "local_${System.currentTimeMillis()}"
+    _activeCall.value = CallSession(
+      callId = localId,
+      peerUser = peerUser,
+      isVideo = isVideo,
+      state = CallState.OUTGOING,
+      isSpeakerOn = isVideo
+    )
+
+    val callerId = explicitCallerId ?: _currentUser.value?.id.orEmpty()
+    if (supabaseRepo.isConfigured && callerId.isNotBlank()) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        val authHeader = SupabaseConfig.buildAuthHeader(token)
+        val tempEngine = VybeCallEngine(appContext)
+        val (offerSdp, iceSummary) = tempEngine.buildLocalSdpWithStun(isVideo = isVideo, isOffer = true)
+        val createRes = SupabaseRoomsAndCallsRemote.createCallSession(
+          callerId = callerId,
+          calleeId = peerUser.id,
+          isVideo = isVideo,
+          offerSdp = offerSdp,
+          authHeader = authHeader
+        )
+        if (createRes.isSuccess) {
+          val serverCall = createRes.getOrThrow()
+          val serverId = serverCall.id ?: return@launch
+          _activeCall.value = _activeCall.value?.copy(
+            callId = serverId,
+            iceCandidateSummary = iceSummary,
+            connectionStatusText = iceSummary
+          )
+          attachCallEngineIfReady(serverId, isVideo = isVideo, token = token)
+          startCallStateWatcher(serverId)
+        }
+      }
+    }
   }
 
   fun acceptCall() {
-    _activeCall.value = _activeCall.value?.copy(state = CallState.CONNECTED)
+    val cur = _activeCall.value ?: return
+    _activeCall.value = cur.copy(state = CallState.CONNECTED, connectionStatusText = "Connecting audio…")
+    if (supabaseRepo.isConfigured && cur.callId.isNotBlank() && !cur.callId.startsWith("local_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        val authHeader = SupabaseConfig.buildAuthHeader(token)
+        if (callEngine == null) {
+          attachCallEngineIfReady(cur.callId, isVideo = cur.isVideo, token = token)
+        }
+        val (answerSdp, iceSummary) = (callEngine ?: VybeCallEngine(appContext))
+          .buildLocalSdpWithStun(isVideo = cur.isVideo, isOffer = false)
+        SupabaseRoomsAndCallsRemote.patchCallSession(
+          callId = cur.callId,
+          status = "CONNECTED",
+          answerSdp = answerSdp,
+          startedAt = TimestampUtils.nowIsoUtc(),
+          authHeader = authHeader
+        )
+        _activeCall.value = _activeCall.value?.copy(
+          iceCandidateSummary = iceSummary,
+          connectionStatusText = "Connected ($iceSummary)"
+        )
+        callEngine?.sendCallControlEvent("ANSWER")
+        callEngine?.startMediaStreaming()
+      }
+    } else {
+      callEngine?.startMediaStreaming()
+    }
+  }
+
+  fun declineCall() {
+    val cur = _activeCall.value ?: return
+    callEngine?.sendCallControlEvent("DECLINE")
+    callEngine?.stopSession()
+    callEngine = null
+    _activeCall.value = null
+    if (supabaseRepo.isConfigured && cur.callId.isNotBlank() && !cur.callId.startsWith("local_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        SupabaseRoomsAndCallsRemote.patchCallSession(
+          callId = cur.callId,
+          status = "DECLINED",
+          endedAt = TimestampUtils.nowIsoUtc(),
+          authHeader = SupabaseConfig.buildAuthHeader(token)
+        )
+      }
+    }
   }
 
   fun endCall() {
+    val cur = _activeCall.value
+    callEngine?.sendCallControlEvent("HANGUP")
+    callEngine?.stopSession()
+    callEngine = null
+    callSignalingPollJob?.cancel()
     _activeCall.value = null
+    if (cur != null && supabaseRepo.isConfigured && cur.callId.isNotBlank() && !cur.callId.startsWith("local_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        val finalStatus = if (cur.state == CallState.INCOMING) "DECLINED" else "ENDED"
+        SupabaseRoomsAndCallsRemote.patchCallSession(
+          callId = cur.callId,
+          status = finalStatus,
+          endedAt = TimestampUtils.nowIsoUtc(),
+          authHeader = SupabaseConfig.buildAuthHeader(token)
+        )
+      }
+    }
+  }
+
+  fun onCallAudioPermissionReady() {
+    if (_activeCall.value?.state == CallState.CONNECTED) {
+      callEngine?.startMediaStreaming()
+    }
   }
 
   fun toggleCallMute() {
-    _activeCall.value = _activeCall.value?.let { it.copy(isMuted = !it.isMuted) }
+    val nextMuted = !(_activeCall.value?.isMuted ?: false)
+    _activeCall.value = _activeCall.value?.copy(isMuted = nextMuted)
+    callEngine?.setMuted(nextMuted)
+  }
+
+  fun toggleCallSpeaker() {
+    val nextSpeaker = !(_activeCall.value?.isSpeakerOn ?: false)
+    _activeCall.value = _activeCall.value?.copy(isSpeakerOn = nextSpeaker)
+    callEngine?.setSpeakerphone(nextSpeaker)
   }
 
   fun toggleCallCamera() {
-    _activeCall.value = _activeCall.value?.let { it.copy(isCameraOff = !it.isCameraOff) }
+    val nextOff = !(_activeCall.value?.isCameraOff ?: false)
+    _activeCall.value = _activeCall.value?.copy(isCameraOff = nextOff)
+    callEngine?.notifyCameraState(nextOff)
+  }
+
+  fun switchCallCamera() {
+    val nextFront = !(_activeCall.value?.isFrontCamera ?: true)
+    _activeCall.value = _activeCall.value?.copy(isFrontCamera = nextFront)
+  }
+
+  fun pushLocalVideoFrame(jpegBytes: ByteArray) {
+    callEngine?.sendVideoFrameJpeg(jpegBytes)
+  }
+
+  // --- Persistent Live Rooms + Join by Unique Room ID (`VYB-XXXX-XXXX`) ---
+
+  suspend fun joinRoomByCode(rawCode: String): Result<UnloadRoom> {
+    val normalizedCode = SupabaseRoomsAndCallsRemote.normalizeRoomLookupInput(rawCode)
+    if (normalizedCode.isBlank()) {
+      return Result.failure(IllegalArgumentException("Enter a valid Room ID (e.g. VYB-7K4M-92QX)."))
+    }
+
+    val me = _currentUser.value
+    if (supabaseRepo.isConfigured) {
+      val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+      val authHeader = SupabaseConfig.buildAuthHeader(token)
+      val remoteRes = SupabaseRoomsAndCallsRemote.findRoomByCodeOrId(normalizedCode, me?.id, authHeader)
+      if (remoteRes.isSuccess) {
+        val found = remoteRes.getOrThrow()
+        if (me != null && !authHeader.isNullOrBlank()) {
+          SupabaseRoomsAndCallsRemote.joinRoomMember(found.id, me.id, "LISTENER", authHeader)
+        }
+        val joinedRoom = found.copy(activeListenersCount = maxOf(1, found.activeListenersCount))
+        _activeUnloadRoom.value = joinedRoom
+        _unloadRooms.value = (listOf(joinedRoom) + _unloadRooms.value.filterNot {
+          it.id == joinedRoom.id || it.roomCode.equals(normalizedCode, ignoreCase = true)
+        })
+        return Result.success(joinedRoom)
+      }
+      // Also check seeded/local rooms if code matches one of them
+      val localMatch = _unloadRooms.value.firstOrNull { it.roomCode.equals(normalizedCode, ignoreCase = true) }
+      if (localMatch != null) {
+        joinUnloadRoom(localMatch)
+        return Result.success(localMatch)
+      }
+      return remoteRes
+    } else {
+      val localMatch = _unloadRooms.value.firstOrNull {
+        it.roomCode.equals(normalizedCode, ignoreCase = true) || it.id.equals(rawCode.trim(), ignoreCase = true)
+      } ?: return Result.failure(IllegalArgumentException("No active room found with ID $normalizedCode."))
+
+      if (!localMatch.isActive) {
+        return Result.failure(IllegalStateException("This room has ended."))
+      }
+      if (localMatch.activeListenersCount >= localMatch.capacity) {
+        return Result.failure(IllegalStateException("This room is currently full (${localMatch.capacity}/${localMatch.capacity})."))
+      }
+      joinUnloadRoom(localMatch)
+      return Result.success(localMatch)
+    }
   }
 
   fun joinUnloadRoom(room: UnloadRoom) {
-    _activeUnloadRoom.value = room
+    val bumped = room.copy(activeListenersCount = maxOf(1, room.activeListenersCount))
+    _activeUnloadRoom.value = bumped
+    val me = _currentUser.value
+    if (supabaseRepo.isConfigured && me != null && !room.id.startsWith("ul_") && !room.id.startsWith("room_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        SupabaseRoomsAndCallsRemote.joinRoomMember(room.id, me.id, "LISTENER", SupabaseConfig.buildAuthHeader(token))
+        refreshActiveRoomMessages(room.id, token)
+      }
+    }
   }
 
   fun leaveUnloadRoom() {
+    val active = _activeUnloadRoom.value
+    val me = _currentUser.value
     _activeUnloadRoom.value = null
+    if (active != null && me != null && supabaseRepo.isConfigured && !active.id.startsWith("ul_") && !active.id.startsWith("room_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        SupabaseRoomsAndCallsRemote.leaveRoomMember(active.id, me.id, SupabaseConfig.buildAuthHeader(token))
+      }
+    }
+  }
+
+  private suspend fun refreshActiveRoomMessages(roomId: String, explicitToken: String? = null) {
+    val meId = _currentUser.value?.id.orEmpty()
+    val token = explicitToken ?: supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+    val authHeader = SupabaseConfig.buildAuthHeader(token)
+    val msgs = SupabaseRoomsAndCallsRemote.fetchRoomMessages(roomId, meId, authHeader)
+    val roomRes = SupabaseRoomsAndCallsRemote.findRoomByCodeOrId(roomId, meId, authHeader)
+    val count = roomRes.getOrNull()?.activeListenersCount ?: 1
+    _unloadRooms.value = _unloadRooms.value.map { r ->
+      if (r.id == roomId) {
+        val updated = r.copy(
+          recentMessages = msgs,
+          activeListenersCount = maxOf(1, count)
+        )
+        if (_activeUnloadRoom.value?.id == roomId) {
+          _activeUnloadRoom.value = updated
+        }
+        updated
+      } else r
+    }
   }
 
   fun sendUnloadMessage(roomId: String, text: String, isAnonymous: Boolean) {
     val user = _currentUser.value ?: return
-    if (text.isBlank()) return
+    val clean = text.trim()
+    if (clean.isBlank()) return
+    val nowIso = TimestampUtils.nowIsoUtc()
+    val senderLabel = if (isAnonymous) "Anonymous Vyber" else user.displayName
+
+    val optimisticMsg = UnloadMessage(
+      id = "ulm_${System.currentTimeMillis()}",
+      senderName = senderLabel,
+      isAnonymous = isAnonymous,
+      text = clean,
+      timestamp = "Just now",
+      createdAtIso = nowIso,
+      isMe = true
+    )
+
     _unloadRooms.value = _unloadRooms.value.map { room ->
       if (room.id == roomId) {
-        val msg = UnloadMessage(
-          id = "ulm_${System.currentTimeMillis()}",
-          senderName = if (isAnonymous) "Anonymous Vyber" else user.displayName,
-          isAnonymous = isAnonymous,
-          text = text.trim(),
-          timestamp = "Just now",
-          isMe = true
-        )
-        val updated = room.copy(recentMessages = room.recentMessages + msg)
+        val updated = room.copy(recentMessages = room.recentMessages + optimisticMsg)
         if (_activeUnloadRoom.value?.id == roomId) _activeUnloadRoom.value = updated
         updated
       } else room
+    }
+
+    if (supabaseRepo.isConfigured && !roomId.startsWith("ul_") && !roomId.startsWith("room_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        val res = SupabaseRoomsAndCallsRemote.sendRoomMessage(
+          roomId = roomId,
+          senderId = user.id,
+          senderName = senderLabel,
+          content = clean,
+          isAnonymous = isAnonymous,
+          authHeader = SupabaseConfig.buildAuthHeader(token)
+        )
+        if (res.isSuccess) {
+          val serverMsg = res.getOrThrow()
+          _unloadRooms.value = _unloadRooms.value.map { room ->
+            if (room.id == roomId) {
+              val reconciled = room.recentMessages.map { if (it.id == optimisticMsg.id) serverMsg else it }
+              val updated = room.copy(recentMessages = reconciled)
+              if (_activeUnloadRoom.value?.id == roomId) _activeUnloadRoom.value = updated
+              updated
+            } else room
+          }
+        }
+      }
     }
   }
 
@@ -2774,23 +3714,54 @@ class VybeRepository private constructor() {
     termsAgreed: Boolean
   ): UnloadRoom {
     val user = _currentUser.value
+    val generatedCode = SupabaseRoomsAndCallsRemote.generateUniqueRoomCode()
+    val nowIso = TimestampUtils.nowIsoUtc()
+    val tempId = "room_${System.currentTimeMillis()}"
     val newRoom = UnloadRoom(
-      id = "room_${System.currentTimeMillis()}",
-      title = title,
-      description = description,
-      topicTag = topicTag,
+      id = tempId,
+      roomCode = generatedCode,
+      title = title.trim(),
+      description = description.trim(),
+      topicTag = topicTag.trim().ifBlank { "Community" },
       mode = mode,
       hostId = user?.id ?: "self",
       hostName = user?.displayName ?: "VYBE Host",
       durationMinutes = durationMinutes,
       capacity = capacity,
       scheduledTime = scheduledTime,
-      joinerMessage = joinerMessage,
+      joinerMessage = joinerMessage.trim(),
       termsAgreed = termsAgreed,
-      activeListenersCount = 1
+      activeListenersCount = 1,
+      createdAtIso = nowIso
     )
     _unloadRooms.value = listOf(newRoom) + _unloadRooms.value
     _activeUnloadRoom.value = newRoom
+
+    if (supabaseRepo.isConfigured && user != null) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        val createRes = SupabaseRoomsAndCallsRemote.createRoom(
+          hostId = user.id,
+          hostName = user.displayName,
+          title = newRoom.title,
+          description = newRoom.description,
+          topicTag = newRoom.topicTag,
+          mode = mode,
+          durationMinutes = durationMinutes,
+          capacity = capacity,
+          scheduledTime = scheduledTime,
+          joinerMessage = newRoom.joinerMessage,
+          authHeader = SupabaseConfig.buildAuthHeader(token)
+        )
+        if (createRes.isSuccess) {
+          val persisted = createRes.getOrThrow()
+          _unloadRooms.value = _unloadRooms.value.map { if (it.id == tempId) persisted else it }
+          if (_activeUnloadRoom.value?.id == tempId) {
+            _activeUnloadRoom.value = persisted
+          }
+        }
+      }
+    }
     return newRoom
   }
 
@@ -2810,11 +3781,35 @@ class VybeRepository private constructor() {
         updated
       } else it
     }
+    if (supabaseRepo.isConfigured && !roomId.startsWith("ul_") && !roomId.startsWith("room_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        SupabaseRoomsAndCallsRemote.updateRoomOnSupabase(
+          roomId = roomId,
+          title = title,
+          description = description,
+          topicTag = topicTag,
+          mode = mode,
+          durationMinutes = durationMinutes,
+          capacity = capacity,
+          authHeader = SupabaseConfig.buildAuthHeader(token)
+        )
+      }
+    }
   }
 
   fun deleteUnloadRoom(roomId: String) {
     _unloadRooms.value = _unloadRooms.value.filterNot { it.id == roomId }
     if (_activeUnloadRoom.value?.id == roomId) _activeUnloadRoom.value = null
+    if (supabaseRepo.isConfigured && !roomId.startsWith("ul_") && !roomId.startsWith("room_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        SupabaseRoomsAndCallsRemote.deleteRoomOnSupabase(
+          roomId = roomId,
+          authHeader = SupabaseConfig.buildAuthHeader(token)
+        )
+      }
+    }
   }
 
   fun submitDoubleTakeAnswer(promptId: String, answer: String) {

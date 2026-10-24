@@ -86,8 +86,15 @@ class VybeViewModel : ViewModel() {
   val isLoggedIn = repository.isLoggedIn
   val isOnline = repository.isOnline
   val isSyncingFeed = repository.isSyncingFeed
+  val hasMoreFeedPosts = repository.hasMoreFeedPosts
+  val isLoadingMorePosts = repository.isLoadingMorePosts
   val uploadStatus: StateFlow<UploadStatus> = repository.uploadStatus
   val passwordRecoveryState: StateFlow<PasswordRecoveryState> = repository.passwordRecoveryState
+  val lastRecoveredEmailHint = repository.lastRecoveredEmailHint
+  val pendingVerificationEmail = repository.pendingVerificationEmail
+  val pendingVerificationPhone = repository.pendingVerificationPhone
+  val isEmailOtpVerified = repository.isEmailOtpVerified
+  val isPhoneOtpVerified = repository.isPhoneOtpVerified
   val themeMode = repository.themeMode
   val isDarkMode = MutableStateFlow(true)
 
@@ -289,7 +296,7 @@ class VybeViewModel : ViewModel() {
     _uiBannerMessage.value = msg
   }
 
-  // --- Cloud Refresh ---
+  // --- Cloud Refresh & Pagination ---
   fun refreshAllData() {
     viewModelScope.launch {
       repository.syncAllFromSupabase()
@@ -299,6 +306,12 @@ class VybeViewModel : ViewModel() {
   fun triggerFeedRefresh() {
     _feedRefreshTrigger.tryEmit(Unit)
     refreshAllData()
+  }
+
+  fun loadMoreFeedPosts() {
+    viewModelScope.launch {
+      repository.loadMoreFeedPosts()
+    }
   }
 
   // --- Upload Reliability Controls ---
@@ -406,6 +419,37 @@ class VybeViewModel : ViewModel() {
   fun loadCommentsForPost(postId: String) = repository.loadCommentsForPost(postId)
   fun addComment(postId: String, text: String) = repository.addComment(postId, text)
 
+  suspend fun publishPostAwait(
+    caption: String,
+    mood: MoodType?,
+    mediaType: MediaType = MediaType.TEXT,
+    imageUrl: String? = null,
+    isVybes: Boolean = false,
+    locationName: String? = null,
+    latitude: Double? = null,
+    longitude: Double? = null,
+    audioTrackTitle: String? = null,
+    preferredAspectRatio: Float? = null
+  ): Result<Post> {
+    val result = repository.publishPostAwait(
+      caption = caption,
+      mood = mood,
+      mediaType = mediaType,
+      imageUrl = imageUrl,
+      isVybes = isVybes,
+      isUnfiltered = false,
+      locationName = locationName,
+      latitude = latitude,
+      longitude = longitude,
+      audioTrackTitle = audioTrackTitle,
+      preferredAspectRatio = preferredAspectRatio
+    )
+    if (result.isSuccess) {
+      navigateBack()
+    }
+    return result
+  }
+
   fun createPost(
     caption: String,
     mood: MoodType?,
@@ -502,6 +546,24 @@ class VybeViewModel : ViewModel() {
     return false
   }
 
+  suspend fun publishStoryAwait(
+    mediaUrl: String,
+    caption: String,
+    mediaType: StoryMediaType = StoryMediaType.PHOTO,
+    audience: StoryAudience = StoryAudience.EVERYONE,
+    musicTrackTitle: String? = null,
+    location: String? = null,
+    textBackgroundColor: String? = null
+  ): Result<Story> = repository.publishStoryAwait(
+    mediaUrl = mediaUrl,
+    caption = caption,
+    mediaType = mediaType,
+    audience = audience,
+    musicTrackTitle = musicTrackTitle,
+    location = location,
+    textBackgroundColor = textBackgroundColor
+  )
+
   fun createStory(
     mediaUrl: String,
     caption: String,
@@ -576,15 +638,38 @@ class VybeViewModel : ViewModel() {
   }
   fun startVoiceCall(peer: User) { initiateCall(peer, isVideo = false) }
   fun startVideoCall(peer: User) { initiateCall(peer, isVideo = true) }
-  fun acceptCall() = repository.acceptCall()
-  fun endCall() { repository.endCall(); navigateBack() }
+  fun openIncomingCallScreen() { navigateTo(Screen.CALL_SCREEN) }
+  fun acceptCall() {
+    repository.acceptCall()
+    if (_currentScreen.value != Screen.CALL_SCREEN) {
+      navigateTo(Screen.CALL_SCREEN)
+    }
+  }
+  fun declineCall() {
+    repository.declineCall()
+    if (_currentScreen.value == Screen.CALL_SCREEN) {
+      navigateBack()
+    }
+  }
+  fun endCall() {
+    repository.endCall()
+    if (_currentScreen.value == Screen.CALL_SCREEN) {
+      navigateBack()
+    }
+  }
+  fun onCallAudioPermissionReady() = repository.onCallAudioPermissionReady()
   fun toggleCallMute() = repository.toggleCallMute()
+  fun toggleCallSpeaker() = repository.toggleCallSpeaker()
   fun toggleCallCamera() = repository.toggleCallCamera()
+  fun switchCallCamera() = repository.switchCallCamera()
+  fun pushLocalVideoFrame(jpegBytes: ByteArray) = repository.pushLocalVideoFrame(jpegBytes)
 
   // --- Profile, Auth & Preserved Spaces ---
   fun updateProfilePhoto(avatarUrl: String) = repository.updateProfilePhoto(avatarUrl)
   fun updateProfileBanner(coverUrl: String) = repository.updateProfileBanner(coverUrl)
   fun checkUserIdAvailability(requestedId: String) = repository.checkUserIdAvailability(requestedId)
+  suspend fun checkUsernameAvailabilityRemote(requestedUsername: String): Pair<Boolean, String> =
+    repository.checkUsernameAvailabilityRemote(requestedUsername)
 
   fun updateAccountProfile(
     firstName: String,
@@ -617,7 +702,22 @@ class VybeViewModel : ViewModel() {
 
   suspend fun verifyOtp(email: String, token: String, type: String = "signup"): Pair<Boolean, String> {
     val result = repository.verifyOtp(email, token, type)
-    if (result.first) {
+    if (result.first && !result.second.startsWith("EMAIL_VERIFIED_NEEDS_PHONE")) {
+      val verifiedRole = repository.currentUser.value?.role ?: UserRole.USER
+      _currentScreen.value = if (verifiedRole == UserRole.ADMIN) Screen.ADMIN_CONSOLE else Screen.MAIN
+    }
+    return result
+  }
+
+  suspend fun resendEmailVerificationCode(email: String): Pair<Boolean, String> =
+    repository.resendEmailVerificationCode(email)
+
+  suspend fun requestPhoneVerificationCode(phone: String): Pair<Boolean, String> =
+    repository.requestPhoneVerificationCode(phone)
+
+  suspend fun verifyPhoneOtpCode(phone: String, code: String): Pair<Boolean, String> {
+    val result = repository.verifyPhoneOtpCode(phone, code)
+    if (result.first && !result.second.startsWith("PHONE_VERIFIED_NEEDS_EMAIL") && repository.isLoggedIn.value) {
       val verifiedRole = repository.currentUser.value?.role ?: UserRole.USER
       _currentScreen.value = if (verifiedRole == UserRole.ADMIN) Screen.ADMIN_CONSOLE else Screen.MAIN
     }
@@ -688,6 +788,13 @@ class VybeViewModel : ViewModel() {
   fun addIntention(text: String) = repository.addIntention(text)
   fun toggleIntentionFulfilled(id: String) = repository.toggleIntentionFulfilled(id)
   fun joinUnloadRoom(room: UnloadRoom) { repository.joinUnloadRoom(room); navigateTo(Screen.UNLOAD_VIEW) }
+  suspend fun joinRoomByCode(code: String): Result<UnloadRoom> {
+    val res = repository.joinRoomByCode(code)
+    if (res.isSuccess) {
+      navigateTo(Screen.UNLOAD_VIEW)
+    }
+    return res
+  }
   fun leaveUnloadRoom() { repository.leaveUnloadRoom(); navigateBack() }
   fun sendUnloadMessage(roomId: String, text: String, isAnonymous: Boolean) = repository.sendUnloadMessage(roomId, text, isAnonymous)
   fun createUnloadRoom(title: String, description: String, topicTag: String, mode: UnloadRoomMode, durationMinutes: Int, capacity: Int, scheduledTime: String, joinerMessage: String, termsAgreed: Boolean) =

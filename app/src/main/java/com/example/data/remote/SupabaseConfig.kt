@@ -41,6 +41,38 @@ object SupabaseConfig {
       ""
     }
 
+  val stunServerUrl: String
+    get() = try {
+      val url = BuildConfig.STUN_SERVER_URL.trim()
+      if (url.isNotBlank() && !url.contains("placeholder", ignoreCase = true)) url else "stun:stun.l.google.com:19302"
+    } catch (e: Throwable) {
+      "stun:stun.l.google.com:19302"
+    }
+
+  val turnServerUrl: String
+    get() = try {
+      val url = BuildConfig.TURN_SERVER_URL.trim()
+      if (url.isNotBlank() && !url.contains("placeholder", ignoreCase = true)) url else ""
+    } catch (e: Throwable) {
+      ""
+    }
+
+  val turnUsername: String
+    get() = try {
+      val u = BuildConfig.TURN_USERNAME.trim()
+      if (u.isNotBlank() && !u.contains("placeholder", ignoreCase = true)) u else ""
+    } catch (e: Throwable) {
+      ""
+    }
+
+  val turnCredential: String
+    get() = try {
+      val c = BuildConfig.TURN_CREDENTIAL.trim()
+      if (c.isNotBlank() && !c.contains("placeholder", ignoreCase = true)) c else ""
+    } catch (e: Throwable) {
+      ""
+    }
+
   fun isGoogleMapsConfigured(): Boolean = googleMapsApiKey.isNotBlank()
 
   /**
@@ -84,5 +116,10 @@ object SupabaseConfig {
 
   fun getRestBaseUrl(): String {
     return if (isConfigured()) "$supabaseUrl/rest/v1/" else "$LIVE_SUPABASE_URL/rest/v1/"
+  }
+
+  fun getRealtimeWsUrl(): String {
+    val base = (if (isConfigured()) supabaseUrl else LIVE_SUPABASE_URL).replaceFirst("https://", "wss://")
+    return "$base/realtime/v1/websocket?apikey=$supabaseAnonKey&vsn=1.0.0"
   }
 }

@@ -187,5 +187,63 @@ class VybeMasterAuditTest {
     assertEquals(7, parsed?.likesCount)
     assertEquals(0, parsed?.viewsCount)
   }
+
+  @Test
+  fun `relative timestamps and joined month year format authoritative ISO dates without substituting current time`() {
+    val baseNow = com.example.util.TimestampUtils.parseIsoMillis("2026-10-24T12:00:00Z")!!
+
+    assertEquals("Just now", com.example.util.TimestampUtils.formatRelative("2026-10-24T11:59:35Z", baseNow))
+    assertEquals("2m", com.example.util.TimestampUtils.formatRelative("2026-10-24T11:58:00Z", baseNow))
+    assertEquals("45m", com.example.util.TimestampUtils.formatRelative("2026-10-24T11:15:00Z", baseNow))
+    assertEquals("3h", com.example.util.TimestampUtils.formatRelative("2026-10-24T09:00:00Z", baseNow))
+    assertEquals("2d", com.example.util.TimestampUtils.formatRelative("2026-10-22T12:00:00Z", baseNow))
+    assertEquals("2w", com.example.util.TimestampUtils.formatRelative("2026-10-10T12:00:00Z", baseNow))
+    assertEquals("", com.example.util.TimestampUtils.formatRelative(null, baseNow))
+
+    val joined = com.example.util.TimestampUtils.formatJoinedMonthYear("2026-10-15T08:30:00Z")
+    assertTrue("Joined date must start with Joined and include year 2026", joined.startsWith("Joined ") && joined.contains("2026"))
+    assertEquals("VYBE Member", com.example.util.TimestampUtils.formatJoinedMonthYear(null, ""))
+  }
+
+  @Test
+  fun `unload room generates shareable VYB-XXXX-XXXX room code and supports join by code`() {
+    val room = com.example.data.model.UnloadRoom(
+      id = "room_9a8b7c6d",
+      title = "Late Night Reflection",
+      description = "Open supportive circle",
+      topicTag = "Silent Company"
+    )
+    assertTrue(
+      "Room code must match VYB-XXXX-XXXX format: ${room.roomCode}",
+      Regex("^VYB-[A-Z0-9]{4}-[A-Z0-9]{4}$").matches(room.roomCode)
+    )
+    assertEquals("VYB-9A8B-7C6D", room.roomCode)
+  }
+
+  @Test
+  fun `profile completeness detects null or placeholder usernames and requires dual verification`() {
+    val nullUsernameUser = User(
+      id = "u_legacy_null",
+      username = "null",
+      displayName = "Alex Rivera",
+      isEmailVerified = true,
+      isPhoneVerified = false
+    )
+    assertTrue("Literal 'null' username must be flagged as incomplete profile", nullUsernameUser.hasIncompleteProfile)
+    assertFalse("Single-channel verification must not mark account fully verified", nullUsernameUser.isFullyVerifiedAccount)
+
+    val completeVerifiedUser = User(
+      id = "u_complete",
+      username = "alex_rivera",
+      displayName = "Alex Rivera",
+      isEmailVerified = true,
+      isPhoneVerified = true,
+      postsCount = 0
+    )
+    assertFalse("Valid username and displayName must pass completeness check", completeVerifiedUser.hasIncompleteProfile)
+    assertTrue("Both email and phone OTP verified must mark account fully verified", completeVerifiedUser.isFullyVerifiedAccount)
+    assertEquals(0, completeVerifiedUser.postsCount)
+  }
 }
+
 

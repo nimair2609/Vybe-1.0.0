@@ -18,6 +18,7 @@ data class PostComment(
   val author: User,
   val content: String,
   val timestamp: String,
+  val createdAtIso: String? = null,
   val likesCount: Int = 0,
   val isLiked: Boolean = false
 )
@@ -29,6 +30,7 @@ data class Post(
   val mediaUrls: List<String> = emptyList(),
   val mediaType: MediaType = MediaType.TEXT,
   val timestamp: String,
+  val createdAtIso: String? = null,
   val likesCount: Int = 0,
   val commentsCount: Int = 0,
   val savesCount: Int = 0,

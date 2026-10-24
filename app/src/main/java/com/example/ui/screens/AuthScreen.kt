@@ -40,6 +40,7 @@ import com.example.ui.theme.*
  *   10. Terms and conditions agreement checkbox (not preselected)
  * - Post-login onboarding checklist support.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AuthScreen(viewModel: VybeViewModel) {
   var isRegisterMode by remember { mutableStateOf(false) }
@@ -48,16 +49,18 @@ fun AuthScreen(viewModel: VybeViewModel) {
   var accountType by remember { mutableStateOf("INDIVIDUAL") } // "INDIVIDUAL" or "BUSINESS"
   var showLegalReader by remember { mutableStateOf(false) }
 
-  // 10 Registration Fields (Individual)
+  // Mandatory Registration Fields (Individual - Section 8)
   var firstName by remember { mutableStateOf("") }
   var lastName by remember { mutableStateOf("") }
   var username by remember { mutableStateOf("") }
   var email by remember { mutableStateOf("") }
   var phone by remember { mutableStateOf("") }
-  var dateOfBirth by remember { mutableStateOf("2004-03-15") }
+  var dateOfBirth by remember { mutableStateOf("") } // Never prefilled; user must enter or pick
   var createPassword by remember { mutableStateOf("") }
   var confirmPassword by remember { mutableStateOf("") }
-  var termsAccepted by remember { mutableStateOf(false) } // Not preselected per Section 2 & 6
+  var termsAccepted by remember { mutableStateOf(false) }
+  var attemptedRegisterSubmit by remember { mutableStateOf(false) }
+  var showDobDatePicker by remember { mutableStateOf(false) }
 
   // Business Onboarding Fields (Section 11)
   var businessName by remember { mutableStateOf("") }
@@ -83,7 +86,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
   var loginPassword by remember { mutableStateOf("") }
   var showLoginPassword by remember { mutableStateOf(false) }
 
-  var registrationStep by remember { mutableStateOf(1) } // 1 = Registration details, 2 = Immediate In-App OTP Verification
+  var registrationStep by remember { mutableStateOf(1) } // 1 = Registration details, 2 = Dual Email + Phone OTP Verification
 
   val docPickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
     contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
@@ -116,10 +119,28 @@ fun AuthScreen(viewModel: VybeViewModel) {
   var resetLoading by remember { mutableStateOf(false) }
   var resetError by remember { mutableStateOf<String?>(null) }
   var resetMessage by remember { mutableStateOf<String?>(null) }
+
+  // Dual Email + Phone OTP Verification state (Section 9)
+  val pendingEmail by viewModel.pendingVerificationEmail.collectAsState()
+  val pendingPhone by viewModel.pendingVerificationPhone.collectAsState()
+  val isEmailVerifiedState by viewModel.isEmailOtpVerified.collectAsState()
+  val isPhoneVerifiedState by viewModel.isPhoneOtpVerified.collectAsState()
+  val lastRecoveredEmail by viewModel.lastRecoveredEmailHint.collectAsState()
+
   var verifyEmailInput by remember { mutableStateOf("") }
   var verifyOtpInput by remember { mutableStateOf("") }
   var verifyLoading by remember { mutableStateOf(false) }
   var verifyError by remember { mutableStateOf<String?>(null) }
+
+  var verifyPhoneInput by remember { mutableStateOf("") }
+  var verifyPhoneOtpInput by remember { mutableStateOf("") }
+  var phoneVerifyLoading by remember { mutableStateOf(false) }
+  var phoneVerifyError by remember { mutableStateOf<String?>(null) }
+  var phoneVerifyInfo by remember { mutableStateOf<String?>(null) }
+
+  var emailResendCooldownSec by remember { mutableIntStateOf(0) }
+  var phoneResendCooldownSec by remember { mutableIntStateOf(0) }
+
   var statusMessage by remember { mutableStateOf<String?>(null) }
   val globalBanner by viewModel.uiBannerMessage.collectAsState()
 
@@ -128,6 +149,42 @@ fun AuthScreen(viewModel: VybeViewModel) {
       statusMessage = globalBanner
       viewModel.consumeBannerMessage()
     }
+  }
+
+  LaunchedEffect(lastRecoveredEmail) {
+    if (lastRecoveredEmail.isNotBlank() && loginIdentifier.isBlank()) {
+      isRegisterMode = false
+      loginIdentifier = lastRecoveredEmail
+    }
+  }
+
+  LaunchedEffect(pendingEmail, pendingPhone) {
+    if (pendingEmail.isNotBlank() && verifyEmailInput.isBlank()) verifyEmailInput = pendingEmail
+    if (pendingPhone.isNotBlank() && verifyPhoneInput.isBlank()) verifyPhoneInput = pendingPhone
+  }
+
+  LaunchedEffect(emailResendCooldownSec) {
+    if (emailResendCooldownSec > 0) {
+      kotlinx.coroutines.delay(1000L)
+      emailResendCooldownSec -= 1
+    }
+  }
+
+  LaunchedEffect(phoneResendCooldownSec) {
+    if (phoneResendCooldownSec > 0) {
+      kotlinx.coroutines.delay(1000L)
+      phoneResendCooldownSec -= 1
+    }
+  }
+
+  // Debounced server-side username availability check
+  LaunchedEffect(username, isRegisterMode) {
+    val clean = username.trim().removePrefix("@")
+    if (!isRegisterMode || clean.length < 3) return@LaunchedEffect
+    kotlinx.coroutines.delay(350L)
+    val (avail, msg) = viewModel.checkUsernameAvailabilityRemote(clean)
+    isUserIdAvailable = avail
+    userIdAvailabilityMessage = msg
   }
 
   Box(
@@ -296,9 +353,9 @@ fun AuthScreen(viewModel: VybeViewModel) {
 
           if (accountType == "INDIVIDUAL") {
             if (registrationStep == 2) {
-              // Direct In-App OTP Verification Step for Individual Signup (Section 6)
+              // Dual Email + Phone SMS OTP Verification Step (Section 9)
               Surface(
-                color = VybeViolet.copy(alpha = 0.12f),
+                color = VybeViolet.copy(alpha = 0.10f),
                 shape = RoundedCornerShape(16.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, VybeViolet.copy(alpha = 0.35f)),
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
@@ -307,69 +364,303 @@ fun AuthScreen(viewModel: VybeViewModel) {
                   modifier = Modifier.padding(16.dp),
                   horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                  Icon(Icons.Default.MarkEmailRead, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(36.dp))
-                  Spacer(modifier = Modifier.height(8.dp))
-                  Text("Step 2 of 2: Verify Your Email", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                  Text(
+                    "Step 2 of 2: Dual Account Verification",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                  )
                   Spacer(modifier = Modifier.height(4.dp))
                   Text(
-                    text = "A 6-digit confirmation code was sent to $verifyEmailInput. Enter it below to activate your profile.",
+                    text = "Verify both your Email Address and Phone Number to mark your VYBE account fully verified.",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                   )
-                  Spacer(modifier = Modifier.height(14.dp))
-                  OutlinedTextField(
-                    value = verifyOtpInput,
-                    onValueChange = { verifyOtpInput = it },
-                    label = { Text("6-Digit Verification Code") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().testTag("auth_verify_otp_input")
-                  )
-                  if (verifyError != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(verifyError!!, color = VybeDanger, fontSize = 11.sp)
-                  }
-                  Spacer(modifier = Modifier.height(14.dp))
-                  Button(
-                    onClick = {
-                      verifyError = null
-                      coroutineScope.launch {
-                        verifyLoading = true
-                        val (ok, msg) = viewModel.verifyOtp(verifyEmailInput, verifyOtpInput, "signup")
-                        verifyLoading = false
-                        if (!ok) {
-                          verifyError = msg
-                        }
-                      }
-                    },
-                    enabled = !verifyLoading && verifyOtpInput.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().height(48.dp).testTag("auth_confirm_otp_button")
-                  ) {
-                    Text(if (verifyLoading) "Verifying..." else "Verify OTP & Enter VYBE", fontWeight = FontWeight.Bold)
-                  }
-                  Spacer(modifier = Modifier.height(8.dp))
+                  Spacer(modifier = Modifier.height(12.dp))
+
+                  // Separate Verification Status Pills
                   Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                   ) {
-                    TextButton(onClick = { registrationStep = 1 }) {
-                      Text("Back to Edit Details", fontSize = 12.sp)
-                    }
-                    TextButton(onClick = {
-                      coroutineScope.launch {
-                        viewModel.sendPasswordReset(verifyEmailInput)
-                        statusMessage = "Verification code resent to $verifyEmailInput"
+                    Surface(
+                      color = if (isEmailVerifiedState) VybeOnlineGreen.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
+                      shape = RoundedCornerShape(10.dp),
+                      modifier = Modifier.weight(1f).testTag("auth_email_verified_status")
+                    ) {
+                      Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                      ) {
+                        Icon(
+                          imageVector = if (isEmailVerifiedState) Icons.Default.CheckCircle else Icons.Default.MarkEmailUnread,
+                          contentDescription = null,
+                          tint = if (isEmailVerifiedState) VybeOnlineGreen else VybeViolet,
+                          modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                          text = if (isEmailVerifiedState) "Email Verified" else "Email Pending",
+                          fontSize = 11.sp,
+                          fontWeight = FontWeight.Bold,
+                          color = if (isEmailVerifiedState) VybeOnlineGreen else MaterialTheme.colorScheme.onSurface
+                        )
                       }
-                    }) {
-                      Text("Resend Code", fontSize = 12.sp, color = VybeBrandCyan, fontWeight = FontWeight.Bold)
                     }
+
+                    Surface(
+                      color = if (isPhoneVerifiedState) VybeOnlineGreen.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
+                      shape = RoundedCornerShape(10.dp),
+                      modifier = Modifier.weight(1f).testTag("auth_phone_verified_status")
+                    ) {
+                      Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                      ) {
+                        Icon(
+                          imageVector = if (isPhoneVerifiedState) Icons.Default.CheckCircle else Icons.Default.Sms,
+                          contentDescription = null,
+                          tint = if (isPhoneVerifiedState) VybeOnlineGreen else VybeBrandCyan,
+                          modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                          text = if (isPhoneVerifiedState) "Phone Verified" else "Phone Pending",
+                          fontSize = 11.sp,
+                          fontWeight = FontWeight.Bold,
+                          color = if (isPhoneVerifiedState) VybeOnlineGreen else MaterialTheme.colorScheme.onSurface
+                        )
+                      }
+                    }
+                  }
+
+                  Spacer(modifier = Modifier.height(14.dp))
+
+                  // --- 1. EMAIL OTP CARD ---
+                  Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                  ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                      Text(
+                        text = if (isEmailVerifiedState) "1. Email Confirmed ($verifyEmailInput)" else "1. Verify Email ($verifyEmailInput)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = if (isEmailVerifiedState) VybeOnlineGreen else MaterialTheme.colorScheme.onSurface
+                      )
+                      if (!isEmailVerifiedState) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                          value = verifyOtpInput,
+                          onValueChange = {
+                            verifyOtpInput = it.filter { ch -> ch.isDigit() || ch.isLetter() }.take(8)
+                            verifyError = null
+                          },
+                          label = { Text("Email Verification Code") },
+                          singleLine = true,
+                          shape = RoundedCornerShape(12.dp),
+                          modifier = Modifier.fillMaxWidth().testTag("auth_verify_otp_input")
+                        )
+                        if (verifyError != null) {
+                          Spacer(modifier = Modifier.height(6.dp))
+                          Text(verifyError!!, color = VybeDanger, fontSize = 11.sp)
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                          modifier = Modifier.fillMaxWidth(),
+                          horizontalArrangement = Arrangement.spacedBy(8.dp),
+                          verticalAlignment = Alignment.CenterVertically
+                        ) {
+                          Button(
+                            onClick = {
+                              verifyError = null
+                              coroutineScope.launch {
+                                verifyLoading = true
+                                val (ok, msg) = viewModel.verifyOtp(verifyEmailInput.trim(), verifyOtpInput.trim(), "signup")
+                                verifyLoading = false
+                                if (!ok) {
+                                  verifyError = msg
+                                } else {
+                                  statusMessage = msg.removePrefix("EMAIL_VERIFIED_NEEDS_PHONE:").trim()
+                                  if (msg.startsWith("EMAIL_VERIFIED_NEEDS_PHONE")) {
+                                    phoneResendCooldownSec = 60
+                                  }
+                                }
+                              }
+                            },
+                            enabled = !verifyLoading && verifyOtpInput.isNotBlank(),
+                            colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("auth_confirm_otp_button")
+                          ) {
+                            Text(if (verifyLoading) "Verifying..." else "Verify Email OTP", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                          }
+                          OutlinedButton(
+                            onClick = {
+                              verifyError = null
+                              coroutineScope.launch {
+                                val (ok, msg) = viewModel.resendEmailVerificationCode(verifyEmailInput.trim())
+                                if (ok) {
+                                  emailResendCooldownSec = 60
+                                  statusMessage = msg
+                                } else {
+                                  verifyError = msg
+                                }
+                              }
+                            },
+                            enabled = !verifyLoading && emailResendCooldownSec == 0 && verifyEmailInput.isNotBlank(),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.heightIn(min = 48.dp).testTag("auth_resend_email_otp_button")
+                          ) {
+                            Text(
+                              if (emailResendCooldownSec > 0) "Resend (${emailResendCooldownSec}s)" else "Resend",
+                              fontSize = 11.sp
+                            )
+                          }
+                        }
+                      }
+                    }
+                  }
+
+                  Spacer(modifier = Modifier.height(12.dp))
+
+                  // --- 2. PHONE SMS OTP CARD ---
+                  Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                  ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                      Text(
+                        text = if (isPhoneVerifiedState) "2. Phone Confirmed ($verifyPhoneInput)" else "2. Verify Phone Number via SMS",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = if (isPhoneVerifiedState) VybeOnlineGreen else MaterialTheme.colorScheme.onSurface
+                      )
+                      if (!isPhoneVerifiedState) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                          value = verifyPhoneInput,
+                          onValueChange = {
+                            verifyPhoneInput = it
+                            phoneVerifyError = null
+                          },
+                          label = { Text("Phone Number (with country code, e.g. +91...)") },
+                          singleLine = true,
+                          shape = RoundedCornerShape(12.dp),
+                          modifier = Modifier.fillMaxWidth().testTag("auth_verify_phone_input")
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                          onClick = {
+                            phoneVerifyError = null
+                            phoneVerifyInfo = null
+                            coroutineScope.launch {
+                              phoneVerifyLoading = true
+                              val (ok, msg) = viewModel.requestPhoneVerificationCode(verifyPhoneInput.trim())
+                              phoneVerifyLoading = false
+                              if (ok) {
+                                phoneResendCooldownSec = 60
+                                phoneVerifyInfo = msg
+                              } else {
+                                phoneVerifyError = msg
+                              }
+                            }
+                          },
+                          enabled = !phoneVerifyLoading && phoneResendCooldownSec == 0 && verifyPhoneInput.isNotBlank(),
+                          shape = RoundedCornerShape(10.dp),
+                          modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("auth_send_phone_otp_button")
+                        ) {
+                          Text(
+                            when {
+                              phoneVerifyLoading -> "Requesting SMS..."
+                              phoneResendCooldownSec > 0 -> "Resend SMS Code (${phoneResendCooldownSec}s)"
+                              else -> "Send / Resend SMS Verification Code"
+                            },
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                          )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                          value = verifyPhoneOtpInput,
+                          onValueChange = {
+                            verifyPhoneOtpInput = it.filter { ch -> ch.isDigit() }.take(8)
+                            phoneVerifyError = null
+                          },
+                          label = { Text("6-Digit SMS OTP Code") },
+                          singleLine = true,
+                          shape = RoundedCornerShape(12.dp),
+                          modifier = Modifier.fillMaxWidth().testTag("auth_verify_phone_otp_input")
+                        )
+                        if (phoneVerifyInfo != null) {
+                          Spacer(modifier = Modifier.height(6.dp))
+                          Text(phoneVerifyInfo!!, color = VybeOnlineGreen, fontSize = 11.sp)
+                        }
+                        if (phoneVerifyError != null) {
+                          Spacer(modifier = Modifier.height(6.dp))
+                          Text(phoneVerifyError!!, color = VybeDanger, fontSize = 11.sp)
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                          onClick = {
+                            phoneVerifyError = null
+                            coroutineScope.launch {
+                              phoneVerifyLoading = true
+                              val (ok, msg) = viewModel.verifyPhoneOtpCode(verifyPhoneInput.trim(), verifyPhoneOtpInput.trim())
+                              phoneVerifyLoading = false
+                              if (!ok) {
+                                phoneVerifyError = msg
+                              } else {
+                                statusMessage = msg.removePrefix("PHONE_VERIFIED_NEEDS_EMAIL:").trim()
+                              }
+                            }
+                          },
+                          enabled = !phoneVerifyLoading && verifyPhoneOtpInput.isNotBlank(),
+                          colors = ButtonDefaults.buttonColors(containerColor = VybeBrandCyan),
+                          shape = RoundedCornerShape(10.dp),
+                          modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("auth_confirm_phone_otp_button")
+                        ) {
+                          Text(
+                            if (phoneVerifyLoading) "Verifying SMS..." else "Verify Phone OTP",
+                            color = Color.Black,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                          )
+                        }
+                      }
+                    }
+                  }
+
+                  Spacer(modifier = Modifier.height(10.dp))
+                  TextButton(
+                    onClick = { registrationStep = 1 },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                  ) {
+                    Text("Back to Edit Registration Details", fontSize = 12.sp)
                   }
                 }
               }
             } else {
+            val cleanUsername = username.trim().removePrefix("@")
+            val isFirstNameInvalid = attemptedRegisterSubmit && firstName.trim().length < 2
+            val isLastNameInvalid = attemptedRegisterSubmit && lastName.trim().isEmpty()
+            val isUsernameFormatInvalid = cleanUsername.isNotEmpty() && !cleanUsername.matches(Regex("^[a-zA-Z0-9._]{3,24}$"))
+            val isUsernameInvalid = (attemptedRegisterSubmit && cleanUsername.isEmpty()) || isUsernameFormatInvalid || !isUserIdAvailable
+            val isEmailInvalid = (attemptedRegisterSubmit && email.trim().isEmpty()) ||
+              (email.isNotBlank() && !email.trim().matches(Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")))
+            val phoneDigitsCount = phone.count { it.isDigit() }
+            val isPhoneInvalid = (attemptedRegisterSubmit && phone.trim().isEmpty()) ||
+              (phone.isNotBlank() && phoneDigitsCount !in 10..15)
+            val dobAgeCheck = remember(dateOfBirth) { validateRegistrationDob(dateOfBirth) }
+            val isDobInvalid = (attemptedRegisterSubmit && dateOfBirth.trim().isEmpty()) ||
+              (dateOfBirth.isNotBlank() && dobAgeCheck != null)
+            val isCreatePassInvalid = (attemptedRegisterSubmit && createPassword.isEmpty()) ||
+              (createPassword.isNotEmpty() && createPassword.length < 8)
+            val isConfirmPassInvalid = (attemptedRegisterSubmit && confirmPassword.isEmpty()) ||
+              (confirmPassword.isNotEmpty() && confirmPassword != createPassword)
+
             // Field 1 & 2: First Name and Last Name
             Row(
               modifier = Modifier.fillMaxWidth(),
@@ -377,15 +668,23 @@ fun AuthScreen(viewModel: VybeViewModel) {
             ) {
               OutlinedTextField(
                 value = firstName,
-                onValueChange = { firstName = it },
-                label = { Text("First Name") },
+                onValueChange = { firstName = it; errorMessage = null },
+                label = { Text("First Name *") },
+                isError = isFirstNameInvalid,
+                supportingText = if (isFirstNameInvalid) {
+                  { Text("Enter first name (2+ chars)", color = VybeDanger, fontSize = 10.sp) }
+                } else null,
                 singleLine = true,
                 modifier = Modifier.weight(1f).testTag("auth_first_name_input")
               )
               OutlinedTextField(
                 value = lastName,
-                onValueChange = { lastName = it },
-                label = { Text("Last Name") },
+                onValueChange = { lastName = it; errorMessage = null },
+                label = { Text("Last Name *") },
+                isError = isLastNameInvalid,
+                supportingText = if (isLastNameInvalid) {
+                  { Text("Required", color = VybeDanger, fontSize = 10.sp) }
+                } else null,
                 singleLine = true,
                 modifier = Modifier.weight(1f).testTag("auth_last_name_input")
               )
@@ -393,28 +692,58 @@ fun AuthScreen(viewModel: VybeViewModel) {
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Field 3: Suggested User ID with live availability check (Section 6)
+            // Field 3: Unique Username with live local + remote availability check (Section 8)
             OutlinedTextField(
               value = username,
               onValueChange = {
                 username = it
-                if (it.isNotBlank()) {
-                  val (avail, msg) = viewModel.checkUserIdAvailability(it)
+                errorMessage = null
+                val clean = it.trim().removePrefix("@")
+                if (clean.isNotBlank()) {
+                  val (avail, msg) = viewModel.checkUserIdAvailability(clean)
                   isUserIdAvailable = avail
                   userIdAvailabilityMessage = msg
                 } else {
                   userIdAvailabilityMessage = null
+                  isUserIdAvailable = true
                 }
               },
-              label = { Text("Unique User ID (@username)") },
+              label = { Text("Unique Username (@username) *") },
               leadingIcon = { Text("@", fontWeight = FontWeight.Bold, color = VybeViolet) },
+              trailingIcon = {
+                if (firstName.isNotBlank() && (username.isBlank() || !isUserIdAvailable)) {
+                  TextButton(
+                    onClick = {
+                      val base = (firstName.trim() + "_" + lastName.trim())
+                        .lowercase()
+                        .replace(Regex("[^a-z0-9_]"), "")
+                        .trim('_')
+                        .ifBlank { "vyber" }
+                        .take(16)
+                      val suggested = "${base}_${(100..999).random()}"
+                      username = suggested
+                      val (avail, msg) = viewModel.checkUserIdAvailability(suggested)
+                      isUserIdAvailable = avail
+                      userIdAvailabilityMessage = msg
+                    }
+                  ) {
+                    Text("Suggest", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = VybeBrandCyan)
+                  }
+                }
+              },
+              isError = isUsernameInvalid,
               supportingText = {
-                if (userIdAvailabilityMessage != null) {
-                  Text(
-                    text = userIdAvailabilityMessage ?: "",
-                    color = if (isUserIdAvailable) VybeOnlineGreen else VybeDanger,
-                    fontWeight = FontWeight.SemiBold
-                  )
+                when {
+                  attemptedRegisterSubmit && cleanUsername.isEmpty() ->
+                    Text("Username is required.", color = VybeDanger, fontWeight = FontWeight.SemiBold)
+                  isUsernameFormatInvalid ->
+                    Text("Use 3–24 letters, numbers, dots, or underscores.", color = VybeDanger, fontWeight = FontWeight.SemiBold)
+                  userIdAvailabilityMessage != null ->
+                    Text(
+                      text = userIdAvailabilityMessage ?: "",
+                      color = if (isUserIdAvailable) VybeOnlineGreen else VybeDanger,
+                      fontWeight = FontWeight.SemiBold
+                    )
                 }
               },
               singleLine = true,
@@ -426,9 +755,13 @@ fun AuthScreen(viewModel: VybeViewModel) {
             // Field 4: Email Address
             OutlinedTextField(
               value = email,
-              onValueChange = { email = it },
-              label = { Text("Email Address") },
+              onValueChange = { email = it; errorMessage = null },
+              label = { Text("Email Address *") },
               leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
+              isError = isEmailInvalid,
+              supportingText = if (isEmailInvalid) {
+                { Text("Enter a valid email address.", color = VybeDanger) }
+              } else null,
               singleLine = true,
               modifier = Modifier.fillMaxWidth().testTag("auth_email_input")
             )
@@ -438,33 +771,57 @@ fun AuthScreen(viewModel: VybeViewModel) {
             // Field 5: Phone Number
             OutlinedTextField(
               value = phone,
-              onValueChange = { phone = it },
-              label = { Text("Phone Number (+91)") },
+              onValueChange = { phone = it; errorMessage = null },
+              label = { Text("Phone Number (e.g. +91 9876543210) *") },
               leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
+              isError = isPhoneInvalid,
+              supportingText = if (isPhoneInvalid) {
+                { Text("Enter a valid 10–15 digit phone number.", color = VybeDanger) }
+              } else null,
               singleLine = true,
               modifier = Modifier.fillMaxWidth().testTag("auth_phone_input")
             )
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Field 6: Date of Birth
+            // Field 6: Date of Birth (Empty by default + Calendar Picker + YYYY-MM-DD + 16+ Gate)
             OutlinedTextField(
               value = dateOfBirth,
-              onValueChange = { dateOfBirth = it },
-              label = { Text("Date of Birth (YYYY-MM-DD)") },
+              onValueChange = { dateOfBirth = it; errorMessage = null },
+              label = { Text("Date of Birth (YYYY-MM-DD) *") },
+              placeholder = { Text("YYYY-MM-DD") },
               leadingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null) },
-              supportingText = { Text("Must be 16 or older to create an account.") },
+              trailingIcon = {
+                IconButton(
+                  onClick = { showDobDatePicker = true },
+                  modifier = Modifier.testTag("auth_dob_picker_button")
+                ) {
+                  Icon(Icons.Default.EditCalendar, contentDescription = "Pick Date of Birth", tint = VybeBrandCyan)
+                }
+              },
+              isError = isDobInvalid,
+              supportingText = {
+                if (isDobInvalid) {
+                  Text(
+                    dobAgeCheck ?: "Date of birth is required (YYYY-MM-DD, 16+).",
+                    color = VybeDanger,
+                    fontWeight = FontWeight.SemiBold
+                  )
+                } else {
+                  Text("Must be 16 or older to create an account.")
+                }
+              },
               singleLine = true,
               modifier = Modifier.fillMaxWidth().testTag("auth_dob_input")
             )
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Field 8: Create Password with Show/Hide button
+            // Field 7: Create Password with Show/Hide button
             OutlinedTextField(
               value = createPassword,
-              onValueChange = { createPassword = it },
-              label = { Text("Create Password") },
+              onValueChange = { createPassword = it; errorMessage = null },
+              label = { Text("Password (8+ characters) *") },
               leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
               trailingIcon = {
                 IconButton(onClick = { showCreatePassword = !showCreatePassword }) {
@@ -474,6 +831,10 @@ fun AuthScreen(viewModel: VybeViewModel) {
                   )
                 }
               },
+              isError = isCreatePassInvalid,
+              supportingText = if (isCreatePassInvalid) {
+                { Text("Password must be at least 8 characters.", color = VybeDanger) }
+              } else null,
               visualTransformation = if (showCreatePassword) VisualTransformation.None else PasswordVisualTransformation(),
               singleLine = true,
               modifier = Modifier.fillMaxWidth().testTag("auth_create_password_input")
@@ -481,11 +842,11 @@ fun AuthScreen(viewModel: VybeViewModel) {
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Field 9: Confirm Password with Show/Hide button
+            // Field 8: Confirm Password with Show/Hide button
             OutlinedTextField(
               value = confirmPassword,
-              onValueChange = { confirmPassword = it },
-              label = { Text("Confirm Password") },
+              onValueChange = { confirmPassword = it; errorMessage = null },
+              label = { Text("Confirm Password *") },
               leadingIcon = { Icon(Icons.Default.LockReset, contentDescription = null) },
               trailingIcon = {
                 IconButton(onClick = { showConfirmPassword = !showConfirmPassword }) {
@@ -495,6 +856,10 @@ fun AuthScreen(viewModel: VybeViewModel) {
                   )
                 }
               },
+              isError = isConfirmPassInvalid,
+              supportingText = if (isConfirmPassInvalid) {
+                { Text("Passwords do not match.", color = VybeDanger) }
+              } else null,
               visualTransformation = if (showConfirmPassword) VisualTransformation.None else PasswordVisualTransformation(),
               singleLine = true,
               modifier = Modifier.fillMaxWidth().testTag("auth_confirm_password_input")
@@ -502,14 +867,14 @@ fun AuthScreen(viewModel: VybeViewModel) {
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Field 10: Terms & Conditions agreement checkbox + readable document link
+            // Terms & Conditions agreement checkbox + readable document link
             Row(
               modifier = Modifier.fillMaxWidth(),
               verticalAlignment = Alignment.CenterVertically
             ) {
               Checkbox(
                 checked = termsAccepted,
-                onCheckedChange = { termsAccepted = it },
+                onCheckedChange = { termsAccepted = it; errorMessage = null },
                 modifier = Modifier.testTag("auth_terms_checkbox")
               )
               Spacer(modifier = Modifier.width(6.dp))
@@ -534,42 +899,54 @@ fun AuthScreen(viewModel: VybeViewModel) {
             VybeGradientButton(
               text = if (isLoading) "Creating Account..." else "Create Account & Join VYBE",
               onClick = {
+                if (isLoading) return@VybeGradientButton
+                attemptedRegisterSubmit = true
                 errorMessage = null
                 statusMessage = null
-                if (firstName.isBlank() || lastName.isBlank() || username.isBlank() || email.isBlank() || phone.isBlank()) {
-                  errorMessage = "Please fill in all 10 registration details."
-                } else if (!termsAccepted) {
-                  errorMessage = "You must agree to the Terms of Service & Privacy Policy to register."
-                } else if (createPassword != confirmPassword) {
-                  errorMessage = "Passwords do not match."
-                } else if (createPassword.length < 6) {
-                  errorMessage = "Password must be at least 6 characters."
-                } else if (!isUserIdAvailable) {
-                  errorMessage = "This User ID is already taken. Please choose another."
-                } else {
-                  coroutineScope.launch {
-                    isLoading = true
-                    val (ok, msg) = viewModel.registerWithSupabase(
-                      username = username,
-                      email = email,
-                      password = createPassword,
-                      firstName = firstName,
-                      lastName = lastName,
-                      phone = phone,
-                      dob = dateOfBirth,
-                      termsAccepted = termsAccepted
-                    )
-                    isLoading = false
-                    if (!ok) {
-                      errorMessage = msg
-                    } else if (msg.startsWith("NEEDS_OTP")) {
-                      registrationStep = 2
-                      verifyEmailInput = email
-                      verifyOtpInput = ""
-                      verifyError = null
-                      statusMessage = msg.substringAfter("NEEDS_OTP:", "Check your email to verify your account.")
-                    } else {
-                      statusMessage = msg
+                val dobErr = validateRegistrationDob(dateOfBirth)
+                when {
+                  firstName.trim().length < 2 -> errorMessage = "Please enter your first name (at least 2 characters)."
+                  lastName.trim().isEmpty() -> errorMessage = "Please enter your last name."
+                  cleanUsername.isEmpty() || isUsernameFormatInvalid ->
+                    errorMessage = "Please enter a valid username (3–24 letters, numbers, dots, or underscores)."
+                  !isUserIdAvailable -> errorMessage = "This username is already taken. Please choose another."
+                  !email.trim().matches(Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")) ->
+                    errorMessage = "Please enter a valid email address."
+                  phoneDigitsCount !in 10..15 ->
+                    errorMessage = "Please enter a valid phone number (10–15 digits)."
+                  dobErr != null -> errorMessage = dobErr
+                  createPassword.length < 8 -> errorMessage = "Password must be at least 8 characters."
+                  createPassword != confirmPassword -> errorMessage = "Passwords do not match."
+                  !termsAccepted -> errorMessage = "You must agree to the Terms of Service & Privacy Policy to register."
+                  else -> {
+                    coroutineScope.launch {
+                      isLoading = true
+                      val (ok, msg) = viewModel.registerWithSupabase(
+                        username = cleanUsername,
+                        email = email.trim(),
+                        password = createPassword,
+                        firstName = firstName.trim(),
+                        lastName = lastName.trim(),
+                        phone = phone.trim(),
+                        dob = dateOfBirth.trim(),
+                        termsAccepted = termsAccepted
+                      )
+                      isLoading = false
+                      if (!ok) {
+                        errorMessage = msg
+                      } else if (msg.startsWith("NEEDS_OTP")) {
+                        registrationStep = 2
+                        verifyEmailInput = email.trim()
+                        verifyPhoneInput = phone.trim()
+                        verifyOtpInput = ""
+                        verifyPhoneOtpInput = ""
+                        verifyError = null
+                        phoneVerifyError = null
+                        emailResendCooldownSec = 60
+                        statusMessage = msg.substringAfter("NEEDS_OTP:", "Verify your email and phone number to complete signup.").trim()
+                      } else {
+                        statusMessage = msg
+                      }
                     }
                   }
                 }
@@ -787,12 +1164,18 @@ fun AuthScreen(viewModel: VybeViewModel) {
             }
           }
         } else {
-          // Login Form
+          // Login Form (Email, Phone Number, or @Username / VYBE User ID)
           OutlinedTextField(
             value = loginIdentifier,
-            onValueChange = { loginIdentifier = it },
-            label = { Text("User ID (@username), Email, or Phone (+91)") },
+            onValueChange = {
+              loginIdentifier = it
+              errorMessage = null
+            },
+            label = { Text("Email, Phone Number (+91), or @Username") },
             leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+            supportingText = {
+              Text("Sign in with your verified Email, Phone Number, or VYBE @username.", fontSize = 11.sp)
+            },
             singleLine = true,
             modifier = Modifier.fillMaxWidth().testTag("auth_identifier_input")
           )
@@ -801,7 +1184,10 @@ fun AuthScreen(viewModel: VybeViewModel) {
 
           OutlinedTextField(
             value = loginPassword,
-            onValueChange = { loginPassword = it },
+            onValueChange = {
+              loginPassword = it
+              errorMessage = null
+            },
             label = { Text("Password") },
             leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
             trailingIcon = {
@@ -822,12 +1208,13 @@ fun AuthScreen(viewModel: VybeViewModel) {
           ) {
             TextButton(
               onClick = {
-                resetEmail = if (loginIdentifier.contains("@")) loginIdentifier else email
+                resetEmail = if (loginIdentifier.contains("@") && loginIdentifier.contains(".")) loginIdentifier.trim() else email.trim()
                 resetStep = 1
                 resetError = null
                 resetMessage = null
                 showForgotPasswordDialog = true
-              }
+              },
+              modifier = Modifier.testTag("auth_forgot_password_button")
             ) {
               Text("Forgot password?", fontSize = 12.sp, color = VybeBrandCyan, fontWeight = FontWeight.SemiBold)
             }
@@ -840,18 +1227,40 @@ fun AuthScreen(viewModel: VybeViewModel) {
               shape = RoundedCornerShape(10.dp),
               modifier = Modifier.fillMaxWidth().testTag("auth_login_error_banner")
             ) {
-              Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = VybeDanger, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                  text = errorMessage ?: "Unable to log in. Please check credentials.",
-                  color = VybeDanger,
-                  fontSize = 12.sp,
-                  fontWeight = FontWeight.Medium
-                )
+              Column(modifier = Modifier.padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = VybeDanger, modifier = Modifier.size(20.dp))
+                  Spacer(modifier = Modifier.width(10.dp))
+                  Text(
+                    text = errorMessage ?: "Unable to log in. Please check credentials.",
+                    color = VybeDanger,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                  )
+                }
+                if (errorMessage?.contains("not confirmed", ignoreCase = true) == true ||
+                  errorMessage?.contains("verify", ignoreCase = true) == true
+                ) {
+                  Spacer(modifier = Modifier.height(8.dp))
+                  OutlinedButton(
+                    onClick = {
+                      if (loginIdentifier.contains("@") && loginIdentifier.contains(".")) {
+                        verifyEmailInput = loginIdentifier.trim()
+                      }
+                      if (loginIdentifier.any { it.isDigit() } && !loginIdentifier.contains("@")) {
+                        verifyPhoneInput = loginIdentifier.trim()
+                      }
+                      isRegisterMode = true
+                      accountType = "INDIVIDUAL"
+                      registrationStep = 2
+                      errorMessage = null
+                    },
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                  ) {
+                    Text("Verify Email / Phone OTP Now", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                  }
+                }
               }
             }
           }
@@ -884,14 +1293,15 @@ fun AuthScreen(viewModel: VybeViewModel) {
           VybeGradientButton(
             text = if (isLoading) "Logging in..." else "Log In to VYBE",
             onClick = {
+              if (isLoading) return@VybeGradientButton
               errorMessage = null
               statusMessage = null
-              if (loginIdentifier.isBlank() || loginPassword.isBlank()) {
-                errorMessage = "Please enter your User ID / Email and password."
+              if (loginIdentifier.trim().isBlank() || loginPassword.isBlank()) {
+                errorMessage = "Please enter your Email, Phone Number, or @Username and password."
               } else {
                 coroutineScope.launch {
                   isLoading = true
-                  val (ok, msg) = viewModel.loginWithSupabase(loginIdentifier, loginPassword)
+                  val (ok, msg) = viewModel.loginWithSupabase(loginIdentifier.trim(), loginPassword)
                   isLoading = false
                   if (!ok) {
                     errorMessage = msg
@@ -1157,6 +1567,57 @@ fun AuthScreen(viewModel: VybeViewModel) {
     if (showLegalReader) {
       TermsAndPrivacyReaderDialog(onDismiss = { showLegalReader = false })
     }
+
+    // --- DIALOG 4: DATE OF BIRTH CALENDAR PICKER ---
+    if (showDobDatePicker) {
+      val datePickerState = rememberDatePickerState()
+      DatePickerDialog(
+        onDismissRequest = { showDobDatePicker = false },
+        confirmButton = {
+          TextButton(
+            onClick = {
+              val millis = datePickerState.selectedDateMillis
+              if (millis != null) {
+                val localDate = java.time.Instant.ofEpochMilli(millis)
+                  .atZone(java.time.ZoneOffset.UTC)
+                  .toLocalDate()
+                dateOfBirth = localDate.toString()
+                errorMessage = null
+              }
+              showDobDatePicker = false
+            }
+          ) {
+            Text("Confirm Date", fontWeight = FontWeight.Bold)
+          }
+        },
+        dismissButton = {
+          TextButton(onClick = { showDobDatePicker = false }) {
+            Text("Cancel")
+          }
+        }
+      ) {
+        DatePicker(state = datePickerState)
+      }
+    }
+  }
+}
+
+private fun validateRegistrationDob(rawDob: String): String? {
+  val trimmed = rawDob.trim()
+  if (trimmed.isEmpty()) return "Date of birth is required (YYYY-MM-DD)."
+  return try {
+    val parsed = java.time.LocalDate.parse(trimmed)
+    val today = java.time.LocalDate.now()
+    if (parsed.isAfter(today)) {
+      "Date of birth cannot be in the future."
+    } else if (parsed.isBefore(java.time.LocalDate.of(1905, 1, 1))) {
+      "Please enter a valid date of birth."
+    } else {
+      val age = java.time.Period.between(parsed, today).years
+      if (age < 16) "You must be at least 16 years old to register on VYBE." else null
+    }
+  } catch (_: Exception) {
+    "Enter date of birth in YYYY-MM-DD format (e.g. 2004-05-21)."
   }
 }
 

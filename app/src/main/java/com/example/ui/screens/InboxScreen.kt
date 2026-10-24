@@ -22,12 +22,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.CallAvailabilityResult
 import com.example.data.model.Conversation
 import com.example.data.model.User
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VybeAvatar
 import com.example.ui.theme.*
+import com.example.util.rememberMessageTimestamp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -371,6 +373,18 @@ fun InboxScreen(viewModel: VybeViewModel) {
               ) {
                 Box {
                   VybeAvatar(user = conv.peerUser, size = 48.dp)
+                  if (!conv.isGroup && conv.peerUser.isOnline && !conv.isBlocked) {
+                    Box(
+                      modifier = Modifier
+                        .size(12.dp)
+                        .align(Alignment.BottomEnd)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(2.dp)
+                        .clip(CircleShape)
+                        .background(VybeOnlineGreen)
+                    )
+                  }
                   if (conv.unreadCount > 0) {
                     Surface(
                       shape = CircleShape,
@@ -476,24 +490,46 @@ fun InboxScreen(viewModel: VybeViewModel) {
                 }
 
                 Column(horizontalAlignment = Alignment.End) {
+                  val relativeLastTime = rememberMessageTimestamp(
+                    conv.lastMessageCreatedAtIso,
+                    conv.lastMessageTimestamp
+                  )
                   Text(
-                    text = conv.lastMessageTimestamp,
+                    text = relativeLastTime,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                   )
                   Spacer(modifier = Modifier.height(4.dp))
                   Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
-                      onClick = { viewModel.startVoiceCall(conv.peerUser) },
-                      modifier = Modifier.size(34.dp).testTag("voice_call_btn_${conv.id}")
-                    ) {
-                      Icon(Icons.Default.Call, contentDescription = "Voice Call", tint = VybeViolet, modifier = Modifier.size(18.dp))
-                    }
-                    IconButton(
-                      onClick = { viewModel.startVideoCall(conv.peerUser) },
-                      modifier = Modifier.size(34.dp).testTag("video_call_btn_${conv.id}")
-                    ) {
-                      Icon(Icons.Default.Videocam, contentDescription = "Video Call", tint = VybeMagenta, modifier = Modifier.size(18.dp))
+                    if (!conv.isGroup) {
+                      IconButton(
+                        onClick = {
+                          when (val res = viewModel.initiateCall(conv.peerUser, isVideo = false)) {
+                            is CallAvailabilityResult.Unavailable -> viewModel.postBannerMessage(res.reason)
+                            is CallAvailabilityResult.Offline -> viewModel.postBannerMessage(res.reason)
+                            is CallAvailabilityResult.Blocked -> viewModel.postBannerMessage(res.reason)
+                            is CallAvailabilityResult.Error -> viewModel.postBannerMessage(res.message)
+                            else -> {}
+                          }
+                        },
+                        modifier = Modifier.size(34.dp).testTag("voice_call_btn_${conv.id}")
+                      ) {
+                        Icon(Icons.Default.Call, contentDescription = "Voice Call", tint = VybeViolet, modifier = Modifier.size(18.dp))
+                      }
+                      IconButton(
+                        onClick = {
+                          when (val res = viewModel.initiateCall(conv.peerUser, isVideo = true)) {
+                            is CallAvailabilityResult.Unavailable -> viewModel.postBannerMessage(res.reason)
+                            is CallAvailabilityResult.Offline -> viewModel.postBannerMessage(res.reason)
+                            is CallAvailabilityResult.Blocked -> viewModel.postBannerMessage(res.reason)
+                            is CallAvailabilityResult.Error -> viewModel.postBannerMessage(res.message)
+                            else -> {}
+                          }
+                        },
+                        modifier = Modifier.size(34.dp).testTag("video_call_btn_${conv.id}")
+                      ) {
+                        Icon(Icons.Default.Videocam, contentDescription = "Video Call", tint = VybeMagenta, modifier = Modifier.size(18.dp))
+                      }
                     }
                     IconButton(
                       onClick = { conversationToManage = conv },

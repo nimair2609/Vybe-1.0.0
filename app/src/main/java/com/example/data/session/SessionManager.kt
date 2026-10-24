@@ -37,6 +37,10 @@ class SessionManager private constructor(context: Context) {
     private const val KEY_FOLLOWERS_COUNT = "followers_count"
     private const val KEY_FOLLOWING_COUNT = "following_count"
     private const val KEY_POSTS_COUNT = "posts_count"
+    private const val KEY_IS_EMAIL_VERIFIED = "is_email_verified"
+    private const val KEY_IS_PHONE_VERIFIED = "is_phone_verified"
+    private const val KEY_JOINED_DATE = "joined_date"
+    private const val KEY_CREATED_AT_ISO = "created_at_iso"
 
     @Volatile
     private var instance: SessionManager? = null
@@ -99,6 +103,10 @@ class SessionManager private constructor(context: Context) {
       putInt(KEY_FOLLOWERS_COUNT, user.followersCount)
       putInt(KEY_FOLLOWING_COUNT, user.followingCount)
       putInt(KEY_POSTS_COUNT, user.postsCount)
+      putBoolean(KEY_IS_EMAIL_VERIFIED, user.isEmailVerified)
+      putBoolean(KEY_IS_PHONE_VERIFIED, user.isPhoneVerified)
+      putString(KEY_JOINED_DATE, user.joinedDate)
+      putString(KEY_CREATED_AT_ISO, user.createdAtIso)
       apply()
     }
   }
@@ -132,6 +140,10 @@ class SessionManager private constructor(context: Context) {
       putInt(KEY_FOLLOWERS_COUNT, user.followersCount)
       putInt(KEY_FOLLOWING_COUNT, user.followingCount)
       putInt(KEY_POSTS_COUNT, user.postsCount)
+      putBoolean(KEY_IS_EMAIL_VERIFIED, user.isEmailVerified)
+      putBoolean(KEY_IS_PHONE_VERIFIED, user.isPhoneVerified)
+      putString(KEY_JOINED_DATE, user.joinedDate)
+      putString(KEY_CREATED_AT_ISO, user.createdAtIso)
       apply()
     }
   }
@@ -143,8 +155,12 @@ class SessionManager private constructor(context: Context) {
   fun loadCurrentUser(): User? {
     if (!isLoggedIn) return null
     val id = prefs.getString(KEY_USER_ID, null) ?: return null
-    val username = prefs.getString(KEY_USERNAME, "") ?: ""
-    val displayName = prefs.getString(KEY_DISPLAY_NAME, "") ?: ""
+    val rawUsername = (prefs.getString(KEY_USERNAME, "") ?: "").trim()
+    val username = if (rawUsername.isBlank() || rawUsername.equals("null", true)) {
+      "vybe_${id.filter { it.isLetterOrDigit() }.take(8).lowercase()}"
+    } else rawUsername
+    val rawDisplay = (prefs.getString(KEY_DISPLAY_NAME, "") ?: "").trim()
+    val displayName = if (rawDisplay.isBlank() || rawDisplay.equals("null", true)) username else rawDisplay
     val email = prefs.getString(KEY_EMAIL, "") ?: ""
     val phone = prefs.getString(KEY_PHONE, "") ?: ""
     val firstName = prefs.getString(KEY_FIRST_NAME, "") ?: ""
@@ -163,6 +179,10 @@ class SessionManager private constructor(context: Context) {
     val followersCount = prefs.getInt(KEY_FOLLOWERS_COUNT, 0)
     val followingCount = prefs.getInt(KEY_FOLLOWING_COUNT, 0)
     val postsCount = prefs.getInt(KEY_POSTS_COUNT, 0)
+    val isEmailVerified = prefs.getBoolean(KEY_IS_EMAIL_VERIFIED, false)
+    val isPhoneVerified = prefs.getBoolean(KEY_IS_PHONE_VERIFIED, false)
+    val joinedDate = prefs.getString(KEY_JOINED_DATE, "VYBE Member") ?: "VYBE Member"
+    val createdAtIso = prefs.getString(KEY_CREATED_AT_ISO, null)?.takeIf { it.isNotBlank() }
 
     val role = try {
       UserRole.valueOf(roleStr)
@@ -176,6 +196,8 @@ class SessionManager private constructor(context: Context) {
       displayName = displayName,
       email = email,
       phone = phone,
+      isEmailVerified = isEmailVerified,
+      isPhoneVerified = isPhoneVerified,
       firstName = firstName,
       lastName = lastName,
       dateOfBirth = dob,
@@ -192,6 +214,8 @@ class SessionManager private constructor(context: Context) {
       followersCount = followersCount,
       followingCount = followingCount,
       postsCount = postsCount,
+      joinedDate = joinedDate,
+      createdAtIso = createdAtIso,
       isOnboardingCompleted = true
     )
   }

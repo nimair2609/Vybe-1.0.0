@@ -20,7 +20,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,6 +32,8 @@ import com.example.data.model.UnloadRoom
 import com.example.data.model.UnloadRoomMode
 import com.example.ui.VybeViewModel
 import com.example.ui.theme.*
+import com.example.util.rememberRelativeTimestamp
+import kotlinx.coroutines.launch
 
 /**
  * VYBE UNLOAD 2.0
@@ -49,12 +53,19 @@ fun UnloadScreen(viewModel: VybeViewModel) {
   val activeRoom by viewModel.activeUnloadRoom.collectAsState()
   val rooms by viewModel.unloadRooms.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
+  val clipboardManager = LocalClipboardManager.current
+  val coroutineScope = rememberCoroutineScope()
 
   var messageText by remember { mutableStateOf("") }
   var isAnonymous by remember { mutableStateOf(true) }
   var isMuted by remember { mutableStateOf(false) }
   var showSafetySheet by remember { mutableStateOf(false) }
   var showReportSuccess by remember { mutableStateOf(false) }
+
+  // Join by Room ID state
+  var joinRoomCodeInput by remember { mutableStateOf("") }
+  var isJoiningByCode by remember { mutableStateOf(false) }
+  var joinRoomCodeError by remember { mutableStateOf<String?>(null) }
 
   // Host & Edit Room Dialog state
   var showHostRoomDialog by remember { mutableStateOf(false) }
@@ -99,11 +110,37 @@ fun UnloadScreen(viewModel: VybeViewModel) {
               fontWeight = FontWeight.Bold,
               fontSize = 16.sp
             )
-            Text(
-              text = "24/7 Live Listening Space • Zero Audio Recording",
-              fontSize = 10.sp,
-              color = VybeBrandCyan
-            )
+            if (activeRoom != null) {
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                  .clickable {
+                    clipboardManager.setText(AnnotatedString(activeRoom!!.roomCode))
+                    viewModel.postBannerMessage("Copied Room ID: ${activeRoom!!.roomCode}")
+                  }
+                  .testTag("active_room_code_chip")
+              ) {
+                Text(
+                  text = "ID: ${activeRoom!!.roomCode}",
+                  fontSize = 11.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = VybeBrandCyan
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(
+                  Icons.Default.ContentCopy,
+                  contentDescription = "Copy Room ID",
+                  tint = VybeBrandCyan,
+                  modifier = Modifier.size(12.dp)
+                )
+              }
+            } else {
+              Text(
+                text = "24/7 Live Listening Space • Zero Audio Recording",
+                fontSize = 10.sp,
+                color = VybeBrandCyan
+              )
+            }
           }
         },
         actions = {
@@ -199,6 +236,78 @@ fun UnloadScreen(viewModel: VybeViewModel) {
           }
         }
 
+        // Join by Room ID Card
+        item {
+          Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(16.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, VybeBrandCyan.copy(alpha = 0.35f)),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Tag, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Join Room by ID", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+              }
+              Spacer(modifier = Modifier.height(8.dp))
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                OutlinedTextField(
+                  value = joinRoomCodeInput,
+                  onValueChange = {
+                    joinRoomCodeInput = it.uppercase()
+                    joinRoomCodeError = null
+                  },
+                  placeholder = { Text("VYB-XXXX-XXXX", fontSize = 12.sp) },
+                  singleLine = true,
+                  shape = RoundedCornerShape(12.dp),
+                  modifier = Modifier
+                    .weight(1f)
+                    .testTag("unload_join_code_input")
+                )
+                Button(
+                  onClick = {
+                    val code = joinRoomCodeInput.trim()
+                    if (code.isBlank() || isJoiningByCode) return@Button
+                    joinRoomCodeError = null
+                    coroutineScope.launch {
+                      isJoiningByCode = true
+                      val res = viewModel.joinRoomByCode(code)
+                      isJoiningByCode = false
+                      if (res.isSuccess) {
+                        joinRoomCodeInput = ""
+                      } else {
+                        joinRoomCodeError = res.exceptionOrNull()?.message ?: "Room not found or no longer active."
+                      }
+                    }
+                  },
+                  enabled = joinRoomCodeInput.trim().isNotBlank() && !isJoiningByCode,
+                  colors = ButtonDefaults.buttonColors(containerColor = VybeBrandCyan),
+                  shape = RoundedCornerShape(12.dp),
+                  modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .testTag("unload_join_code_button")
+                ) {
+                  Text(
+                    if (isJoiningByCode) "Joining..." else "Join ID",
+                    color = Color.Black,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                  )
+                }
+              }
+              if (joinRoomCodeError != null) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(joinRoomCodeError!!, color = VybeDanger, fontSize = 11.sp)
+              }
+            }
+          }
+        }
+
         item {
           Row(
             modifier = Modifier.fillMaxWidth(),
@@ -206,6 +315,11 @@ fun UnloadScreen(viewModel: VybeViewModel) {
             verticalAlignment = Alignment.CenterVertically
           ) {
             Text("Active Listening Rooms (${rooms.size})", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            TextButton(onClick = { viewModel.refreshAllData() }) {
+              Icon(Icons.Default.Refresh, contentDescription = "Refresh Rooms", modifier = Modifier.size(16.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("Refresh", fontSize = 12.sp)
+            }
           }
         }
 
@@ -228,12 +342,15 @@ fun UnloadScreen(viewModel: VybeViewModel) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  modifier = Modifier.weight(1f)
+                ) {
                   Box(
                     modifier = Modifier
                       .size(10.dp)
                       .clip(CircleShape)
-                      .background(VybeOnlineGreen)
+                      .background(if (room.isActive) VybeOnlineGreen else Color.Gray)
                   )
                   Spacer(modifier = Modifier.width(8.dp))
                   Text(room.title, fontWeight = FontWeight.Bold, fontSize = 15.sp)
@@ -250,6 +367,44 @@ fun UnloadScreen(viewModel: VybeViewModel) {
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                   )
                 }
+              }
+              Spacer(modifier = Modifier.height(6.dp))
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+              ) {
+                Surface(
+                  color = VybeBrandCyan.copy(alpha = 0.14f),
+                  shape = RoundedCornerShape(6.dp),
+                  modifier = Modifier.clickable {
+                    clipboardManager.setText(AnnotatedString(room.roomCode))
+                    viewModel.postBannerMessage("Copied Room ID: ${room.roomCode}")
+                  }
+                ) {
+                  Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Text(
+                      text = room.roomCode,
+                      fontSize = 10.sp,
+                      fontWeight = FontWeight.ExtraBold,
+                      color = VybeBrandCyan
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                      Icons.Default.ContentCopy,
+                      contentDescription = "Copy Room ID",
+                      tint = VybeBrandCyan,
+                      modifier = Modifier.size(11.dp)
+                    )
+                  }
+                }
+                Text(
+                  text = "Host: ${room.hostName}",
+                  fontSize = 11.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
               }
               Spacer(modifier = Modifier.height(6.dp))
               Text(room.description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -457,7 +612,8 @@ fun UnloadScreen(viewModel: VybeViewModel) {
               .padding(horizontal = 16.dp),
             reverseLayout = true
           ) {
-            items(room.recentMessages.reversed()) { msg ->
+            items(room.recentMessages.reversed(), key = { it.id }) { msg ->
+              val relativeTime = rememberRelativeTimestamp(msg.createdAtIso, msg.timestamp)
               Card(
                 colors = CardDefaults.cardColors(
                   containerColor = if (msg.isAnonymous) MaterialTheme.colorScheme.surfaceVariant else VybeViolet.copy(alpha = 0.15f)
@@ -478,7 +634,7 @@ fun UnloadScreen(viewModel: VybeViewModel) {
                       fontSize = 12.sp,
                       color = if (msg.isAnonymous) VybeBrandCyan else VybeViolet
                     )
-                    Text(msg.timestamp, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(relativeTime, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                   }
                   Spacer(modifier = Modifier.height(4.dp))
                   Text(msg.text, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)

@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.data.model.MediaType
 import com.example.data.model.MoodType
 import com.example.data.model.matchesMoodFilter
 import com.example.ui.Screen
@@ -57,6 +58,8 @@ fun FeedScreen(viewModel: VybeViewModel) {
   val followingUserIds by viewModel.followingUserIds.collectAsState()
   val allUsers by viewModel.allUsers.collectAsState()
   val vybeMatches by viewModel.vybeMatches.collectAsState()
+  val hasMoreFeedPosts by viewModel.hasMoreFeedPosts.collectAsState()
+  val isLoadingMorePosts by viewModel.isLoadingMorePosts.collectAsState()
   val coroutineScope = rememberCoroutineScope()
 
   var feedTab by remember { mutableStateOf("For You") }
@@ -76,6 +79,20 @@ fun FeedScreen(viewModel: VybeViewModel) {
     list
   }
 
+  val videoPostIds = remember(filteredPosts) {
+    filteredPosts.filter { post ->
+      val firstUrl = post.mediaUrls.firstOrNull().orEmpty()
+      post.mediaUrls.isNotEmpty() && (
+        post.mediaType == MediaType.VIDEO ||
+          post.mediaType == MediaType.REEL ||
+          post.isVybesReel ||
+          firstUrl.contains(".mp4", ignoreCase = true) ||
+          firstUrl.contains(".mov", ignoreCase = true) ||
+          firstUrl.contains(".webm", ignoreCase = true)
+        )
+    }.map { it.id }.toSet()
+  }
+
   fun triggerRefresh() {
     if (isRefreshing) return
     isRefreshing = true
@@ -87,6 +104,49 @@ fun FeedScreen(viewModel: VybeViewModel) {
   }
 
   val listState = rememberLazyListState()
+
+  // Determine the single most-visible video post (>= 55% visible in viewport) so only ONE video autoplays
+  val activeAutoPlayPostId by remember(listState, videoPostIds) {
+    derivedStateOf {
+      if (videoPostIds.isEmpty()) return@derivedStateOf null
+      val layoutInfo = listState.layoutInfo
+      val viewportStart = layoutInfo.viewportStartOffset
+      val viewportEnd = layoutInfo.viewportEndOffset
+      if (viewportEnd <= viewportStart) return@derivedStateOf null
+
+      layoutInfo.visibleItemsInfo
+        .mapNotNull { itemInfo ->
+          val keyStr = itemInfo.key as? String ?: return@mapNotNull null
+          if (!videoPostIds.contains(keyStr) || itemInfo.size <= 0) return@mapNotNull null
+          val visibleStart = maxOf(itemInfo.offset, viewportStart)
+          val visibleEnd = minOf(itemInfo.offset + itemInfo.size, viewportEnd)
+          val visiblePx = (visibleEnd - visibleStart).coerceAtLeast(0)
+          val fraction = visiblePx.toFloat() / itemInfo.size.toFloat()
+          if (fraction >= 0.55f) keyStr to fraction else null
+        }
+        .maxByOrNull { it.second }
+        ?.first
+    }
+  }
+
+  // Trigger smooth pagination when scrolling within 3 items of the end of the feed
+  val shouldLoadMore by remember(listState, filteredPosts.size, hasMoreFeedPosts, isLoadingMorePosts) {
+    derivedStateOf {
+      if (!hasMoreFeedPosts || isLoadingMorePosts || filteredPosts.isEmpty()) {
+        false
+      } else {
+        val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+        val totalItems = listState.layoutInfo.totalItemsCount
+        totalItems > 4 && lastVisibleIndex >= totalItems - 3
+      }
+    }
+  }
+
+  LaunchedEffect(shouldLoadMore) {
+    if (shouldLoadMore) {
+      viewModel.loadMoreFeedPosts()
+    }
+  }
 
   LaunchedEffect(Unit) {
     viewModel.feedRefreshTrigger.collect {
@@ -105,7 +165,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
             Box(
               modifier = Modifier
                 .size(32.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(9.dp))
             ) {
               Image(
                 painter = painterResource(id = R.drawable.vybe_app_icon_clean),
@@ -113,12 +173,13 @@ fun FeedScreen(viewModel: VybeViewModel) {
                 modifier = Modifier.fillMaxSize()
               )
             }
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(10.dp))
             Text(
-              text = "vybe",
-              style = MaterialTheme.typography.titleLarge,
+              text = "VYBE",
+              fontFamily = SyneFontFamily,
+              fontSize = 21.sp,
               fontWeight = FontWeight.ExtraBold,
-              letterSpacing = 1.sp,
+              letterSpacing = 1.6.sp,
               color = MaterialTheme.colorScheme.onBackground
             )
           }
@@ -193,7 +254,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
           .testTag("feed_list")
       ) {
         // Stories Tray + VYBE Matches Quick Access
-        item {
+        item(key = "stories_tray") {
           StoryCarousel(
             stories = stories,
             currentUser = currentUser,
@@ -204,8 +265,8 @@ fun FeedScreen(viewModel: VybeViewModel) {
           )
         }
 
-        // Single, Unified Mood Selector Bar (No Light/Dark theme toggles here — theme stays in Settings)
-        item {
+        // Single, Unified Mood Selector Bar (No duplicate "All Vibes" + "General" clutter; tapping selected chip resets to unfiltered feed)
+        item(key = "mood_selector") {
           LazyRow(
             modifier = Modifier
               .fillMaxWidth()
@@ -215,27 +276,6 @@ fun FeedScreen(viewModel: VybeViewModel) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
           ) {
-            item(key = "mood_all") {
-              val isAllSelected = selectedMood == null
-              Surface(
-                color = if (isAllSelected) VybeViolet.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(14.dp),
-                border = if (isAllSelected) BorderStroke(1.5.dp, VybeViolet) else null,
-                modifier = Modifier
-                  .clip(RoundedCornerShape(14.dp))
-                  .clickable { viewModel.selectMoodFilter(null) }
-                  .testTag("feed_mood_chip_ALL")
-              ) {
-                Text(
-                  text = "All Vibes",
-                  fontSize = 12.sp,
-                  fontWeight = if (isAllSelected) FontWeight.Bold else FontWeight.Medium,
-                  color = if (isAllSelected) VybeViolet else MaterialTheme.colorScheme.onSurfaceVariant,
-                  modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
-                )
-              }
-            }
-
             items(MoodType.values(), key = { it.name }) { mood ->
               val isSelected = selectedMood == mood
               Surface(
@@ -268,7 +308,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
         }
 
         // Feed Stream Tabs ("For You", "Following", "Discover")
-        item {
+        item(key = "feed_stream_tabs") {
           Row(
             modifier = Modifier
               .fillMaxWidth()
@@ -298,7 +338,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
 
         // Feed Posts or Clean Empty State
         if (filteredPosts.isEmpty()) {
-          item {
+          item(key = "feed_empty_state") {
             Box(
               modifier = Modifier
                 .fillMaxWidth()
@@ -308,7 +348,9 @@ fun FeedScreen(viewModel: VybeViewModel) {
               Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
                 shape = RoundedCornerShape(20.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                  .widthIn(max = 560.dp)
+                  .fillMaxWidth()
               ) {
                 Column(
                   modifier = Modifier.padding(24.dp),
@@ -377,39 +419,63 @@ fun FeedScreen(viewModel: VybeViewModel) {
           }
         } else {
           items(filteredPosts, key = { it.id }) { post ->
-            PostCard(
-              post = post,
-              onLikeClick = { viewModel.toggleLike(post.id) },
-              onSaveClick = { viewModel.toggleSave(post.id) },
-              onCommentClick = { viewModel.loadCommentsForPost(post.id) },
-              onAddComment = { text -> viewModel.addComment(post.id, text) },
-              onLoadComments = { viewModel.loadCommentsForPost(post.id) },
-              onShareClick = {
-                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                  type = "text/plain"
-                  putExtra(
-                    Intent.EXTRA_TEXT,
-                    "${post.author.displayName} (@${post.author.username}) on VYBE:\n${post.caption}"
-                  )
-                }
-                context.startActivity(Intent.createChooser(shareIntent, "Share VYBE Post"))
-              },
-              onUserClick = { user -> viewModel.openUserProfile(user) },
-              onRemixClick = { viewModel.navigateTo(Screen.REELS_VIEWER) },
-              onDeleteClick = { viewModel.deletePost(post.id) },
-              onReportPost = { reason ->
-                coroutineScope.launch {
-                  viewModel.submitReport("POST", post.id, reason)
-                  viewModel.postBannerMessage("Report submitted for review.")
-                }
-              },
-              onPostViewed = { viewModel.recordPostView(it) },
-              currentUserId = currentUser?.id
-            )
+            Box(
+              modifier = Modifier.fillMaxWidth(),
+              contentAlignment = Alignment.Center
+            ) {
+              PostCard(
+                post = post,
+                onLikeClick = { viewModel.toggleLike(post.id) },
+                onSaveClick = { viewModel.toggleSave(post.id) },
+                onCommentClick = { viewModel.loadCommentsForPost(post.id) },
+                onAddComment = { text -> viewModel.addComment(post.id, text) },
+                onLoadComments = { viewModel.loadCommentsForPost(post.id) },
+                onShareClick = {
+                  val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(
+                      Intent.EXTRA_TEXT,
+                      "${post.author.displayName} (@${post.author.username}) on VYBE:\n${post.caption}"
+                    )
+                  }
+                  context.startActivity(Intent.createChooser(shareIntent, "Share VYBE Post"))
+                },
+                onUserClick = { user -> viewModel.openUserProfile(user) },
+                onRemixClick = { viewModel.navigateTo(Screen.REELS_VIEWER) },
+                onDeleteClick = { viewModel.deletePost(post.id) },
+                onReportPost = { reason ->
+                  coroutineScope.launch {
+                    viewModel.submitReport("POST", post.id, reason)
+                    viewModel.postBannerMessage("Report submitted for review.")
+                  }
+                },
+                onPostViewed = { viewModel.recordPostView(it) },
+                currentUserId = currentUser?.id,
+                shouldAutoPlay = (post.id == activeAutoPlayPostId),
+                modifier = Modifier.widthIn(max = 600.dp)
+              )
+            }
           }
         }
 
-        item {
+        if (isLoadingMorePosts) {
+          item(key = "feed_pagination_loader") {
+            Box(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp),
+              contentAlignment = Alignment.Center
+            ) {
+              CircularProgressIndicator(
+                color = VybeViolet,
+                strokeWidth = 2.5.dp,
+                modifier = Modifier.size(24.dp)
+              )
+            }
+          }
+        }
+
+        item(key = "feed_bottom_spacer") {
           Spacer(modifier = Modifier.height(84.dp))
         }
       }

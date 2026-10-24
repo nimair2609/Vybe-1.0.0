@@ -29,6 +29,7 @@ import com.example.data.model.User
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VybeAvatar
 import com.example.ui.theme.*
+import com.example.util.rememberRelativeTimestamp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -386,8 +387,9 @@ fun NotificationCard(
           color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(modifier = Modifier.height(4.dp))
+        val relativeTime = rememberRelativeTimestamp(item.createdAtIso, item.timestamp)
         Text(
-          text = item.timestamp,
+          text = relativeTime,
           fontSize = 11.sp,
           color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
         )

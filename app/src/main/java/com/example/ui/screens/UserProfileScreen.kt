@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
+import com.example.data.model.CallAvailabilityResult
 import com.example.data.model.MediaType
 import com.example.data.model.User
 import com.example.ui.Screen
@@ -47,6 +48,7 @@ import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VybeAvatar
 import com.example.ui.theme.*
 import com.example.util.MediaUtils
+import com.example.util.TimestampUtils
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -213,9 +215,31 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
     }
   }
 
-  val displayedPostsCount = if (canViewContent) maxOf(user.postsCount, nonArchivedUserPosts.size) else user.postsCount
-  val displayedFollowersCount = if (isMe) maxOf(user.followersCount, followerUserIds.size) else user.followersCount
-  val displayedFollowingCount = if (isMe) maxOf(user.followingCount, followingUserIds.size) else user.followingCount
+  val safeUsername = remember(user.username, user.id) {
+    user.username.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+      ?: "vybe_${user.id.filter { it.isLetterOrDigit() }.take(6).lowercase()}"
+  }
+  val safeDisplayName = remember(user.displayName, safeUsername) {
+    user.displayName.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+      ?: safeUsername
+  }
+  val formattedJoinedText = remember(user.createdAtIso, user.joinedDate) {
+    val fromIso = TimestampUtils.formatJoinedMonthYear(user.createdAtIso)
+    when {
+      !user.createdAtIso.isNullOrBlank() && fromIso != "Joined recently" -> fromIso
+      user.joinedDate.isNotBlank() && user.joinedDate != "VYBE Member" ->
+        if (user.joinedDate.startsWith("Joined", ignoreCase = true)) user.joinedDate else "Joined ${user.joinedDate}"
+      else -> fromIso
+    }
+  }
+
+  val displayedPostsCount = if (isMe || nonArchivedUserPosts.isNotEmpty() || user.postsCount <= 0) {
+    nonArchivedUserPosts.size
+  } else {
+    maxOf(0, user.postsCount)
+  }
+  val displayedFollowersCount = if (isMe) maxOf(0, maxOf(user.followersCount, followerUserIds.size)) else maxOf(0, user.followersCount)
+  val displayedFollowingCount = if (isMe) maxOf(0, maxOf(user.followingCount, followingUserIds.size)) else maxOf(0, user.followingCount)
 
   Scaffold(
     snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -241,7 +265,7 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
               Spacer(modifier = Modifier.width(6.dp))
             }
             Text(
-              text = "@${user.username}",
+              text = "@$safeUsername",
               fontWeight = FontWeight.Bold,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis
@@ -257,6 +281,36 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
               Icon(Icons.Default.Settings, contentDescription = "Settings")
             }
           } else {
+            if (!isBlocked) {
+              IconButton(
+                onClick = {
+                  when (val res = viewModel.initiateCall(user, isVideo = false)) {
+                    is CallAvailabilityResult.Unavailable -> coroutineScope.launch { snackbarHostState.showSnackbar(res.reason) }
+                    is CallAvailabilityResult.Offline -> coroutineScope.launch { snackbarHostState.showSnackbar(res.reason) }
+                    is CallAvailabilityResult.Blocked -> coroutineScope.launch { snackbarHostState.showSnackbar(res.reason) }
+                    is CallAvailabilityResult.Error -> coroutineScope.launch { snackbarHostState.showSnackbar(res.message) }
+                    else -> {}
+                  }
+                },
+                modifier = Modifier.testTag("peer_profile_voice_call_button")
+              ) {
+                Icon(Icons.Default.Call, contentDescription = "Voice Call", tint = VybeViolet)
+              }
+              IconButton(
+                onClick = {
+                  when (val res = viewModel.initiateCall(user, isVideo = true)) {
+                    is CallAvailabilityResult.Unavailable -> coroutineScope.launch { snackbarHostState.showSnackbar(res.reason) }
+                    is CallAvailabilityResult.Offline -> coroutineScope.launch { snackbarHostState.showSnackbar(res.reason) }
+                    is CallAvailabilityResult.Blocked -> coroutineScope.launch { snackbarHostState.showSnackbar(res.reason) }
+                    is CallAvailabilityResult.Error -> coroutineScope.launch { snackbarHostState.showSnackbar(res.message) }
+                    else -> {}
+                  }
+                },
+                modifier = Modifier.testTag("peer_profile_video_call_button")
+              ) {
+                Icon(Icons.Default.Videocam, contentDescription = "Video Call", tint = VybeMagenta)
+              }
+            }
             Box {
               IconButton(
                 onClick = { showPeerMenu = true },
@@ -433,12 +487,21 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
         Column(modifier = Modifier.padding(horizontal = 16.dp)) {
           Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-              text = user.displayName,
+              text = safeDisplayName,
               style = MaterialTheme.typography.headlineSmall,
               fontWeight = FontWeight.Bold
             )
             Spacer(modifier = Modifier.width(6.dp))
             VerificationBadge(user = user)
+            if (user.isOnline) {
+              Spacer(modifier = Modifier.width(8.dp))
+              Box(
+                modifier = Modifier
+                  .size(9.dp)
+                  .clip(CircleShape)
+                  .background(VybeOnlineGreen)
+              )
+            }
           }
 
           Row(
@@ -446,7 +509,7 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
             horizontalArrangement = Arrangement.spacedBy(8.dp)
           ) {
             Text(
-              text = "@${user.username} • Joined ${user.joinedDate}",
+              text = "@$safeUsername • $formattedJoinedText",
               fontSize = 12.sp,
               color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -474,6 +537,51 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
                   modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                 )
+              }
+            }
+          }
+
+          if (isMe && user.hasIncompleteProfile) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Card(
+              colors = CardDefaults.cardColors(containerColor = VybeBrandCyan.copy(alpha = 0.12f)),
+              shape = RoundedCornerShape(12.dp),
+              border = BorderStroke(1.dp, VybeBrandCyan.copy(alpha = 0.45f)),
+              modifier = Modifier.fillMaxWidth().testTag("incomplete_profile_banner")
+            ) {
+              Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+              ) {
+                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                  Text("Complete Your VYBE Handle", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                  Text(
+                    "Set your permanent @username and full name so friends can find you.",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                }
+                Button(
+                  onClick = {
+                    editFirstName = user.firstName
+                    editLastName = user.lastName
+                    editUsername = if (user.username.startsWith("vybe_") || user.username.equals("null", true)) "" else user.username
+                    editBio = user.bio
+                    editAvatarUrl = user.avatarUrl
+                    editCoverUrl = user.coverUrl
+                    editVideoUrl = user.profileVideoUrl
+                    editIsPrivate = user.isPrivate
+                    availabilityMessage = null
+                    isAvailable = true
+                    showEditProfileModal = true
+                  },
+                  colors = ButtonDefaults.buttonColors(containerColor = VybeBrandCyan),
+                  shape = RoundedCornerShape(10.dp),
+                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                  Text("Set @username", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                }
               }
             }
           }
@@ -1105,11 +1213,17 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
           actions = {
             Button(
               onClick = {
+                val cleanHandle = editUsername.trim().removePrefix("@")
+                if (cleanHandle.length < 3 || cleanHandle.equals("null", ignoreCase = true)) {
+                  availabilityMessage = "Username must be at least 3 characters."
+                  isAvailable = false
+                  return@Button
+                }
                 if (isAvailable) {
                   viewModel.updateAccountProfile(
-                    firstName = editFirstName,
-                    lastName = editLastName,
-                    requestedUserId = editUsername,
+                    firstName = editFirstName.trim(),
+                    lastName = editLastName.trim(),
+                    requestedUserId = cleanHandle,
                     email = currentUser?.email ?: "",
                     phone = currentUser?.phone ?: "",
                     bio = editBio,
@@ -1123,6 +1237,7 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
                   showEditProfileModal = false
                 }
               },
+              enabled = isAvailable && editUsername.trim().removePrefix("@").length >= 3,
               colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
               modifier = Modifier
                 .padding(end = 8.dp)

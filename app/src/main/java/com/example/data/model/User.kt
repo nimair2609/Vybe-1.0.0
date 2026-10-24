@@ -48,9 +48,22 @@ data class User(
   val postsCount: Int = 0,
   val currentMood: MoodType? = null,
   val livePulse: LivePulseStatus = LivePulseStatus.NONE,
-  val joinedDate: String = "2024",
+  val joinedDate: String = "VYBE Member",
+  val createdAtIso: String? = null,
+  val lastSeenAtIso: String? = null,
+  val isOnline: Boolean = false,
   val isDeactivated: Boolean = false,
   val isOnboardingCompleted: Boolean = false,
   val isSpiritualMode: Boolean = false,
   val goalType: String = "Creator Journey"
-)
+) {
+  val isFullyVerifiedAccount: Boolean
+    get() = isEmailVerified && isPhoneVerified
+
+  val hasIncompleteProfile: Boolean
+    get() = username.isBlank() ||
+      username.equals("null", ignoreCase = true) ||
+      username.startsWith("vybe_") ||
+      displayName.isBlank() ||
+      displayName.equals("null", ignoreCase = true)
+}

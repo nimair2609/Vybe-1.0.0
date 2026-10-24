@@ -24,7 +24,8 @@ data class DirectMessage(
   val replyToSenderName: String? = null,
   val reactions: List<String> = emptyList(), // Reactions: ❤️, 🔥, ⚡, 😂, 👏
   val status: MessageStatus = MessageStatus.SENT,
-  val clientId: String? = null
+  val clientId: String? = null,
+  val createdAtIso: String? = null
 )
 
 sealed class CallAvailabilityResult {
@@ -40,6 +41,7 @@ data class Conversation(
   val peerUser: User,
   val lastMessage: String,
   val lastMessageTimestamp: String,
+  val lastMessageCreatedAtIso: String? = null,
   val unreadCount: Int = 0,
   val isGroup: Boolean = false,
   val groupName: String? = null,
@@ -58,10 +60,11 @@ data class Conversation(
 )
 
 enum class CallState {
-  IDLE, OUTGOING, INCOMING, CONNECTED, ENDED
+  IDLE, OUTGOING, INCOMING, CONNECTING, CONNECTED, DECLINED, MISSED, FAILED, ENDED
 }
 
 data class CallSession(
+  val callId: String = "",
   val peerUser: User,
   val isVideo: Boolean,
   val state: CallState,
@@ -69,6 +72,11 @@ data class CallSession(
   val isMuted: Boolean = false,
   val isSpeakerOn: Boolean = true,
   val isCameraOff: Boolean = false,
+  val isFrontCamera: Boolean = true,
+  val isPeerMuted: Boolean = false,
+  val isPeerCameraOff: Boolean = false,
+  val remoteVideoFrameBase64: String? = null,
   val isSignalingConnected: Boolean = false,
+  val iceCandidateSummary: String = "",
   val connectionStatusText: String = "Connecting signaling..."
 )

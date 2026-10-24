@@ -56,6 +56,7 @@ data class NotificationItem(
   val title: String,
   val message: String,
   val timestamp: String,
+  val createdAtIso: String? = null,
   val isRead: Boolean = false,
   val actorUser: User? = null,
   val destinationScreen: String? = null,

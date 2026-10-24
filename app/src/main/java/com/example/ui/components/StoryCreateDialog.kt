@@ -1,5 +1,7 @@
 package com.example.ui.components
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -35,12 +37,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.example.data.model.StoryAudience
 import com.example.data.model.StoryMediaType
 import com.example.ui.VybeViewModel
 import com.example.ui.theme.*
 import com.example.util.MediaUtils
+import kotlinx.coroutines.launch
 
 val StoryGradients = listOf(
   "NEON_PURPLE" to listOf(Color(0xFF8A2387), Color(0xFFE94057), Color(0xFFF27121)),
@@ -65,12 +69,9 @@ enum class StoryCreateMode {
 
 /**
  * VYBE Story Composer Dialog:
- * - Real Photo & Video pickers with live `VybeVideoPlayer` preview (supporting portrait & landscape cleanly).
- * - Google Maps + GPS + manual `LocationPickerDialog` integration.
- * - VYBE Matches Add/Remove manager (`VybeMatchesManagerDialog`), empty-audience safety guard,
- *   and explicit Audience Confirmation Dialog before publishing to VYBE Matches.
- * - Safe-area inset handling (`WindowInsets.safeDrawing` + `navigationBarsPadding()`) so bottom
- *   "VYBE Matches" and "Your Story" buttons are always visible and accessible.
+ * - Real Photo, Camera & Video pickers with live `VybeVideoPlayer` preview.
+ * - Action controls cleanly separated below the media canvas so they never overlap story preview or video controls.
+ * - Awaits verified Storage + Database persistence (`publishStoryAwait`) before closing — never fakes publication.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,6 +80,13 @@ fun StoryCreateDialog(
   onDismiss: () -> Unit,
   onStoryPublished: (String) -> Unit
 ) {
+  val coroutineScope = rememberCoroutineScope()
+  val context = LocalContext.current
+  val currentUser by viewModel.currentUser.collectAsState()
+  val isOnline by viewModel.isOnline.collectAsState()
+  val allUsers by viewModel.allUsers.collectAsState()
+  val vybeMatches by viewModel.vybeMatches.collectAsState()
+
   var selectedMode by remember { mutableStateOf(StoryCreateMode.CAMERA_PHOTO) }
   var selectedAudience by remember { mutableStateOf(StoryAudience.EVERYONE) }
   var captionText by remember { mutableStateOf("") }
@@ -88,11 +96,7 @@ fun StoryCreateDialog(
   var showEmptyMatchesAlert by remember { mutableStateOf(false) }
   var showMatchesConfirmDialog by remember { mutableStateOf(false) }
   var validationError by remember { mutableStateOf<String?>(null) }
-
-  val context = LocalContext.current
-  val currentUser by viewModel.currentUser.collectAsState()
-  val allUsers by viewModel.allUsers.collectAsState()
-  val vybeMatches by viewModel.vybeMatches.collectAsState()
+  var isPublishingStory by remember { mutableStateOf(false) }
 
   var pickedPhotoUri by remember { mutableStateOf<Uri?>(null) }
   var pickedVideoUri by remember { mutableStateOf<Uri?>(null) }
@@ -114,6 +118,26 @@ fun StoryCreateDialog(
     }
   }
 
+  val cameraLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.TakePicturePreview()
+  ) { bitmap ->
+    if (bitmap != null) {
+      val savedUri = MediaUtils.saveBitmapToCache(context, bitmap, prefix = "story_camera")
+      pickedPhotoUri = savedUri
+      validationError = null
+    }
+  }
+
+  val cameraPermissionLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.RequestPermission()
+  ) { granted ->
+    if (granted) {
+      cameraLauncher.launch(null)
+    } else {
+      validationError = "Camera permission is required to capture a story photo."
+    }
+  }
+
   val videoPicker = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.PickVisualMedia()
   ) { uri ->
@@ -127,9 +151,12 @@ fun StoryCreateDialog(
   }
 
   fun validateStoryInputs(): Pair<Boolean, String> {
+    if (!isOnline) {
+      return false to "No internet connection. Reconnect before publishing your story."
+    }
     return when (selectedMode) {
       StoryCreateMode.CAMERA_PHOTO -> {
-        if (pickedPhotoUri == null) false to "Please select a photo before sharing your story."
+        if (pickedPhotoUri == null) false to "Please select or capture a photo before sharing your story."
         else true to pickedPhotoUri.toString()
       }
       StoryCreateMode.VIDEO -> {
@@ -147,34 +174,50 @@ fun StoryCreateDialog(
   }
 
   fun executeStoryPublish(targetAudience: StoryAudience) {
+    if (isPublishingStory) return
     val (valid, resolvedUri) = validateStoryInputs()
     if (!valid) {
       validationError = resolvedUri
       return
     }
-    publishStory(
-      viewModel = viewModel,
-      mode = selectedMode,
-      audience = targetAudience,
-      caption = captionText.trim(),
-      mediaUri = resolvedUri,
-      textBgKey = textBackgroundKey,
-      musicTitle = selectedTrack.first,
-      location = selectedLocation,
-      onSuccess = {
+
+    val mediaType = when (selectedMode) {
+      StoryCreateMode.CAMERA_PHOTO -> StoryMediaType.PHOTO
+      StoryCreateMode.TYPE_TEXT -> StoryMediaType.TEXT
+      StoryCreateMode.MUSIC -> StoryMediaType.MUSIC
+      StoryCreateMode.VIDEO -> StoryMediaType.VIDEO
+    }
+
+    isPublishingStory = true
+    validationError = null
+    coroutineScope.launch {
+      val result = viewModel.publishStoryAwait(
+        mediaUrl = if (selectedMode == StoryCreateMode.TYPE_TEXT) "" else resolvedUri,
+        caption = captionText.trim(),
+        mediaType = mediaType,
+        audience = targetAudience,
+        musicTrackTitle = if (selectedMode == StoryCreateMode.MUSIC) selectedTrack.first else null,
+        location = selectedLocation,
+        textBackgroundColor = if (selectedMode == StoryCreateMode.TYPE_TEXT) textBackgroundKey else null
+      )
+      isPublishingStory = false
+      if (result.isSuccess) {
         val msg = if (targetAudience == StoryAudience.VYBE_MATCHES) {
-          "Uploading story for ${vybeMatches.size} VYBE Matches..."
+          "Story published for ${vybeMatches.size} VYBE Matches!"
         } else {
-          "Uploading story to Your Story..."
+          "Your story is now live!"
         }
         onStoryPublished(msg)
         onDismiss()
+      } else {
+        validationError = result.exceptionOrNull()?.message
+          ?: "Failed to publish story. Please check your connection and try again."
       }
-    )
+    }
   }
 
   Dialog(
-    onDismissRequest = onDismiss,
+    onDismissRequest = { if (!isPublishingStory) onDismiss() },
     properties = DialogProperties(
       usePlatformDefaultWidth = false,
       decorFitsSystemWindows = false
@@ -197,7 +240,8 @@ fun StoryCreateDialog(
           },
           navigationIcon = {
             IconButton(
-              onClick = onDismiss,
+              onClick = { if (!isPublishingStory) onDismiss() },
+              enabled = !isPublishingStory,
               modifier = Modifier.size(48.dp).testTag("close_story_dialog_button")
             ) {
               Icon(Icons.Default.Close, contentDescription = "Close")
@@ -206,6 +250,7 @@ fun StoryCreateDialog(
           actions = {
             TextButton(
               onClick = { showVybeMatchesManager = true },
+              enabled = !isPublishingStory,
               modifier = Modifier
                 .padding(end = 8.dp)
                 .heightIn(min = 48.dp)
@@ -236,550 +281,584 @@ fun StoryCreateDialog(
           tonalElevation = 4.dp,
           modifier = Modifier.fillMaxWidth()
         ) {
-          Row(
+          Box(
             modifier = Modifier
               .fillMaxWidth()
               .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
+            contentAlignment = Alignment.Center
           ) {
-            // 1. VYBE Matches Button (with empty-audience guard & confirmation dialog)
-            OutlinedButton(
-              onClick = {
-                val (valid, errOrUri) = validateStoryInputs()
-                if (!valid) {
-                  validationError = errOrUri
-                  return@OutlinedButton
-                }
-                if (vybeMatches.isEmpty()) {
-                  showEmptyMatchesAlert = true
-                } else {
-                  showMatchesConfirmDialog = true
-                }
-              },
-              border = BorderStroke(1.5.dp, Color(0xFF10B981)),
-              shape = RoundedCornerShape(24.dp),
-              contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+            Row(
               modifier = Modifier
-                .weight(1f)
-                .heightIn(min = 48.dp)
-                .testTag("publish_vybe_matches_button")
+                .widthIn(max = 600.dp)
+                .fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(10.dp),
+              verticalAlignment = Alignment.CenterVertically
             ) {
-              Icon(
-                Icons.Default.Star,
-                contentDescription = null,
-                tint = Color(0xFF10B981),
-                modifier = Modifier.size(16.dp)
-              )
-              Spacer(modifier = Modifier.width(6.dp))
-              Text(
-                text = "VYBE Matches (${vybeMatches.size})",
-                color = Color(0xFF10B981),
-                fontWeight = FontWeight.Bold,
-                fontSize = 12.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-              )
-            }
-
-            // 2. Your Story Button
-            Button(
-              onClick = {
-                if (selectedAudience == StoryAudience.VYBE_MATCHES) {
+              // 1. VYBE Matches Button
+              OutlinedButton(
+                onClick = {
                   val (valid, errOrUri) = validateStoryInputs()
                   if (!valid) {
                     validationError = errOrUri
-                    return@Button
+                    return@OutlinedButton
                   }
                   if (vybeMatches.isEmpty()) {
                     showEmptyMatchesAlert = true
                   } else {
                     showMatchesConfirmDialog = true
                   }
+                },
+                enabled = !isPublishingStory,
+                border = BorderStroke(1.5.dp, Color(0xFF10B981)),
+                shape = RoundedCornerShape(24.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                modifier = Modifier
+                  .weight(1f)
+                  .heightIn(min = 48.dp)
+                  .testTag("publish_vybe_matches_button")
+              ) {
+                Icon(
+                  Icons.Default.Star,
+                  contentDescription = null,
+                  tint = Color(0xFF10B981),
+                  modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                  text = "VYBE Matches (${vybeMatches.size})",
+                  color = Color(0xFF10B981),
+                  fontWeight = FontWeight.Bold,
+                  fontSize = 12.sp,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis
+                )
+              }
+
+              // 2. Your Story Button
+              Button(
+                onClick = {
+                  if (selectedAudience == StoryAudience.VYBE_MATCHES) {
+                    val (valid, errOrUri) = validateStoryInputs()
+                    if (!valid) {
+                      validationError = errOrUri
+                      return@Button
+                    }
+                    if (vybeMatches.isEmpty()) {
+                      showEmptyMatchesAlert = true
+                    } else {
+                      showMatchesConfirmDialog = true
+                    }
+                  } else {
+                    executeStoryPublish(StoryAudience.EVERYONE)
+                  }
+                },
+                enabled = !isPublishingStory,
+                colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                shape = RoundedCornerShape(24.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                modifier = Modifier
+                  .weight(1f)
+                  .heightIn(min = 48.dp)
+                  .testTag("publish_your_story_button")
+              ) {
+                if (isPublishingStory) {
+                  CircularProgressIndicator(
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(16.dp)
+                  )
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Text("Publishing...", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 } else {
-                  executeStoryPublish(StoryAudience.EVERYONE)
+                  Text(
+                    text = "Your Story",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    maxLines = 1
+                  )
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Icon(
+                    Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                  )
                 }
-              },
-              colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-              shape = RoundedCornerShape(24.dp),
-              contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
-              modifier = Modifier
-                .weight(1f)
-                .heightIn(min = 48.dp)
-                .testTag("publish_your_story_button")
-            ) {
-              Text(
-                text = "Your Story",
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 12.sp,
-                maxLines = 1
-              )
-              Spacer(modifier = Modifier.width(6.dp))
-              Icon(
-                Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(16.dp)
-              )
+              }
             }
           }
         }
       }
     ) { padding ->
-      Column(
+      Box(
         modifier = Modifier
           .fillMaxSize()
-          .padding(padding)
-          .verticalScroll(rememberScrollState())
-          .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+          .padding(padding),
+        contentAlignment = Alignment.TopCenter
       ) {
-        if (validationError != null) {
-          Surface(
-            color = VybeDanger.copy(alpha = 0.14f),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth()
-          ) {
-            Row(
-              modifier = Modifier.padding(12.dp),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = VybeDanger, modifier = Modifier.size(18.dp))
-              Spacer(modifier = Modifier.width(8.dp))
-              Text(
-                text = validationError ?: "",
-                color = VybeDanger,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.weight(1f)
-              )
-            }
-          }
-        }
-
-        // --- 1. Mode Switcher ---
-        Text(
-          text = "STORY FORMAT",
-          fontSize = 11.sp,
-          fontWeight = FontWeight.Bold,
-          color = MaterialTheme.colorScheme.primary,
-          letterSpacing = 1.sp
-        )
-
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-          listOf(
-            Triple(StoryCreateMode.CAMERA_PHOTO, "Photo", Icons.Default.PhotoCamera),
-            Triple(StoryCreateMode.VIDEO, "Video", Icons.Default.Videocam),
-            Triple(StoryCreateMode.TYPE_TEXT, "Type", Icons.Default.TextFields),
-            Triple(StoryCreateMode.MUSIC, "Music", Icons.Default.MusicNote)
-          ).forEach { (mode, label, icon) ->
-            val isSelected = selectedMode == mode
-            Surface(
-              color = if (isSelected) VybeViolet else MaterialTheme.colorScheme.surfaceVariant,
-              shape = RoundedCornerShape(12.dp),
-              modifier = Modifier
-                .weight(1f)
-                .heightIn(min = 56.dp)
-                .clickable {
-                  selectedMode = mode
-                  validationError = null
-                }
-                .testTag("story_mode_${mode.name}")
-            ) {
-              Column(
-                modifier = Modifier.padding(vertical = 10.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-              ) {
-                Icon(
-                  imageVector = icon,
-                  contentDescription = label,
-                  tint = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                  modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                  text = label,
-                  fontSize = 11.sp,
-                  fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                  color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-              }
-            }
-          }
-        }
-
-        // --- 2. Visual Preview Canvas (Supports Portrait & Landscape Cleanly) ---
-        val canvasHeight = if (selectedMode == StoryCreateMode.VIDEO && detectedVideoRatio > 1.15f) 240.dp else 320.dp
-        Box(
+        Column(
           modifier = Modifier
+            .widthIn(max = 600.dp)
             .fillMaxWidth()
-            .height(canvasHeight)
-            .clip(RoundedCornerShape(18.dp))
-            .background(Color(0xFF0A0A0F)),
-          contentAlignment = Alignment.Center
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+          verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-          when (selectedMode) {
-            StoryCreateMode.CAMERA_PHOTO -> {
-              if (pickedPhotoUri != null) {
-                AsyncImage(
-                  model = pickedPhotoUri,
-                  contentDescription = "Selected story photo",
-                  contentScale = ContentScale.Fit,
-                  modifier = Modifier.fillMaxSize()
-                )
-                Surface(
-                  color = Color.Black.copy(alpha = 0.65f),
-                  shape = RoundedCornerShape(12.dp),
-                  modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(12.dp)
-                    .clickable {
-                      photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                    }
-                ) {
-                  Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                  ) {
-                    Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Change Photo", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                  }
-                }
-              } else {
-                Box(
-                  modifier = Modifier
-                    .fillMaxSize()
-                    .background(Brush.verticalGradient(listOf(Color(0xFF231D33), Color(0xFF12101B))))
-                    .clickable {
-                      photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                    }
-                    .testTag("story_pick_photo_canvas"),
-                  contentAlignment = Alignment.Center
-                ) {
-                  Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(20.dp)) {
-                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(48.dp))
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text("Tap to Select Photo", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Portrait and landscape photos supported", color = Color.White.copy(alpha = 0.65f), fontSize = 11.sp)
-                  }
-                }
-              }
-            }
-
-            StoryCreateMode.VIDEO -> {
-              if (pickedVideoUri != null) {
-                VybeVideoPlayer(
-                  videoUrl = pickedVideoUri.toString(),
-                  autoPlay = true,
-                  isLooping = true,
-                  fitMode = VideoFitMode.FIT_CONTAIN,
-                  showControls = true,
-                  onAspectRatioDetected = { ratio -> detectedVideoRatio = ratio },
-                  modifier = Modifier.fillMaxSize()
-                )
-                Surface(
-                  color = Color.Black.copy(alpha = 0.68f),
-                  shape = RoundedCornerShape(12.dp),
-                  modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(12.dp)
-                    .clickable {
-                      videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
-                    }
-                ) {
-                  Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                  ) {
-                    Icon(Icons.Default.VideoLibrary, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Change Video", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                  }
-                }
-              } else {
-                Box(
-                  modifier = Modifier
-                    .fillMaxSize()
-                    .background(Brush.verticalGradient(listOf(Color(0xFF192236), Color(0xFF0E131F))))
-                    .clickable {
-                      videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
-                    }
-                    .testTag("story_pick_video_canvas"),
-                  contentAlignment = Alignment.Center
-                ) {
-                  Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(20.dp)) {
-                    Icon(Icons.Default.VideoCall, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(52.dp))
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text("Tap to Select Video", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Supports portrait (9:16) and landscape (16:9) video playback", color = Color.White.copy(alpha = 0.65f), fontSize = 11.sp, textAlign = TextAlign.Center)
-                  }
-                }
-              }
-            }
-
-            StoryCreateMode.TYPE_TEXT -> {
-              Box(
-                modifier = Modifier
-                  .fillMaxSize()
-                  .background(Brush.linearGradient(currentGradient))
-                  .padding(24.dp),
-                contentAlignment = Alignment.Center
-              ) {
-                Text(
-                  text = if (captionText.isNotBlank()) captionText else "Type your story message below...",
-                  color = Color.White,
-                  fontSize = 20.sp,
-                  fontWeight = FontWeight.Bold,
-                  textAlign = TextAlign.Center
-                )
-              }
-            }
-
-            StoryCreateMode.MUSIC -> {
-              Box(
-                modifier = Modifier
-                  .fillMaxSize()
-                  .background(Brush.verticalGradient(listOf(Color(0xFF1E1B4B), Color(0xFF0F172A))))
-                  .padding(20.dp),
-                contentAlignment = Alignment.Center
-              ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                  Box(
-                    modifier = Modifier
-                      .size(76.dp)
-                      .clip(CircleShape)
-                      .background(Brush.linearGradient(listOf(VybeMagenta, VybeBrandCyan))),
-                    contentAlignment = Alignment.Center
-                  ) {
-                    Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(38.dp))
-                  }
-                  Spacer(modifier = Modifier.height(14.dp))
-                  Surface(
-                    color = Color.White.copy(alpha = 0.14f),
-                    shape = RoundedCornerShape(12.dp)
-                  ) {
-                    Row(
-                      modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                      verticalAlignment = Alignment.CenterVertically
-                    ) {
-                      Icon(Icons.Default.GraphicEq, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(16.dp))
-                      Spacer(modifier = Modifier.width(6.dp))
-                      Text(selectedTrack.first, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
-                  }
-                  Spacer(modifier = Modifier.height(4.dp))
-                  Text(selectedTrack.second, color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp)
-                }
-              }
-            }
-          }
-
-          if (selectedLocation != null) {
+          if (validationError != null) {
             Surface(
-              color = Color.Black.copy(alpha = 0.7f),
-              shape = RoundedCornerShape(16.dp),
-              modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(12.dp)
-                .clickable { selectedLocation = null }
+              color = VybeDanger.copy(alpha = 0.14f),
+              shape = RoundedCornerShape(12.dp),
+              modifier = Modifier.fillMaxWidth()
             ) {
               Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                modifier = Modifier.padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Icon(Icons.Default.LocationOn, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(selectedLocation ?: "", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.width(6.dp))
-                Icon(Icons.Default.Close, contentDescription = "Remove location", tint = Color.White, modifier = Modifier.size(13.dp))
+                Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = VybeDanger, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                  text = validationError ?: "",
+                  color = VybeDanger,
+                  fontSize = 12.sp,
+                  fontWeight = FontWeight.Medium,
+                  modifier = Modifier.weight(1f)
+                )
               }
             }
           }
-        }
 
-        // --- 3. Caption / Text Content ---
-        Text(
-          text = if (selectedMode == StoryCreateMode.TYPE_TEXT) "STORY TEXT" else "CAPTION (OPTIONAL)",
-          fontSize = 11.sp,
-          fontWeight = FontWeight.Bold,
-          color = MaterialTheme.colorScheme.primary,
-          letterSpacing = 1.sp
-        )
-
-        OutlinedTextField(
-          value = captionText,
-          onValueChange = {
-            captionText = it
-            validationError = null
-          },
-          placeholder = { Text(if (selectedMode == StoryCreateMode.TYPE_TEXT) "Write what's on your mind..." else "Add a caption...") },
-          modifier = Modifier.fillMaxWidth().testTag("story_caption_input"),
-          shape = RoundedCornerShape(14.dp),
-          minLines = if (selectedMode == StoryCreateMode.TYPE_TEXT) 2 else 1
-        )
-
-        if (selectedMode == StoryCreateMode.TYPE_TEXT) {
-          Text("BACKGROUND GRADIENT", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-          LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(StoryGradients) { (key, colors) ->
-              Box(
-                modifier = Modifier
-                  .size(40.dp)
-                  .clip(CircleShape)
-                  .background(Brush.linearGradient(colors))
-                  .border(
-                    width = if (textBackgroundKey == key) 2.5.dp else 0.dp,
-                    color = Color.White,
-                    shape = CircleShape
-                  )
-                  .clickable { textBackgroundKey = key }
-              )
-            }
-          }
-        }
-
-        if (selectedMode == StoryCreateMode.MUSIC) {
-          Text("SELECT SOUNDTRACK", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-          Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            IndianIndieMusicTracks.forEach { track ->
-              val isTrackSelected = selectedTrack == track
-              Surface(
-                color = if (isTrackSelected) VybeMagenta.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .clickable { selectedTrack = track }
-              ) {
-                Row(
-                  modifier = Modifier.padding(10.dp),
-                  verticalAlignment = Alignment.CenterVertically
-                ) {
-                  Icon(
-                    imageVector = if (isTrackSelected) Icons.Default.GraphicEq else Icons.Default.MusicNote,
-                    contentDescription = null,
-                    tint = if (isTrackSelected) VybeMagenta else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
-                  )
-                  Spacer(modifier = Modifier.width(10.dp))
-                  Column(modifier = Modifier.weight(1f)) {
-                    Text(track.first, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    Text(track.second, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                  }
-                  if (isTrackSelected) {
-                    Icon(Icons.Default.Check, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(16.dp))
-                  }
-                }
-              }
-            }
-          }
-        }
-
-        // --- 4. Location Picker (Google Maps / GPS / Manual) ---
-        OutlinedButton(
-          onClick = { showLocationPickerDialog = true },
-          shape = RoundedCornerShape(12.dp),
-          modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .testTag("story_open_location_picker_button")
-        ) {
-          Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(18.dp))
-          Spacer(modifier = Modifier.width(8.dp))
+          // --- 1. Mode Switcher ---
           Text(
-            text = if (selectedLocation != null) "Location: $selectedLocation (Change)" else "Add Location",
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-          )
-        }
-
-        // --- 5. Audience & VYBE Matches Control ---
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          Text(
-            text = "AUDIENCE & PRIVACY",
+            text = "STORY FORMAT",
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
             letterSpacing = 1.sp
           )
-          TextButton(
-            onClick = { showVybeMatchesManager = true },
-            modifier = Modifier.heightIn(min = 48.dp).testTag("story_edit_vybe_matches_button")
-          ) {
-            Text("Add / Remove Matches (${vybeMatches.size})", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-          }
-        }
 
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-          Surface(
-            color = if (selectedAudience == StoryAudience.EVERYONE) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier
-              .weight(1f)
-              .clickable { selectedAudience = StoryAudience.EVERYONE }
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
           ) {
+            listOf(
+              Triple(StoryCreateMode.CAMERA_PHOTO, "Photo", Icons.Default.PhotoCamera),
+              Triple(StoryCreateMode.VIDEO, "Video", Icons.Default.Videocam),
+              Triple(StoryCreateMode.TYPE_TEXT, "Type", Icons.Default.TextFields),
+              Triple(StoryCreateMode.MUSIC, "Music", Icons.Default.MusicNote)
+            ).forEach { (mode, label, icon) ->
+              val isSelected = selectedMode == mode
+              Surface(
+                color = if (isSelected) VybeViolet else MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                  .weight(1f)
+                  .heightIn(min = 56.dp)
+                  .clickable(enabled = !isPublishingStory) {
+                    selectedMode = mode
+                    validationError = null
+                  }
+                  .testTag("story_mode_${mode.name}")
+              ) {
+                Column(
+                  modifier = Modifier.padding(vertical = 10.dp),
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                  verticalArrangement = Arrangement.Center
+                ) {
+                  Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                  )
+                  Spacer(modifier = Modifier.height(4.dp))
+                  Text(
+                    text = label,
+                    fontSize = 11.sp,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                }
+              }
+            }
+          }
+
+          // --- 2. Clean Visual Preview Canvas (Zero Overlapping Composer Buttons) ---
+          val canvasHeight = if (selectedMode == StoryCreateMode.VIDEO && detectedVideoRatio > 1.15f) 240.dp else 310.dp
+          Box(
+            modifier = Modifier
+              .fillMaxWidth()
+              .height(canvasHeight)
+              .clip(RoundedCornerShape(18.dp))
+              .background(Color(0xFF0A0A0F)),
+            contentAlignment = Alignment.Center
+          ) {
+            when (selectedMode) {
+              StoryCreateMode.CAMERA_PHOTO -> {
+                if (pickedPhotoUri != null) {
+                  AsyncImage(
+                    model = pickedPhotoUri,
+                    contentDescription = "Selected story photo",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
+                  )
+                } else {
+                  Box(
+                    modifier = Modifier
+                      .fillMaxSize()
+                      .background(Brush.verticalGradient(listOf(Color(0xFF231D33), Color(0xFF12101B))))
+                      .clickable(enabled = !isPublishingStory) {
+                        photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                      }
+                      .testTag("story_pick_photo_canvas"),
+                    contentAlignment = Alignment.Center
+                  ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(20.dp)) {
+                      Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(48.dp))
+                      Spacer(modifier = Modifier.height(10.dp))
+                      Text("Tap to Select Photo", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                      Spacer(modifier = Modifier.height(4.dp))
+                      Text("Or use Gallery / Camera controls below", color = Color.White.copy(alpha = 0.65f), fontSize = 11.sp)
+                    }
+                  }
+                }
+              }
+
+              StoryCreateMode.VIDEO -> {
+                if (pickedVideoUri != null) {
+                  VybeVideoPlayer(
+                    videoUrl = pickedVideoUri.toString(),
+                    autoPlay = true,
+                    isLooping = true,
+                    initialMuted = true,
+                    isPausedExternal = isPublishingStory,
+                    fitMode = VideoFitMode.FIT_CONTAIN,
+                    showControls = true,
+                    onAspectRatioDetected = { ratio -> detectedVideoRatio = ratio },
+                    modifier = Modifier.fillMaxSize()
+                  )
+                } else {
+                  Box(
+                    modifier = Modifier
+                      .fillMaxSize()
+                      .background(Brush.verticalGradient(listOf(Color(0xFF192236), Color(0xFF0E131F))))
+                      .clickable(enabled = !isPublishingStory) {
+                        videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+                      }
+                      .testTag("story_pick_video_canvas"),
+                    contentAlignment = Alignment.Center
+                  ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(20.dp)) {
+                      Icon(Icons.Default.VideoCall, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(52.dp))
+                      Spacer(modifier = Modifier.height(10.dp))
+                      Text("Tap to Select Video", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                      Spacer(modifier = Modifier.height(4.dp))
+                      Text("Supports portrait (9:16) and landscape (16:9) video playback", color = Color.White.copy(alpha = 0.65f), fontSize = 11.sp, textAlign = TextAlign.Center)
+                    }
+                  }
+                }
+              }
+
+              StoryCreateMode.TYPE_TEXT -> {
+                Box(
+                  modifier = Modifier
+                    .fillMaxSize()
+                    .background(Brush.linearGradient(currentGradient))
+                    .padding(24.dp),
+                  contentAlignment = Alignment.Center
+                ) {
+                  Text(
+                    text = if (captionText.isNotBlank()) captionText else "Type your story message below...",
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                  )
+                }
+              }
+
+              StoryCreateMode.MUSIC -> {
+                Box(
+                  modifier = Modifier
+                    .fillMaxSize()
+                    .background(Brush.verticalGradient(listOf(Color(0xFF1E1B4B), Color(0xFF0F172A))))
+                    .padding(20.dp),
+                  contentAlignment = Alignment.Center
+                ) {
+                  Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(
+                      modifier = Modifier
+                        .size(76.dp)
+                        .clip(CircleShape)
+                        .background(Brush.linearGradient(listOf(VybeMagenta, VybeBrandCyan))),
+                      contentAlignment = Alignment.Center
+                    ) {
+                      Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(38.dp))
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Surface(
+                      color = Color.White.copy(alpha = 0.14f),
+                      shape = RoundedCornerShape(12.dp)
+                    ) {
+                      Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                      ) {
+                        Icon(Icons.Default.GraphicEq, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(selectedTrack.first, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                      }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(selectedTrack.second, color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp)
+                  }
+                }
+              }
+            }
+          }
+
+          // Dedicated Media Source Controls cleanly BELOW preview canvas
+          if (selectedMode == StoryCreateMode.CAMERA_PHOTO) {
             Row(
-              modifier = Modifier.padding(12.dp),
-              verticalAlignment = Alignment.CenterVertically
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-              Icon(Icons.Default.Public, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(18.dp))
-              Spacer(modifier = Modifier.width(8.dp))
-              Column {
-                Text("Your Story", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                Text(
-                  text = if (currentUser?.isPrivate == true) "Approved followers" else "Followers & public",
-                  fontSize = 10.sp,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
+              OutlinedButton(
+                onClick = {
+                  photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                },
+                enabled = !isPublishingStory,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+              ) {
+                Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(if (pickedPhotoUri != null) "Change Photo" else "Gallery Photo", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+              }
+
+              OutlinedButton(
+                onClick = {
+                  val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                  if (granted) cameraLauncher.launch(null) else cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                },
+                enabled = !isPublishingStory,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+              ) {
+                Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Take Photo", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+              }
+            }
+          } else if (selectedMode == StoryCreateMode.VIDEO && pickedVideoUri != null) {
+            OutlinedButton(
+              onClick = {
+                videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+              },
+              enabled = !isPublishingStory,
+              shape = RoundedCornerShape(12.dp),
+              modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            ) {
+              Icon(Icons.Default.VideoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(modifier = Modifier.width(6.dp))
+              Text("Change Video", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+          }
+
+          // --- 3. Caption / Text Content ---
+          Text(
+            text = if (selectedMode == StoryCreateMode.TYPE_TEXT) "STORY TEXT" else "CAPTION (OPTIONAL)",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            letterSpacing = 1.sp
+          )
+
+          OutlinedTextField(
+            value = captionText,
+            onValueChange = {
+              captionText = it
+              validationError = null
+            },
+            enabled = !isPublishingStory,
+            placeholder = { Text(if (selectedMode == StoryCreateMode.TYPE_TEXT) "Write what's on your mind..." else "Add a caption...") },
+            modifier = Modifier.fillMaxWidth().testTag("story_caption_input"),
+            shape = RoundedCornerShape(14.dp),
+            minLines = if (selectedMode == StoryCreateMode.TYPE_TEXT) 2 else 1
+          )
+
+          if (selectedMode == StoryCreateMode.TYPE_TEXT) {
+            Text("BACKGROUND GRADIENT", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+              items(StoryGradients) { (key, colors) ->
+                Box(
+                  modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Brush.linearGradient(colors))
+                    .border(
+                      width = if (textBackgroundKey == key) 2.5.dp else 0.dp,
+                      color = Color.White,
+                      shape = CircleShape
+                    )
+                    .clickable(enabled = !isPublishingStory) { textBackgroundKey = key }
                 )
               }
             }
           }
 
-          Surface(
-            color = if (selectedAudience == StoryAudience.VYBE_MATCHES) Color(0xFF10B981).copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier
-              .weight(1f)
-              .clickable { selectedAudience = StoryAudience.VYBE_MATCHES }
-          ) {
-            Row(
-              modifier = Modifier.padding(12.dp),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
-              Spacer(modifier = Modifier.width(8.dp))
-              Column {
-                Text(
-                  "VYBE Matches",
-                  fontWeight = FontWeight.Bold,
-                  fontSize = 12.sp,
-                  color = if (selectedAudience == StoryAudience.VYBE_MATCHES) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                  "${vybeMatches.size} selected",
-                  fontSize = 10.sp,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+          if (selectedMode == StoryCreateMode.MUSIC) {
+            Text("SELECT SOUNDTRACK", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+              IndianIndieMusicTracks.forEach { track ->
+                val isTrackSelected = selectedTrack == track
+                Surface(
+                  color = if (isTrackSelected) VybeMagenta.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
+                  shape = RoundedCornerShape(10.dp),
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = !isPublishingStory) { selectedTrack = track }
+                ) {
+                  Row(
+                    modifier = Modifier.padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Icon(
+                      imageVector = if (isTrackSelected) Icons.Default.GraphicEq else Icons.Default.MusicNote,
+                      contentDescription = null,
+                      tint = if (isTrackSelected) VybeMagenta else MaterialTheme.colorScheme.onSurfaceVariant,
+                      modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                      Text(track.first, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                      Text(track.second, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (isTrackSelected) {
+                      Icon(Icons.Default.Check, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(16.dp))
+                    }
+                  }
+                }
               }
             }
           }
-        }
 
-        Spacer(modifier = Modifier.height(12.dp))
+          // --- 4. Location Picker ---
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            OutlinedButton(
+              onClick = { showLocationPickerDialog = true },
+              enabled = !isPublishingStory,
+              shape = RoundedCornerShape(12.dp),
+              modifier = Modifier
+                .weight(1f)
+                .heightIn(min = 48.dp)
+                .testTag("story_open_location_picker_button")
+            ) {
+              Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(modifier = Modifier.width(8.dp))
+              Text(
+                text = if (selectedLocation != null) "Location: $selectedLocation" else "Add Location",
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+            }
+            if (selectedLocation != null) {
+              IconButton(
+                onClick = { selectedLocation = null },
+                enabled = !isPublishingStory,
+                modifier = Modifier.size(48.dp)
+              ) {
+                Icon(Icons.Default.Close, contentDescription = "Remove location")
+              }
+            }
+          }
+
+          // --- 5. Audience & VYBE Matches Control ---
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Text(
+              text = "AUDIENCE & PRIVACY",
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.primary,
+              letterSpacing = 1.sp
+            )
+            TextButton(
+              onClick = { showVybeMatchesManager = true },
+              enabled = !isPublishingStory,
+              modifier = Modifier.heightIn(min = 48.dp).testTag("story_edit_vybe_matches_button")
+            ) {
+              Text("Add / Remove Matches (${vybeMatches.size})", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+          }
+
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+          ) {
+            Surface(
+              color = if (selectedAudience == StoryAudience.EVERYONE) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+              shape = RoundedCornerShape(12.dp),
+              modifier = Modifier
+                .weight(1f)
+                .clickable(enabled = !isPublishingStory) { selectedAudience = StoryAudience.EVERYONE }
+            ) {
+              Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Icon(Icons.Default.Public, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                  Text("Your Story", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                  Text(
+                    text = if (currentUser?.isPrivate == true) "Approved followers" else "Followers & public",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                }
+              }
+            }
+
+            Surface(
+              color = if (selectedAudience == StoryAudience.VYBE_MATCHES) Color(0xFF10B981).copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+              shape = RoundedCornerShape(12.dp),
+              modifier = Modifier
+                .weight(1f)
+                .clickable(enabled = !isPublishingStory) { selectedAudience = StoryAudience.VYBE_MATCHES }
+            ) {
+              Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                  Text(
+                    "VYBE Matches",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    color = if (selectedAudience == StoryAudience.VYBE_MATCHES) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurface
+                  )
+                  Text(
+                    "${vybeMatches.size} selected",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                }
+              }
+            }
+          }
+
+          Spacer(modifier = Modifier.height(12.dp))
+        }
       }
     }
 
@@ -804,7 +883,6 @@ fun StoryCreateDialog(
       )
     }
 
-    // Empty VYBE Matches Guard: never silently publish to an empty or unintended audience!
     if (showEmptyMatchesAlert) {
       AlertDialog(
         onDismissRequest = { showEmptyMatchesAlert = false },
@@ -835,7 +913,6 @@ fun StoryCreateDialog(
       )
     }
 
-    // Audience Confirmation Dialog before publishing to VYBE Matches
     if (showMatchesConfirmDialog) {
       val namesPreview = vybeMatches.take(5).joinToString(", ") { "@${it.username}" } +
         if (vybeMatches.size > 5) " +${vybeMatches.size - 5} more" else ""
@@ -895,34 +972,4 @@ fun StoryCreateDialog(
       )
     }
   }
-}
-
-private fun publishStory(
-  viewModel: VybeViewModel,
-  mode: StoryCreateMode,
-  audience: StoryAudience,
-  caption: String,
-  mediaUri: String,
-  textBgKey: String,
-  musicTitle: String,
-  location: String?,
-  onSuccess: () -> Unit
-) {
-  val mediaType = when (mode) {
-    StoryCreateMode.CAMERA_PHOTO -> StoryMediaType.PHOTO
-    StoryCreateMode.TYPE_TEXT -> StoryMediaType.TEXT
-    StoryCreateMode.MUSIC -> StoryMediaType.MUSIC
-    StoryCreateMode.VIDEO -> StoryMediaType.VIDEO
-  }
-
-  viewModel.createStory(
-    mediaUrl = if (mode == StoryCreateMode.TYPE_TEXT) "" else mediaUri,
-    caption = caption,
-    mediaType = mediaType,
-    audience = audience,
-    musicTrackTitle = if (mode == StoryCreateMode.MUSIC) musicTitle else null,
-    location = location,
-    textBackgroundColor = if (mode == StoryCreateMode.TYPE_TEXT) textBgKey else null
-  )
-  onSuccess()
 }

@@ -32,6 +32,7 @@ import com.example.ui.components.PostCard
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VybeAvatar
 import com.example.ui.theme.*
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,9 +41,15 @@ fun ExploreScreen(viewModel: VybeViewModel) {
   val predictions by viewModel.predictions.collectAsState()
   val shops by viewModel.shops.collectAsState()
   val posts by viewModel.posts.collectAsState()
+  val unloadRooms by viewModel.unloadRooms.collectAsState()
   val allUsers by viewModel.allUsers.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
   val adminReports by viewModel.adminReports.collectAsState()
+  val coroutineScope = rememberCoroutineScope()
+
+  var roomCodeInput by remember { mutableStateOf("") }
+  var roomCodeJoining by remember { mutableStateOf(false) }
+  var roomCodeError by remember { mutableStateOf<String?>(null) }
 
   val trendingTags = listOf(
     "MumbaiLoFi",
@@ -84,6 +91,18 @@ fun ExploreScreen(viewModel: VybeViewModel) {
           post.caption.lowercase().contains(cleanQuery) ||
             post.tags.any { tag -> tag.lowercase().contains(cleanQuery) } ||
             post.locationName?.lowercase()?.contains(cleanQuery) == true
+          )
+      }
+    }
+  }
+
+  val matchedRooms = remember(cleanQuery, unloadRooms) {
+    if (cleanQuery.isBlank()) emptyList() else {
+      unloadRooms.filter { room ->
+        room.isActive && (
+          room.roomCode.lowercase().contains(cleanQuery) ||
+            room.title.lowercase().contains(cleanQuery) ||
+            room.topicTag.lowercase().contains(cleanQuery)
           )
       }
     }
@@ -140,7 +159,7 @@ fun ExploreScreen(viewModel: VybeViewModel) {
           Spacer(modifier = Modifier.height(8.dp))
         }
 
-        if (matchedUsers.isEmpty() && matchedShops.isEmpty() && matchedPosts.isEmpty()) {
+        if (matchedUsers.isEmpty() && matchedShops.isEmpty() && matchedPosts.isEmpty() && matchedRooms.isEmpty()) {
           item {
             Card(
               modifier = Modifier
@@ -172,6 +191,42 @@ fun ExploreScreen(viewModel: VybeViewModel) {
             }
           }
         } else {
+          if (matchedRooms.isNotEmpty()) {
+            item {
+              Text(
+                text = "Live Listening Rooms (${matchedRooms.size})",
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                color = VybeBrandCyan,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+              )
+            }
+            items(matchedRooms, key = { "search_room_${it.id}" }) { room ->
+              Card(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(horizontal = 16.dp, vertical = 5.dp)
+                  .clip(RoundedCornerShape(14.dp))
+                  .clickable { viewModel.joinUnloadRoom(room) },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.35f))
+              ) {
+                Row(
+                  modifier = Modifier.padding(12.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Icon(Icons.Default.GraphicEq, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(28.dp))
+                  Spacer(modifier = Modifier.width(12.dp))
+                  Column(modifier = Modifier.weight(1f)) {
+                    Text(room.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("${room.roomCode} • ${room.topicTag} • ${room.activeListenersCount} online", fontSize = 11.sp, color = VybeBrandCyan)
+                  }
+                  Text("Join", color = VybeViolet, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+              }
+            }
+          }
           if (matchedUsers.isNotEmpty()) {
             item {
               Text(
@@ -470,6 +525,128 @@ fun ExploreScreen(viewModel: VybeViewModel) {
             )
           }
           Spacer(modifier = Modifier.height(12.dp))
+        }
+
+        // Live Persistent Rooms Discovery & Join by Room ID
+        item {
+          Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(18.dp),
+            border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.35f)),
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 16.dp, vertical = 4.dp)
+          ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Box(
+                    modifier = Modifier
+                      .size(9.dp)
+                      .clip(CircleShape)
+                      .background(VybeOnlineGreen)
+                  )
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Text("Live Rooms (${unloadRooms.count { it.isActive }})", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+                TextButton(onClick = { viewModel.navigateTo(Screen.UNLOAD_VIEW) }) {
+                  Text("Host / All Rooms", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = VybeBrandCyan)
+                }
+              }
+
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                OutlinedTextField(
+                  value = roomCodeInput,
+                  onValueChange = {
+                    roomCodeInput = it.uppercase()
+                    roomCodeError = null
+                  },
+                  placeholder = { Text("Enter Room ID (VYB-XXXX-XXXX)", fontSize = 12.sp) },
+                  singleLine = true,
+                  shape = RoundedCornerShape(12.dp),
+                  modifier = Modifier
+                    .weight(1f)
+                    .testTag("explore_join_room_code_input")
+                )
+                Button(
+                  onClick = {
+                    val code = roomCodeInput.trim()
+                    if (code.isBlank() || roomCodeJoining) return@Button
+                    roomCodeError = null
+                    coroutineScope.launch {
+                      roomCodeJoining = true
+                      val res = viewModel.joinRoomByCode(code)
+                      roomCodeJoining = false
+                      if (res.isSuccess) {
+                        roomCodeInput = ""
+                      } else {
+                        roomCodeError = res.exceptionOrNull()?.message ?: "Room not found."
+                      }
+                    }
+                  },
+                  enabled = roomCodeInput.trim().isNotBlank() && !roomCodeJoining,
+                  colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                  shape = RoundedCornerShape(12.dp),
+                  modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .testTag("explore_join_room_code_button")
+                ) {
+                  Text(if (roomCodeJoining) "..." else "Join", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+              }
+
+              if (roomCodeError != null) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(roomCodeError!!, color = VybeDanger, fontSize = 11.sp)
+              }
+
+              val activeRooms = unloadRooms.filter { it.isActive }
+              if (activeRooms.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                  items(activeRooms, key = { "explore_live_room_${it.id}" }) { room ->
+                    Surface(
+                      color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                      shape = RoundedCornerShape(12.dp),
+                      border = BorderStroke(1.dp, VybeBrandCyan.copy(alpha = 0.3f)),
+                      modifier = Modifier
+                        .width(210.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { viewModel.joinUnloadRoom(room) }
+                        .testTag("explore_live_room_${room.id}")
+                    ) {
+                      Column(modifier = Modifier.padding(10.dp)) {
+                        Text(room.title, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                          room.roomCode,
+                          fontSize = 10.sp,
+                          fontWeight = FontWeight.ExtraBold,
+                          color = VybeBrandCyan
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                          "${room.topicTag} • ${room.activeListenersCount}/${room.capacity} live",
+                          fontSize = 10.sp,
+                          color = MaterialTheme.colorScheme.onSurfaceVariant,
+                          maxLines = 1
+                        )
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          Spacer(modifier = Modifier.height(10.dp))
         }
 
         // Admin & Moderation Quick Bar (Isolated to Admin accounts only)

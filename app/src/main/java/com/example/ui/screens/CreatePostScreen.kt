@@ -40,6 +40,7 @@ import com.example.data.model.MoodType
 import com.example.ui.VybeViewModel
 import com.example.ui.components.LocationPickerDialog
 import com.example.ui.components.SelectedLocationResult
+import com.example.ui.components.StoryCreateDialog
 import com.example.ui.components.VideoFitMode
 import com.example.ui.components.VybeAvatar
 import com.example.ui.components.VybeGradientButton
@@ -48,6 +49,7 @@ import com.example.ui.theme.VybeBrandCyan
 import com.example.ui.theme.VybeMagenta
 import com.example.ui.theme.VybeViolet
 import com.example.util.MediaUtils
+import kotlinx.coroutines.launch
 
 enum class PublishDestination {
   FEED_POST, VYBES_REEL
@@ -56,10 +58,7 @@ enum class PublishDestination {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreatePostScreen(viewModel: VybeViewModel) {
-  BackHandler {
-    viewModel.navigateBack()
-  }
-
+  val coroutineScope = rememberCoroutineScope()
   val context = LocalContext.current
   val currentUser by viewModel.currentUser.collectAsState()
   val isOnline by viewModel.isOnline.collectAsState()
@@ -74,7 +73,13 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
   var showPreviewDialog by remember { mutableStateOf(false) }
   var selectedLocationResult by remember { mutableStateOf<SelectedLocationResult?>(null) }
   var showLocationDialog by remember { mutableStateOf(false) }
+  var showStoryComposerDialog by remember { mutableStateOf(false) }
   var localValidationMessage by remember { mutableStateOf<String?>(null) }
+  var isSubmitting by remember { mutableStateOf(false) }
+
+  BackHandler(enabled = !isSubmitting) {
+    viewModel.navigateBack()
+  }
 
   val isVideoMedia = selectedMediaUri != null && (
     selectedMediaType == MediaType.VIDEO ||
@@ -160,6 +165,7 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
   }
 
   fun submitPost() {
+    if (isSubmitting) return
     if (!isOnline) {
       localValidationMessage = "No internet connection. Reconnect before publishing your post."
       return
@@ -180,20 +186,29 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
       else -> MediaType.IMAGE
     }
 
-    viewModel.createPost(
-      caption = caption.trim(),
-      mood = selectedMood,
-      mediaType = resolvedType,
-      imageUrl = selectedMediaUri,
-      isVybes = publishDestination == PublishDestination.VYBES_REEL,
-      locationName = selectedLocationResult?.displayName,
-      latitude = selectedLocationResult?.latitude,
-      longitude = selectedLocationResult?.longitude,
-      preferredAspectRatio = if (selectedMediaUri != null) preferredAspectRatio else null
-    )
+    isSubmitting = true
+    localValidationMessage = null
+    coroutineScope.launch {
+      val result = viewModel.publishPostAwait(
+        caption = caption.trim(),
+        mood = selectedMood,
+        mediaType = resolvedType,
+        imageUrl = selectedMediaUri,
+        isVybes = publishDestination == PublishDestination.VYBES_REEL,
+        locationName = selectedLocationResult?.displayName,
+        latitude = selectedLocationResult?.latitude,
+        longitude = selectedLocationResult?.longitude,
+        preferredAspectRatio = if (selectedMediaUri != null) preferredAspectRatio else null
+      )
+      isSubmitting = false
+      if (result.isFailure) {
+        localValidationMessage = result.exceptionOrNull()?.message
+          ?: "Could not publish your post. Please verify your connection and try again."
+      }
+    }
   }
 
-  val canSubmit = if (publishDestination == PublishDestination.VYBES_REEL) {
+  val canSubmit = !isSubmitting && if (publishDestination == PublishDestination.VYBES_REEL) {
     isVideoMedia
   } else {
     caption.isNotBlank() || selectedMediaUri != null
@@ -204,7 +219,8 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
       TopAppBar(
         navigationIcon = {
           IconButton(
-            onClick = { viewModel.navigateBack() },
+            onClick = { if (!isSubmitting) viewModel.navigateBack() },
+            enabled = !isSubmitting,
             modifier = Modifier
               .size(48.dp)
               .testTag("create_post_back_button")
@@ -228,458 +244,530 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
               .heightIn(min = 48.dp)
               .testTag("publish_post_button")
           ) {
-            Text(
-              text = "Publish",
-              fontWeight = FontWeight.Bold,
-              color = if (canSubmit) VybeViolet else MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (isSubmitting) {
+              CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp,
+                color = VybeViolet
+              )
+              Spacer(modifier = Modifier.width(6.dp))
+              Text("Publishing...", fontWeight = FontWeight.Bold, color = VybeViolet)
+            } else {
+              Text(
+                text = "Publish",
+                fontWeight = FontWeight.Bold,
+                color = if (canSubmit) VybeViolet else MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
           }
         },
         colors = TopAppBarDefaults.topAppBarColors(
           containerColor = MaterialTheme.colorScheme.background
         )
       )
-    }
-  ) { paddingValues ->
-    Column(
-      modifier = Modifier
-        .fillMaxSize()
-        .padding(paddingValues)
-        .padding(horizontal = 16.dp, vertical = 12.dp)
-        .verticalScroll(rememberScrollState())
-    ) {
-      if (currentUser != null) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          VybeAvatar(user = currentUser!!, size = 42.dp)
-          Spacer(modifier = Modifier.width(12.dp))
-          Column {
-            Text(currentUser!!.displayName, fontWeight = FontWeight.Bold)
-            Text(
-              text = if (publishDestination == PublishDestination.FEED_POST) {
-                if (currentUser!!.isPrivate) "Visible to Approved Followers" else "Visible in Community Feed"
-              } else {
-                "Visible in VYBES Short-Video Stream"
-              },
-              fontSize = 12.sp,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-          }
-        }
-      }
-
-      Spacer(modifier = Modifier.height(16.dp))
-
-      // Publishing Destination (Feed Post vs VYBES Reel)
-      Text(
-        text = "Publishing Destination",
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = FontWeight.SemiBold
-      )
-      Spacer(modifier = Modifier.height(8.dp))
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    },
+    bottomBar = {
+      // Dedicated composer footer cleanly separated from content & video preview controls
+      Surface(
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 4.dp,
+        shadowElevation = 8.dp,
+        modifier = Modifier.fillMaxWidth()
       ) {
-        Surface(
-          color = if (publishDestination == PublishDestination.FEED_POST) VybeViolet.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
-          shape = RoundedCornerShape(14.dp),
-          border = if (publishDestination == PublishDestination.FEED_POST) BorderStroke(1.5.dp, VybeViolet) else null,
-          modifier = Modifier
-            .weight(1f)
-            .clip(RoundedCornerShape(14.dp))
-            .clickable {
-              publishDestination = PublishDestination.FEED_POST
-              if (selectedMediaType == MediaType.REEL) {
-                selectedMediaType = MediaType.VIDEO
-              }
-              localValidationMessage = null
-            }
-        ) {
-          Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              Icon(Icons.Default.DynamicFeed, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(18.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text("Feed Post", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            }
-            Spacer(modifier = Modifier.height(2.dp))
-            Text("Text, photo, or video", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-          }
-        }
-
-        Surface(
-          color = if (publishDestination == PublishDestination.VYBES_REEL) VybeMagenta.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
-          shape = RoundedCornerShape(14.dp),
-          border = if (publishDestination == PublishDestination.VYBES_REEL) BorderStroke(1.5.dp, VybeMagenta) else null,
-          modifier = Modifier
-            .weight(1f)
-            .clip(RoundedCornerShape(14.dp))
-            .clickable {
-              publishDestination = PublishDestination.VYBES_REEL
-              if (selectedMediaUri != null && !isVideoMedia) {
-                selectedMediaUri = null
-                selectedMediaType = MediaType.REEL
-              } else if (isVideoMedia) {
-                selectedMediaType = MediaType.REEL
-              }
-              localValidationMessage = null
-            }
-        ) {
-          Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              Icon(Icons.Default.PlayCircle, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(18.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text("VYBES Reel", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            }
-            Spacer(modifier = Modifier.height(2.dp))
-            Text("Full-screen short video", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-          }
-        }
-      }
-
-      Spacer(modifier = Modifier.height(16.dp))
-
-      OutlinedTextField(
-        value = caption,
-        onValueChange = {
-          caption = it
-          localValidationMessage = null
-        },
-        placeholder = {
-          Text(
-            if (publishDestination == PublishDestination.FEED_POST)
-              "Share what's on your mind..."
-            else
-              "Add a caption and #hashtags for your VYBES reel..."
-          )
-        },
-        minLines = 3,
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier
-          .fillMaxWidth()
-          .testTag("create_post_caption_input")
-      )
-
-      Spacer(modifier = Modifier.height(16.dp))
-
-      // Mood Zone Tagging (Posts without an explicit mood appear in General feed automatically)
-      Text(
-        text = "Mood Zone (Optional — defaults to General)",
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = FontWeight.SemiBold
-      )
-      Spacer(modifier = Modifier.height(8.dp))
-      LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(MoodType.values()) { mood ->
-          val isSelected = selectedMood == mood
-          Surface(
-            color = if (isSelected) mood.accentColor.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceVariant,
-            shape = RoundedCornerShape(12.dp),
-            border = if (isSelected) BorderStroke(1.5.dp, mood.accentColor) else null,
-            modifier = Modifier
-              .clip(RoundedCornerShape(12.dp))
-              .clickable {
-                selectedMood = if (isSelected) null else mood
-              }
-          ) {
-            Row(
-              modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Text(mood.emoji, fontSize = 14.sp)
-              Spacer(modifier = Modifier.width(6.dp))
-              Text(
-                text = mood.title,
-                fontSize = 12.sp,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                color = if (isSelected) mood.accentColor else MaterialTheme.colorScheme.onSurface
-              )
-            }
-          }
-        }
-      }
-
-      Spacer(modifier = Modifier.height(18.dp))
-
-      // Media Selection Controls (Well-proportioned, unclipped 48dp touch targets)
-      Text(
-        text = if (publishDestination == PublishDestination.FEED_POST) "Attach Media" else "Select Reel Video",
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = FontWeight.SemiBold
-      )
-      Spacer(modifier = Modifier.height(8.dp))
-
-      if (publishDestination == PublishDestination.VYBES_REEL) {
-        OutlinedButton(
-          onClick = {
-            videoPickerLauncher.launch(
-              PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
-            )
-          },
-          shape = RoundedCornerShape(12.dp),
-          contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        Box(
           modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .testTag("pick_gallery_video_btn")
+            .navigationBarsPadding()
+            .imePadding()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+          contentAlignment = Alignment.Center
         ) {
-          Icon(Icons.Default.Videocam, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(20.dp))
-          Spacer(modifier = Modifier.width(8.dp))
-          Text("Choose Video from Gallery", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+          Row(
+            modifier = Modifier
+              .widthIn(max = 600.dp)
+              .fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            OutlinedButton(
+              onClick = { showStoryComposerDialog = true },
+              enabled = !isSubmitting,
+              shape = RoundedCornerShape(14.dp),
+              modifier = Modifier
+                .heightIn(min = 48.dp)
+                .testTag("open_story_composer_from_post_btn")
+            ) {
+              Icon(Icons.Default.AutoStories, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(18.dp))
+              Spacer(modifier = Modifier.width(6.dp))
+              Text("Story", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            }
+
+            Box(modifier = Modifier.weight(1f)) {
+              VybeGradientButton(
+                text = when {
+                  isSubmitting -> "Uploading & Saving..."
+                  publishDestination == PublishDestination.FEED_POST -> "Post to VYBE Feed"
+                  else -> "Publish VYBES Reel"
+                },
+                onClick = { submitPost() },
+                enabled = canSubmit,
+                modifier = Modifier.testTag("publish_bottom_button")
+              )
+            }
+          }
         }
-      } else {
+      }
+    }
+  ) { paddingValues ->
+    Box(
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(paddingValues),
+      contentAlignment = Alignment.TopCenter
+    ) {
+      Column(
+        modifier = Modifier
+          .widthIn(max = 600.dp)
+          .fillMaxWidth()
+          .padding(horizontal = 16.dp, vertical = 12.dp)
+          .verticalScroll(rememberScrollState())
+      ) {
+        if (currentUser != null) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            VybeAvatar(user = currentUser!!, size = 42.dp)
+            Spacer(modifier = Modifier.width(12.dp))
+            Column {
+              Text(currentUser!!.displayName, fontWeight = FontWeight.Bold)
+              Text(
+                text = if (publishDestination == PublishDestination.FEED_POST) {
+                  if (currentUser!!.isPrivate) "Visible to Approved Followers" else "Visible in Community Feed"
+                } else {
+                  "Visible in VYBES Short-Video Stream"
+                },
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
+          }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Publishing Destination (Feed Post vs VYBES Reel)
+        Text(
+          text = "Publishing Destination",
+          style = MaterialTheme.typography.labelLarge,
+          fontWeight = FontWeight.SemiBold
+        )
+        Spacer(modifier = Modifier.height(8.dp))
         Row(
           modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(8.dp)
+          horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-          OutlinedButton(
-            onClick = {
-              photoPickerLauncher.launch(
-                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-              )
-            },
-            shape = RoundedCornerShape(12.dp),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+          Surface(
+            color = if (publishDestination == PublishDestination.FEED_POST) VybeViolet.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
+            shape = RoundedCornerShape(14.dp),
+            border = if (publishDestination == PublishDestination.FEED_POST) BorderStroke(1.5.dp, VybeViolet) else null,
             modifier = Modifier
               .weight(1f)
-              .heightIn(min = 48.dp)
-              .testTag("pick_gallery_photo_btn")
+              .clip(RoundedCornerShape(14.dp))
+              .clickable(enabled = !isSubmitting) {
+                publishDestination = PublishDestination.FEED_POST
+                if (selectedMediaType == MediaType.REEL) {
+                  selectedMediaType = MediaType.VIDEO
+                }
+                localValidationMessage = null
+              }
           ) {
-            Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(6.dp))
-            Text("Photo", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1)
+            Column(modifier = Modifier.padding(12.dp)) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.DynamicFeed, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Feed Post", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+              }
+              Spacer(modifier = Modifier.height(2.dp))
+              Text("Text, photo, or video", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
           }
 
+          Surface(
+            color = if (publishDestination == PublishDestination.VYBES_REEL) VybeMagenta.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
+            shape = RoundedCornerShape(14.dp),
+            border = if (publishDestination == PublishDestination.VYBES_REEL) BorderStroke(1.5.dp, VybeMagenta) else null,
+            modifier = Modifier
+              .weight(1f)
+              .clip(RoundedCornerShape(14.dp))
+              .clickable(enabled = !isSubmitting) {
+                publishDestination = PublishDestination.VYBES_REEL
+                if (selectedMediaUri != null && !isVideoMedia) {
+                  selectedMediaUri = null
+                  selectedMediaType = MediaType.REEL
+                } else if (isVideoMedia) {
+                  selectedMediaType = MediaType.REEL
+                }
+                localValidationMessage = null
+              }
+          ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.PlayCircle, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("VYBES Reel", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+              }
+              Spacer(modifier = Modifier.height(2.dp))
+              Text("Full-screen short video", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+          }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedTextField(
+          value = caption,
+          onValueChange = {
+            caption = it
+            localValidationMessage = null
+          },
+          enabled = !isSubmitting,
+          placeholder = {
+            Text(
+              if (publishDestination == PublishDestination.FEED_POST)
+                "Share what's on your mind..."
+              else
+                "Add a caption and #hashtags for your VYBES reel..."
+            )
+          },
+          minLines = 3,
+          shape = RoundedCornerShape(14.dp),
+          modifier = Modifier
+            .fillMaxWidth()
+            .testTag("create_post_caption_input")
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Mood Zone Tagging
+        Text(
+          text = "Mood Zone (Optional — defaults to General)",
+          style = MaterialTheme.typography.labelLarge,
+          fontWeight = FontWeight.SemiBold
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          items(MoodType.values()) { mood ->
+            val isSelected = selectedMood == mood
+            Surface(
+              color = if (isSelected) mood.accentColor.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceVariant,
+              shape = RoundedCornerShape(12.dp),
+              border = if (isSelected) BorderStroke(1.5.dp, mood.accentColor) else null,
+              modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(enabled = !isSubmitting) {
+                  selectedMood = if (isSelected) null else mood
+                }
+            ) {
+              Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Text(mood.emoji, fontSize = 14.sp)
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                  text = mood.title,
+                  fontSize = 12.sp,
+                  fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                  color = if (isSelected) mood.accentColor else MaterialTheme.colorScheme.onSurface
+                )
+              }
+            }
+          }
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        // Media Selection Controls (Well-proportioned, unclipped 48dp touch targets)
+        Text(
+          text = if (publishDestination == PublishDestination.FEED_POST) "Attach Media" else "Select Reel Video",
+          style = MaterialTheme.typography.labelLarge,
+          fontWeight = FontWeight.SemiBold
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (publishDestination == PublishDestination.VYBES_REEL) {
           OutlinedButton(
             onClick = {
               videoPickerLauncher.launch(
                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
               )
             },
+            enabled = !isSubmitting,
             shape = RoundedCornerShape(12.dp),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
             modifier = Modifier
-              .weight(1f)
+              .fillMaxWidth()
               .heightIn(min = 48.dp)
               .testTag("pick_gallery_video_btn")
           ) {
-            Icon(Icons.Default.Videocam, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(6.dp))
-            Text("Video", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1)
+            Icon(Icons.Default.Videocam, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Choose Video from Gallery", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
           }
-
-          OutlinedButton(
-            onClick = {
-              val granted = ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.CAMERA
-              ) == PackageManager.PERMISSION_GRANTED
-              if (granted) {
-                cameraLauncher.launch(null)
-              } else {
-                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-              }
-            },
-            shape = RoundedCornerShape(12.dp),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
-            modifier = Modifier
-              .weight(1f)
-              .heightIn(min = 48.dp)
-              .testTag("capture_camera_media_btn")
-          ) {
-            Icon(Icons.Default.CameraAlt, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(6.dp))
-            Text("Camera", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1)
-          }
-        }
-      }
-
-      // Live Media Preview (Actual Video Player for Videos/Reels, Proportional Preview for Photos)
-      if (selectedMediaUri != null) {
-        Spacer(modifier = Modifier.height(14.dp))
-        Box(
-          modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(previewContainerRatio)
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xFF0A0A0F))
-            .testTag("create_post_media_preview")
-        ) {
-          if (isVideoMedia) {
-            VybeVideoPlayer(
-              videoUrl = selectedMediaUri!!,
-              autoPlay = true,
-              isLooping = true,
-              initialMuted = false,
-              isPausedExternal = showPreviewDialog,
-              fitMode = VideoFitMode.FIT_CONTAIN,
-              onAspectRatioDetected = { ratio ->
-                if (detectedMediaRatio == null) {
-                  detectedMediaRatio = ratio
-                }
-              },
-              modifier = Modifier.fillMaxSize()
-            )
-          } else {
-            AsyncImage(
-              model = selectedMediaUri,
-              contentDescription = "Selected photo preview",
-              contentScale = ContentScale.Crop,
-              modifier = Modifier.fillMaxSize()
-            )
-          }
-
-          // Full Preview button overlay
-          Surface(
-            color = Color.Black.copy(alpha = 0.68f),
-            shape = RoundedCornerShape(10.dp),
-            modifier = Modifier
-              .align(Alignment.BottomStart)
-              .padding(10.dp)
-              .clip(RoundedCornerShape(10.dp))
-              .clickable { showPreviewDialog = true }
-          ) {
-            Row(
-              modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Icon(Icons.Default.Fullscreen, contentDescription = "Full Preview", tint = Color.White, modifier = Modifier.size(16.dp))
-              Spacer(modifier = Modifier.width(4.dp))
-              Text("Full Preview", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-            }
-          }
-
-          // Remove media button (48dp touch area)
-          IconButton(
-            onClick = {
-              selectedMediaUri = null
-              selectedMediaType = MediaType.TEXT
-              detectedMediaRatio = null
-            },
-            modifier = Modifier
-              .align(Alignment.TopEnd)
-              .padding(4.dp)
-              .size(48.dp)
-              .testTag("remove_selected_media_button")
-          ) {
-            Box(
-              modifier = Modifier
-                .size(32.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.68f)),
-              contentAlignment = Alignment.Center
-            ) {
-              Icon(Icons.Default.Close, contentDescription = "Remove media", tint = Color.White, modifier = Modifier.size(16.dp))
-            }
-          }
-        }
-
-        if (publishDestination == PublishDestination.FEED_POST) {
-          Spacer(modifier = Modifier.height(10.dp))
-          Text(
-            text = "Feed Aspect Ratio",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.SemiBold
-          )
-          Spacer(modifier = Modifier.height(6.dp))
+        } else {
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
           ) {
-            listOf(
-              "1:1" to "1:1 Square",
-              "4:5" to "4:5 Portrait",
-              "16:9" to "16:9 Landscape"
-            ).forEach { (ratio, label) ->
-              FilterChip(
-                selected = cropRatio == ratio,
-                onClick = { cropRatio = ratio },
-                label = { Text(label, fontSize = 11.sp, maxLines = 1) },
+            OutlinedButton(
+              onClick = {
+                photoPickerLauncher.launch(
+                  PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+              },
+              enabled = !isSubmitting,
+              shape = RoundedCornerShape(12.dp),
+              contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+              modifier = Modifier
+                .weight(1f)
+                .heightIn(min = 48.dp)
+                .testTag("pick_gallery_photo_btn")
+            ) {
+              Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(18.dp))
+              Spacer(modifier = Modifier.width(6.dp))
+              Text("Photo", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1)
+            }
+
+            OutlinedButton(
+              onClick = {
+                videoPickerLauncher.launch(
+                  PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                )
+              },
+              enabled = !isSubmitting,
+              shape = RoundedCornerShape(12.dp),
+              contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+              modifier = Modifier
+                .weight(1f)
+                .heightIn(min = 48.dp)
+                .testTag("pick_gallery_video_btn")
+            ) {
+              Icon(Icons.Default.Videocam, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(18.dp))
+              Spacer(modifier = Modifier.width(6.dp))
+              Text("Video", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1)
+            }
+
+            OutlinedButton(
+              onClick = {
+                val granted = ContextCompat.checkSelfPermission(
+                  context,
+                  Manifest.permission.CAMERA
+                ) == PackageManager.PERMISSION_GRANTED
+                if (granted) {
+                  cameraLauncher.launch(null)
+                } else {
+                  cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                }
+              },
+              enabled = !isSubmitting,
+              shape = RoundedCornerShape(12.dp),
+              contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+              modifier = Modifier
+                .weight(1f)
+                .heightIn(min = 48.dp)
+                .testTag("capture_camera_media_btn")
+            ) {
+              Icon(Icons.Default.CameraAlt, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(18.dp))
+              Spacer(modifier = Modifier.width(6.dp))
+              Text("Camera", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1)
+            }
+          }
+        }
+
+        // Live Media Preview + Separated Preview Action Bar (Never overlaps video controls)
+        if (selectedMediaUri != null) {
+          Spacer(modifier = Modifier.height(14.dp))
+          Box(
+            modifier = Modifier
+              .fillMaxWidth()
+              .aspectRatio(previewContainerRatio)
+              .clip(RoundedCornerShape(16.dp))
+              .background(Color(0xFF0A0A0F))
+              .testTag("create_post_media_preview")
+          ) {
+            if (isVideoMedia) {
+              VybeVideoPlayer(
+                videoUrl = selectedMediaUri!!,
+                autoPlay = true,
+                isLooping = true,
+                initialMuted = true,
+                isPausedExternal = showPreviewDialog || isSubmitting,
+                fitMode = VideoFitMode.FIT_CONTAIN,
+                onAspectRatioDetected = { ratio ->
+                  if (detectedMediaRatio == null) {
+                    detectedMediaRatio = ratio
+                  }
+                },
+                modifier = Modifier.fillMaxSize()
+              )
+            } else {
+              AsyncImage(
+                model = selectedMediaUri,
+                contentDescription = "Selected photo preview",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+              )
+            }
+          }
+
+          Spacer(modifier = Modifier.height(8.dp))
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            OutlinedButton(
+              onClick = { showPreviewDialog = true },
+              enabled = !isSubmitting,
+              shape = RoundedCornerShape(10.dp),
+              modifier = Modifier
+                .weight(1f)
+                .heightIn(min = 44.dp)
+            ) {
+              Icon(Icons.Default.Fullscreen, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(modifier = Modifier.width(6.dp))
+              Text("Full Preview", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+
+            OutlinedButton(
+              onClick = {
+                selectedMediaUri = null
+                selectedMediaType = MediaType.TEXT
+                detectedMediaRatio = null
+              },
+              enabled = !isSubmitting,
+              shape = RoundedCornerShape(10.dp),
+              modifier = Modifier
+                .weight(1f)
+                .heightIn(min = 44.dp)
+                .testTag("remove_selected_media_button")
+            ) {
+              Icon(Icons.Default.DeleteOutline, contentDescription = "Remove media", modifier = Modifier.size(18.dp))
+              Spacer(modifier = Modifier.width(6.dp))
+              Text("Remove Media", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+          }
+
+          if (publishDestination == PublishDestination.FEED_POST) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+              text = "Feed Aspect Ratio",
+              style = MaterialTheme.typography.labelMedium,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+              listOf(
+                "1:1" to "1:1 Square",
+                "4:5" to "4:5 Portrait",
+                "16:9" to "16:9 Landscape"
+              ).forEach { (ratio, label) ->
+                FilterChip(
+                  selected = cropRatio == ratio,
+                  onClick = { if (!isSubmitting) cropRatio = ratio },
+                  label = { Text(label, fontSize = 11.sp, maxLines = 1) },
+                  modifier = Modifier.weight(1f)
+                )
+              }
+            }
+          }
+        }
+
+        // Real Google Maps Location Picker Row
+        Spacer(modifier = Modifier.height(14.dp))
+        Surface(
+          color = MaterialTheme.colorScheme.surfaceVariant,
+          shape = RoundedCornerShape(14.dp),
+          modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(enabled = !isSubmitting) { showLocationDialog = true }
+            .testTag("open_location_picker_row")
+        ) {
+          Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Icon(
+              Icons.Default.LocationOn,
+              contentDescription = null,
+              tint = Color(0xFFFF5252),
+              modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+              Text(
+                text = selectedLocationResult?.displayName ?: "Add Location",
+                fontWeight = if (selectedLocationResult != null) FontWeight.Bold else FontWeight.Medium,
+                fontSize = 13.sp,
+                color = if (selectedLocationResult != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+              )
+              Text(
+                text = when {
+                  selectedLocationResult == null -> "Pin on Google Maps, use GPS, or enter a manual place"
+                  selectedLocationResult!!.isCoordinatesVerified -> "Map coordinates attached"
+                  else -> "Manual location label"
+                },
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
+            if (selectedLocationResult != null) {
+              IconButton(
+                onClick = { selectedLocationResult = null },
+                enabled = !isSubmitting,
+                modifier = Modifier.size(40.dp)
+              ) {
+                Icon(Icons.Default.Close, contentDescription = "Remove location", modifier = Modifier.size(16.dp))
+              }
+            } else {
+              Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+          }
+        }
+
+        if (!localValidationMessage.isNullOrBlank()) {
+          Spacer(modifier = Modifier.height(12.dp))
+          Surface(
+            color = MaterialTheme.colorScheme.errorContainer,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Row(
+              modifier = Modifier.padding(12.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Icon(
+                Icons.Default.ErrorOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(18.dp)
+              )
+              Spacer(modifier = Modifier.width(8.dp))
+              Text(
+                text = localValidationMessage!!,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                fontSize = 12.sp,
                 modifier = Modifier.weight(1f)
               )
             }
           }
         }
+
+        Spacer(modifier = Modifier.height(24.dp))
       }
-
-      // Real Google Maps Location Picker Row
-      Spacer(modifier = Modifier.height(14.dp))
-      Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier
-          .fillMaxWidth()
-          .clip(RoundedCornerShape(14.dp))
-          .clickable { showLocationDialog = true }
-          .testTag("open_location_picker_row")
-      ) {
-        Row(
-          modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          Icon(
-            Icons.Default.LocationOn,
-            contentDescription = null,
-            tint = Color(0xFFFF5252),
-            modifier = Modifier.size(20.dp)
-          )
-          Spacer(modifier = Modifier.width(10.dp))
-          Column(modifier = Modifier.weight(1f)) {
-            Text(
-              text = selectedLocationResult?.displayName ?: "Add Location",
-              fontWeight = if (selectedLocationResult != null) FontWeight.Bold else FontWeight.Medium,
-              fontSize = 13.sp,
-              color = if (selectedLocationResult != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-              text = when {
-                selectedLocationResult == null -> "Pin on Google Maps, use GPS, or enter a manual place"
-                selectedLocationResult!!.isCoordinatesVerified -> "Map coordinates attached"
-                else -> "Manual location label"
-              },
-              fontSize = 11.sp,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-          }
-          if (selectedLocationResult != null) {
-            IconButton(
-              onClick = { selectedLocationResult = null },
-              modifier = Modifier.size(40.dp)
-            ) {
-              Icon(Icons.Default.Close, contentDescription = "Remove location", modifier = Modifier.size(16.dp))
-            }
-          } else {
-            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-          }
-        }
-      }
-
-      if (!localValidationMessage.isNullOrBlank()) {
-        Spacer(modifier = Modifier.height(12.dp))
-        Surface(
-          color = MaterialTheme.colorScheme.errorContainer,
-          shape = RoundedCornerShape(12.dp),
-          modifier = Modifier.fillMaxWidth()
-        ) {
-          Text(
-            text = localValidationMessage!!,
-            color = MaterialTheme.colorScheme.onErrorContainer,
-            fontSize = 12.sp,
-            modifier = Modifier.padding(12.dp)
-          )
-        }
-      }
-
-      Spacer(modifier = Modifier.height(24.dp))
-
-      VybeGradientButton(
-        text = if (publishDestination == PublishDestination.FEED_POST) "Post to VYBE Feed" else "Publish VYBES Reel",
-        onClick = { submitPost() },
-        enabled = canSubmit,
-        modifier = Modifier.testTag("publish_bottom_button")
-      )
-
-      Spacer(modifier = Modifier.height(24.dp))
     }
   }
 
@@ -738,13 +826,24 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
     }
   }
 
-  // Real Google Maps + GPS + Manual Location Picker
   if (showLocationDialog) {
     LocationPickerDialog(
       initialLocationName = selectedLocationResult?.displayName,
       onDismiss = { showLocationDialog = false },
       onLocationSelected = { picked ->
         selectedLocationResult = picked
+      }
+    )
+  }
+
+  if (showStoryComposerDialog) {
+    StoryCreateDialog(
+      viewModel = viewModel,
+      onDismiss = { showStoryComposerDialog = false },
+      onStoryPublished = { feedback ->
+        showStoryComposerDialog = false
+        viewModel.postBannerMessage(feedback)
+        viewModel.navigateBack()
       }
     )
   }

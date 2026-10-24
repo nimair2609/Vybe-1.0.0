@@ -263,23 +263,43 @@ class VybeLocalStore private constructor(context: Context) {
       put("dateOfBirth", u.dateOfBirth)
       put("age", u.age)
       put("isUnder18", u.isUnder18)
+      put("isEmailVerified", u.isEmailVerified)
+      put("isPhoneVerified", u.isPhoneVerified)
+      put("joinedDate", u.joinedDate)
+      if (!u.createdAtIso.isNullOrBlank()) put("createdAtIso", u.createdAtIso)
+      if (!u.lastSeenAtIso.isNullOrBlank()) put("lastSeenAtIso", u.lastSeenAtIso)
+      put("livePulse", u.livePulse.name)
     }
   }
 
   private fun userFromJson(obj: JSONObject): User {
     val roleStr = obj.optString("role", UserRole.USER.name)
     val role = try { UserRole.valueOf(roleStr) } catch (_: Exception) { UserRole.USER }
+    val id = obj.optString("id", "u_unknown")
+    val rawUsername = obj.optString("username", "").trim()
+    val safeUsername = if (rawUsername.isBlank() || rawUsername.equals("null", true)) {
+      "vybe_${id.filter { it.isLetterOrDigit() }.take(8).lowercase()}"
+    } else rawUsername
+    val rawDisplay = obj.optString("displayName", "").trim()
+    val safeDisplay = if (rawDisplay.isBlank() || rawDisplay.equals("null", true)) safeUsername else rawDisplay
+    val pulseStr = obj.optString("livePulse", LivePulseStatus.NONE.name)
+    val pulse = try { LivePulseStatus.valueOf(pulseStr) } catch (_: Exception) { LivePulseStatus.NONE }
+    val createdAtIso = obj.optString("createdAtIso", "").ifBlank { null }
+    val lastSeenIso = obj.optString("lastSeenAtIso", "").ifBlank { null }
+
     return User(
-      id = obj.optString("id", "u_unknown"),
-      username = obj.optString("username", "user"),
-      displayName = obj.optString("displayName", "User"),
-      firstName = obj.optString("firstName", ""),
-      lastName = obj.optString("lastName", ""),
-      bio = obj.optString("bio", ""),
-      avatarUrl = obj.optString("avatarUrl", ""),
-      coverUrl = obj.optString("coverUrl", ""),
-      email = obj.optString("email", ""),
-      phone = obj.optString("phone", ""),
+      id = id,
+      username = safeUsername,
+      displayName = safeDisplay,
+      firstName = obj.optString("firstName", "").takeUnless { it.equals("null", true) }.orEmpty(),
+      lastName = obj.optString("lastName", "").takeUnless { it.equals("null", true) }.orEmpty(),
+      bio = obj.optString("bio", "").takeUnless { it.equals("null", true) }.orEmpty(),
+      avatarUrl = obj.optString("avatarUrl", "").takeUnless { it.equals("null", true) }.orEmpty(),
+      coverUrl = obj.optString("coverUrl", "").takeUnless { it.equals("null", true) }.orEmpty(),
+      email = obj.optString("email", "").takeUnless { it.equals("null", true) }.orEmpty(),
+      phone = obj.optString("phone", "").takeUnless { it.equals("null", true) }.orEmpty(),
+      isEmailVerified = obj.optBoolean("isEmailVerified", false),
+      isPhoneVerified = obj.optBoolean("isPhoneVerified", false),
       role = role,
       isVerified = obj.optBoolean("isVerified", false),
       isVip = obj.optBoolean("isVip", false),
@@ -291,6 +311,11 @@ class VybeLocalStore private constructor(context: Context) {
       dateOfBirth = obj.optString("dateOfBirth", "2000-01-01"),
       age = obj.optInt("age", 22),
       isUnder18 = obj.optBoolean("isUnder18", false),
+      livePulse = pulse,
+      joinedDate = obj.optString("joinedDate", "VYBE Member").takeUnless { it.equals("null", true) } ?: "VYBE Member",
+      createdAtIso = createdAtIso,
+      lastSeenAtIso = lastSeenIso,
+      isOnline = com.example.util.TimestampUtils.isRecentlyOnline(lastSeenIso),
       isOnboardingCompleted = true
     )
   }
@@ -305,6 +330,7 @@ class VybeLocalStore private constructor(context: Context) {
       put("mediaUrls", mediaArr)
       put("mediaType", p.mediaType.name)
       put("timestamp", p.timestamp)
+      if (!p.createdAtIso.isNullOrBlank()) put("createdAtIso", p.createdAtIso)
       put("likesCount", p.likesCount)
       put("commentsCount", p.commentsCount)
       put("savesCount", p.savesCount)
@@ -312,6 +338,7 @@ class VybeLocalStore private constructor(context: Context) {
       put("viewsCount", p.viewsCount)
       put("isLiked", p.isLiked)
       put("isSaved", p.isSaved)
+      put("isArchived", p.isArchived)
       put("isUnfiltered", p.isUnfiltered)
       put("isVybesReel", p.isVybesReel)
       put("moodZone", p.moodZone?.name)
@@ -333,11 +360,12 @@ class VybeLocalStore private constructor(context: Context) {
     val mediaTypeStr = obj.optString("mediaType", MediaType.IMAGE.name)
     val mediaType = try { MediaType.valueOf(mediaTypeStr) } catch (_: Exception) { MediaType.IMAGE }
     val moodStr = obj.optString("moodZone", null)
-    val mood = if (!moodStr.isNullOrBlank()) {
+    val mood = if (!moodStr.isNullOrBlank() && !moodStr.equals("null", true)) {
       try { MoodType.valueOf(moodStr) } catch (_: Exception) { null }
     } else null
     val aspect = if (obj.has("mediaAspectRatio")) obj.optDouble("mediaAspectRatio").toFloat() else null
-    val loc = obj.optString("locationName", "").ifBlank { null }
+    val loc = obj.optString("locationName", "").takeUnless { it.isBlank() || it.equals("null", true) }
+    val createdAtIso = obj.optString("createdAtIso", "").ifBlank { null }
 
     return Post(
       id = obj.optString("id", "p_${System.currentTimeMillis()}"),
@@ -346,6 +374,7 @@ class VybeLocalStore private constructor(context: Context) {
       mediaUrls = mediaUrlsList,
       mediaType = mediaType,
       timestamp = obj.optString("timestamp", "Just now"),
+      createdAtIso = createdAtIso,
       likesCount = obj.optInt("likesCount", 0),
       commentsCount = obj.optInt("commentsCount", 0),
       savesCount = obj.optInt("savesCount", 0),
@@ -353,6 +382,7 @@ class VybeLocalStore private constructor(context: Context) {
       viewsCount = obj.optInt("viewsCount", 0),
       isLiked = obj.optBoolean("isLiked", false),
       isSaved = obj.optBoolean("isSaved", false),
+      isArchived = obj.optBoolean("isArchived", false),
       isUnfiltered = obj.optBoolean("isUnfiltered", false),
       isVybesReel = obj.optBoolean("isVybesReel", false),
       moodZone = mood,
@@ -367,6 +397,7 @@ class VybeLocalStore private constructor(context: Context) {
       put("peerUser", userToJson(c.peerUser))
       put("lastMessage", c.lastMessage)
       put("lastMessageTimestamp", c.lastMessageTimestamp)
+      if (!c.lastMessageCreatedAtIso.isNullOrBlank()) put("lastMessageCreatedAtIso", c.lastMessageCreatedAtIso)
       put("unreadCount", c.unreadCount)
       put("isGroup", c.isGroup)
       put("groupName", c.groupName)
@@ -377,6 +408,7 @@ class VybeLocalStore private constructor(context: Context) {
           put("senderId", m.senderId)
           put("text", m.text)
           put("timestamp", m.timestamp)
+          if (!m.createdAtIso.isNullOrBlank()) put("createdAtIso", m.createdAtIso)
           put("isMe", m.isMe)
           put("mediaUrl", m.mediaUrl)
           put("mediaType", m.mediaType)
@@ -402,8 +434,9 @@ class VybeLocalStore private constructor(context: Context) {
             senderId = mObj.optString("senderId", ""),
             text = mObj.optString("text", ""),
             timestamp = mObj.optString("timestamp", "Just now"),
+            createdAtIso = mObj.optString("createdAtIso", "").ifBlank { null },
             isMe = mObj.optBoolean("isMe", false),
-            mediaUrl = mObj.optString("mediaUrl", "").ifBlank { null },
+            mediaUrl = mObj.optString("mediaUrl", "").takeUnless { it.isBlank() || it.equals("null", true) },
             mediaType = mObj.optString("mediaType", "TEXT"),
             isRead = mObj.optBoolean("isRead", true)
           )
@@ -415,9 +448,10 @@ class VybeLocalStore private constructor(context: Context) {
       peerUser = peer,
       lastMessage = obj.optString("lastMessage", ""),
       lastMessageTimestamp = obj.optString("lastMessageTimestamp", "Just now"),
+      lastMessageCreatedAtIso = obj.optString("lastMessageCreatedAtIso", "").ifBlank { null },
       unreadCount = obj.optInt("unreadCount", 0),
       isGroup = obj.optBoolean("isGroup", false),
-      groupName = obj.optString("groupName", "").ifBlank { null },
+      groupName = obj.optString("groupName", "").takeUnless { it.isBlank() || it.equals("null", true) },
       messages = msgsList
     )
   }
@@ -433,6 +467,7 @@ class VybeLocalStore private constructor(context: Context) {
         put("title", n.title)
         put("message", n.message)
         put("timestamp", n.timestamp)
+        if (!n.createdAtIso.isNullOrBlank()) put("createdAtIso", n.createdAtIso)
         put("isRead", n.isRead)
         put("destinationScreen", n.destinationScreen)
         put("targetEntityId", n.targetEntityId)
@@ -463,10 +498,11 @@ class VybeLocalStore private constructor(context: Context) {
             title = obj.optString("title", ""),
             message = obj.optString("message", ""),
             timestamp = obj.optString("timestamp", "Just now"),
+            createdAtIso = obj.optString("createdAtIso", "").ifBlank { null },
             isRead = obj.optBoolean("isRead", false),
             actorUser = actor,
             destinationScreen = obj.optString("destinationScreen", "MAIN"),
-            targetEntityId = obj.optString("targetEntityId", "").ifBlank { null }
+            targetEntityId = obj.optString("targetEntityId", "").takeUnless { it.isBlank() || it.equals("null", true) }
           )
         )
       }

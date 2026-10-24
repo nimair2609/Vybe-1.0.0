@@ -19,11 +19,30 @@ interface SupabaseAuthApi {
   ): Response<SupabaseAuthResponse>
 
   @POST("token")
+  suspend fun signInWithPhone(
+    @Header("apikey") apiKey: String,
+    @Query("grant_type") grantType: String = "password",
+    @Body request: SupabasePhoneSignInRequest
+  ): Response<SupabaseAuthResponse>
+
+  @POST("token")
   suspend fun refreshSession(
     @Header("apikey") apiKey: String,
     @Query("grant_type") grantType: String = "refresh_token",
     @Body request: SupabaseRefreshTokenRequest
   ): Response<SupabaseAuthResponse>
+
+  @POST("otp")
+  suspend fun sendOtp(
+    @Header("apikey") apiKey: String,
+    @Body request: SupabaseOtpSendRequest
+  ): Response<Unit>
+
+  @POST("resend")
+  suspend fun resendOtp(
+    @Header("apikey") apiKey: String,
+    @Body request: SupabaseResendOtpRequest
+  ): Response<Unit>
 
   @POST("verify")
   suspend fun verifyOtp(
@@ -59,7 +78,21 @@ interface SupabaseAuthApi {
 }
 
 interface SupabaseRestApi {
-  // --- PROFILES ---
+  // --- PROFILES & SECURE IDENTIFIER RESOLUTION ---
+  @POST("rpc/resolve_login_identifier")
+  suspend fun resolveLoginIdentifier(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Body request: SupabaseRpcResolveIdentifierRequest
+  ): Response<SupabaseResolvedIdentifierDto>
+
+  @POST("rpc/check_username_available")
+  suspend fun checkUsernameAvailableRpc(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Body request: SupabaseRpcCheckUsernameRequest
+  ): Response<Boolean>
+
   @GET("profiles")
   suspend fun getProfileById(
     @Header("apikey") apiKey: String,
@@ -127,7 +160,15 @@ interface SupabaseRestApi {
     @Body patch: SupabaseProfilePatchDto
   ): Response<List<SupabaseProfileDto>>
 
-  // --- CONVERSATIONS & MESSAGING ---
+  @PATCH("profiles")
+  suspend fun patchPresence(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("id") idFilter: String,
+    @Body patch: SupabasePresencePatchDto
+  ): Response<Unit>
+
+  // --- CONVERSATIONS, MESSAGING & READ RECEIPTS ---
   @GET("conversation_members")
   suspend fun getMyConversationMemberships(
     @Header("apikey") apiKey: String,
@@ -149,7 +190,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Header("Prefer") prefer: String = "return=representation",
-    @Body conversation: SupabaseConversationDto
+    @Body conversation: SupabaseConversationInsertDto
   ): Response<List<SupabaseConversationDto>>
 
   @POST("conversation_members")
@@ -181,8 +222,24 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Header("Prefer") prefer: String = "return=representation",
-    @Body message: SupabaseMessageDto
+    @Body message: SupabaseMessageInsertDto
   ): Response<List<SupabaseMessageDto>>
+
+  @GET("message_receipts")
+  suspend fun getMessageReceipts(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("user_id") userIdFilter: String,
+    @Query("message_id") messageIdsInFilter: String
+  ): Response<List<SupabaseMessageReceiptDto>>
+
+  @POST("message_receipts")
+  suspend fun upsertMessageReceipts(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "resolution=merge-duplicates",
+    @Body receipts: List<SupabaseMessageReceiptDto>
+  ): Response<Unit>
 
   // --- COMMENTS ---
   @GET("comments")
@@ -200,7 +257,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Header("Prefer") prefer: String = "return=representation",
-    @Body comment: SupabaseCommentDto
+    @Body comment: SupabaseCommentInsertDto
   ): Response<List<SupabaseCommentDto>>
 
   // --- POST REACTIONS & SAVES ---
@@ -265,7 +322,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Header("Prefer") prefer: String = "return=representation",
-    @Body notification: SupabaseNotificationDto
+    @Body notification: SupabaseNotificationInsertDto
   ): Response<List<SupabaseNotificationDto>>
 
   @DELETE("notifications")
@@ -417,8 +474,8 @@ interface SupabaseRestApi {
   suspend fun insertStory(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
-    @Header("Prefer") prefer: String = "resolution=merge-duplicates,return=representation",
-    @Body story: SupabaseStoryDto
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body story: SupabaseStoryInsertDto
   ): Response<List<SupabaseStoryDto>>
 
   @POST("stories")
@@ -457,7 +514,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Header("Prefer") prefer: String = "return=representation",
-    @Body body: SupabaseReportDto
+    @Body body: SupabaseReportInsertDto
   ): Response<List<SupabaseReportDto>>
 
   // --- POSTS & POST MEDIA ---
@@ -467,6 +524,7 @@ interface SupabaseRestApi {
     @Header("Authorization") authHeader: String? = null,
     @Query("select") select: String = "*,post_media(*),profiles(*)",
     @Query("order") order: String = "created_at.desc",
+    @Query("offset") offset: Int = 0,
     @Query("limit") limit: Int = 60
   ): Response<List<SupabasePostDto>>
 
@@ -494,6 +552,14 @@ interface SupabaseRestApi {
     @Body post: SupabasePostLegacyInsertDto
   ): Response<List<SupabasePostDto>>
 
+  @PATCH("posts")
+  suspend fun patchPost(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("id") idFilter: String,
+    @Body body: Map<String, Boolean>
+  ): Response<Unit>
+
   @DELETE("posts")
   suspend fun deletePost(
     @Header("apikey") apiKey: String,
@@ -506,7 +572,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Header("Prefer") prefer: String = "return=representation",
-    @Body media: SupabasePostMediaDto
+    @Body media: SupabasePostMediaInsertDto
   ): Response<List<SupabasePostMediaDto>>
 
   @POST("post_media")
@@ -517,11 +583,169 @@ interface SupabaseRestApi {
     @Body media: SupabasePostMediaLegacyDto
   ): Response<List<SupabasePostMediaDto>>
 
-  // --- RPC: INCREMENT POST VIEW ---
   @POST("rpc/increment_post_view")
   suspend fun incrementPostView(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Body request: SupabaseRpcIncrementViewRequest
   ): Response<Int>
+
+  // --- PERSISTENT LIVE ROOMS ---
+  @GET("rooms")
+  suspend fun getRooms(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("is_active") activeFilter: String = "eq.true",
+    @Query("select") select: String = "*,profiles(*)",
+    @Query("order") order: String = "created_at.desc",
+    @Query("limit") limit: Int = 50
+  ): Response<List<SupabaseRoomDto>>
+
+  @GET("rooms")
+  suspend fun getRoomByCode(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("room_code") roomCodeFilter: String,
+    @Query("select") select: String = "*,profiles(*)"
+  ): Response<List<SupabaseRoomDto>>
+
+  @GET("rooms")
+  suspend fun getRoomById(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("id") idFilter: String,
+    @Query("select") select: String = "*,profiles(*)"
+  ): Response<List<SupabaseRoomDto>>
+
+  @POST("rooms")
+  suspend fun insertRoom(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body room: SupabaseRoomInsertDto
+  ): Response<List<SupabaseRoomDto>>
+
+  @POST("rooms")
+  suspend fun insertRoomLegacy(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body room: SupabaseRoomLegacyInsertDto
+  ): Response<List<SupabaseRoomDto>>
+
+  @PATCH("rooms")
+  suspend fun patchRoom(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Query("id") idFilter: String,
+    @Body patch: SupabaseRoomPatchDto
+  ): Response<List<SupabaseRoomDto>>
+
+  @DELETE("rooms")
+  suspend fun deleteRoom(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("id") idFilter: String
+  ): Response<Unit>
+
+  @GET("room_members")
+  suspend fun getRoomMembers(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("room_id") roomIdFilter: String
+  ): Response<List<SupabaseRoomMemberDto>>
+
+  @POST("room_members")
+  suspend fun upsertRoomMember(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "resolution=merge-duplicates,return=representation",
+    @Body member: SupabaseRoomMemberDto
+  ): Response<List<SupabaseRoomMemberDto>>
+
+  @DELETE("room_members")
+  suspend fun deleteRoomMember(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("room_id") roomIdFilter: String,
+    @Query("user_id") userIdFilter: String
+  ): Response<Unit>
+
+  @GET("room_messages")
+  suspend fun getRoomMessages(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("room_id") roomIdFilter: String,
+    @Query("select") select: String = "*,profiles(*)",
+    @Query("order") order: String = "created_at.asc",
+    @Query("limit") limit: Int = 80
+  ): Response<List<SupabaseRoomMessageDto>>
+
+  @POST("room_messages")
+  suspend fun insertRoomMessage(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body message: SupabaseRoomMessageInsertDto
+  ): Response<List<SupabaseRoomMessageDto>>
+
+  @POST("room_messages")
+  suspend fun insertRoomMessageLegacy(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body message: SupabaseRoomMessageLegacyInsertDto
+  ): Response<List<SupabaseRoomMessageDto>>
+
+  // --- WEBRTC CALL SESSIONS & SIGNALING ---
+  @POST("call_sessions")
+  suspend fun insertCallSession(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body session: SupabaseCallSessionInsertDto
+  ): Response<List<SupabaseCallSessionDto>>
+
+  @GET("call_sessions")
+  suspend fun getIncomingCallSessions(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("callee_id") calleeIdFilter: String,
+    @Query("status") statusFilter: String = "eq.RINGING",
+    @Query("order") order: String = "created_at.desc",
+    @Query("limit") limit: Int = 5
+  ): Response<List<SupabaseCallSessionDto>>
+
+  @GET("call_sessions")
+  suspend fun getCallSessionById(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("id") idFilter: String
+  ): Response<List<SupabaseCallSessionDto>>
+
+  @PATCH("call_sessions")
+  suspend fun patchCallSession(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Query("id") idFilter: String,
+    @Body patch: SupabaseCallSessionPatchDto
+  ): Response<List<SupabaseCallSessionDto>>
+
+  @POST("call_signals")
+  suspend fun insertCallSignal(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Body signal: SupabaseCallSignalInsertDto
+  ): Response<Unit>
+
+  @GET("call_signals")
+  suspend fun getCallSignals(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("call_id") callIdFilter: String,
+    @Query("order") order: String = "created_at.asc",
+    @Query("limit") limit: Int = 100
+  ): Response<List<SupabaseCallSignalDto>>
 }

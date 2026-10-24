@@ -43,8 +43,10 @@ import com.example.ui.VybeViewModel
 import com.example.ui.components.StoryGradients
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VideoFitMode
+import com.example.ui.components.VybeLikeIcon
 import com.example.ui.components.VybeVideoPlayer
 import com.example.ui.theme.*
+import com.example.util.rememberRelativeTimestamp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -76,6 +78,7 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
   val safeIndex = currentIndex.coerceIn(0, stories.size - 1)
   val currentStory = stories[safeIndex]
   val isMe = currentStory.author.id == currentUser?.id
+  val relativeTimestamp = rememberRelativeTimestamp(currentStory.createdAtIso, currentStory.timestamp)
 
   var isPaused by remember { mutableStateOf(false) }
   var isMuted by remember { mutableStateOf(false) }
@@ -286,20 +289,27 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
               Spacer(modifier = Modifier.width(4.dp))
               VerificationBadge(user = currentStory.author)
             }
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-              text = currentStory.timestamp,
-              color = Color.White.copy(alpha = 0.72f),
-              fontSize = 11.sp
-            )
+            if (relativeTimestamp.isNotBlank()) {
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(
+                text = relativeTimestamp,
+                color = Color.White.copy(alpha = 0.78f),
+                fontSize = 11.sp
+              )
+            }
           }
 
-          if (currentStory.audience == StoryAudience.VYBE_MATCHES || currentStory.audience == StoryAudience.CLOSE_FRIENDS) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            if (currentStory.audience == StoryAudience.VYBE_MATCHES || currentStory.audience == StoryAudience.CLOSE_FRIENDS) {
               Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(11.dp))
               Spacer(modifier = Modifier.width(3.dp))
-              Text("VYBE Matches", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 10.sp)
+              Text("VYBE Matches • ", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 10.sp)
             }
+            Text(
+              text = "${currentStory.expiresHoursRemaining.coerceAtLeast(1)}h left",
+              color = Color.White.copy(alpha = 0.62f),
+              fontSize = 10.sp
+            )
           }
         }
 
@@ -445,7 +455,7 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
           IconButton(
             onClick = {
               viewModel.toggleStoryLike(currentStory.id)
-              reactionToast = if (!currentStory.isLikedByMe) "Liked" else null
+              reactionToast = if (!currentStory.isLikedByMe) "Vibed!" else null
             },
             modifier = Modifier
               .size(48.dp)
@@ -454,11 +464,10 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
               .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
               .testTag("story_like_button")
           ) {
-            Icon(
-              imageVector = if (currentStory.isLikedByMe) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-              contentDescription = "Like story",
-              tint = if (currentStory.isLikedByMe) Color(0xFFFF2D55) else Color.White,
-              modifier = Modifier.size(24.dp)
+            VybeLikeIcon(
+              isLiked = currentStory.isLikedByMe,
+              size = 22.dp,
+              inactiveTint = Color.White
             )
           }
         }

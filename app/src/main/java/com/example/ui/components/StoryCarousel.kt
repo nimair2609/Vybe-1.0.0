@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,6 +33,7 @@ import com.example.data.model.Story
 import com.example.data.model.StoryAudience
 import com.example.data.model.User
 import com.example.ui.theme.*
+import com.example.util.TimestampUtils
 
 // VYBE signature story ring gradients
 private val VybeStoryRingGradient = Brush.sweepGradient(
@@ -52,13 +54,6 @@ private val VybeMatchesRingGradient = Brush.sweepGradient(
   )
 )
 
-/**
- * VYBE Stories Tray:
- * - Shows only real, non-expired stories permitted by creator privacy & VYBE Matches rules.
- * - Unviewed peer stories appear in the unviewed tray; watched stories are removed from the unviewed tray
- *   (and own story shows viewed vs unviewed ring state).
- * - Provides quick access to create a story and manage VYBE Matches.
- */
 @Composable
 fun StoryCarousel(
   stories: List<Story>,
@@ -69,13 +64,21 @@ fun StoryCarousel(
   vybeMatchesCount: Int = 0,
   modifier: Modifier = Modifier
 ) {
-  val ownStories = stories.filter { it.author.id == currentUser?.id }
+  val nowMillis = System.currentTimeMillis()
+  val activeStories = remember(stories) {
+    stories.filter { s ->
+      val expMillis = TimestampUtils.parseIsoMillis(s.expiresAtIso)
+      if (expMillis != null) expMillis > nowMillis else s.expiresHoursRemaining > 0
+    }
+  }
+  val ownStories = activeStories.filter { currentUser != null && it.author.id == currentUser.id }
   val userHasStory = ownStories.isNotEmpty()
   val userOwnStory = ownStories.firstOrNull { !it.isViewed } ?: ownStories.firstOrNull()
   val hasUnviewedOwnStory = ownStories.any { !it.isViewed }
 
-  // Remove already-viewed peer stories from the unviewed story tray so they are never repeatedly shown as new
-  val unviewedPeerStories = stories.filter { it.author.id != currentUser?.id && !it.isViewed }
+  val unviewedPeerStories = activeStories
+    .filter { currentUser == null || it.author.id != currentUser.id }
+    .sortedWith(compareBy<Story> { it.isViewed }.thenByDescending { TimestampUtils.parseIsoMillis(it.createdAtIso) ?: 0L })
 
   Surface(
     color = MaterialTheme.colorScheme.surface,
@@ -268,10 +271,17 @@ fun StoryCarousel(
           }
         }
 
-        // 3. Unviewed Peer Stories
+        // 3. Active Peer Stories (unviewed first, viewed muted ring)
         items(unviewedPeerStories, key = { it.id }) { story ->
           val isMatchesStory = story.audience == StoryAudience.VYBE_MATCHES || story.audience == StoryAudience.CLOSE_FRIENDS
-          val ringGradient = if (isMatchesStory) VybeMatchesRingGradient else VybeStoryRingGradient
+          val mutedBrush = androidx.compose.ui.graphics.SolidColor(
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
+          )
+          val ringBrush: androidx.compose.ui.graphics.Brush = when {
+            story.isViewed -> mutedBrush
+            isMatchesStory -> VybeMatchesRingGradient
+            else -> VybeStoryRingGradient
+          }
 
           Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -288,7 +298,7 @@ fun StoryCarousel(
                 modifier = Modifier
                   .size(68.dp)
                   .clip(CircleShape)
-                  .background(ringGradient)
+                  .background(ringBrush)
                   .padding(2.5.dp)
                   .clip(CircleShape)
                   .background(MaterialTheme.colorScheme.surface)

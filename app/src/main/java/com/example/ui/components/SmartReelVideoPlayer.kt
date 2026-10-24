@@ -253,23 +253,19 @@ fun SmartReelVideoPlayer(
       )
     }
 
-    // Double-tap animated heart pop in center
+    // Double-tap animated VYBE Resonance burst in center
     if (heartAlpha.value > 0.01f) {
       Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+          .fillMaxSize()
+          .graphicsLayer(
+            scaleX = heartScale.value,
+            scaleY = heartScale.value,
+            alpha = heartAlpha.value
+          ),
         contentAlignment = Alignment.Center
       ) {
-        Icon(
-          imageVector = Icons.Filled.Favorite,
-          contentDescription = null,
-          tint = Color.White.copy(alpha = heartAlpha.value),
-          modifier = Modifier
-            .size(110.dp)
-            .graphicsLayer(
-              scaleX = heartScale.value,
-              scaleY = heartScale.value
-            )
-        )
+        VybeLikeIcon(isLiked = true, size = 104.dp, contentDescriptionText = null)
       }
     }
   }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -29,6 +30,7 @@ import com.example.data.model.AppThemeMode
 import com.example.data.repository.VybeRepository
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
+import com.example.ui.components.IncomingCallBanner
 import com.example.ui.components.OfflineStatusBanner
 import com.example.ui.components.UploadStatusBanner
 import com.example.ui.screens.*
@@ -70,6 +72,7 @@ class MainActivity : ComponentActivity() {
       val currentScreen by viewModel.currentScreen.collectAsState()
       val isOnline by viewModel.isOnline.collectAsState()
       val uploadStatus by viewModel.uploadStatus.collectAsState()
+      val activeCall by viewModel.activeCall.collectAsState()
       val bannerMsg by viewModel.uiBannerMessage.collectAsState()
 
       LaunchedEffect(bannerMsg) {
@@ -83,14 +86,6 @@ class MainActivity : ComponentActivity() {
         Surface(modifier = Modifier.fillMaxSize()) {
           Column(modifier = Modifier.fillMaxSize()) {
             OfflineStatusBanner(isOnline = isOnline)
-
-            if (currentScreen != Screen.SPLASH && currentScreen != Screen.AUTH && currentScreen != Screen.PASSWORD_RECOVERY) {
-              UploadStatusBanner(
-                uploadStatus = uploadStatus,
-                onRetry = { viewModel.retryLastUpload() },
-                onDismiss = { viewModel.clearUploadStatus() }
-              )
-            }
 
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
               when (currentScreen) {
@@ -118,6 +113,33 @@ class MainActivity : ComponentActivity() {
                 Screen.STORY_VIEWER -> StoryViewerScreen(viewModel)
                 Screen.NOTIFICATIONS -> NotificationCenterScreen(viewModel)
                 Screen.LIVE_STUDIO -> LiveStudioScreen(viewModel)
+              }
+
+              // Floating Upload Status Banner positioned cleanly below the top header
+              if (currentScreen != Screen.SPLASH && currentScreen != Screen.AUTH && currentScreen != Screen.PASSWORD_RECOVERY) {
+                UploadStatusBanner(
+                  uploadStatus = uploadStatus,
+                  onRetry = { viewModel.retryLastUpload() },
+                  onDismiss = { viewModel.clearUploadStatus() },
+                  modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 56.dp)
+                )
+              }
+
+              // Real-time Incoming Voice / Video Call Banner
+              if (currentScreen != Screen.CALL_SCREEN && currentScreen != Screen.SPLASH && currentScreen != Screen.AUTH) {
+                IncomingCallBanner(
+                  callSession = activeCall,
+                  onAccept = { viewModel.acceptCall() },
+                  onDecline = { viewModel.declineCall() },
+                  onOpenCallScreen = { viewModel.openIncomingCallScreen() },
+                  modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 8.dp)
+                )
               }
 
               if (!bannerMsg.isNullOrBlank()) {
