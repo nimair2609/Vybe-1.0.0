@@ -1,0 +1,55 @@
+{
+  "id": "/",
+  "name": "VYBE",
+  "short_name": "VYBE",
+  "description": "Mood-driven social network featuring Stories, Reels, Unload Rooms, Messaging, and Voice & Video Calling.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#09090E",
+  "theme_color": "#09090E",
+  "categories": ["social", "lifestyle", "communication"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Home Feed",
+      "short_name": "Feed",
+      "url": "/"
+    },
+    {
+      "name": "VYBE Reels",
+      "short_name": "Reels",
+      "url": "/reels"
+    },
+    {
+      "name": "Unload Rooms",
+      "short_name": "Rooms",
+      "url": "/rooms"
+    },
+    {
+      "name": "Messages",
+      "short_name": "Inbox",
+      "url": "/messages"
+    }
+  ]
+}
