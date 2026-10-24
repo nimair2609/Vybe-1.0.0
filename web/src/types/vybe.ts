@@ -134,6 +134,7 @@ export interface UnloadRoom {
   title: string;
   description: string;
   category: string;
+  topicTag?: string;
   mode: UnloadRoomMode;
   durationMinutes: number;
   capacity: number;

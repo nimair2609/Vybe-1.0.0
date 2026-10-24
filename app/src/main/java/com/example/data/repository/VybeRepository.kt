@@ -650,10 +650,12 @@ class VybeRepository private constructor() {
             true
           } else if (_blockedUserIds.value.contains(s.author.id)) {
             false
-          } else if (s.author.isPrivate && !_followingUserIds.value.contains(s.author.id)) {
+          } else if (s.audience == StoryAudience.VYBE_MATCHES || s.audience == StoryAudience.CLOSE_FRIENDS) {
+            myUserId.isNotBlank() && (s.author.id == myUserId || vybeMatchIdsCache.contains(s.author.id) || _followerUserIds.value.contains(s.author.id))
+          } else if (s.author.isPrivate && !_followingUserIds.value.contains(s.author.id) && !_followerUserIds.value.contains(s.author.id)) {
             false
           } else {
-            _followingUserIds.value.contains(s.author.id) || !s.author.isPrivate
+            _followingUserIds.value.contains(s.author.id) || _followerUserIds.value.contains(s.author.id) || !s.author.isPrivate
           }
         }
         .sortedWith(

@@ -187,6 +187,24 @@ fun FeedScreen(viewModel: VybeViewModel) {
         actions = {
           val unreadNotifsCount = remember(notifications) { notifications.count { !it.isRead } }
           IconButton(
+            onClick = { showVybeMatchesDialog = true },
+            modifier = Modifier
+              .size(48.dp)
+              .testTag("vybe_matches_top_button")
+          ) {
+            BadgedBox(
+              badge = {
+                if (vybeMatches.isNotEmpty()) {
+                  Badge(containerColor = Color(0xFF10B981)) {
+                    Text("${vybeMatches.size}")
+                  }
+                }
+              }
+            ) {
+              Icon(Icons.Default.Group, contentDescription = "VYBE Matches", tint = Color(0xFF10B981))
+            }
+          }
+          IconButton(
             onClick = { viewModel.navigateTo(Screen.NOTIFICATIONS) },
             modifier = Modifier
               .size(48.dp)

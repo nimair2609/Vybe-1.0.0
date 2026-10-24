@@ -495,12 +495,39 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
             VerificationBadge(user = user)
             if (user.isOnline) {
               Spacer(modifier = Modifier.width(8.dp))
-              Box(
-                modifier = Modifier
-                  .size(9.dp)
-                  .clip(CircleShape)
-                  .background(VybeOnlineGreen)
-              )
+              Surface(
+                color = VybeOnlineGreen.copy(alpha = 0.15f),
+                shape = RoundedCornerShape(8.dp)
+              ) {
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                  Box(
+                    modifier = Modifier
+                      .size(7.dp)
+                      .clip(CircleShape)
+                      .background(VybeOnlineGreen)
+                  )
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text(
+                    text = "Active now",
+                    color = VybeOnlineGreen,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold
+                  )
+                }
+              }
+            } else if (!user.lastSeenAtIso.isNullOrBlank()) {
+              val lastSeen = TimestampUtils.formatLastSeen(user.lastSeenAtIso)
+              if (lastSeen.isNotBlank()) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                  text = lastSeen,
+                  fontSize = 11.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+              }
             }
           }
 

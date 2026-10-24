@@ -939,3 +939,5 @@ export const PasswordResetScreenWeb: React.FC = () => {
     </div>
   );
 };
+
+export const ResetPasswordPageWeb = PasswordResetScreenWeb;

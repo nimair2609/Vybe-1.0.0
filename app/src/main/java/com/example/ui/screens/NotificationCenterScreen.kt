@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.NotificationItem
 import com.example.data.model.NotificationType
 import com.example.data.model.User
+import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VybeAvatar
 import com.example.ui.theme.*
@@ -267,8 +268,15 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
               item = item,
               onClick = {
                 viewModel.markNotificationAsRead(item.id)
-                item.actorUser?.let { actor ->
-                  viewModel.openUserProfile(actor)
+                when (item.type) {
+                  NotificationType.DIRECT_MESSAGE, NotificationType.GROUP_MESSAGE -> {
+                    viewModel.selectTab(com.example.ui.MainTab.INBOX)
+                  }
+                  else -> {
+                    item.actorUser?.let { actor ->
+                      viewModel.openUserProfile(actor)
+                    }
+                  }
                 }
               },
               onDelete = {

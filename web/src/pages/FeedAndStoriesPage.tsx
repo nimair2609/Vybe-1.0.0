@@ -41,6 +41,7 @@ export const FeedAndStoriesPage: React.FC<{
   onLoadMore: () => Promise<void>;
   hasMorePosts: boolean;
   onDraftDirtyChange: (dirty: boolean) => void;
+  externalOpenComposer?: boolean;
 }> = ({
   currentUser,
   posts,
@@ -49,11 +50,18 @@ export const FeedAndStoriesPage: React.FC<{
   onRefreshAll,
   onLoadMore,
   hasMorePosts,
-  onDraftDirtyChange
+  onDraftDirtyChange,
+  externalOpenComposer
 }) => {
   const navigate = useNavigate();
   const [selectedMood, setSelectedMood] = useState<MoodZone | null>(null);
   const [showPostComposer, setShowPostComposer] = useState(false);
+
+  React.useEffect(() => {
+    if (externalOpenComposer) {
+      setShowPostComposer(true);
+    }
+  }, [externalOpenComposer]);
   const [showStoryComposer, setShowStoryComposer] = useState(false);
   const [activeStory, setActiveStory] = useState<VybeStory | null>(null);
   const [openCommentsPostId, setOpenCommentsPostId] = useState<string | null>(null);

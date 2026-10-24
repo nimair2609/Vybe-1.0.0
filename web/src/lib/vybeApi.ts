@@ -261,21 +261,26 @@ export async function fetchFeedPosts(
 export async function publishPostPersisted(params: {
   authorId: string;
   caption: string;
-  files: File[];
-  moodZone: MoodZone;
+  files?: File[];
+  mediaFiles?: File[];
+  mediaType?: MediaType;
+  moodZone?: MoodZone | null;
   isUnfiltered?: boolean;
   isVybesReel?: boolean;
-  locationName?: string;
-  musicTitle?: string;
-  onProgress?: (label: string) => void;
+  locationName?: string | null;
+  musicTitle?: string | null;
+  onProgress?: ((label: string) => void) | ((progress: number) => void);
 }): Promise<string> {
   const clientUploadId = `web_post_${crypto.randomUUID()}`;
   const uploaded: { publicUrl: string; storagePath: string; mediaType: MediaType }[] = [];
+  const filesToUpload = params.files || params.mediaFiles || [];
 
-  for (let i = 0; i < params.files.length; i++) {
-    const file = params.files[i];
+  for (let i = 0; i < filesToUpload.length; i++) {
+    const file = filesToUpload[i];
     const isVideo = file.type.startsWith('video/');
-    params.onProgress?.(`Uploading media ${i + 1} of ${params.files.length}…`);
+    if (typeof params.onProgress === 'function') {
+      params.onProgress(`Uploading media ${i + 1} of ${filesToUpload.length}…` as any);
+    }
     const res = await uploadMediaToBucket('posts', params.authorId, file);
     uploaded.push({
       ...res,
@@ -286,20 +291,24 @@ export async function publishPostPersisted(params: {
   const primaryType: MediaType =
     params.isVybesReel
       ? 'REEL'
-      : uploaded.some((u) => u.mediaType === 'VIDEO')
-        ? 'VIDEO'
-        : uploaded.length > 0
-          ? 'IMAGE'
-          : 'TEXT';
+      : params.mediaType
+        ? params.mediaType
+        : uploaded.some((u) => u.mediaType === 'VIDEO')
+          ? 'VIDEO'
+          : uploaded.length > 0
+            ? 'IMAGE'
+            : 'TEXT';
 
-  params.onProgress?.('Saving post to VYBE…');
+  if (typeof params.onProgress === 'function') {
+    params.onProgress('Saving post to VYBE…' as any);
+  }
   const { data: inserted, error: postErr } = await supabase
     .from('posts')
     .insert({
       author_id: params.authorId,
       caption: params.caption.trim(),
       media_type: primaryType,
-      mood_zone: params.moodZone,
+      mood_zone: params.moodZone || 'GENERAL',
       is_unfiltered: Boolean(params.isUnfiltered),
       is_vybes_reel: Boolean(params.isVybesReel),
       location_name: params.locationName?.trim() || null,
@@ -508,15 +517,19 @@ function mapRoomRow(r: any): UnloadRoom {
 export async function createLiveRoom(params: {
   hostId: string;
   title: string;
-  description: string;
-  category: string;
-  mode: UnloadRoomMode;
-  durationMinutes: number;
-  capacity: number;
-  isPrivate: boolean;
+  description?: string;
+  category?: string;
+  topicTag?: string;
+  hostName?: string;
+  mode?: UnloadRoomMode;
+  durationMinutes?: number;
+  capacity?: number;
+  isPrivate?: boolean;
 }): Promise<UnloadRoom> {
   const roomCode = generateRoomCode();
-  const expiresAt = new Date(Date.now() + Math.max(15, params.durationMinutes) * 60_000).toISOString();
+  const duration = params.durationMinutes ?? 45;
+  const expiresAt = new Date(Date.now() + Math.max(15, duration) * 60_000).toISOString();
+  const categoryTag = params.category?.trim() || params.topicTag?.trim() || 'Community Space';
 
   const { data, error } = await supabase
     .from('rooms')
@@ -524,14 +537,14 @@ export async function createLiveRoom(params: {
       room_code: roomCode,
       host_id: params.hostId,
       title: params.title.trim(),
-      description: params.description.trim(),
-      category: params.category.trim() || 'Community Space',
-      topic_tag: params.category.trim() || 'Community Space',
-      mode: params.mode,
-      duration_minutes: params.durationMinutes,
-      max_participants: params.capacity,
-      capacity: params.capacity,
-      is_private: params.isPrivate,
+      description: (params.description || '').trim(),
+      category: categoryTag,
+      topic_tag: categoryTag,
+      mode: params.mode || 'VOICE_AND_TEXT',
+      duration_minutes: duration,
+      max_participants: params.capacity ?? 25,
+      capacity: params.capacity ?? 25,
+      is_private: Boolean(params.isPrivate),
       is_public: !params.isPrivate,
       is_active: true,
       expires_at: expiresAt
@@ -757,11 +770,15 @@ export async function getOrCreateDirectConversation(myId: string, peerId: string
 export async function sendDirectMessagePersisted(params: {
   conversationId: string;
   senderId: string;
-  text: string;
+  text?: string;
+  content?: string;
   file?: File | null;
-}): Promise<void> {
-  let mediaUrl: string | null = null;
-  let mediaType = 'TEXT';
+  mediaUrl?: string | null;
+  mediaType?: string;
+}): Promise<string> {
+  let mediaUrl = params.mediaUrl || null;
+  let mediaType = params.mediaType || 'TEXT';
+  const textBody = (params.text ?? params.content ?? '').trim();
 
   if (params.file) {
     mediaType = params.file.type.startsWith('video/') ? 'VIDEO' : 'IMAGE';
@@ -769,47 +786,90 @@ export async function sendDirectMessagePersisted(params: {
     mediaUrl = up.publicUrl;
   }
 
-  const { error } = await supabase.from('messages').insert({
-    conversation_id: params.conversationId,
-    sender_id: params.senderId,
-    content: params.text.trim() || (mediaType === 'IMAGE' ? 'Shared a photo' : 'Shared a video'),
-    media_url: mediaUrl,
-    media_type: mediaType
-  });
+  const { data: inserted, error } = await supabase
+    .from('messages')
+    .insert({
+      conversation_id: params.conversationId,
+      sender_id: params.senderId,
+      content: textBody || (mediaType === 'IMAGE' ? 'Shared a photo' : mediaType === 'VIDEO' ? 'Shared a video' : 'Message'),
+      media_url: mediaUrl,
+      media_type: mediaType
+    })
+    .select('id')
+    .maybeSingle();
+
   if (error) throw new Error(error.message);
 
   await supabase
     .from('conversations')
     .update({ updated_at: new Date().toISOString() })
     .eq('id', params.conversationId);
+
+  return inserted?.id ? String(inserted.id) : crypto.randomUUID();
 }
 
 // ============================================================================
 // DISCOVERY, NOTIFICATIONS, VERIFICATION, COPYRIGHT/REPORTS & ADMIN
 // ============================================================================
 
-export async function searchUsersAndPosts(query: string): Promise<{
+export async function searchUsersAndPosts(
+  query: string,
+  limit = 20
+): Promise<{
   users: VybeUser[];
+  posts: VybePost[];
   shops: BusinessShop[];
 }> {
-  if (!isSupabaseConfigured) return { users: [], shops: [] };
+  if (!isSupabaseConfigured) return { users: [], posts: [], shops: [] };
   const q = query.trim().replace(/^@/, '');
   const userReq = q
     ? supabase
         .from('profiles')
         .select('*')
         .or(`username.ilike.%${q}%,display_name.ilike.%${q}%`)
-        .limit(24)
-    : supabase.from('profiles').select('*').order('followers_count', { ascending: false }).limit(20);
+        .limit(limit)
+    : supabase.from('profiles').select('*').order('followers_count', { ascending: false }).limit(limit);
 
   const shopReq = q
-    ? supabase.from('business_profiles').select('*').ilike('business_name', `%${q}%`).limit(12)
-    : supabase.from('business_profiles').select('*').limit(12);
+    ? supabase.from('business_profiles').select('*').ilike('business_name', `%${q}%`).limit(limit)
+    : supabase.from('business_profiles').select('*').limit(limit);
 
-  const [{ data: uRows }, { data: sRows }] = await Promise.all([userReq, shopReq]);
+  const postReq = q
+    ? supabase
+        .from('posts')
+        .select(`*, profiles:author_id (*), post_media (*), comments (*, profiles:author_id (*))`)
+        .ilike('caption', `%${q}%`)
+        .limit(limit)
+    : supabase
+        .from('posts')
+        .select(`*, profiles:author_id (*), post_media (*), comments (*, profiles:author_id (*))`)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+  const [{ data: uRows }, { data: sRows }, { data: pRows }] = await Promise.all([userReq, shopReq, postReq]);
+
+  const mappedPosts: VybePost[] = (pRows || []).map((r: any) => ({
+    id: String(r.id),
+    author: mapProfileRow(r.profiles || { id: r.author_id }),
+    caption: String(r.caption || ''),
+    moodZone: (r.mood_zone || 'GENERAL') as MoodZone,
+    mediaType: ((r.media_type || 'IMAGE') as string).toUpperCase() as MediaType,
+    mediaUrls: (r.post_media || []).map((pm: any) => pm.media_url || ''),
+    isUnfiltered: Boolean(r.is_unfiltered),
+    isVybesReel: Boolean(r.is_vybes_reel),
+    locationName: r.location_name || null,
+    musicTitle: r.music_title || null,
+    resonancePulseCount: Number(r.reactions_count ?? 0),
+    commentsCount: Number(r.comments_count ?? (r.comments ? r.comments.length : 0)),
+    isResonatedByMe: false,
+    isSavedByMe: false,
+    createdAtIso: r.created_at || null,
+    comments: []
+  }));
 
   return {
     users: (uRows || []).map(mapProfileRow),
+    posts: mappedPosts,
     shops: (sRows || []).map((s: any) => ({
       id: String(s.id),
       ownerId: String(s.owner_id),

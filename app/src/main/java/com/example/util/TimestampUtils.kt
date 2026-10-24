@@ -143,6 +143,16 @@ object TimestampUtils {
   fun formatMessageTimestamp(iso: String?, fallback: String): String =
     formatMessageTimestamp(iso = iso, nowMillis = System.currentTimeMillis(), fallback = fallback)
 
+  fun formatLastSeen(lastSeenIso: String?): String {
+    if (lastSeenIso.isNullOrBlank()) return ""
+    val rel = formatRelative(lastSeenIso, fallback = "")
+    return when {
+      rel.isBlank() -> ""
+      rel == "Just now" -> "Active just now"
+      else -> "Active $rel ago"
+    }
+  }
+
   fun formatMessageTime(iso: String?, fallback: String = ""): String =
     formatMessageTimestamp(iso = iso, nowMillis = System.currentTimeMillis(), fallback = fallback)
 

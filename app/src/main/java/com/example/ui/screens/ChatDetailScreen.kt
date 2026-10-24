@@ -240,8 +240,12 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                   text = conv.typingIndicator
                     ?: if (conv.isBlocked) "Blocked • Unblock in options"
                     else if (conv.isGroup) "${conv.groupMembers.size} participants"
-                    else if (conv.peerUser.isOnline) "Online • @${conv.peerUser.username}"
-                    else "@${conv.peerUser.username}",
+                    else if (conv.peerUser.isOnline) "Active now • @${conv.peerUser.username}"
+                    else {
+                      val lastSeen = TimestampUtils.formatLastSeen(conv.peerUser.lastSeenAtIso)
+                      if (lastSeen.isNotBlank()) "$lastSeen • @${conv.peerUser.username}"
+                      else "@${conv.peerUser.username}"
+                    },
                   style = MaterialTheme.typography.bodySmall,
                   color = when {
                     conv.typingIndicator != null -> themeAccent

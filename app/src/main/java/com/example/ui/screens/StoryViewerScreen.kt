@@ -109,11 +109,9 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
           easing = LinearEasing
         )
       )
-      if (currentStory.mediaType != StoryMediaType.VIDEO) {
-        val hasNext = viewModel.nextStory()
-        if (!hasNext) {
-          viewModel.navigateBack()
-        }
+      val hasNext = viewModel.nextStory()
+      if (!hasNext) {
+        viewModel.navigateBack()
       }
     }
   }
@@ -374,6 +372,21 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
                 }
               )
             }
+          }
+        }
+
+        if (currentStory.mediaType == StoryMediaType.VIDEO || currentStory.mediaType == StoryMediaType.MUSIC) {
+          IconButton(
+            onClick = { isMuted = !isMuted },
+            modifier = Modifier
+              .size(48.dp)
+              .testTag("story_viewer_mute_button")
+          ) {
+            Icon(
+              imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+              contentDescription = if (isMuted) "Unmute Audio" else "Mute Audio",
+              tint = Color.White
+            )
           }
         }
 
