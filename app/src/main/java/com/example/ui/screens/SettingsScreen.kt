@@ -1226,6 +1226,33 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                         if (release.name.isNotBlank() && release.name != release.tagName) {
                           Text(release.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp))
                         }
+                        if (release.apkFileName != null) {
+                          val sizeFormatted = GitHubUpdater.formatFileSize(release.apkFileSize)
+                          val details = if (sizeFormatted.isNotBlank()) "${release.apkFileName} • $sizeFormatted" else release.apkFileName
+                          Text(
+                            text = "Asset: $details",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 2.dp)
+                          )
+                        }
+                        if (release.assetStatusMessage != null) {
+                          Surface(
+                            color = VybeDanger.copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                              .fillMaxWidth()
+                              .padding(top = 6.dp)
+                          ) {
+                            Text(
+                              text = release.assetStatusMessage,
+                              color = VybeDanger,
+                              fontSize = 11.sp,
+                              modifier = Modifier.padding(8.dp)
+                            )
+                          }
+                        }
                         if (release.body.isNotBlank()) {
                           Text(
                             text = release.body.take(240) + if (release.body.length > 240) "..." else "",
@@ -1250,7 +1277,13 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                           Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
                           Spacer(modifier = Modifier.width(6.dp))
                           Text(
-                            text = if (release.isNewerThanInstalled) "Download & Install APK" else "View Release on GitHub",
+                            text = if (release.hasValidApkAsset && release.isNewerThanInstalled) {
+                              "Download & Install APK"
+                            } else if (release.hasValidApkAsset) {
+                              "Re-download APK (${release.tagName})"
+                            } else {
+                              "View Release on GitHub"
+                            },
                             fontWeight = FontWeight.Bold,
                             fontSize = 12.sp,
                             color = Color.White

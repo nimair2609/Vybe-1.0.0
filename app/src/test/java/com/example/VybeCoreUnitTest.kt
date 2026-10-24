@@ -263,4 +263,12 @@ class VybeCoreUnitTest {
     assertEquals("nrnext/vybe", com.example.util.GitHubUpdater.cleanRepoSlug("github.com/nrnext/vybe"))
     assertEquals("owner/app", com.example.util.GitHubUpdater.cleanRepoSlug("owner/app"))
   }
+
+  @Test
+  fun testGitHubUpdaterFileSizeFormatting() {
+    val bytes15_5 = (15.5 * 1024 * 1024).toLong()
+    assertEquals("15.5 MB", com.example.util.GitHubUpdater.formatFileSize(bytes15_5))
+    assertEquals("24.0 MB", com.example.util.GitHubUpdater.formatFileSize(24L * 1024L * 1024L))
+    assertEquals("", com.example.util.GitHubUpdater.formatFileSize(0L))
+  }
 }

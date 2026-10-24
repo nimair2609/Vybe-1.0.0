@@ -144,7 +144,7 @@ fun CallScreen(viewModel: VybeViewModel) {
     }
   }
 
-  val showRemoteVideo = call.isVideo && !call.isPeerCameraOff && remoteBitmap != null && call.state == CallState.CONNECTED
+  val showRemoteVideo = call.isVideo && !call.isPeerCameraOff && call.state == CallState.CONNECTED
   val showLocalCamera = call.isVideo && !call.isCameraOff && hasCameraPermission
 
   Box(

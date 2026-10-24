@@ -19,12 +19,28 @@ data class GitHubReleaseInfo(
   val body: String,
   val htmlUrl: String,
   val downloadUrl: String?,
-  val isNewerThanInstalled: Boolean = true
+  val isNewerThanInstalled: Boolean = true,
+  val apkFileName: String? = null,
+  val apkFileSize: Long = 0L,
+  val hasValidApkAsset: Boolean = false,
+  val assetStatusMessage: String? = null
 )
 
 object GitHubUpdater {
-  const val INSTALLED_VERSION = "2.0.0"
+  val INSTALLED_VERSION: String
+    get() = try {
+      com.example.BuildConfig.VERSION_NAME
+    } catch (_: Throwable) {
+      "1.0.0"
+    }
+
   const val DEFAULT_GITHUB_REPO = "nrnext/vybe"
+
+  fun formatFileSize(bytes: Long): String {
+    if (bytes <= 0) return ""
+    val mb = bytes / (1024.0 * 1024.0)
+    return "%.1f MB".format(java.util.Locale.US, mb)
+  }
 
   private val client = OkHttpClient.Builder()
     .connectTimeout(12, TimeUnit.SECONDS)
@@ -100,22 +116,44 @@ object GitHubUpdater {
         val body = json.optString("body", "Release notes not provided.")
         val htmlUrl = json.optString("html_url", "https://github.com/$cleanRepo/releases")
 
-        var downloadUrl: String? = null
+        var selectedDownloadUrl: String? = null
+        var selectedApkName: String? = null
+        var selectedApkSize: Long = 0L
+        var hasValidApk = false
+
         val assets = json.optJSONArray("assets")
-        if (assets != null) {
+        if (assets != null && assets.length() > 0) {
+          val apkCandidates = mutableListOf<Triple<String, String, Long>>()
           for (i in 0 until assets.length()) {
             val asset = assets.getJSONObject(i)
             val assetName = asset.optString("name", "")
-            if (assetName.endsWith(".apk", ignoreCase = true)) {
-              downloadUrl = asset.optString("browser_download_url", "").takeIf { it.isNotBlank() }
-              break
+            val assetUrl = asset.optString("browser_download_url", "")
+            val assetSize = asset.optLong("size", 0L)
+            if (assetName.endsWith(".apk", ignoreCase = true) && assetUrl.isNotBlank()) {
+              apkCandidates.add(Triple(assetName, assetUrl, assetSize))
             }
           }
-        }
-        if (downloadUrl == null) {
-          downloadUrl = htmlUrl
+
+          if (apkCandidates.isNotEmpty()) {
+            // Prioritize APKs that are non-empty and not marked as unsigned
+            val preferred = apkCandidates.firstOrNull { (assetName, _, size) ->
+              size > 0 && !assetName.contains("unsigned", ignoreCase = true)
+            } ?: apkCandidates.firstOrNull { (_, _, size) -> size > 0 } ?: apkCandidates.first()
+
+            selectedApkName = preferred.first
+            selectedDownloadUrl = preferred.second
+            selectedApkSize = preferred.third
+            hasValidApk = true
+          }
         }
 
+        val assetStatusMessage = when {
+          !hasValidApk -> "Release found, but no installable .apk asset is attached to this release. The release author must attach the compiled APK (e.g. app-debug.apk) to the release assets."
+          selectedApkName?.contains("unsigned", ignoreCase = true) == true -> "Warning: The asset '$selectedApkName' appears to be unsigned. Android requires updates to be signed with the matching key."
+          else -> null
+        }
+
+        val downloadUrl = if (hasValidApk) selectedDownloadUrl else htmlUrl
         val isNewer = isNewerVersion(INSTALLED_VERSION, tagName)
 
         Result.success(
@@ -125,7 +163,11 @@ object GitHubUpdater {
             body = body,
             htmlUrl = htmlUrl,
             downloadUrl = downloadUrl,
-            isNewerThanInstalled = isNewer
+            isNewerThanInstalled = isNewer,
+            apkFileName = selectedApkName,
+            apkFileSize = selectedApkSize,
+            hasValidApkAsset = hasValidApk,
+            assetStatusMessage = assetStatusMessage
           )
         )
       }
