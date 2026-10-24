@@ -185,10 +185,20 @@ class VybeCoreUnitTest {
 
   @Test
   fun testRecordPostViewIncrementsCount() {
-    if (repository.posts.value.isEmpty()) {
-      repository.createPost(caption = "View tracking test post", mood = MoodType.CHILL)
-    }
-    val targetPost = repository.posts.value.first()
+    repository.loginUser("eligible@vybe.in", "Password123!")
+    val author = repository.currentUser.value!!
+    val postId = "post_view_test_${System.currentTimeMillis()}"
+    val seededPost = com.example.data.model.Post(
+      id = postId,
+      author = author,
+      caption = "View tracking test post",
+      timestamp = "Just now",
+      moodZone = MoodType.CHILL,
+      clientUploadId = "upload_$postId"
+    )
+    repository.recordVerifiedPostForState(seededPost)
+
+    val targetPost = repository.posts.value.first { it.id == postId }
     val initialViews = targetPost.viewsCount
 
     repository.recordPostView(targetPost.id)
@@ -198,8 +208,18 @@ class VybeCoreUnitTest {
 
   @Test
   fun testDeleteOwnPostRemovesFromFeed() {
-    repository.createPost(caption = "Temporary post to delete", mood = MoodType.HEALING)
-    val createdPost = repository.posts.value.first { it.caption == "Temporary post to delete" }
+    repository.loginUser("eligible@vybe.in", "Password123!")
+    val author = repository.currentUser.value!!
+    val postId = "post_delete_test_${System.currentTimeMillis()}"
+    val createdPost = com.example.data.model.Post(
+      id = postId,
+      author = author,
+      caption = "Temporary post to delete",
+      timestamp = "Just now",
+      moodZone = MoodType.HEALING,
+      clientUploadId = "upload_$postId"
+    )
+    repository.recordVerifiedPostForState(createdPost)
     val initialCount = repository.posts.value.size
 
     repository.deletePost(createdPost.id)
@@ -210,7 +230,12 @@ class VybeCoreUnitTest {
 
   @Test
   fun testStartConversationAndToggleUnread() {
-    val peerUser = repository.allUsers.value.first { it.id != repository.currentUser.value?.id }
+    repository.loginUser("eligible@vybe.in", "Password123!")
+    val peerUser = User(
+      id = "peer_unread_test_1",
+      username = "peer_unread",
+      displayName = "Peer Unread"
+    )
     val conversation = repository.getOrCreateConversation(peerUser)
     assertNotNull(conversation)
     assertEquals(peerUser.id, conversation.peerUser.id)

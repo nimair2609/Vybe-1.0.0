@@ -31,14 +31,37 @@ object GitHubUpdater {
     .readTimeout(12, TimeUnit.SECONDS)
     .build()
 
+  fun cleanRepoSlug(repo: String): String {
+    return repo
+      .trim()
+      .removePrefix("https://github.com/")
+      .removePrefix("http://github.com/")
+      .removePrefix("github.com/")
+      .removeSuffix(".git")
+      .trim('/')
+  }
+
+  fun isNewerVersion(installedVersion: String, remoteVersion: String): Boolean {
+    val cleanInstalled = installedVersion.trim().removePrefix("v").removePrefix("V").substringBefore("-")
+    val cleanRemote = remoteVersion.trim().removePrefix("v").removePrefix("V").substringBefore("-")
+    if (cleanRemote.isBlank() || cleanRemote.equals("latest", ignoreCase = true)) return false
+    if (cleanInstalled == cleanRemote) return false
+
+    val installedParts = cleanInstalled.split(".").map { it.toIntOrNull() ?: 0 }
+    val remoteParts = cleanRemote.split(".").map { it.toIntOrNull() ?: 0 }
+    val maxLen = maxOf(installedParts.size, remoteParts.size)
+    for (i in 0 until maxLen) {
+      val inst = installedParts.getOrElse(i) { 0 }
+      val rem = remoteParts.getOrElse(i) { 0 }
+      if (rem > inst) return true
+      if (rem < inst) return false
+    }
+    return false
+  }
+
   suspend fun checkForUpdates(repo: String = DEFAULT_GITHUB_REPO): Result<GitHubReleaseInfo> = withContext(Dispatchers.IO) {
     try {
-      val cleanRepo = repo
-        .trim()
-        .removePrefix("https://github.com/")
-        .removePrefix("http://github.com/")
-        .removePrefix("github.com/")
-        .trim('/')
+      val cleanRepo = cleanRepoSlug(repo)
 
       if (cleanRepo.isBlank() || !cleanRepo.contains("/") || cleanRepo.equals("my-github-username/vybe", ignoreCase = true)) {
         return@withContext Result.failure(
@@ -84,7 +107,7 @@ object GitHubUpdater {
             val asset = assets.getJSONObject(i)
             val assetName = asset.optString("name", "")
             if (assetName.endsWith(".apk", ignoreCase = true)) {
-              downloadUrl = asset.optString("browser_download_url", null)
+              downloadUrl = asset.optString("browser_download_url", "").takeIf { it.isNotBlank() }
               break
             }
           }
@@ -93,8 +116,7 @@ object GitHubUpdater {
           downloadUrl = htmlUrl
         }
 
-        val normalizedTag = tagName.removePrefix("v").removePrefix("V").trim()
-        val isNewer = normalizedTag != INSTALLED_VERSION
+        val isNewer = isNewerVersion(INSTALLED_VERSION, tagName)
 
         Result.success(
           GitHubReleaseInfo(

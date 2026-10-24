@@ -163,4 +163,29 @@ class VybeMasterAuditTest {
     val malformedRes = GitHubUpdater.checkForUpdates("invalid_repo_without_slash")
     assertTrue(malformedRes.isFailure)
   }
+
+  @Test
+  fun `moshi serializes and deserializes supabase DTOs with json field names and defaults`() {
+    val adapter = com.example.data.remote.SupabaseNetworkClient.moshi
+      .adapter(com.example.data.remote.SupabasePostDto::class.java)
+    val rawJson = """
+      {
+        "id": "p_101",
+        "author_id": "u_202",
+        "caption": "Hello VYBE",
+        "mood_zone": "CHILL",
+        "is_vybes_reel": true,
+        "likes_count": 7
+      }
+    """.trimIndent()
+    val parsed = adapter.fromJson(rawJson)
+    assertNotNull(parsed)
+    assertEquals("p_101", parsed?.id)
+    assertEquals("u_202", parsed?.authorId)
+    assertEquals("CHILL", parsed?.moodZone)
+    assertEquals(true, parsed?.isVybesReel)
+    assertEquals(7, parsed?.likesCount)
+    assertEquals(0, parsed?.viewsCount)
+  }
 }
+

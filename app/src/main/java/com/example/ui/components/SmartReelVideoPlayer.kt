@@ -17,10 +17,10 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.VolumeOff
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -224,7 +224,7 @@ fun SmartReelVideoPlayer(
       ) {
         Box(modifier = Modifier.padding(8.dp), contentAlignment = Alignment.Center) {
           Icon(
-            imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+            imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
             contentDescription = if (isMuted) "Muted" else "Sound on",
             tint = Color.White,
             modifier = Modifier.size(18.dp)

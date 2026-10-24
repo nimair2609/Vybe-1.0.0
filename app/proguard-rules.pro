@@ -19,3 +19,10 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+-keep class kotlin.Metadata { *; }
+-keep class com.example.data.remote.** { *; }
+-keepclassmembers class com.example.data.remote.** {
+    <init>(...);
+}
+
