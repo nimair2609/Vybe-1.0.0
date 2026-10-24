@@ -269,7 +269,7 @@ export async function publishPostPersisted(params: {
   isVybesReel?: boolean;
   locationName?: string | null;
   musicTitle?: string | null;
-  onProgress?: ((label: string) => void) | ((progress: number) => void);
+  onProgress?: (label: string) => void;
 }): Promise<string> {
   const clientUploadId = `web_post_${crypto.randomUUID()}`;
   const uploaded: { publicUrl: string; storagePath: string; mediaType: MediaType }[] = [];
@@ -279,7 +279,7 @@ export async function publishPostPersisted(params: {
     const file = filesToUpload[i];
     const isVideo = file.type.startsWith('video/');
     if (typeof params.onProgress === 'function') {
-      params.onProgress(`Uploading media ${i + 1} of ${filesToUpload.length}…` as any);
+      params.onProgress(`Uploading media ${i + 1} of ${filesToUpload.length}…`);
     }
     const res = await uploadMediaToBucket('posts', params.authorId, file);
     uploaded.push({
@@ -300,7 +300,7 @@ export async function publishPostPersisted(params: {
             : 'TEXT';
 
   if (typeof params.onProgress === 'function') {
-    params.onProgress('Saving post to VYBE…' as any);
+    params.onProgress('Saving post to VYBE…');
   }
   const { data: inserted, error: postErr } = await supabase
     .from('posts')
@@ -859,10 +859,12 @@ export async function searchUsersAndPosts(
     isVybesReel: Boolean(r.is_vybes_reel),
     locationName: r.location_name || null,
     musicTitle: r.music_title || null,
-    resonancePulseCount: Number(r.reactions_count ?? 0),
+    likesCount: Number(r.likes_count ?? r.reactions_count ?? 0),
     commentsCount: Number(r.comments_count ?? (r.comments ? r.comments.length : 0)),
-    isResonatedByMe: false,
-    isSavedByMe: false,
+    savesCount: Number(r.saves_count ?? 0),
+    viewsCount: Number(r.views_count ?? 0),
+    isLiked: false,
+    isSaved: false,
     createdAtIso: r.created_at || null,
     comments: []
   }));

@@ -131,8 +131,8 @@ export function validateRegistrationFields(input: RegistrationInput): Record<str
     const age = calculateAgeYears(input.dateOfBirth);
     if (age === null || age > 120 || age < 0) {
       errors.dateOfBirth = 'Enter a valid date of birth.';
-    } else if (age < 16) {
-      errors.dateOfBirth = 'You must be at least 16 years old to join VYBE.';
+    } else if (age < 18) {
+      errors.dateOfBirth = 'You must be at least 18 years old to join VYBE for the initial launch.';
     }
   }
   if (input.password.length < 8) {

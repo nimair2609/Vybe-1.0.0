@@ -528,7 +528,7 @@ export const AuthScreenWeb: React.FC<{ onAuthSuccess: () => Promise<void> }> = (
 
             <div>
               <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                Date of Birth (16+ required) *
+                Date of Birth (18+ required for initial launch) *
               </label>
               <input
                 className="vybe-input"
@@ -537,6 +537,9 @@ export const AuthScreenWeb: React.FC<{ onAuthSuccess: () => Promise<void> }> = (
                 max={new Date().toISOString().split('T')[0]}
                 onChange={(e) => setDateOfBirth(e.target.value)}
               />
+              <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.3 }}>
+                Initial launch is restricted to individuals aged 18 and above. Note: Self-declared date of birth is an onboarding attestation and does not guarantee sovereign cryptographic identity verification.
+              </p>
               {fieldErrors.dateOfBirth && (
                 <small style={{ color: 'var(--vybe-danger)' }}>{fieldErrors.dateOfBirth}</small>
               )}
