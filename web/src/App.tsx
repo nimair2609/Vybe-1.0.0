@@ -172,6 +172,7 @@ export const App: React.FC = () => {
   const callControllerRef = useRef<BrowserWebRtcCallController | null>(null);
 
   // PWA updater
+  const [showInstallBanner, setShowInstallBanner] = useState(true);
   const pwa = usePwaAndSafeUpdates({
     hasBusyActivity: Boolean(activeCall || isComposerDirty)
   });
@@ -483,6 +484,44 @@ export const App: React.FC = () => {
   // Authenticated App Shell Flow
   return (
     <>
+      {/* PWA One-Click Install Banner */}
+      {pwa.canInstallPwa && !pwa.isStandalonePwa && showInstallBanner && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '16px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 9998,
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-pill)',
+            padding: '8px 16px',
+            boxShadow: 'var(--shadow-card)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            maxWidth: '92vw'
+          }}
+        >
+          <Download size={18} color="var(--vybe-violet)" />
+          <span style={{ fontSize: '0.84rem', fontWeight: 600 }}>Install VYBE App</span>
+          <button
+            className="vybe-btn vybe-btn-primary"
+            style={{ padding: '5px 12px', fontSize: '0.78rem', borderRadius: 'var(--radius-pill)' }}
+            onClick={() => void pwa.triggerInstallPrompt()}
+          >
+            Install
+          </button>
+          <button
+            onClick={() => setShowInstallBanner(false)}
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
       {/* PWA Update / Installation Banner */}
       {pwa.updateAvailable && (
         <div

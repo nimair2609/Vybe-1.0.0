@@ -1,0 +1,11 @@
+{
+  "name": "vybe-platform",
+  "private": true,
+  "workspaces": [
+    "web"
+  ],
+  "scripts": {
+    "build": "npm --prefix web install && npm --prefix web run build",
+    "install": "npm --prefix web install"
+  }
+}
