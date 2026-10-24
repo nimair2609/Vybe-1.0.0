@@ -39,6 +39,10 @@ data class User(
   val role: UserRole = UserRole.USER,
   val isPrivate: Boolean = false,
   val isFollowedByMe: Boolean = false,
+  val isFollowRequestedByMe: Boolean = false,
+  val followsMe: Boolean = false,
+  val hasPendingFollowRequestForMe: Boolean = false,
+  val messagePrivacy: String = "EVERYONE", // "EVERYONE", "MUTUAL_FOLLOWS", "NONE"
   val followersCount: Int = 0,
   val followingCount: Int = 0,
   val postsCount: Int = 0,

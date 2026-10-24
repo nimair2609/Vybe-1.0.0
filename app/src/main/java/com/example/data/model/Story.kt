@@ -20,11 +20,15 @@ data class Story(
   val mediaType: StoryMediaType = StoryMediaType.PHOTO,
   val audience: StoryAudience = StoryAudience.EVERYONE,
   val musicTrackTitle: String? = null,
-  val timestamp: String = "2h ago",
-  val expiresHoursRemaining: Int = 22,
+  val timestamp: String = "Just now",
+  val expiresHoursRemaining: Int = 24,
   val isViewed: Boolean = false,
-  val reactionsCount: Int = 14,
+  val reactionsCount: Int = 0,
   val isLikedByMe: Boolean = false,
   val location: String? = null,
-  val textBackgroundColor: String? = null
+  val textBackgroundColor: String? = null,
+  val createdAtIso: String? = null,
+  val expiresAtIso: String? = null,
+  val storagePath: String? = null,
+  val clientUploadId: String? = null
 )

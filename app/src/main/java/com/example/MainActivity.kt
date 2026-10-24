@@ -1,66 +1,151 @@
 package com.example
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.data.model.AppThemeMode
+import com.example.data.repository.VybeRepository
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
+import com.example.ui.components.OfflineStatusBanner
+import com.example.ui.components.UploadStatusBanner
 import com.example.ui.screens.*
 import com.example.ui.theme.VybeTheme
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 
 class MainActivity : ComponentActivity() {
 
+  private val pendingDeepLinkUri = MutableStateFlow<Uri?>(null)
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    com.example.data.repository.VybeRepository.getInstance().initSession(applicationContext)
-    handleAuthDeepLink(intent)
+    VybeRepository.getInstance().initSession(applicationContext)
+    intent?.data?.let { uri ->
+      Log.i("MainActivity", "Initial deep link URI: $uri")
+      pendingDeepLinkUri.value = uri
+    }
+
     enableEdgeToEdge()
     setContent {
       val viewModel: VybeViewModel = viewModel()
-      val themeMode by viewModel.themeMode.collectAsState()
-      val systemInDark = androidx.compose.foundation.isSystemInDarkTheme()
-      val isDark = when (themeMode) {
-        com.example.data.model.AppThemeMode.DARK -> true
-        com.example.data.model.AppThemeMode.LIGHT -> false
-        com.example.data.model.AppThemeMode.SYSTEM -> systemInDark
+      val incomingUri by pendingDeepLinkUri.collectAsState()
+
+      LaunchedEffect(incomingUri) {
+        val uri = incomingUri ?: return@LaunchedEffect
+        viewModel.handleIncomingAuthUri(uri)
+        pendingDeepLinkUri.value = null
       }
+
+      val themeMode by viewModel.themeMode.collectAsState()
+      val systemInDark = isSystemInDarkTheme()
+      val isDark = when (themeMode) {
+        AppThemeMode.DARK -> true
+        AppThemeMode.LIGHT -> false
+        AppThemeMode.SYSTEM -> systemInDark
+      }
+
       val currentScreen by viewModel.currentScreen.collectAsState()
+      val isOnline by viewModel.isOnline.collectAsState()
+      val uploadStatus by viewModel.uploadStatus.collectAsState()
+      val bannerMsg by viewModel.uiBannerMessage.collectAsState()
+
+      LaunchedEffect(bannerMsg) {
+        if (!bannerMsg.isNullOrBlank()) {
+          delay(4500)
+          viewModel.consumeBannerMessage()
+        }
+      }
 
       VybeTheme(darkTheme = isDark) {
         Surface(modifier = Modifier.fillMaxSize()) {
-          when (currentScreen) {
-            Screen.SPLASH -> SplashScreen()
-            Screen.AUTH -> AuthScreen(viewModel)
-            Screen.MAIN -> MainScreen(viewModel)
-            Screen.CHAT_DETAIL -> ChatDetailScreen(viewModel)
-            Screen.CALL_SCREEN -> CallScreen(viewModel)
-            Screen.CREATE_POST -> CreatePostScreen(viewModel)
-            Screen.CREATE_CAPSULE -> TimeCapsulesScreen(viewModel)
-            Screen.TIME_CAPSULES_VIEW -> TimeCapsulesScreen(viewModel)
-            Screen.DOUBLE_TAKE_VIEW -> DoubleTakeScreen(viewModel)
-            Screen.SHOP_DETAIL -> ShopDetailScreen(viewModel)
-            Screen.USER_PROFILE -> UserProfileScreen(viewModel)
-            Screen.CREATOR_STUDIO -> CreatorStudioScreen(viewModel)
-            Screen.ADMIN_CONSOLE -> AdminConsoleScreen(viewModel)
-            Screen.SETTINGS -> SettingsScreen(viewModel)
-            Screen.REELS_VIEWER -> ReelsViewerScreen(viewModel)
-            Screen.CREATE_CROSSED_PATH -> CrossedPathsScreen(viewModel)
-            Screen.UNLOAD_VIEW -> UnloadScreen(viewModel)
-            Screen.UNFILTERED_VIEW -> UnfilteredScreen(viewModel)
-            Screen.WHAT_NEXT_VIEW -> WhatNextScreen(viewModel)
-            Screen.SPIRITUAL_MODE -> SpiritualModeScreen(viewModel)
-            Screen.STORY_VIEWER -> StoryViewerScreen(viewModel)
-            Screen.NOTIFICATIONS -> NotificationCenterScreen(viewModel)
-            Screen.LIVE_STUDIO -> LiveStudioScreen(viewModel)
+          Column(modifier = Modifier.fillMaxSize()) {
+            OfflineStatusBanner(isOnline = isOnline)
+
+            if (currentScreen != Screen.SPLASH && currentScreen != Screen.AUTH && currentScreen != Screen.PASSWORD_RECOVERY) {
+              UploadStatusBanner(
+                uploadStatus = uploadStatus,
+                onRetry = { viewModel.retryLastUpload() },
+                onDismiss = { viewModel.clearUploadStatus() }
+              )
+            }
+
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+              when (currentScreen) {
+                Screen.SPLASH -> SplashScreen()
+                Screen.AUTH -> AuthScreen(viewModel)
+                Screen.PASSWORD_RECOVERY -> PasswordRecoveryScreen(viewModel)
+                Screen.MAIN -> MainScreen(viewModel)
+                Screen.CHAT_DETAIL -> ChatDetailScreen(viewModel)
+                Screen.CALL_SCREEN -> CallScreen(viewModel)
+                Screen.CREATE_POST -> CreatePostScreen(viewModel)
+                Screen.CREATE_CAPSULE -> TimeCapsulesScreen(viewModel)
+                Screen.TIME_CAPSULES_VIEW -> TimeCapsulesScreen(viewModel)
+                Screen.DOUBLE_TAKE_VIEW -> DoubleTakeScreen(viewModel)
+                Screen.SHOP_DETAIL -> ShopDetailScreen(viewModel)
+                Screen.USER_PROFILE -> UserProfileScreen(viewModel)
+                Screen.CREATOR_STUDIO -> CreatorStudioScreen(viewModel)
+                Screen.ADMIN_CONSOLE -> AdminConsoleScreen(viewModel)
+                Screen.SETTINGS -> SettingsScreen(viewModel)
+                Screen.REELS_VIEWER -> ReelsViewerScreen(viewModel)
+                Screen.CREATE_CROSSED_PATH -> CrossedPathsScreen(viewModel)
+                Screen.UNLOAD_VIEW -> UnloadScreen(viewModel)
+                Screen.UNFILTERED_VIEW -> UnfilteredScreen(viewModel)
+                Screen.WHAT_NEXT_VIEW -> WhatNextScreen(viewModel)
+                Screen.SPIRITUAL_MODE -> SpiritualModeScreen(viewModel)
+                Screen.STORY_VIEWER -> StoryViewerScreen(viewModel)
+                Screen.NOTIFICATIONS -> NotificationCenterScreen(viewModel)
+                Screen.LIVE_STUDIO -> LiveStudioScreen(viewModel)
+              }
+
+              if (!bannerMsg.isNullOrBlank()) {
+                Surface(
+                  color = MaterialTheme.colorScheme.inverseSurface,
+                  contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                  shape = RoundedCornerShape(14.dp),
+                  tonalElevation = 6.dp,
+                  modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 16.dp, vertical = 84.dp)
+                ) {
+                  androidx.compose.foundation.layout.Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Text(
+                      text = bannerMsg!!,
+                      style = MaterialTheme.typography.bodyMedium,
+                      modifier = Modifier.weight(1f, fill = false)
+                    )
+                    TextButton(onClick = { viewModel.consumeBannerMessage() }) {
+                      Text("OK")
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -70,47 +155,9 @@ class MainActivity : ComponentActivity() {
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
-    handleAuthDeepLink(intent)
-  }
-
-  private fun handleAuthDeepLink(intent: Intent?) {
-    val data = intent?.data ?: return
-    Log.i("MainActivity", "Captured auth deep link: $data")
-    try {
-      // 1. Handle fragment (#access_token=...&refresh_token=...)
-      val fragment = data.fragment
-      val queryParamToken = data.getQueryParameter("access_token") ?: data.getQueryParameter("token")
-
-      var accessToken: String? = queryParamToken
-      var refreshToken: String? = data.getQueryParameter("refresh_token")
-      var type: String? = data.getQueryParameter("type")
-
-      if (!fragment.isNullOrBlank()) {
-        val pairs = fragment.split("&")
-        for (pair in pairs) {
-          val parts = pair.split("=", limit = 2)
-          if (parts.size == 2) {
-            when (parts[0]) {
-              "access_token" -> accessToken = parts[1]
-              "refresh_token" -> refreshToken = parts[1]
-              "type" -> type = parts[1]
-            }
-          }
-        }
-      }
-
-      if (!accessToken.isNullOrBlank()) {
-        Log.i("MainActivity", "Successfully parsed auth session tokens from deep link ($type)")
-        val repo = com.example.data.repository.VybeRepository.getInstance()
-        val session = com.example.data.session.SessionManager.getInstance(applicationContext)
-        // If current user already loaded, preserve user profile with new tokens
-        val user = repo.currentUser.value ?: session.loadCurrentUser()
-        if (user != null) {
-          session.saveSession(user, accessToken, refreshToken ?: "")
-        }
-      }
-    } catch (e: Exception) {
-      Log.e("MainActivity", "Failed to parse deep link: ${e.message}")
+    intent.data?.let { uri ->
+      Log.i("MainActivity", "NewIntent deep link URI: $uri")
+      pendingDeepLinkUri.value = uri
     }
   }
 }

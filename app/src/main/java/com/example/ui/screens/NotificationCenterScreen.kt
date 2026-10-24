@@ -1,9 +1,7 @@
 package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -22,11 +20,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.NotificationItem
 import com.example.data.model.NotificationType
+import com.example.data.model.User
 import com.example.ui.VybeViewModel
+import com.example.ui.components.VybeAvatar
 import com.example.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -37,9 +38,26 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
   }
 
   val notifications by viewModel.notifications.collectAsState()
+  val incomingFollowRequestUserIds by viewModel.incomingFollowRequestUserIds.collectAsState()
+  val allUsers by viewModel.allUsers.collectAsState()
+
   var filterUnreadOnly by remember { mutableStateOf(false) }
   var notificationToDelete by remember { mutableStateOf<NotificationItem?>(null) }
   val snackbarHostState = remember { SnackbarHostState() }
+
+  LaunchedEffect(Unit) {
+    viewModel.refreshAllData()
+  }
+
+  val pendingFollowRequesters = remember(incomingFollowRequestUserIds, allUsers) {
+    incomingFollowRequestUserIds.map { requesterId ->
+      allUsers.firstOrNull { it.id == requesterId } ?: User(
+        id = requesterId,
+        username = "member_${requesterId.take(6)}",
+        displayName = "VYBE Member"
+      )
+    }
+  }
 
   val unreadCount = remember(notifications) { notifications.count { !it.isRead } }
   val filteredNotifications = remember(notifications, filterUnreadOnly) {
@@ -61,7 +79,8 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
         title = {
           Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Notifications", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-            if (unreadCount > 0) {
+            val totalBadge = unreadCount + pendingFollowRequesters.size
+            if (totalBadge > 0) {
               Spacer(modifier = Modifier.width(8.dp))
               Surface(
                 color = VybeViolet,
@@ -69,7 +88,7 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
                 modifier = Modifier.padding(horizontal = 4.dp)
               ) {
                 Text(
-                  text = "$unreadCount",
+                  text = "$totalBadge",
                   color = Color.White,
                   fontSize = 12.sp,
                   fontWeight = FontWeight.Bold,
@@ -80,7 +99,13 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
           }
         },
         actions = {
-          if (notifications.isNotEmpty()) {
+          IconButton(
+            onClick = { viewModel.refreshAllData() },
+            modifier = Modifier.testTag("notifications_refresh_button")
+          ) {
+            Icon(Icons.Default.Refresh, contentDescription = "Sync Notifications")
+          }
+          if (unreadCount > 0) {
             TextButton(
               onClick = { viewModel.markAllNotificationsRead() },
               modifier = Modifier.testTag("mark_all_read_button")
@@ -98,7 +123,6 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
         .fillMaxSize()
         .padding(paddingValues)
     ) {
-      // Filter Tabs
       Row(
         modifier = Modifier
           .fillMaxWidth()
@@ -127,7 +151,7 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
         )
       }
 
-      if (filteredNotifications.isEmpty()) {
+      if (filteredNotifications.isEmpty() && pendingFollowRequesters.isEmpty()) {
         Box(
           modifier = Modifier
             .fillMaxSize()
@@ -151,15 +175,16 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
             }
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-              text = if (filterUnreadOnly) "No unread notifications" else "You're all caught up!",
+              text = if (filterUnreadOnly) "No unread notifications" else "No notifications yet",
               style = MaterialTheme.typography.titleMedium,
               fontWeight = FontWeight.SemiBold
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-              text = "New vibes, comments, and connections will appear here.",
+              text = "Likes, comments, follows, and message alerts from real interactions will appear here.",
               style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              textAlign = TextAlign.Center
             )
           }
         }
@@ -167,13 +192,83 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
         LazyColumn(
           modifier = Modifier.fillMaxSize(),
           contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-          verticalArrangement = Arrangement.spacedBy(8.dp)
+          verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+          if (pendingFollowRequesters.isNotEmpty()) {
+            item {
+              Text(
+                text = "Follow Requests (${pendingFollowRequesters.size})",
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                color = VybeViolet,
+                modifier = Modifier.padding(vertical = 4.dp)
+              )
+            }
+            items(pendingFollowRequesters, key = { "req_${it.id}" }) { requester ->
+              Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.3f)),
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .testTag("follow_request_item_${requester.id}")
+              ) {
+                Row(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  VybeAvatar(
+                    user = requester,
+                    size = 42.dp,
+                    onClick = { viewModel.openUserProfile(requester) }
+                  )
+                  Spacer(modifier = Modifier.width(10.dp))
+                  Column(
+                    modifier = Modifier
+                      .weight(1f)
+                      .clickable { viewModel.openUserProfile(requester) }
+                  ) {
+                    Text(requester.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text(
+                      "@${requester.username} requested to follow you",
+                      fontSize = 11.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                  }
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Button(
+                    onClick = { viewModel.respondToFollowRequest(requester.id, approve = true) },
+                    colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.heightIn(min = 38.dp)
+                  ) {
+                    Text("Approve", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                  }
+                  Spacer(modifier = Modifier.width(6.dp))
+                  OutlinedButton(
+                    onClick = { viewModel.respondToFollowRequest(requester.id, approve = false) },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.heightIn(min = 38.dp)
+                  ) {
+                    Text("Decline", fontSize = 11.sp)
+                  }
+                }
+              }
+            }
+          }
+
           items(filteredNotifications, key = { it.id }) { item ->
             NotificationCard(
               item = item,
               onClick = {
                 viewModel.markNotificationAsRead(item.id)
+                item.actorUser?.let { actor ->
+                  viewModel.openUserProfile(actor)
+                }
               },
               onDelete = {
                 notificationToDelete = item
@@ -185,12 +280,11 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
     }
   }
 
-  // Confirmation Dialog for deletion
   if (notificationToDelete != null) {
     AlertDialog(
       onDismissRequest = { notificationToDelete = null },
       title = { Text("Delete Notification?", fontWeight = FontWeight.Bold) },
-      text = { Text("This notification will be permanently removed from your feed.") },
+      text = { Text("This notification will be removed across all your signed-in devices.") },
       confirmButton = {
         Button(
           onClick = {
@@ -238,7 +332,7 @@ fun NotificationCard(
   Surface(
     shape = RoundedCornerShape(14.dp),
     color = if (!item.isRead) VybeViolet.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-    border = if (!item.isRead) androidx.compose.foundation.BorderStroke(1.dp, VybeViolet.copy(alpha = 0.25f)) else null,
+    border = if (!item.isRead) BorderStroke(1.dp, VybeViolet.copy(alpha = 0.25f)) else null,
     modifier = Modifier
       .fillMaxWidth()
       .clickable { onClick() }
@@ -301,7 +395,7 @@ fun NotificationCard(
 
       IconButton(
         onClick = onDelete,
-        modifier = Modifier.size(32.dp).testTag("delete_notification_${item.id}")
+        modifier = Modifier.size(36.dp).testTag("delete_notification_${item.id}")
       ) {
         Icon(
           imageVector = Icons.Default.Close,

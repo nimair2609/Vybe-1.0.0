@@ -14,12 +14,20 @@ class VybeLocalStore private constructor(context: Context) {
   companion object {
     private const val KEY_POSTS = "saved_posts_json"
     private const val KEY_UNFILTERED = "saved_unfiltered_json"
-    private const val KEY_STORIES = "saved_stories_json"
     private const val KEY_CONVERSATIONS = "saved_conversations_json"
     private const val KEY_NOTIFICATIONS = "saved_notifications_json"
     private const val KEY_FOLLOWING = "saved_following_json"
+    private const val KEY_VIEWED_STORIES = "saved_viewed_stories_json"
+    private const val KEY_VYBE_MATCHES = "saved_vybe_matches_json"
     private const val KEY_USERS = "saved_users_json"
     private const val KEY_GITHUB_REPO = "saved_github_repo"
+    private const val KEY_THEME_MODE = "saved_theme_mode"
+
+    private val LEGACY_SAMPLE_IDS = setOf(
+      "u_me", "u_aarav", "u_priya", "u_vikram",
+      "conv_1", "conv_2",
+      "notif_1", "notif_2", "notif_3", "notif_4", "notif_5", "notif_6", "notif_7", "notif_8"
+    )
 
     @Volatile
     private var instance: VybeLocalStore? = null
@@ -33,6 +41,27 @@ class VybeLocalStore private constructor(context: Context) {
     fun get(): VybeLocalStore? = instance
   }
 
+  fun clearUserScopedCaches() {
+    prefs.edit()
+      .remove(KEY_CONVERSATIONS)
+      .remove(KEY_NOTIFICATIONS)
+      .remove(KEY_FOLLOWING)
+      .remove(KEY_VIEWED_STORIES)
+      .remove(KEY_VYBE_MATCHES)
+      .remove(KEY_POSTS)
+      .apply()
+  }
+
+  // --- Theme Mode ---
+  fun getThemeMode(): AppThemeMode {
+    val raw = prefs.getString(KEY_THEME_MODE, AppThemeMode.DARK.name) ?: AppThemeMode.DARK.name
+    return try { AppThemeMode.valueOf(raw) } catch (_: Exception) { AppThemeMode.DARK }
+  }
+
+  fun setThemeMode(mode: AppThemeMode) {
+    prefs.edit().putString(KEY_THEME_MODE, mode.name).apply()
+  }
+
   // --- GitHub Repo Config for In-App Updates ---
   fun getGitHubRepo(): String {
     return prefs.getString(KEY_GITHUB_REPO, "owner/vybe-app") ?: "owner/vybe-app"
@@ -44,6 +73,7 @@ class VybeLocalStore private constructor(context: Context) {
 
   // --- Saved Users Cache ---
   fun saveUser(user: User) {
+    if (LEGACY_SAMPLE_IDS.contains(user.id)) return
     val users = loadUsers().toMutableList()
     val idx = users.indexOfFirst { it.id == user.id || it.username.equals(user.username, ignoreCase = true) }
     if (idx != -1) {
@@ -54,17 +84,23 @@ class VybeLocalStore private constructor(context: Context) {
     saveUsers(users)
   }
 
+  fun saveAllUsers(users: List<User>) {
+    saveUsers(users.filterNot { LEGACY_SAMPLE_IDS.contains(it.id) })
+  }
+
   fun loadUsers(): List<User> {
     val raw = prefs.getString(KEY_USERS, null) ?: return emptyList()
     return try {
       val array = JSONArray(raw)
       val list = mutableListOf<User>()
       for (i in 0 until array.length()) {
-        val obj = array.getJSONObject(i)
-        list.add(userFromJson(obj))
+        val u = userFromJson(array.getJSONObject(i))
+        if (!LEGACY_SAMPLE_IDS.contains(u.id)) {
+          list.add(u)
+        }
       }
       list
-    } catch (e: Exception) {
+    } catch (_: Exception) {
       emptyList()
     }
   }
@@ -72,7 +108,9 @@ class VybeLocalStore private constructor(context: Context) {
   private fun saveUsers(users: List<User>) {
     val array = JSONArray()
     for (u in users) {
-      array.put(userToJson(u))
+      if (!LEGACY_SAMPLE_IDS.contains(u.id)) {
+        array.put(userToJson(u))
+      }
     }
     prefs.edit().putString(KEY_USERS, array.toString()).apply()
   }
@@ -81,7 +119,9 @@ class VybeLocalStore private constructor(context: Context) {
   fun savePosts(posts: List<Post>) {
     val array = JSONArray()
     for (p in posts) {
-      array.put(postToJson(p))
+      if (!LEGACY_SAMPLE_IDS.contains(p.author.id)) {
+        array.put(postToJson(p))
+      }
     }
     prefs.edit().putString(KEY_POSTS, array.toString()).apply()
   }
@@ -92,10 +132,13 @@ class VybeLocalStore private constructor(context: Context) {
       val array = JSONArray(raw)
       val list = mutableListOf<Post>()
       for (i in 0 until array.length()) {
-        list.add(postFromJson(array.getJSONObject(i)))
+        val p = postFromJson(array.getJSONObject(i))
+        if (!LEGACY_SAMPLE_IDS.contains(p.author.id)) {
+          list.add(p)
+        }
       }
       list
-    } catch (e: Exception) {
+    } catch (_: Exception) {
       emptyList()
     }
   }
@@ -118,7 +161,7 @@ class VybeLocalStore private constructor(context: Context) {
         list.add(postFromJson(array.getJSONObject(i)))
       }
       list
-    } catch (e: Exception) {
+    } catch (_: Exception) {
       emptyList()
     }
   }
@@ -127,7 +170,9 @@ class VybeLocalStore private constructor(context: Context) {
   fun saveConversations(convs: List<Conversation>) {
     val array = JSONArray()
     for (c in convs) {
-      array.put(conversationToJson(c))
+      if (!LEGACY_SAMPLE_IDS.contains(c.id) && !LEGACY_SAMPLE_IDS.contains(c.peerUser.id)) {
+        array.put(conversationToJson(c))
+      }
     }
     prefs.edit().putString(KEY_CONVERSATIONS, array.toString()).apply()
   }
@@ -138,11 +183,59 @@ class VybeLocalStore private constructor(context: Context) {
       val array = JSONArray(raw)
       val list = mutableListOf<Conversation>()
       for (i in 0 until array.length()) {
-        list.add(conversationFromJson(array.getJSONObject(i)))
+        val c = conversationFromJson(array.getJSONObject(i))
+        if (!LEGACY_SAMPLE_IDS.contains(c.id) && !LEGACY_SAMPLE_IDS.contains(c.peerUser.id)) {
+          list.add(c)
+        }
       }
       list
-    } catch (e: Exception) {
+    } catch (_: Exception) {
       emptyList()
+    }
+  }
+
+  // --- Viewed Stories Cache (User-scoped) ---
+  fun saveViewedStoryIds(userId: String, ids: Set<String>) {
+    if (userId.isBlank()) return
+    val array = JSONArray()
+    ids.forEach { array.put(it) }
+    prefs.edit().putString("${KEY_VIEWED_STORIES}_$userId", array.toString()).apply()
+  }
+
+  fun loadViewedStoryIds(userId: String): Set<String> {
+    if (userId.isBlank()) return emptySet()
+    val raw = prefs.getString("${KEY_VIEWED_STORIES}_$userId", null) ?: return emptySet()
+    return try {
+      val array = JSONArray(raw)
+      val set = mutableSetOf<String>()
+      for (i in 0 until array.length()) set.add(array.getString(i))
+      set
+    } catch (_: Exception) {
+      emptySet()
+    }
+  }
+
+  // --- VYBE Matches Cache (User-scoped) ---
+  fun saveVybeMatches(userId: String, ids: Set<String>) {
+    if (userId.isBlank()) return
+    val array = JSONArray()
+    ids.filterNot { LEGACY_SAMPLE_IDS.contains(it) }.forEach { array.put(it) }
+    prefs.edit().putString("${KEY_VYBE_MATCHES}_$userId", array.toString()).apply()
+  }
+
+  fun loadVybeMatches(userId: String): Set<String> {
+    if (userId.isBlank()) return emptySet()
+    val raw = prefs.getString("${KEY_VYBE_MATCHES}_$userId", null) ?: return emptySet()
+    return try {
+      val array = JSONArray(raw)
+      val set = mutableSetOf<String>()
+      for (i in 0 until array.length()) {
+        val id = array.getString(i)
+        if (!LEGACY_SAMPLE_IDS.contains(id)) set.add(id)
+      }
+      set
+    } catch (_: Exception) {
+      emptySet()
     }
   }
 
@@ -161,6 +254,9 @@ class VybeLocalStore private constructor(context: Context) {
       put("phone", u.phone)
       put("role", u.role.name)
       put("isVerified", u.isVerified)
+      put("isVip", u.isVip)
+      put("isPrivate", u.isPrivate)
+      put("messagePrivacy", u.messagePrivacy)
       put("followersCount", u.followersCount)
       put("followingCount", u.followingCount)
       put("postsCount", u.postsCount)
@@ -172,7 +268,7 @@ class VybeLocalStore private constructor(context: Context) {
 
   private fun userFromJson(obj: JSONObject): User {
     val roleStr = obj.optString("role", UserRole.USER.name)
-    val role = try { UserRole.valueOf(roleStr) } catch (e: Exception) { UserRole.USER }
+    val role = try { UserRole.valueOf(roleStr) } catch (_: Exception) { UserRole.USER }
     return User(
       id = obj.optString("id", "u_unknown"),
       username = obj.optString("username", "user"),
@@ -186,6 +282,9 @@ class VybeLocalStore private constructor(context: Context) {
       phone = obj.optString("phone", ""),
       role = role,
       isVerified = obj.optBoolean("isVerified", false),
+      isVip = obj.optBoolean("isVip", false),
+      isPrivate = obj.optBoolean("isPrivate", false),
+      messagePrivacy = obj.optString("messagePrivacy", "EVERYONE"),
       followersCount = obj.optInt("followersCount", 0),
       followingCount = obj.optInt("followingCount", 0),
       postsCount = obj.optInt("postsCount", 0),
@@ -216,6 +315,8 @@ class VybeLocalStore private constructor(context: Context) {
       put("isUnfiltered", p.isUnfiltered)
       put("isVybesReel", p.isVybesReel)
       put("moodZone", p.moodZone?.name)
+      put("locationName", p.locationName)
+      if (p.mediaAspectRatio != null) put("mediaAspectRatio", p.mediaAspectRatio.toDouble())
     }
   }
 
@@ -230,11 +331,13 @@ class VybeLocalStore private constructor(context: Context) {
       }
     }
     val mediaTypeStr = obj.optString("mediaType", MediaType.IMAGE.name)
-    val mediaType = try { MediaType.valueOf(mediaTypeStr) } catch (e: Exception) { MediaType.IMAGE }
+    val mediaType = try { MediaType.valueOf(mediaTypeStr) } catch (_: Exception) { MediaType.IMAGE }
     val moodStr = obj.optString("moodZone", null)
     val mood = if (!moodStr.isNullOrBlank()) {
-      try { MoodType.valueOf(moodStr) } catch (e: Exception) { null }
+      try { MoodType.valueOf(moodStr) } catch (_: Exception) { null }
     } else null
+    val aspect = if (obj.has("mediaAspectRatio")) obj.optDouble("mediaAspectRatio").toFloat() else null
+    val loc = obj.optString("locationName", "").ifBlank { null }
 
     return Post(
       id = obj.optString("id", "p_${System.currentTimeMillis()}"),
@@ -252,7 +355,9 @@ class VybeLocalStore private constructor(context: Context) {
       isSaved = obj.optBoolean("isSaved", false),
       isUnfiltered = obj.optBoolean("isUnfiltered", false),
       isVybesReel = obj.optBoolean("isVybesReel", false),
-      moodZone = mood
+      moodZone = mood,
+      locationName = loc,
+      mediaAspectRatio = aspect
     )
   }
 
@@ -298,7 +403,7 @@ class VybeLocalStore private constructor(context: Context) {
             text = mObj.optString("text", ""),
             timestamp = mObj.optString("timestamp", "Just now"),
             isMe = mObj.optBoolean("isMe", false),
-            mediaUrl = mObj.optString("mediaUrl", null),
+            mediaUrl = mObj.optString("mediaUrl", "").ifBlank { null },
             mediaType = mObj.optString("mediaType", "TEXT"),
             isRead = mObj.optBoolean("isRead", true)
           )
@@ -312,7 +417,7 @@ class VybeLocalStore private constructor(context: Context) {
       lastMessageTimestamp = obj.optString("lastMessageTimestamp", "Just now"),
       unreadCount = obj.optInt("unreadCount", 0),
       isGroup = obj.optBoolean("isGroup", false),
-      groupName = obj.optString("groupName", null),
+      groupName = obj.optString("groupName", "").ifBlank { null },
       messages = msgsList
     )
   }
@@ -321,6 +426,7 @@ class VybeLocalStore private constructor(context: Context) {
   fun saveNotifications(notifications: List<NotificationItem>) {
     val array = JSONArray()
     for (n in notifications) {
+      if (LEGACY_SAMPLE_IDS.contains(n.id)) continue
       val obj = JSONObject().apply {
         put("id", n.id)
         put("type", n.type.name)
@@ -329,6 +435,7 @@ class VybeLocalStore private constructor(context: Context) {
         put("timestamp", n.timestamp)
         put("isRead", n.isRead)
         put("destinationScreen", n.destinationScreen)
+        put("targetEntityId", n.targetEntityId)
         n.actorUser?.let { put("actorUser", userToJson(it)) }
       }
       array.put(obj)
@@ -343,25 +450,28 @@ class VybeLocalStore private constructor(context: Context) {
       val list = mutableListOf<NotificationItem>()
       for (i in 0 until array.length()) {
         val obj = array.getJSONObject(i)
+        val id = obj.optString("id", "")
+        if (LEGACY_SAMPLE_IDS.contains(id)) continue
         val actorObj = obj.optJSONObject("actorUser")
         val actor = if (actorObj != null) userFromJson(actorObj) else null
         val typeStr = obj.optString("type", NotificationType.LIKE.name)
-        val type = try { NotificationType.valueOf(typeStr) } catch (e: Exception) { NotificationType.LIKE }
+        val type = try { NotificationType.valueOf(typeStr) } catch (_: Exception) { NotificationType.LIKE }
         list.add(
           NotificationItem(
-            id = obj.optString("id", "notif_${System.currentTimeMillis()}"),
+            id = id.ifBlank { "notif_${System.currentTimeMillis()}" },
             type = type,
             title = obj.optString("title", ""),
             message = obj.optString("message", ""),
             timestamp = obj.optString("timestamp", "Just now"),
             isRead = obj.optBoolean("isRead", false),
             actorUser = actor,
-            destinationScreen = obj.optString("destinationScreen", "MAIN")
+            destinationScreen = obj.optString("destinationScreen", "MAIN"),
+            targetEntityId = obj.optString("targetEntityId", "").ifBlank { null }
           )
         )
       }
       list
-    } catch (e: Exception) {
+    } catch (_: Exception) {
       emptyList()
     }
   }
@@ -370,7 +480,7 @@ class VybeLocalStore private constructor(context: Context) {
   fun saveFollowing(followingIds: Set<String>) {
     val array = JSONArray()
     for (id in followingIds) {
-      array.put(id)
+      if (!LEGACY_SAMPLE_IDS.contains(id)) array.put(id)
     }
     prefs.edit().putString(KEY_FOLLOWING, array.toString()).apply()
   }
@@ -381,12 +491,12 @@ class VybeLocalStore private constructor(context: Context) {
       val array = JSONArray(raw)
       val set = mutableSetOf<String>()
       for (i in 0 until array.length()) {
-        set.add(array.getString(i))
+        val id = array.getString(i)
+        if (!LEGACY_SAMPLE_IDS.contains(id)) set.add(id)
       }
       set
-    } catch (e: Exception) {
+    } catch (_: Exception) {
       emptySet()
     }
   }
 }
-

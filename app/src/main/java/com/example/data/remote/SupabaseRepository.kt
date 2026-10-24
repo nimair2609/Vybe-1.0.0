@@ -1,24 +1,54 @@
 package com.example.data.remote
 
 import android.util.Log
+import com.example.data.model.Conversation
+import com.example.data.model.DirectMessage
 import com.example.data.model.MediaType
+import com.example.data.model.MessageStatus
 import com.example.data.model.MoodType
+import com.example.data.model.NotificationItem
 import com.example.data.model.Post
+import com.example.data.model.PostComment
+import com.example.data.model.Story
+import com.example.data.model.StoryAudience
+import com.example.data.model.StoryMediaType
 import com.example.data.model.User
 import com.example.data.model.UserRole
+import com.example.data.model.VybeReaction
+import com.example.data.session.SessionManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+
+data class AuthSessionPayload(
+  val user: User,
+  val accessToken: String,
+  val refreshToken: String,
+  val expiresInSeconds: Long
+)
+
+data class UploadedStorageMedia(
+  val url: String,
+  val storagePath: String
+)
 
 /**
- * Supabase Data Repository for VYBE.
+ * Production Supabase Data Repository for VYBE.
  *
- * Implements real GoTrue REST authentication (signup, email/password login,
- * in-app OTP verification, password recovery/reset, and session logout)
- * and PostgREST profile operations.
+ * Fixes:
+ * - Never sends `sb_publishable_*` keys inside `Authorization: Bearer ...` (uses `SupabaseConfig.buildAuthHeader`).
+ * - Supports automatic session token refresh when JWT expires.
+ * - Implements full GoTrue password recovery link/token verification, password update, and recovery sign-out.
+ * - Uploads photos & videos with real byte progress % and signed/public URL resolution + Storage object cleanup on delete.
+ * - Syncs profiles, posts, stories, story_views, vybe_matches, follows (with private approval), conversations, messages, and notifications.
  */
 class SupabaseRepository {
 
@@ -38,8 +68,56 @@ class SupabaseRepository {
     get() = SupabaseConfig.isConfigured()
 
   /**
-   * Registers a new user with email and password via Supabase Auth.
+   * Resolves a fresh valid JWT access token from explicit parameter or SessionManager,
+   * refreshing via refresh_token automatically if within 60 seconds of expiry.
    */
+  suspend fun resolveValidAccessToken(explicitToken: String? = null): String? {
+    if (!explicitToken.isNullOrBlank() && SupabaseConfig.isJwtAccessToken(explicitToken)) {
+      return explicitToken.trim()
+    }
+    val sm = SessionManager.get() ?: return null
+    val currentToken = sm.accessToken
+    val refreshToken = sm.refreshToken
+    val expiresAt = sm.expiresAtMs
+
+    if (!currentToken.isNullOrBlank() && SupabaseConfig.isJwtAccessToken(currentToken)) {
+      val needsRefresh = expiresAt > 0L && System.currentTimeMillis() > (expiresAt - 60_000L)
+      if (!needsRefresh) {
+        return currentToken
+      }
+    }
+
+    if (!refreshToken.isNullOrBlank()) {
+      try {
+        val resp = SupabaseNetworkClient.authApi.refreshSession(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          request = SupabaseRefreshTokenRequest(refreshToken = refreshToken)
+        )
+        if (resp.isSuccessful && resp.body()?.accessToken != null) {
+          val body = resp.body()!!
+          val freshAccess = body.accessToken!!
+          val freshRefresh = body.refreshToken ?: refreshToken
+          val expiresIn = body.expiresIn ?: 3600L
+          sm.updateTokens(freshAccess, freshRefresh, expiresIn)
+          return freshAccess
+        }
+      } catch (e: Exception) {
+        Log.w(TAG, "Token refresh warning: ${e.message}")
+      }
+    }
+
+    return if (SupabaseConfig.isJwtAccessToken(currentToken)) currentToken else null
+  }
+
+  private suspend fun authHeaderFor(explicitToken: String? = null): String? {
+    val validJwt = resolveValidAccessToken(explicitToken)
+    return SupabaseConfig.buildAuthHeader(validJwt)
+  }
+
+  // =========================================================================
+  // 1. AUTHENTICATION & SECURE PASSWORD RECOVERY
+  // =========================================================================
+
   suspend fun signUpWithEmail(
     username: String,
     email: String,
@@ -48,11 +126,9 @@ class SupabaseRepository {
     lastName: String,
     phone: String,
     dateOfBirth: String
-  ): Result<Pair<User, String>> = withContext(Dispatchers.IO) {
+  ): Result<AuthSessionPayload> = withContext(Dispatchers.IO) {
     if (!isConfigured) {
-      return@withContext Result.failure(
-        IllegalStateException("Supabase backend is not configured.")
-      )
+      return@withContext Result.failure(IllegalStateException("Supabase backend is not configured."))
     }
 
     try {
@@ -67,26 +143,27 @@ class SupabaseRepository {
         "date_of_birth" to dateOfBirth
       )
 
-      val request = SupabaseSignUpRequest(
-        email = email.trim(),
-        password = password,
-        data = metadata
-      )
-
       val response = SupabaseNetworkClient.authApi.signUp(
         apiKey = SupabaseConfig.supabaseAnonKey,
         redirectTo = "vybe://auth-callback",
-        request = request
+        request = SupabaseSignUpRequest(
+          email = email.trim(),
+          password = password,
+          data = metadata
+        )
       )
 
       if (response.isSuccessful && response.body() != null) {
         val authBody = response.body()!!
         val userDto = authBody.user ?: return@withContext Result.failure(
-          Exception(authBody.msg ?: authBody.errorDescription ?: "Sign up succeeded but user record was not returned.")
+          Exception(authBody.msg ?: authBody.errorDescription ?: "Sign up succeeded, please check your email to verify.")
         )
 
         val age = calculateAge(dateOfBirth)
         val isUnder18 = age in 16..17
+        val token = authBody.accessToken ?: ""
+        val refresh = authBody.refreshToken ?: ""
+        val expiresIn = authBody.expiresIn ?: 3600L
 
         val createdUser = User(
           id = userDto.id,
@@ -96,7 +173,7 @@ class SupabaseRepository {
           lastName = lastName,
           email = email.trim(),
           phone = phone,
-          isEmailVerified = false,
+          isEmailVerified = !userDto.emailConfirmedAt.isNullOrBlank(),
           isPhoneVerified = false,
           dateOfBirth = dateOfBirth,
           age = age,
@@ -105,10 +182,7 @@ class SupabaseRepository {
           isOnboardingCompleted = false
         )
 
-        val token = authBody.accessToken ?: ""
-
-        // Try creating / upserting profile in public.profiles if token is present
-        if (token.isNotEmpty()) {
+        if (SupabaseConfig.isJwtAccessToken(token)) {
           try {
             val profileDto = SupabaseProfileDto(
               id = userDto.id,
@@ -129,103 +203,87 @@ class SupabaseRepository {
               profile = profileDto
             )
           } catch (e: Exception) {
-            Log.w(TAG, "Profile upsert notice (trigger handles): ${e.message}")
+            Log.w(TAG, "Profile upsert notice (auth trigger handles): ${e.message}")
           }
         }
 
-        Result.success(Pair(createdUser, token))
+        Result.success(AuthSessionPayload(createdUser, token, refresh, expiresIn))
       } else {
         val errorBody = response.errorBody()?.string() ?: ""
-        val errorMsg = parseErrorMessage(errorBody, "Sign up failed (${response.code()})")
-        Result.failure(Exception(errorMsg))
+        Result.failure(Exception(parseErrorMessage(errorBody, "Sign up failed (${response.code()})")))
       }
     } catch (e: Exception) {
       Log.e(TAG, "Sign up exception: ${e.message}", e)
-      Result.failure(e)
+      Result.failure(Exception(friendlyNetworkMessage(e, "Unable to complete sign up.")))
     }
   }
 
-  /**
-   * Signs in an existing user with email and password via Supabase Auth.
-   */
   suspend fun signInWithEmail(
     email: String,
     password: String
-  ): Result<Pair<User, String>> = withContext(Dispatchers.IO) {
+  ): Result<AuthSessionPayload> = withContext(Dispatchers.IO) {
     if (!isConfigured) {
-      return@withContext Result.failure(
-        IllegalStateException("Supabase backend is not configured.")
-      )
+      return@withContext Result.failure(IllegalStateException("Supabase backend is not configured."))
     }
 
     try {
-      val request = SupabaseSignInRequest(
-        email = email.trim(),
-        password = password
-      )
-
       val response = SupabaseNetworkClient.authApi.signIn(
         apiKey = SupabaseConfig.supabaseAnonKey,
-        request = request
+        request = SupabaseSignInRequest(email = email.trim(), password = password)
       )
 
       if (response.isSuccessful && response.body() != null) {
         val authBody = response.body()!!
         val token = authBody.accessToken ?: return@withContext Result.failure(
-          Exception("No access token returned from Supabase. (Email may not be confirmed yet)")
+          Exception("No access token returned. Please verify your email address first.")
         )
+        val refresh = authBody.refreshToken ?: ""
+        val expiresIn = authBody.expiresIn ?: 3600L
         val userDto = authBody.user ?: return@withContext Result.failure(
-          Exception("No user record returned from Supabase.")
+          Exception("No user account returned from Supabase.")
         )
 
         var userProfile = fetchUserProfile(userDto.id, token, userDto.email ?: email.trim())
-
         if (userProfile == null) {
-          val meta = userDto.userMetadata ?: emptyMap()
-          val username = (meta["username"] as? String) ?: email.substringBefore("@")
-          val displayName = (meta["display_name"] as? String) ?: username
-          val firstName = (meta["first_name"] as? String) ?: ""
-          val lastName = (meta["last_name"] as? String) ?: ""
-          val phone = (meta["phone"] as? String) ?: userDto.phone ?: ""
-          val dob = (meta["date_of_birth"] as? String) ?: "2000-01-01"
-          val age = calculateAge(dob)
-
-          userProfile = User(
-            id = userDto.id,
-            username = username,
-            displayName = displayName,
-            firstName = firstName,
-            lastName = lastName,
-            email = userDto.email ?: email.trim(),
-            phone = phone,
-            dateOfBirth = dob,
-            age = age,
-            isUnder18 = age in 16..17,
-            role = UserRole.USER,
-            isOnboardingCompleted = true
-          )
+          userProfile = buildFallbackUserFromAuthDto(userDto, email.trim())
+          // Ensure public.profiles row exists for accounts created outside standard flow
+          try {
+            SupabaseNetworkClient.restApi.upsertProfile(
+              apiKey = SupabaseConfig.supabaseAnonKey,
+              authHeader = "Bearer $token",
+              profile = SupabaseProfileDto(
+                id = userProfile.id,
+                username = userProfile.username,
+                displayName = userProfile.displayName,
+                firstName = userProfile.firstName,
+                lastName = userProfile.lastName,
+                email = userProfile.email,
+                phone = userProfile.phone,
+                dateOfBirth = userProfile.dateOfBirth,
+                age = userProfile.age,
+                isUnder18 = userProfile.isUnder18,
+                role = "USER"
+              )
+            )
+          } catch (_: Exception) {}
         }
 
-        Result.success(Pair(userProfile, token))
+        Result.success(AuthSessionPayload(userProfile, token, refresh, expiresIn))
       } else {
         val errorBody = response.errorBody()?.string() ?: ""
-        val errorMsg = parseErrorMessage(errorBody, "Invalid login credentials (${response.code()})")
-        Result.failure(Exception(errorMsg))
+        Result.failure(Exception(parseErrorMessage(errorBody, "Invalid email or password.")))
       }
     } catch (e: Exception) {
       Log.e(TAG, "Sign in exception: ${e.message}", e)
-      Result.failure(e)
+      Result.failure(Exception(friendlyNetworkMessage(e, "Unable to sign in. Check your internet connection.")))
     }
   }
 
-  /**
-   * Verifies an email or recovery OTP code directly in-app without requiring browser redirects.
-   */
   suspend fun verifyOtp(
     email: String,
     token: String,
     type: String = "signup"
-  ): Result<Pair<User, String>> = withContext(Dispatchers.IO) {
+  ): Result<AuthSessionPayload> = withContext(Dispatchers.IO) {
     if (!isConfigured) {
       return@withContext Result.failure(IllegalStateException("Supabase not configured."))
     }
@@ -233,7 +291,7 @@ class SupabaseRepository {
       val request = SupabaseVerifyOtpRequest(
         type = type,
         token = token.trim(),
-        email = email.trim()
+        email = email.trim().ifBlank { null }
       )
       val response = SupabaseNetworkClient.authApi.verifyOtp(
         apiKey = SupabaseConfig.supabaseAnonKey,
@@ -242,124 +300,186 @@ class SupabaseRepository {
       if (response.isSuccessful && response.body() != null) {
         val authBody = response.body()!!
         val accessToken = authBody.accessToken ?: return@withContext Result.failure(
-          Exception("OTP verified, but session token was empty.")
+          Exception("Verification succeeded, but session token was empty.")
         )
+        val refresh = authBody.refreshToken ?: ""
+        val expiresIn = authBody.expiresIn ?: 3600L
         val userDto = authBody.user ?: return@withContext Result.failure(
-          Exception("OTP verified, but user data was missing.")
+          Exception("Verification succeeded, but user account details were missing.")
         )
 
-        var userProfile = fetchUserProfile(userDto.id, accessToken, userDto.email ?: email.trim())
+        val userProfile = fetchUserProfile(userDto.id, accessToken, userDto.email ?: email.trim())
+          ?: buildFallbackUserFromAuthDto(userDto, email.trim())
 
-        if (userProfile == null) {
-          val meta = userDto.userMetadata ?: emptyMap()
-          val username = (meta["username"] as? String) ?: email.substringBefore("@")
-          val displayName = (meta["display_name"] as? String) ?: username
-          val firstName = (meta["first_name"] as? String) ?: ""
-          val lastName = (meta["last_name"] as? String) ?: ""
-          val phone = (meta["phone"] as? String) ?: userDto.phone ?: ""
-          val dob = (meta["date_of_birth"] as? String) ?: "2000-01-01"
-          val age = calculateAge(dob)
-
-          userProfile = User(
-            id = userDto.id,
-            username = username,
-            displayName = displayName,
-            firstName = firstName,
-            lastName = lastName,
-            email = userDto.email ?: email.trim(),
-            phone = phone,
-            dateOfBirth = dob,
-            age = age,
-            isUnder18 = age in 16..17,
-            role = UserRole.USER,
-            isOnboardingCompleted = true
-          )
-        }
-
-        Result.success(Pair(userProfile, accessToken))
+        Result.success(AuthSessionPayload(userProfile, accessToken, refresh, expiresIn))
       } else {
         val errorBody = response.errorBody()?.string() ?: ""
-        val errorMsg = parseErrorMessage(errorBody, "Invalid or expired verification code.")
-        Result.failure(Exception(errorMsg))
+        Result.failure(Exception(parseErrorMessage(errorBody, "Invalid or expired verification token.")))
       }
     } catch (e: Exception) {
-      Result.failure(e)
+      Result.failure(Exception(friendlyNetworkMessage(e, "Network error while verifying token.")))
     }
   }
 
   /**
-   * Sends a password reset request via Supabase Auth.
+   * Step 1 & 2 of Forgot Password:
+   * Requests Supabase Auth to send a secure password-recovery email link to `vybe://reset-password`.
    */
   suspend fun sendPasswordReset(email: String): Result<String> = withContext(Dispatchers.IO) {
     if (!isConfigured) {
       return@withContext Result.failure(IllegalStateException("Supabase not configured."))
     }
+    val cleanEmail = email.trim()
+    if (cleanEmail.isBlank() || !cleanEmail.contains("@")) {
+      return@withContext Result.failure(IllegalArgumentException("Please enter a valid registered email address."))
+    }
     try {
-      val request = SupabaseRecoverPasswordRequest(email = email.trim())
       val response = SupabaseNetworkClient.authApi.recoverPassword(
         apiKey = SupabaseConfig.supabaseAnonKey,
         redirectTo = "vybe://reset-password",
-        request = request
+        request = SupabaseRecoverPasswordRequest(email = cleanEmail)
       )
       if (response.isSuccessful) {
-        Result.success("Password reset code sent to $email. Please check your inbox.")
+        Result.success("Recovery link sent to $cleanEmail. Open the link in your email to securely reset your password.")
       } else {
         val errorBody = response.errorBody()?.string() ?: ""
-        val errorMsg = parseErrorMessage(errorBody, "Failed to send password reset request.")
-        Result.failure(Exception(errorMsg))
+        Result.failure(Exception(parseErrorMessage(errorBody, "Unable to send password recovery email.")))
       }
     } catch (e: Exception) {
-      Result.failure(e)
+      Result.failure(Exception(friendlyNetworkMessage(e, "Network error while requesting password recovery.")))
     }
   }
 
   /**
-   * Resets the user's password using the OTP code received in email.
+   * Step 4 & 5 of Forgot Password:
+   * Securely validates a recovery deep link's `access_token` OR `token_hash` / `token` against Supabase Auth
+   * before allowing password entry. Returns `(validatedAccessToken, verifiedEmail)`.
    */
-  suspend fun resetPasswordWithOtp(
-    email: String,
-    otp: String,
+  suspend fun validateRecoverySession(
+    accessTokenFromLink: String? = null,
+    tokenHashFromLink: String? = null,
+    tokenFromInput: String? = null,
+    emailHint: String? = null
+  ): Result<Pair<String, String>> = withContext(Dispatchers.IO) {
+    if (!isConfigured) {
+      return@withContext Result.failure(IllegalStateException("Supabase not configured."))
+    }
+    try {
+      // Path A: Deep link already carries #access_token=...&type=recovery -> validate live against /auth/v1/user
+      if (!accessTokenFromLink.isNullOrBlank() && SupabaseConfig.isJwtAccessToken(accessTokenFromLink)) {
+        val cleanJwt = accessTokenFromLink.trim()
+        val userResp = SupabaseNetworkClient.authApi.getUser(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = "Bearer $cleanJwt"
+        )
+        if (userResp.isSuccessful && userResp.body() != null) {
+          val verifiedUser = userResp.body()!!
+          return@withContext Result.success(Pair(cleanJwt, verifiedUser.email ?: emailHint.orEmpty()))
+        } else {
+          val err = parseErrorMessage(
+            userResp.errorBody()?.string().orEmpty(),
+            "This password recovery link has expired or is invalid. Please request a new link."
+          )
+          return@withContext Result.failure(Exception(err))
+        }
+      }
+
+      // Path B: PKCE / token_hash link (?token_hash=...&type=recovery)
+      if (!tokenHashFromLink.isNullOrBlank()) {
+        val verifyResp = SupabaseNetworkClient.authApi.verifyOtp(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          request = SupabaseVerifyOtpRequest(
+            type = "recovery",
+            tokenHash = tokenHashFromLink.trim()
+          )
+        )
+        if (verifyResp.isSuccessful && !verifyResp.body()?.accessToken.isNullOrBlank()) {
+          val body = verifyResp.body()!!
+          return@withContext Result.success(Pair(body.accessToken!!, body.user?.email ?: emailHint.orEmpty()))
+        } else {
+          val err = parseErrorMessage(
+            verifyResp.errorBody()?.string().orEmpty(),
+            "This password recovery link has expired or has already been used."
+          )
+          return@withContext Result.failure(Exception(err))
+        }
+      }
+
+      // Path C: Explicit token + email verification (when Supabase email template includes a recovery token)
+      if (!tokenFromInput.isNullOrBlank()) {
+        val verifyReq = if (emailHint.isNullOrBlank()) {
+          SupabaseVerifyOtpRequest(type = "recovery", tokenHash = tokenFromInput.trim())
+        } else {
+          SupabaseVerifyOtpRequest(type = "recovery", token = tokenFromInput.trim(), email = emailHint.trim())
+        }
+        val verifyResp = SupabaseNetworkClient.authApi.verifyOtp(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          request = verifyReq
+        )
+        if (verifyResp.isSuccessful && !verifyResp.body()?.accessToken.isNullOrBlank()) {
+          val body = verifyResp.body()!!
+          return@withContext Result.success(Pair(body.accessToken!!, body.user?.email ?: emailHint.orEmpty()))
+        } else {
+          val err = parseErrorMessage(
+            verifyResp.errorBody()?.string().orEmpty(),
+            "Invalid or expired recovery token. Please open the latest recovery email link."
+          )
+          return@withContext Result.failure(Exception(err))
+        }
+      }
+
+      Result.failure(Exception("Missing recovery token. Please open the password reset link from your email."))
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Network failure while validating recovery session.")))
+    }
+  }
+
+  /**
+   * Step 8 & 9 of Forgot Password:
+   * Updates the password using the validated recovery token and immediately revokes the recovery session
+   * so the user returns safely to the Login screen.
+   */
+  suspend fun completePasswordRecovery(
+    validatedRecoveryToken: String,
     newPassword: String
   ): Result<String> = withContext(Dispatchers.IO) {
     if (!isConfigured) {
       return@withContext Result.failure(IllegalStateException("Supabase not configured."))
     }
+    if (!SupabaseConfig.isJwtAccessToken(validatedRecoveryToken)) {
+      return@withContext Result.failure(Exception("Recovery session is invalid or expired. Please request a new reset link."))
+    }
     try {
-      val verifyReq = SupabaseVerifyOtpRequest(
-        type = "recovery",
-        token = otp.trim(),
-        email = email.trim()
-      )
-      val verifyResp = SupabaseNetworkClient.authApi.verifyOtp(
-        apiKey = SupabaseConfig.supabaseAnonKey,
-        request = verifyReq
-      )
-      if (!verifyResp.isSuccessful || verifyResp.body()?.accessToken == null) {
-        val err = parseErrorMessage(verifyResp.errorBody()?.string() ?: "", "Invalid or expired recovery code.")
-        return@withContext Result.failure(Exception(err))
-      }
-
-      val token = verifyResp.body()!!.accessToken!!
-      val updateReq = SupabaseUpdateUserRequest(password = newPassword)
       val updateResp = SupabaseNetworkClient.authApi.updateUser(
         apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = "Bearer $token",
-        request = updateReq
+        authHeader = "Bearer ${validatedRecoveryToken.trim()}",
+        request = SupabaseUpdateUserRequest(password = newPassword)
       )
-
       if (updateResp.isSuccessful) {
-        Result.success("Password reset successfully! Please log in with your new password.")
+        // Safely terminate the recovery session on Supabase Auth
+        try {
+          SupabaseNetworkClient.authApi.logout(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = "Bearer ${validatedRecoveryToken.trim()}"
+          )
+        } catch (_: Exception) {}
+        Result.success("Your password has been updated. Please sign in with your new password.")
       } else {
-        val err = parseErrorMessage(updateResp.errorBody()?.string() ?: "", "Failed to update password.")
-        Result.failure(Exception(err))
+        val rawErr = updateResp.errorBody()?.string().orEmpty()
+        val msg = when (updateResp.code()) {
+          401, 403 -> "Your recovery session expired. Please request a new password reset email."
+          422 -> parseErrorMessage(rawErr, "New password must be different and meet security requirements.")
+          else -> parseErrorMessage(rawErr, "Failed to update password (${updateResp.code()}).")
+        }
+        Result.failure(Exception(msg))
       }
     } catch (e: Exception) {
-      Result.failure(e)
+      Result.failure(Exception(friendlyNetworkMessage(e, "Network failure while updating password.")))
     }
   }
 
   suspend fun signOut(accessToken: String): Boolean = withContext(Dispatchers.IO) {
-    if (!isConfigured || accessToken.isEmpty()) return@withContext true
+    if (!isConfigured || !SupabaseConfig.isJwtAccessToken(accessToken)) return@withContext true
     try {
       val response = SupabaseNetworkClient.authApi.logout(
         apiKey = SupabaseConfig.supabaseAnonKey,
@@ -367,86 +487,46 @@ class SupabaseRepository {
       )
       response.isSuccessful
     } catch (e: Exception) {
-      Log.w(TAG, "Sign out network call error: ${e.message}")
+      Log.w(TAG, "Sign out network call warning: ${e.message}")
       true
     }
   }
 
-  private fun calculateAge(dateOfBirth: String): Int {
-    return try {
-      val parts = dateOfBirth.split("-")
-      if (parts.size == 3) {
-        val y = parts[0].toInt()
-        val m = parts[1].toInt()
-        val d = parts[2].toInt()
-        val cal = java.util.Calendar.getInstance()
-        val cy = cal.get(java.util.Calendar.YEAR)
-        val cm = cal.get(java.util.Calendar.MONTH) + 1
-        val cd = cal.get(java.util.Calendar.DAY_OF_MONTH)
-        var calculated = cy - y
-        if (cm < m || (cm == m && cd < d)) calculated--
-        calculated
-      } else 20
-    } catch (e: Exception) {
-      20
-    }
-  }
+  // =========================================================================
+  // 2. PROFILES, PRIVACY & SOCIAL GRAPH
+  // =========================================================================
 
-  private fun parseErrorMessage(jsonBody: String, fallback: String): String {
-    if (jsonBody.isBlank()) return fallback
-    return try {
-      val json = JSONObject(jsonBody)
-      when {
-        json.has("error_description") -> json.getString("error_description")
-        json.has("msg") -> json.getString("msg")
-        json.has("message") -> json.getString("message")
-        json.has("error") -> json.getString("error")
-        else -> fallback
-      }
-    } catch (e: Exception) {
-      fallback
-    }
-  }
-
-  suspend fun updateUserProfile(
-    userId: String,
-    firstName: String,
-    lastName: String,
-    displayName: String,
-    bio: String,
-    avatarUrl: String,
-    coverUrl: String,
-    accessToken: String = ""
-  ): Result<Unit> = withContext(Dispatchers.IO) {
-    if (!isConfigured) return@withContext Result.success(Unit)
-    try {
-      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
-      val dto = SupabaseProfileDto(
-        id = userId,
-        username = "",
-        displayName = displayName,
-        firstName = firstName,
-        lastName = lastName,
-        bio = bio,
-        avatarUrl = avatarUrl,
-        coverUrl = coverUrl
-      )
-      val resp = SupabaseNetworkClient.restApi.upsertProfile(
-        apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = authHeader,
-        profile = dto
-      )
-      if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to update profile"))
-    } catch (e: Exception) {
-      Result.failure(e)
-    }
+  private fun buildFallbackUserFromAuthDto(userDto: SupabaseUserDto, fallbackEmail: String): User {
+    val meta = userDto.userMetadata ?: emptyMap()
+    val username = (meta["username"] as? String) ?: fallbackEmail.substringBefore("@").lowercase()
+    val displayName = (meta["display_name"] as? String) ?: username
+    val firstName = (meta["first_name"] as? String) ?: ""
+    val lastName = (meta["last_name"] as? String) ?: ""
+    val phone = (meta["phone"] as? String) ?: userDto.phone ?: ""
+    val dob = (meta["date_of_birth"] as? String) ?: "2000-01-01"
+    val age = calculateAge(dob)
+    return User(
+      id = userDto.id,
+      username = username,
+      displayName = displayName,
+      firstName = firstName,
+      lastName = lastName,
+      email = userDto.email ?: fallbackEmail,
+      phone = phone,
+      isEmailVerified = !userDto.emailConfirmedAt.isNullOrBlank(),
+      dateOfBirth = dob,
+      age = age,
+      isUnder18 = age in 16..17,
+      role = UserRole.USER,
+      isOnboardingCompleted = true
+    )
   }
 
   fun mapProfileDtoToUser(p: SupabaseProfileDto, fallbackEmail: String? = null): User {
     val rawRole = (p.role ?: "USER").trim().uppercase()
     val parsedRole = try {
       UserRole.valueOf(rawRole)
-    } catch (e: Exception) {
+    } catch (_: Exception) {
       UserRole.USER
     }
     val isAdmin = parsedRole == UserRole.ADMIN
@@ -454,7 +534,7 @@ class SupabaseRepository {
     return User(
       id = p.id,
       username = p.username,
-      displayName = p.displayName,
+      displayName = p.displayName.ifBlank { p.username },
       firstName = p.firstName ?: "",
       lastName = p.lastName ?: "",
       email = p.email ?: fallbackEmail ?: "",
@@ -468,6 +548,8 @@ class SupabaseRepository {
       role = parsedRole,
       isVerified = if (isAdmin) true else (p.isVerified ?: false),
       isVip = if (isAdmin) true else (p.isVip ?: false),
+      isPrivate = p.isPrivateAccount ?: false,
+      messagePrivacy = p.messagePrivacy ?: "EVERYONE",
       followersCount = p.followersCount ?: 0,
       followingCount = p.followingCount ?: 0,
       postsCount = p.postsCount ?: 0,
@@ -477,10 +559,8 @@ class SupabaseRepository {
 
   suspend fun fetchUserProfile(userId: String, token: String? = null, email: String? = null): User? = withContext(Dispatchers.IO) {
     if (!isConfigured) return@withContext null
-    val authToken = if (!token.isNullOrBlank()) token else SupabaseConfig.supabaseAnonKey
-    val authHeader = "Bearer $authToken"
+    val authHeader = authHeaderFor(token)
 
-    // 1. Primary lookup: by ID
     try {
       val resp = SupabaseNetworkClient.restApi.getProfileById(
         apiKey = SupabaseConfig.supabaseAnonKey,
@@ -494,7 +574,6 @@ class SupabaseRepository {
       Log.w(TAG, "getProfileById failed: ${e.message}")
     }
 
-    // 2. Secondary lookup: by Email if provided
     if (!email.isNullOrBlank()) {
       try {
         val emailResp = SupabaseNetworkClient.restApi.getProfileByEmail(
@@ -509,8 +588,94 @@ class SupabaseRepository {
         Log.w(TAG, "getProfileByEmail failed: ${e.message}")
       }
     }
-
     return@withContext null
+  }
+
+  suspend fun updateUserProfile(
+    userId: String,
+    firstName: String,
+    lastName: String,
+    displayName: String,
+    bio: String,
+    avatarUrl: String,
+    coverUrl: String,
+    isPrivate: Boolean? = null,
+    messagePrivacy: String? = null,
+    accessToken: String = ""
+  ): Result<User?> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(null)
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Authentication required to edit profile."))
+    try {
+      val patch = SupabaseProfilePatchDto(
+        displayName = displayName,
+        firstName = firstName,
+        lastName = lastName,
+        bio = bio,
+        avatarUrl = avatarUrl,
+        coverUrl = coverUrl,
+        isPrivateAccount = isPrivate,
+        messagePrivacy = messagePrivacy
+      )
+      var resp = SupabaseNetworkClient.restApi.patchProfile(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        idFilter = "eq.$userId",
+        patch = patch
+      )
+      // Fallback if message_privacy column is not yet migrated in live DB
+      if (!resp.isSuccessful && resp.code() == 400 && messagePrivacy != null) {
+        resp = SupabaseNetworkClient.restApi.patchProfile(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          idFilter = "eq.$userId",
+          patch = patch.copy(messagePrivacy = null)
+        )
+      }
+      if (resp.isSuccessful) {
+        val updated = resp.body()?.firstOrNull()?.let { mapProfileDtoToUser(it) }
+        Result.success(updated)
+      } else {
+        val err = parseErrorMessage(resp.errorBody()?.string().orEmpty(), "Failed to update profile.")
+        Result.failure(Exception(err))
+      }
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Failed to save profile changes.")))
+    }
+  }
+
+  suspend fun updateProfilePrivacy(
+    userId: String,
+    isPrivate: Boolean,
+    messagePrivacy: String? = null,
+    accessToken: String = ""
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Authentication required."))
+    try {
+      var resp = SupabaseNetworkClient.restApi.patchProfile(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        idFilter = "eq.$userId",
+        patch = SupabaseProfilePatchDto(
+          isPrivateAccount = isPrivate,
+          messagePrivacy = messagePrivacy
+        )
+      )
+      if (!resp.isSuccessful && resp.code() == 400 && messagePrivacy != null) {
+        resp = SupabaseNetworkClient.restApi.patchProfile(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          idFilter = "eq.$userId",
+          patch = SupabaseProfilePatchDto(isPrivateAccount = isPrivate)
+        )
+      }
+      if (resp.isSuccessful) Result.success(Unit)
+      else Result.failure(Exception("Failed to update privacy settings (${resp.code()})."))
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Unable to update privacy settings.")))
+    }
   }
 
   suspend fun checkUsernameAvailable(username: String): Boolean = withContext(Dispatchers.IO) {
@@ -518,16 +683,15 @@ class SupabaseRepository {
     try {
       val resp = SupabaseNetworkClient.restApi.getProfileByUsername(
         apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = "Bearer ${SupabaseConfig.supabaseAnonKey}",
+        authHeader = authHeaderFor(),
         usernameFilter = "eq.${username.trim().lowercase()}"
       )
       if (resp.isSuccessful) {
-        val list = resp.body() ?: emptyList()
-        list.isEmpty()
+        (resp.body() ?: emptyList()).isEmpty()
       } else {
         true
       }
-    } catch (e: Exception) {
+    } catch (_: Exception) {
       true
     }
   }
@@ -538,13 +702,13 @@ class SupabaseRepository {
     val clean = trimmed.lowercase().removePrefix("@")
     if (clean.contains("@")) return@withContext clean
 
+    val authHeader = authHeaderFor()
     val phoneClean = trimmed.replace(" ", "").replace("-", "")
 
-    // Try username
     try {
       val resp = SupabaseNetworkClient.restApi.getProfileByUsername(
         apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = "Bearer ${SupabaseConfig.supabaseAnonKey}",
+        authHeader = authHeader,
         usernameFilter = "eq.$clean"
       )
       if (resp.isSuccessful && !resp.body().isNullOrEmpty()) {
@@ -552,14 +716,13 @@ class SupabaseRepository {
         if (!em.isNullOrBlank()) return@withContext em
       }
     } catch (e: Exception) {
-      Log.w(TAG, "Username resolution error: ${e.message}")
+      Log.w(TAG, "Username resolution warning: ${e.message}")
     }
 
-    // Try phone
     try {
       val phoneResp = SupabaseNetworkClient.restApi.getProfileByPhone(
         apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = "Bearer ${SupabaseConfig.supabaseAnonKey}",
+        authHeader = authHeader,
         phoneFilter = "eq.$trimmed"
       )
       if (phoneResp.isSuccessful && !phoneResp.body().isNullOrEmpty()) {
@@ -567,69 +730,1325 @@ class SupabaseRepository {
         if (!em.isNullOrBlank()) return@withContext em
       }
     } catch (e: Exception) {
-      Log.w(TAG, "Phone resolution error: ${e.message}")
+      Log.w(TAG, "Phone resolution warning: ${e.message}")
     }
 
-    // Fallback: search all profiles for matching username, phone or id
     try {
       val allResp = SupabaseNetworkClient.restApi.getProfiles(
         apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = "Bearer ${SupabaseConfig.supabaseAnonKey}"
+        authHeader = authHeader
       )
       if (allResp.isSuccessful && !allResp.body().isNullOrEmpty()) {
         val matched = allResp.body()!!.firstOrNull {
           it.username.equals(clean, true) ||
-          it.id.equals(clean, true) ||
-          (!it.phone.isNullOrBlank() && (it.phone.replace(" ", "").replace("-", "") == phoneClean || it.phone == trimmed))
+            it.id.equals(clean, true) ||
+            (!it.phone.isNullOrBlank() && (it.phone.replace(" ", "").replace("-", "") == phoneClean || it.phone == trimmed))
         }
         if (matched != null && !matched.email.isNullOrBlank()) {
           return@withContext matched.email
         }
       }
-    } catch (e: Exception) {
-      Log.w(TAG, "All profiles search error: ${e.message}")
-    }
+    } catch (_: Exception) {}
 
     null
   }
 
-  suspend fun fetchAllProfiles(): List<User> = withContext(Dispatchers.IO) {
+  suspend fun fetchAllProfiles(accessToken: String? = null): List<User> = withContext(Dispatchers.IO) {
     if (!isConfigured) return@withContext emptyList()
     try {
       val resp = SupabaseNetworkClient.restApi.getProfiles(
         apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = "Bearer ${SupabaseConfig.supabaseAnonKey}"
+        authHeader = authHeaderFor(accessToken)
       )
       if (resp.isSuccessful && resp.body() != null) {
-        return@withContext resp.body()!!.map { p ->
-          User(
-            id = p.id,
-            username = p.username,
-            displayName = p.displayName,
-            firstName = p.firstName ?: "",
-            lastName = p.lastName ?: "",
-            bio = p.bio ?: "",
-            avatarUrl = p.avatarUrl ?: "",
-            coverUrl = p.coverUrl ?: "",
-            email = p.email ?: "",
-            phone = p.phone ?: "",
-            dateOfBirth = p.dateOfBirth ?: "2000-01-01",
-            age = p.age ?: 20,
-            isUnder18 = p.isUnder18 ?: false,
-            role = try { UserRole.valueOf(p.role ?: "USER") } catch (e: Exception) { UserRole.USER },
-            isVerified = p.isVerified ?: false,
-            isVip = p.isVip ?: false,
-            followersCount = p.followersCount ?: 0,
-            followingCount = p.followingCount ?: 0,
-            postsCount = p.postsCount ?: 0,
-            isOnboardingCompleted = true
-          )
-        }
+        return@withContext resp.body()!!.map { mapProfileDtoToUser(it) }
+      } else {
+        Log.w(TAG, "fetchAllProfiles HTTP ${resp.code()}: ${resp.errorBody()?.string()}")
       }
     } catch (e: Exception) {
       Log.w(TAG, "fetchAllProfiles exception: ${e.message}")
     }
     emptyList()
+  }
+
+  suspend fun searchProfilesRemote(query: String, accessToken: String? = null): List<User> = withContext(Dispatchers.IO) {
+    if (!isConfigured || query.isBlank()) return@withContext emptyList()
+    val q = query.trim().removePrefix("@").replace(",", "")
+    if (q.isBlank()) return@withContext emptyList()
+    try {
+      val orFilter = "(username.ilike.*$q*,display_name.ilike.*$q*)"
+      val resp = SupabaseNetworkClient.restApi.searchProfiles(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeaderFor(accessToken),
+        orFilter = orFilter
+      )
+      if (resp.isSuccessful && resp.body() != null) {
+        return@withContext resp.body()!!.map { mapProfileDtoToUser(it) }
+      }
+    } catch (e: Exception) {
+      Log.w(TAG, "searchProfilesRemote exception: ${e.message}")
+    }
+    emptyList()
+  }
+
+  suspend fun fetchMyOutgoingFollows(userId: String, accessToken: String? = null): List<SupabaseFollowDto> = withContext(Dispatchers.IO) {
+    if (!isConfigured || userId.isBlank()) return@withContext emptyList()
+    try {
+      val resp = SupabaseNetworkClient.restApi.getFollowsByFollower(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeaderFor(accessToken),
+        followerIdFilter = "eq.$userId"
+      )
+      if (resp.isSuccessful) return@withContext resp.body() ?: emptyList()
+    } catch (e: Exception) {
+      Log.w(TAG, "fetchMyOutgoingFollows warning: ${e.message}")
+    }
+    emptyList()
+  }
+
+  suspend fun fetchMyIncomingFollows(userId: String, accessToken: String? = null): List<SupabaseFollowDto> = withContext(Dispatchers.IO) {
+    if (!isConfigured || userId.isBlank()) return@withContext emptyList()
+    try {
+      val resp = SupabaseNetworkClient.restApi.getFollowsByFollowed(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeaderFor(accessToken),
+        followedIdFilter = "eq.$userId"
+      )
+      if (resp.isSuccessful) return@withContext resp.body() ?: emptyList()
+    } catch (e: Exception) {
+      Log.w(TAG, "fetchMyIncomingFollows warning: ${e.message}")
+    }
+    emptyList()
+  }
+
+  suspend fun followUser(
+    followerId: String,
+    followedId: String,
+    isTargetPrivate: Boolean = false,
+    accessToken: String = ""
+  ): Result<String> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success("ACCEPTED")
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Please sign in to follow users."))
+    val desiredStatus = if (isTargetPrivate) "PENDING" else "ACCEPTED"
+    try {
+      var resp = SupabaseNetworkClient.restApi.insertFollow(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        body = SupabaseFollowDto(followerId = followerId, followedId = followedId, status = desiredStatus)
+      )
+      if (!resp.isSuccessful && resp.code() == 400) {
+        resp = SupabaseNetworkClient.restApi.insertFollow(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          body = SupabaseFollowDto(followerId = followerId, followedId = followedId, status = null)
+        )
+      }
+      if (resp.isSuccessful) {
+        val actualStatus = resp.body()?.firstOrNull()?.status ?: desiredStatus
+        Result.success(actualStatus)
+      } else {
+        Result.failure(Exception(parseErrorMessage(resp.errorBody()?.string().orEmpty(), "Unable to follow user.")))
+      }
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Network error while following user.")))
+    }
+  }
+
+  suspend fun respondToFollowRequest(
+    requesterId: String,
+    myUserId: String,
+    approve: Boolean,
+    accessToken: String = ""
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Authentication required."))
+    try {
+      if (approve) {
+        val resp = SupabaseNetworkClient.restApi.updateFollowStatus(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          followerFilter = "eq.$requesterId",
+          followedFilter = "eq.$myUserId",
+          body = mapOf("status" to "ACCEPTED")
+        )
+        if (resp.isSuccessful) Result.success(Unit)
+        else Result.failure(Exception("Failed to approve follow request."))
+      } else {
+        val resp = SupabaseNetworkClient.restApi.deleteFollow(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          followerFilter = "eq.$requesterId",
+          followedFilter = "eq.$myUserId"
+        )
+        if (resp.isSuccessful) Result.success(Unit)
+        else Result.failure(Exception("Failed to decline follow request."))
+      }
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Unable to process follow request.")))
+    }
+  }
+
+  suspend fun unfollowUser(followerId: String, followedId: String, accessToken: String = ""): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Authentication required."))
+    try {
+      val resp = SupabaseNetworkClient.restApi.deleteFollow(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        followerFilter = "eq.$followerId",
+        followedFilter = "eq.$followedId"
+      )
+      if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to unfollow user."))
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Network error while unfollowing.")))
+    }
+  }
+
+  // =========================================================================
+  // 3. BLOCKS, RESTRICTIONS & REPORTS
+  // =========================================================================
+
+  suspend fun fetchBlockedUserIds(userId: String, accessToken: String? = null): Set<String> = withContext(Dispatchers.IO) {
+    if (!isConfigured || userId.isBlank()) return@withContext emptySet()
+    try {
+      val resp = SupabaseNetworkClient.restApi.getBlocks(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeaderFor(accessToken),
+        blockerIdFilter = "eq.$userId"
+      )
+      if (resp.isSuccessful) {
+        return@withContext resp.body().orEmpty().map { it.blockedId }.toSet()
+      }
+    } catch (_: Exception) {}
+    emptySet()
+  }
+
+  suspend fun blockUser(blockerId: String, blockedId: String, accessToken: String = ""): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Authentication required."))
+    try {
+      val resp = SupabaseNetworkClient.restApi.insertBlock(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        body = SupabaseBlockDto(blockerId = blockerId, blockedId = blockedId)
+      )
+      if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to block user."))
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun unblockUser(blockerId: String, blockedId: String, accessToken: String = ""): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Authentication required."))
+    try {
+      val resp = SupabaseNetworkClient.restApi.deleteBlock(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        blockerFilter = "eq.$blockerId",
+        blockedFilter = "eq.$blockedId"
+      )
+      if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to unblock user."))
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun fetchRestrictedUserIds(userId: String, accessToken: String? = null): Set<String> = withContext(Dispatchers.IO) {
+    if (!isConfigured || userId.isBlank()) return@withContext emptySet()
+    try {
+      val resp = SupabaseNetworkClient.restApi.getRestrictions(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeaderFor(accessToken),
+        restrictorIdFilter = "eq.$userId"
+      )
+      if (resp.isSuccessful) {
+        return@withContext resp.body().orEmpty().map { it.restrictedId }.toSet()
+      }
+    } catch (_: Exception) {}
+    emptySet()
+  }
+
+  suspend fun setUserRestricted(
+    restrictorId: String,
+    restrictedId: String,
+    restricted: Boolean,
+    accessToken: String = ""
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken) ?: return@withContext Result.success(Unit)
+    try {
+      if (restricted) {
+        SupabaseNetworkClient.restApi.insertRestriction(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          body = SupabaseRestrictionDto(restrictorId = restrictorId, restrictedId = restrictedId)
+        )
+      } else {
+        SupabaseNetworkClient.restApi.deleteRestriction(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          restrictorFilter = "eq.$restrictorId",
+          restrictedFilter = "eq.$restrictedId"
+        )
+      }
+      Result.success(Unit)
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun submitReport(
+    reporterId: String,
+    targetType: String,
+    targetId: String,
+    reason: String,
+    details: String = "",
+    accessToken: String = ""
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Authentication required to submit report."))
+    try {
+      val resp = SupabaseNetworkClient.restApi.submitReport(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        body = SupabaseReportDto(
+          reporterId = reporterId,
+          targetType = targetType,
+          targetId = targetId,
+          reason = reason,
+          adminNotes = details.ifBlank { null }
+        )
+      )
+      if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to submit report."))
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Unable to submit report.")))
+    }
+  }
+
+  // =========================================================================
+  // 4. SUPABASE STORAGE UPLOAD, SIGNED URLS & OBJECT DELETION
+  // =========================================================================
+
+  /**
+   * Uploads binary media to `<bucket>/<userId>/<fileName>` with live byte progress reporting.
+   * For restricted/private buckets (`posts`, `stories`, `chat-media`), creates a signed URL when
+   * configured as private, falling back cleanly to public object URL if the bucket is public.
+   */
+  suspend fun uploadMediaWithProgress(
+    bucket: String,
+    userId: String,
+    fileName: String,
+    bytes: ByteArray,
+    mimeType: String,
+    accessToken: String = "",
+    onProgress: ((Int) -> Unit)? = null
+  ): Result<UploadedStorageMedia> = withContext(Dispatchers.IO) {
+    if (!isConfigured) {
+      return@withContext Result.failure(IllegalStateException("Supabase backend not configured."))
+    }
+    val validJwt = resolveValidAccessToken(accessToken)
+      ?: return@withContext Result.failure(IllegalStateException("Please sign in again before uploading media."))
+
+    try {
+      val cleanBucket = bucket.trim()
+      val cleanLeaf = fileName.trim().removePrefix("/")
+      val objectPath = if (cleanLeaf.startsWith("$userId/")) cleanLeaf else "$userId/$cleanLeaf"
+      val uploadUrl = "${SupabaseConfig.supabaseUrl}/storage/v1/object/$cleanBucket/$objectPath"
+
+      val body = ProgressRequestBody(
+        bytes = bytes,
+        contentType = mimeType.toMediaTypeOrNull(),
+        onProgress = onProgress
+      )
+
+      val request = Request.Builder()
+        .url(uploadUrl)
+        .addHeader("apikey", SupabaseConfig.supabaseAnonKey)
+        .addHeader("Authorization", "Bearer $validJwt")
+        .addHeader("Content-Type", mimeType)
+        .addHeader("x-upsert", "true")
+        .post(body)
+        .build()
+
+      SupabaseNetworkClient.storageHttpClient.newCall(request).execute().use { response ->
+        if (!response.isSuccessful) {
+          val errText = response.body?.string().orEmpty()
+          val parsed = parseErrorMessage(errText, "Media upload failed (HTTP ${response.code}).")
+          return@withContext Result.failure(Exception(parsed))
+        }
+      }
+
+      val resolvedUrl = resolveAccessibleMediaUrl(cleanBucket, objectPath, validJwt)
+      Result.success(UploadedStorageMedia(url = resolvedUrl, storagePath = "$cleanBucket/$objectPath"))
+    } catch (e: Exception) {
+      Log.e(TAG, "Storage upload failed: ${e.message}", e)
+      Result.failure(Exception(friendlyNetworkMessage(e, "Upload interrupted. Check your internet connection and retry.")))
+    }
+  }
+
+  /**
+   * Backward-compatible wrapper preserving existing signature.
+   */
+  suspend fun uploadMediaFile(
+    bucket: String,
+    fileName: String,
+    bytes: ByteArray,
+    mimeType: String,
+    accessToken: String = ""
+  ): Result<String> {
+    val uid = SessionManager.get()?.userId ?: "shared"
+    return uploadMediaWithProgress(
+      bucket = bucket,
+      userId = uid,
+      fileName = fileName,
+      bytes = bytes,
+      mimeType = mimeType,
+      accessToken = accessToken
+    ).map { it.url }
+  }
+
+  /**
+   * Generates a 7-day signed URL for private buckets (`posts`, `stories`, `chat-media`) so restricted media
+   * cannot be scraped via unauthenticated public URLs; gracefully falls back to `/object/public/` if bucket is public.
+   */
+  suspend fun resolveAccessibleMediaUrl(
+    bucket: String,
+    objectPath: String,
+    accessToken: String? = null
+  ): String = withContext(Dispatchers.IO) {
+    val publicUrl = "${SupabaseConfig.supabaseUrl}/storage/v1/object/public/$bucket/$objectPath"
+    if (bucket == "avatars") return@withContext publicUrl
+
+    val validJwt = resolveValidAccessToken(accessToken) ?: return@withContext publicUrl
+    try {
+      val signEndpoint = "${SupabaseConfig.supabaseUrl}/storage/v1/object/sign/$bucket/$objectPath"
+      val reqBody = """{"expiresIn":604800}""".toRequestBody("application/json".toMediaTypeOrNull())
+      val req = Request.Builder()
+        .url(signEndpoint)
+        .addHeader("apikey", SupabaseConfig.supabaseAnonKey)
+        .addHeader("Authorization", "Bearer $validJwt")
+        .post(reqBody)
+        .build()
+
+      SupabaseNetworkClient.okHttpClient.newCall(req).execute().use { resp ->
+        if (resp.isSuccessful) {
+          val json = JSONObject(resp.body?.string().orEmpty())
+          val signedPath = json.optString("signedURL", "").ifBlank { json.optString("signedUrl", "") }
+          if (signedPath.isNotBlank()) {
+            return@withContext if (signedPath.startsWith("http")) {
+              signedPath
+            } else if (signedPath.startsWith("/storage/v1")) {
+              "${SupabaseConfig.supabaseUrl}$signedPath"
+            } else {
+              "${SupabaseConfig.supabaseUrl}/storage/v1$signedPath"
+            }
+          }
+        }
+      }
+    } catch (_: Exception) {}
+    publicUrl
+  }
+
+  /**
+   * Deletes an uploaded Storage object (`<bucket>/<objectPath>`) or parses it directly from a Supabase Storage URL.
+   */
+  suspend fun deleteStorageObject(
+    storagePathOrUrl: String,
+    accessToken: String = ""
+  ): Boolean = withContext(Dispatchers.IO) {
+    if (!isConfigured || storagePathOrUrl.isBlank()) return@withContext false
+    val validJwt = resolveValidAccessToken(accessToken) ?: return@withContext false
+
+    val parsedPair: Pair<String, String>? = extractBucketAndObjectPath(storagePathOrUrl)
+    if (parsedPair == null) return@withContext false
+
+    val (bucket, objectPath) = parsedPair
+    try {
+      val deleteUrl = "${SupabaseConfig.supabaseUrl}/storage/v1/object/$bucket/$objectPath"
+      val req = Request.Builder()
+        .url(deleteUrl)
+        .addHeader("apikey", SupabaseConfig.supabaseAnonKey)
+        .addHeader("Authorization", "Bearer $validJwt")
+        .delete()
+        .build()
+      SupabaseNetworkClient.okHttpClient.newCall(req).execute().use { resp ->
+        resp.isSuccessful
+      }
+    } catch (e: Exception) {
+      Log.w(TAG, "Storage object delete warning: ${e.message}")
+      false
+    }
+  }
+
+  private fun extractBucketAndObjectPath(storagePathOrUrl: String): Pair<String, String>? {
+    val clean = storagePathOrUrl.substringBefore("?").trim()
+    val markers = listOf(
+      "/storage/v1/object/public/",
+      "/storage/v1/object/sign/",
+      "/storage/v1/object/authenticated/",
+      "/storage/v1/object/"
+    )
+    for (marker in markers) {
+      val idx = clean.indexOf(marker)
+      if (idx >= 0) {
+        val remainder = clean.substring(idx + marker.length)
+        val slash = remainder.indexOf('/')
+        if (slash > 0 && slash < remainder.length - 1) {
+          return Pair(remainder.substring(0, slash), remainder.substring(slash + 1))
+        }
+      }
+    }
+    if (!clean.startsWith("http") && clean.contains('/')) {
+      val slash = clean.indexOf('/')
+      return Pair(clean.substring(0, slash), clean.substring(slash + 1))
+    }
+    return null
+  }
+
+  // =========================================================================
+  // 5. POSTS, REELS, REACTIONS, SAVES & COMMENTS
+  // =========================================================================
+
+  suspend fun fetchPosts(
+    currentUserId: String? = null,
+    accessToken: String = ""
+  ): Result<List<Post>> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(emptyList())
+    try {
+      val authHeader = authHeaderFor(accessToken)
+      val resp = SupabaseNetworkClient.restApi.getPosts(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        limit = 60
+      )
+      if (!resp.isSuccessful || resp.body() == null) {
+        val err = parseErrorMessage(resp.errorBody()?.string().orEmpty(), "Failed to load feed (HTTP ${resp.code()}).")
+        return@withContext Result.failure(Exception(err))
+      }
+
+      val myReactions: Map<String, VybeReaction> = if (!currentUserId.isNullOrBlank()) {
+        try {
+          val rResp = SupabaseNetworkClient.restApi.getMyReactions(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = authHeader,
+            userIdFilter = "eq.$currentUserId"
+          )
+          if (rResp.isSuccessful) {
+            rResp.body().orEmpty().associate { dto ->
+              val reaction = try { VybeReaction.valueOf(dto.reactionType) } catch (_: Exception) { VybeReaction.PURE_ENERGY }
+              dto.postId to reaction
+            }
+          } else emptyMap()
+        } catch (_: Exception) { emptyMap() }
+      } else emptyMap()
+
+      val mySavedIds: Set<String> = if (!currentUserId.isNullOrBlank()) {
+        try {
+          val sResp = SupabaseNetworkClient.restApi.getMySavedPosts(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = authHeader,
+            userIdFilter = "eq.$currentUserId"
+          )
+          if (sResp.isSuccessful) sResp.body().orEmpty().map { it.postId }.toSet() else emptySet()
+        } catch (_: Exception) { emptySet() }
+      } else emptySet()
+
+      val postsList = resp.body()!!.map { dto -> mapPostDtoToModel(dto, myReactions, mySavedIds, accessToken) }
+      Result.success(postsList)
+    } catch (e: Exception) {
+      Log.e(TAG, "Error fetching posts: ${e.message}", e)
+      Result.failure(Exception(friendlyNetworkMessage(e, "Unable to refresh feed.")))
+    }
+  }
+
+  private suspend fun mapPostDtoToModel(
+    dto: SupabasePostDto,
+    myReactions: Map<String, VybeReaction>,
+    mySavedIds: Set<String>,
+    accessToken: String
+  ): Post {
+    val authorUser = if (dto.profiles != null) {
+      mapProfileDtoToUser(dto.profiles)
+    } else {
+      User(id = dto.authorId, username = "vyber", displayName = "VYBE Member")
+    }
+
+    val sortedMedia = dto.postMedia?.sortedBy { it.displayOrder }.orEmpty()
+    val mediaUrls = sortedMedia.map { media ->
+      val sp = media.storagePath
+      if (!sp.isNullOrBlank() && sp.contains('/')) {
+        val bucket = sp.substringBefore('/')
+        val obj = sp.substringAfter('/')
+        resolveAccessibleMediaUrl(bucket, obj, accessToken)
+      } else {
+        media.mediaUrl
+      }
+    }
+    val storagePaths = sortedMedia.mapNotNull { it.storagePath ?: extractBucketAndObjectPath(it.mediaUrl)?.let { p -> "${p.first}/${p.second}" } }
+    val firstRatio = sortedMedia.firstOrNull()?.aspectRatio?.toFloat()
+
+    val mediaType = try {
+      val parsed = MediaType.valueOf(dto.mediaType ?: "TEXT")
+      val anyVideoUrl = mediaUrls.any {
+        it.contains(".mp4", true) || it.contains(".webm", true) || it.contains(".mov", true)
+      }
+      if (parsed == MediaType.IMAGE && anyVideoUrl) MediaType.VIDEO else parsed
+    } catch (_: Exception) {
+      if (mediaUrls.any { it.contains(".mp4", true) || it.contains(".webm", true) }) MediaType.VIDEO else MediaType.IMAGE
+    }
+
+    val moodZone = if (!dto.moodZone.isNullOrBlank()) {
+      try { MoodType.valueOf(dto.moodZone) } catch (_: Exception) { null }
+    } else null
+
+    val myReaction = myReactions[dto.id]
+
+    return Post(
+      id = dto.id,
+      author = authorUser,
+      caption = dto.caption ?: "",
+      mediaUrls = mediaUrls,
+      mediaType = mediaType,
+      timestamp = formatRelativeTimestamp(dto.createdAt),
+      likesCount = dto.likesCount ?: 0,
+      commentsCount = dto.commentsCount ?: 0,
+      savesCount = dto.savesCount ?: 0,
+      viewsCount = dto.viewsCount ?: 0,
+      isLiked = myReaction != null,
+      isSaved = mySavedIds.contains(dto.id),
+      isArchived = dto.isArchived ?: false,
+      isUnfiltered = dto.isUnfiltered ?: false,
+      isVybesReel = (dto.isVybesReel ?: false) || mediaType == MediaType.REEL,
+      moodZone = moodZone,
+      audioTrackTitle = dto.musicTitle,
+      locationName = dto.locationName,
+      latitude = dto.latitude,
+      longitude = dto.longitude,
+      mediaAspectRatio = firstRatio,
+      storagePaths = storagePaths,
+      userReaction = myReaction
+    )
+  }
+
+  /**
+   * Idempotent post creation: checks `client_upload_id` first if retrying so retries NEVER create duplicate posts!
+   */
+  suspend fun createPostOnSupabase(
+    post: Post,
+    accessToken: String = ""
+  ): Result<Post> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.failure(IllegalStateException("Supabase not configured."))
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(IllegalStateException("Session expired. Please sign in again."))
+
+    try {
+      // Deduplication check on retry
+      if (!post.clientUploadId.isNullOrBlank()) {
+        try {
+          val existing = SupabaseNetworkClient.restApi.getPostByClientUploadId(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = authHeader,
+            clientUploadFilter = "eq.${post.clientUploadId}"
+          )
+          if (existing.isSuccessful && !existing.body().isNullOrEmpty()) {
+            val dto = existing.body()!!.first()
+            return@withContext Result.success(post.copy(id = dto.id))
+          }
+        } catch (_: Exception) {}
+      }
+
+      val insertDto = SupabasePostInsertDto(
+        authorId = post.author.id,
+        caption = post.caption,
+        mediaType = post.mediaType.name,
+        moodZone = post.moodZone?.name,
+        locationName = post.locationName,
+        latitude = post.latitude,
+        longitude = post.longitude,
+        musicTitle = post.audioTrackTitle,
+        clientUploadId = post.clientUploadId,
+        isUnfiltered = post.isUnfiltered,
+        isVybesReel = post.isVybesReel,
+        viewsCount = 0
+      )
+
+      var postResp = SupabaseNetworkClient.restApi.insertPost(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        post = insertDto
+      )
+
+      // Backward-compatible fallback if migration 0004 columns aren't applied yet
+      if (!postResp.isSuccessful && postResp.code() == 400) {
+        postResp = SupabaseNetworkClient.restApi.insertPostLegacy(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          post = SupabasePostLegacyInsertDto(
+            authorId = post.author.id,
+            caption = post.caption,
+            mediaType = post.mediaType.name,
+            moodZone = post.moodZone?.name,
+            isUnfiltered = post.isUnfiltered,
+            isVybesReel = post.isVybesReel,
+            viewsCount = 0
+          )
+        )
+      }
+
+      if (postResp.isSuccessful && !postResp.body().isNullOrEmpty()) {
+        val createdId = postResp.body()!!.first().id
+
+        if (post.mediaUrls.isNotEmpty()) {
+          val mediaTypeStr = if (post.mediaType == MediaType.VIDEO || post.mediaType == MediaType.REEL) "VIDEO" else "IMAGE"
+          post.mediaUrls.forEachIndexed { index, url ->
+            val sp = post.storagePaths.getOrNull(index)
+            val mediaDto = SupabasePostMediaDto(
+              postId = createdId,
+              mediaUrl = url,
+              mediaType = mediaTypeStr,
+              displayOrder = index,
+              aspectRatio = post.mediaAspectRatio?.toDouble(),
+              storagePath = sp
+            )
+            var mResp = SupabaseNetworkClient.restApi.insertPostMedia(
+              apiKey = SupabaseConfig.supabaseAnonKey,
+              authHeader = authHeader,
+              media = mediaDto
+            )
+            if (!mResp.isSuccessful && mResp.code() == 400) {
+              mResp = SupabaseNetworkClient.restApi.insertPostMediaLegacy(
+                apiKey = SupabaseConfig.supabaseAnonKey,
+                authHeader = authHeader,
+                media = SupabasePostMediaLegacyDto(
+                  postId = createdId,
+                  mediaUrl = url,
+                  mediaType = mediaTypeStr,
+                  displayOrder = index
+                )
+              )
+            }
+            if (!mResp.isSuccessful) {
+              // Roll back partial post row if media record insertion failed!
+              try {
+                SupabaseNetworkClient.restApi.deletePost(
+                  apiKey = SupabaseConfig.supabaseAnonKey,
+                  authHeader = authHeader,
+                  idFilter = "eq.$createdId"
+                )
+              } catch (_: Exception) {}
+              return@withContext Result.failure(Exception("Failed to attach media metadata (HTTP ${mResp.code()})."))
+            }
+          }
+        }
+
+        Result.success(post.copy(id = createdId, timestamp = "Just now"))
+      } else {
+        val err = parseErrorMessage(postResp.errorBody()?.string().orEmpty(), "Post creation failed (HTTP ${postResp.code()}).")
+        Result.failure(Exception(err))
+      }
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed creating post: ${e.message}", e)
+      Result.failure(Exception(friendlyNetworkMessage(e, "Unable to publish post. Check your connection and retry.")))
+    }
+  }
+
+  /**
+   * Deletes the post database row AND removes all associated Supabase Storage objects.
+   */
+  suspend fun deletePostOnSupabase(
+    postId: String,
+    mediaToCleanup: List<String> = emptyList(),
+    accessToken: String = ""
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Authentication required to delete post."))
+    try {
+      val resp = SupabaseNetworkClient.restApi.deletePost(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        idFilter = "eq.$postId"
+      )
+      if (resp.isSuccessful) {
+        mediaToCleanup.distinct().forEach { pathOrUrl ->
+          deleteStorageObject(pathOrUrl, accessToken)
+        }
+        Result.success(Unit)
+      } else {
+        Result.failure(Exception("Failed to delete post (HTTP ${resp.code()})."))
+      }
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Network error while deleting post.")))
+    }
+  }
+
+  suspend fun setPostReaction(
+    postId: String,
+    userId: String,
+    reaction: VybeReaction?,
+    accessToken: String = ""
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken) ?: return@withContext Result.failure(Exception("Sign in required."))
+    try {
+      if (reaction == null) {
+        val resp = SupabaseNetworkClient.restApi.deleteReaction(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          postIdFilter = "eq.$postId",
+          userIdFilter = "eq.$userId"
+        )
+        if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to remove reaction."))
+      } else {
+        val resp = SupabaseNetworkClient.restApi.upsertReaction(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          reaction = SupabaseReactionDto(postId = postId, userId = userId, reactionType = reaction.name)
+        )
+        if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to react to post."))
+      }
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun setPostSaved(
+    postId: String,
+    userId: String,
+    save: Boolean,
+    accessToken: String = ""
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken) ?: return@withContext Result.failure(Exception("Sign in required."))
+    try {
+      if (save) {
+        SupabaseNetworkClient.restApi.insertSavedPost(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          body = SupabaseSavedPostDto(userId = userId, postId = postId)
+        )
+      } else {
+        SupabaseNetworkClient.restApi.deleteSavedPost(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          userIdFilter = "eq.$userId",
+          postIdFilter = "eq.$postId"
+        )
+      }
+      Result.success(Unit)
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun fetchCommentsForPost(
+    postId: String,
+    accessToken: String = ""
+  ): Result<List<PostComment>> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(emptyList())
+    try {
+      val resp = SupabaseNetworkClient.restApi.getComments(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeaderFor(accessToken),
+        postIdFilter = "eq.$postId"
+      )
+      if (resp.isSuccessful && resp.body() != null) {
+        val mapped = resp.body()!!.map { dto ->
+          val author = dto.profiles?.let { mapProfileDtoToUser(it) }
+            ?: User(id = dto.authorId, username = "vyber", displayName = "VYBE Member")
+          PostComment(
+            id = dto.id ?: "c_${System.currentTimeMillis()}",
+            postId = dto.postId,
+            author = author,
+            content = dto.content,
+            timestamp = formatRelativeTimestamp(dto.createdAt)
+          )
+        }
+        Result.success(mapped)
+      } else {
+        Result.failure(Exception("Failed to load comments"))
+      }
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun addComment(
+    postId: String,
+    authorId: String,
+    content: String,
+    accessToken: String = ""
+  ): Result<SupabaseCommentDto> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.failure(Exception("Supabase not configured"))
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Please sign in to comment."))
+    try {
+      val resp = SupabaseNetworkClient.restApi.insertComment(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        comment = SupabaseCommentDto(postId = postId, authorId = authorId, content = content)
+      )
+      if (resp.isSuccessful && !resp.body().isNullOrEmpty()) {
+        Result.success(resp.body()!!.first())
+      } else {
+        Result.failure(Exception(parseErrorMessage(resp.errorBody()?.string().orEmpty(), "Failed to post comment.")))
+      }
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Unable to post comment.")))
+    }
+  }
+
+  suspend fun recordPostView(
+    postId: String,
+    viewerId: String? = null,
+    accessToken: String = ""
+  ): Result<Int> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(1)
+    try {
+      val resp = SupabaseNetworkClient.restApi.incrementPostView(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeaderFor(accessToken),
+        request = SupabaseRpcIncrementViewRequest(postId = postId, viewerId = viewerId)
+      )
+      if (resp.isSuccessful && resp.body() != null) {
+        Result.success(resp.body()!!)
+      } else {
+        Result.failure(Exception("View increment skipped"))
+      }
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  // =========================================================================
+  // 6. STORIES, PERSISTENT STORY VIEWS & VYBE MATCHES
+  // =========================================================================
+
+  suspend fun fetchActiveStories(
+    currentUserId: String,
+    accessToken: String = ""
+  ): Result<List<Story>> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(emptyList())
+    val authHeader = authHeaderFor(accessToken)
+    try {
+      val nowIso = formatIsoUtc(System.currentTimeMillis())
+      val resp = SupabaseNetworkClient.restApi.getActiveStories(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        expiresAtFilter = "gt.$nowIso"
+      )
+      if (!resp.isSuccessful || resp.body() == null) {
+        return@withContext Result.failure(Exception("Unable to load stories (${resp.code()})."))
+      }
+
+      val viewedStoryIds: Set<String> = if (currentUserId.isNotBlank()) {
+        try {
+          val vResp = SupabaseNetworkClient.restApi.getMyStoryViews(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = authHeader,
+            viewerIdFilter = "eq.$currentUserId"
+          )
+          if (vResp.isSuccessful) vResp.body().orEmpty().map { it.storyId }.toSet() else emptySet()
+        } catch (_: Exception) { emptySet() }
+      } else emptySet()
+
+      val stories = resp.body()!!.mapNotNull { dto ->
+        val id = dto.id ?: return@mapNotNull null
+        val expiresMillis = parseIsoMillis(dto.expiresAt)
+        if (expiresMillis != null && expiresMillis <= System.currentTimeMillis()) {
+          return@mapNotNull null
+        }
+        val remainingHours = if (expiresMillis != null) {
+          (((expiresMillis - System.currentTimeMillis()) / 3_600_000L).toInt()).coerceIn(1, 24)
+        } else 24
+
+        val author = dto.profiles?.let { mapProfileDtoToUser(it) }
+          ?: User(id = dto.authorId, username = "vyber", displayName = "VYBE Member")
+
+        val resolvedMediaUrl = if (!dto.storagePath.isNullOrBlank() && dto.storagePath.contains('/')) {
+          resolveAccessibleMediaUrl(
+            dto.storagePath.substringBefore('/'),
+            dto.storagePath.substringAfter('/'),
+            accessToken
+          )
+        } else {
+          dto.mediaUrl
+        }
+
+        val mediaType = try {
+          StoryMediaType.valueOf(dto.mediaType)
+        } catch (_: Exception) {
+          if (resolvedMediaUrl.contains(".mp4", true) || resolvedMediaUrl.contains(".webm", true)) {
+            StoryMediaType.VIDEO
+          } else StoryMediaType.PHOTO
+        }
+
+        val audience = try {
+          StoryAudience.valueOf(dto.audience ?: "EVERYONE")
+        } catch (_: Exception) {
+          StoryAudience.EVERYONE
+        }
+
+        Story(
+          id = id,
+          author = author,
+          mediaUrl = resolvedMediaUrl,
+          caption = dto.caption ?: "",
+          mediaType = mediaType,
+          audience = audience,
+          musicTrackTitle = dto.musicTitle,
+          timestamp = formatRelativeTimestamp(dto.createdAt),
+          expiresHoursRemaining = remainingHours,
+          isViewed = viewedStoryIds.contains(id),
+          reactionsCount = 0,
+          location = dto.locationName,
+          textBackgroundColor = dto.textBgKey,
+          createdAtIso = dto.createdAt,
+          expiresAtIso = dto.expiresAt,
+          storagePath = dto.storagePath,
+          clientUploadId = dto.clientUploadId
+        )
+      }
+
+      Result.success(stories)
+    } catch (e: Exception) {
+      Log.w(TAG, "fetchActiveStories error: ${e.message}")
+      Result.failure(Exception(friendlyNetworkMessage(e, "Failed to sync stories.")))
+    }
+  }
+
+  suspend fun createStoryOnSupabase(
+    story: Story,
+    accessToken: String = ""
+  ): Result<Story> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.failure(IllegalStateException("Supabase not configured."))
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(IllegalStateException("Please sign in again to share a story."))
+
+    try {
+      val expiresIso = formatIsoUtc(System.currentTimeMillis() + 24L * 3_600_000L)
+      val audienceStr = when (story.audience) {
+        StoryAudience.VYBE_MATCHES, StoryAudience.CLOSE_FRIENDS -> "VYBE_MATCHES"
+        else -> "EVERYONE"
+      }
+
+      val dto = SupabaseStoryDto(
+        authorId = story.author.id,
+        mediaUrl = story.mediaUrl.ifBlank { "text://story" },
+        mediaType = story.mediaType.name,
+        caption = story.caption,
+        audience = audienceStr,
+        musicTitle = story.musicTrackTitle,
+        locationName = story.location,
+        textBgKey = story.textBackgroundColor,
+        storagePath = story.storagePath,
+        clientUploadId = story.clientUploadId,
+        expiresAt = expiresIso
+      )
+
+      var resp = SupabaseNetworkClient.restApi.insertStory(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        story = dto
+      )
+      if (!resp.isSuccessful && resp.code() == 400) {
+        resp = SupabaseNetworkClient.restApi.insertStoryLegacy(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          story = SupabaseStoryLegacyInsertDto(
+            authorId = story.author.id,
+            mediaUrl = story.mediaUrl.ifBlank { "text://story" },
+            mediaType = story.mediaType.name,
+            caption = story.caption,
+            expiresAt = expiresIso
+          )
+        )
+      }
+
+      if (resp.isSuccessful && !resp.body().isNullOrEmpty()) {
+        val created = resp.body()!!.first()
+        Result.success(
+          story.copy(
+            id = created.id ?: story.id,
+            timestamp = "Just now",
+            expiresHoursRemaining = 24,
+            createdAtIso = created.createdAt,
+            expiresAtIso = created.expiresAt
+          )
+        )
+      } else {
+        val err = parseErrorMessage(resp.errorBody()?.string().orEmpty(), "Unable to publish story (${resp.code()}).")
+        Result.failure(Exception(err))
+      }
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Network error while publishing story.")))
+    }
+  }
+
+  suspend fun markStoryViewedOnSupabase(
+    storyId: String,
+    viewerId: String,
+    accessToken: String = ""
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured || storyId.isBlank() || viewerId.isBlank()) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken) ?: return@withContext Result.success(Unit)
+    try {
+      val resp = SupabaseNetworkClient.restApi.upsertStoryView(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        view = SupabaseStoryViewDto(storyId = storyId, viewerId = viewerId)
+      )
+      if (resp.isSuccessful) Result.success(Unit)
+      else Result.failure(Exception("Story view sync pending"))
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun deleteStoryOnSupabase(
+    storyId: String,
+    storagePathOrUrl: String? = null,
+    accessToken: String = ""
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Authentication required."))
+    try {
+      val resp = SupabaseNetworkClient.restApi.deleteStory(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        idFilter = "eq.$storyId"
+      )
+      if (resp.isSuccessful) {
+        if (!storagePathOrUrl.isNullOrBlank() && !storagePathOrUrl.startsWith("text://")) {
+          deleteStorageObject(storagePathOrUrl, accessToken)
+        }
+        Result.success(Unit)
+      } else {
+        Result.failure(Exception("Failed to delete story (${resp.code()})."))
+      }
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Unable to delete story.")))
+    }
+  }
+
+  suspend fun fetchVybeMatchUserIds(
+    userId: String,
+    accessToken: String = ""
+  ): Result<Set<String>> = withContext(Dispatchers.IO) {
+    if (!isConfigured || userId.isBlank()) return@withContext Result.success(emptySet())
+    val authHeader = authHeaderFor(accessToken) ?: return@withContext Result.success(emptySet())
+    try {
+      val resp = SupabaseNetworkClient.restApi.getVybeMatches(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        userIdFilter = "eq.$userId"
+      )
+      if (resp.isSuccessful && resp.body() != null) {
+        Result.success(resp.body()!!.map { it.matchedUserId }.toSet())
+      } else {
+        Result.failure(Exception("Unable to load VYBE Matches"))
+      }
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun addVybeMatch(
+    userId: String,
+    matchedUserId: String,
+    accessToken: String = ""
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Authentication required."))
+    try {
+      val resp = SupabaseNetworkClient.restApi.insertVybeMatch(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        body = SupabaseVybeMatchDto(userId = userId, matchedUserId = matchedUserId)
+      )
+      if (resp.isSuccessful) Result.success(Unit)
+      else Result.failure(Exception(parseErrorMessage(resp.errorBody()?.string().orEmpty(), "Could not add VYBE Match.")))
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Network error updating VYBE Matches.")))
+    }
+  }
+
+  suspend fun removeVybeMatch(
+    userId: String,
+    matchedUserId: String,
+    accessToken: String = ""
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Authentication required."))
+    try {
+      val resp = SupabaseNetworkClient.restApi.deleteVybeMatch(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        userIdFilter = "eq.$userId",
+        matchedUserIdFilter = "eq.$matchedUserId"
+      )
+      if (resp.isSuccessful) Result.success(Unit)
+      else Result.failure(Exception("Could not remove VYBE Match."))
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Network error updating VYBE Matches.")))
+    }
+  }
+
+  // =========================================================================
+  // 7. MESSAGING & CONVERSATIONS (REAL USER-OWNED INBOX ONLY)
+  // =========================================================================
+
+  suspend fun fetchConversationsForUser(
+    myUserId: String,
+    blockedIds: Set<String> = emptySet(),
+    restrictedIds: Set<String> = emptySet(),
+    accessToken: String = ""
+  ): Result<List<Conversation>> = withContext(Dispatchers.IO) {
+    if (!isConfigured || myUserId.isBlank()) return@withContext Result.success(emptyList())
+    val authHeader = authHeaderFor(accessToken) ?: return@withContext Result.success(emptyList())
+    try {
+      val myMembershipsResp = SupabaseNetworkClient.restApi.getMyConversationMemberships(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        userIdFilter = "eq.$myUserId"
+      )
+      if (!myMembershipsResp.isSuccessful || myMembershipsResp.body().isNullOrEmpty()) {
+        return@withContext Result.success(emptyList())
+      }
+
+      val myMemberships = myMembershipsResp.body()!!
+      val convIds = myMemberships.map { it.conversationId }.distinct()
+      val inFilter = "in.(${convIds.joinToString(",")})"
+
+      val allMembersResp = SupabaseNetworkClient.restApi.getMembersForConversations(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        conversationIdsInFilter = inFilter
+      )
+      val membersByConv = allMembersResp.body().orEmpty().groupBy { it.conversationId }
+
+      val conversations = myMemberships.mapNotNull { myMember ->
+        val convId = myMember.conversationId
+        val convMeta = myMember.conversations
+        val isGroup = convMeta?.isGroup ?: false
+        val participants = membersByConv[convId].orEmpty()
+        val peerDtos = participants.filter { it.userId != myUserId }.mapNotNull { it.profiles }
+        val peerUser = peerDtos.firstOrNull()?.let { mapProfileDtoToUser(it) }
+          ?: if (!isGroup) return@mapNotNull null else User(id = convId, username = "group", displayName = convMeta?.groupName ?: "Group")
+
+        val msgResp = SupabaseNetworkClient.restApi.getMessages(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          conversationIdFilter = "eq.$convId",
+          limit = 60
+        )
+        val rawMessages = msgResp.body().orEmpty()
+        val mappedMessages = rawMessages.map { m ->
+          DirectMessage(
+            id = m.id ?: "m_${System.currentTimeMillis()}",
+            senderId = m.senderId,
+            text = if (m.isDeletedForEveryone == true) "Message unsent" else m.content,
+            timestamp = formatShortClock(m.createdAt),
+            isMe = m.senderId == myUserId,
+            mediaUrl = m.mediaUrl,
+            mediaType = m.mediaType ?: "TEXT",
+            isDeletedForEveryone = m.isDeletedForEveryone ?: false,
+            replyToId = m.replyToMessageId,
+            status = MessageStatus.SENT
+          )
+        }
+        val lastMsg = mappedMessages.lastOrNull()
+
+        Conversation(
+          id = convId,
+          peerUser = peerUser,
+          lastMessage = lastMsg?.text ?: "Conversation started",
+          lastMessageTimestamp = lastMsg?.timestamp ?: formatRelativeTimestamp(convMeta?.createdAt),
+          unreadCount = 0,
+          isGroup = isGroup,
+          groupName = convMeta?.groupName,
+          groupMembers = participants.mapNotNull { it.profiles?.let { p -> mapProfileDtoToUser(p) } },
+          messages = mappedMessages,
+          isHidden = myMember.isHidden ?: false,
+          chatTheme = myMember.chatTheme ?: "DEFAULT",
+          customNickname = myMember.customNickname,
+          isMuted = myMember.isMuted ?: false,
+          isBlocked = blockedIds.contains(peerUser.id),
+          isRestricted = restrictedIds.contains(peerUser.id)
+        )
+      }
+
+      Result.success(conversations)
+    } catch (e: Exception) {
+      Log.w(TAG, "fetchConversationsForUser warning: ${e.message}")
+      Result.failure(Exception(friendlyNetworkMessage(e, "Unable to sync inbox.")))
+    }
+  }
+
+  suspend fun getOrCreateDirectConversation(
+    myUserId: String,
+    peerUserId: String,
+    accessToken: String = ""
+  ): Result<String> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.failure(Exception("Supabase not configured."))
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Please sign in to send messages."))
+
+    try {
+      // 1. Try atomic server-side RPC enforcing mutual-follow / privacy / block rules
+      val rpcResp = SupabaseNetworkClient.restApi.getOrCreateDirectConversation(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        request = SupabaseRpcPeerConversationRequest(peerId = peerUserId)
+      )
+      if (rpcResp.isSuccessful && !rpcResp.body().isNullOrBlank()) {
+        return@withContext Result.success(rpcResp.body()!!.trim().removeSurrounding("\""))
+      }
+      if (!rpcResp.isSuccessful && rpcResp.code() != 404) {
+        val rpcErr = parseErrorMessage(rpcResp.errorBody()?.string().orEmpty(), "")
+        if (rpcErr.contains("Mutual follow", true) ||
+          rpcErr.contains("disabled", true) ||
+          rpcErr.contains("block", true) ||
+          rpcErr.contains("private", true)
+        ) {
+          return@withContext Result.failure(Exception(rpcErr))
+        }
+      }
+
+      // 2. Fallback direct table creation if migration 0004 RPC is not yet deployed
+      val convResp = SupabaseNetworkClient.restApi.insertConversation(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        conversation = SupabaseConversationDto(isGroup = false)
+      )
+      if (convResp.isSuccessful && !convResp.body().isNullOrEmpty()) {
+        val convId = convResp.body()!!.first().id ?: return@withContext Result.failure(Exception("Missing conversation ID."))
+        val membersResp = SupabaseNetworkClient.restApi.insertConversationMembers(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          members = listOf(
+            SupabaseConversationMemberDto(conversationId = convId, userId = myUserId),
+            SupabaseConversationMemberDto(conversationId = convId, userId = peerUserId)
+          )
+        )
+        if (membersResp.isSuccessful) {
+          return@withContext Result.success(convId)
+        }
+      }
+      Result.failure(Exception("Unable to start conversation. Ensure migration 0004 RLS policies are applied."))
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Unable to open conversation.")))
+    }
   }
 
   suspend fun sendMessage(
@@ -642,8 +2061,9 @@ class SupabaseRepository {
     accessToken: String = ""
   ): Result<SupabaseMessageDto> = withContext(Dispatchers.IO) {
     if (!isConfigured) return@withContext Result.failure(Exception("Supabase not configured"))
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Please sign in again to send messages."))
     try {
-      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
       val dto = SupabaseMessageDto(
         conversationId = conversationId,
         senderId = senderId,
@@ -660,25 +2080,24 @@ class SupabaseRepository {
       if (resp.isSuccessful && !resp.body().isNullOrEmpty()) {
         Result.success(resp.body()!!.first())
       } else {
-        val err = parseErrorMessage(resp.errorBody()?.string() ?: "", "Failed to send message.")
+        val err = parseErrorMessage(resp.errorBody()?.string().orEmpty(), "Failed to deliver message.")
         Result.failure(Exception(err))
       }
     } catch (e: Exception) {
-      Result.failure(e)
+      Result.failure(Exception(friendlyNetworkMessage(e, "Message failed to send. Check your internet connection.")))
     }
   }
 
   suspend fun fetchMessages(
     conversationId: String,
     accessToken: String = "",
-    limit: Int = 40
+    limit: Int = 80
   ): Result<List<SupabaseMessageDto>> = withContext(Dispatchers.IO) {
     if (!isConfigured) return@withContext Result.success(emptyList())
     try {
-      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
       val resp = SupabaseNetworkClient.restApi.getMessages(
         apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = authHeader,
+        authHeader = authHeaderFor(accessToken),
         conversationIdFilter = "eq.$conversationId",
         limit = limit
       )
@@ -692,121 +2111,126 @@ class SupabaseRepository {
     }
   }
 
-  suspend fun addComment(
-    postId: String,
-    authorId: String,
-    content: String,
+  // =========================================================================
+  // 8. REAL NOTIFICATIONS (RECIPIENT-SCOPED, DEDUPLICATED, SYNCED)
+  // =========================================================================
+
+  suspend fun fetchNotifications(
+    recipientId: String,
     accessToken: String = ""
-  ): Result<SupabaseCommentDto> = withContext(Dispatchers.IO) {
-    if (!isConfigured) return@withContext Result.failure(Exception("Supabase not configured"))
+  ): Result<List<NotificationItem>> = withContext(Dispatchers.IO) {
+    if (!isConfigured || recipientId.isBlank()) return@withContext Result.success(emptyList())
+    val authHeader = authHeaderFor(accessToken) ?: return@withContext Result.success(emptyList())
     try {
-      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
-      val dto = SupabaseCommentDto(
-        postId = postId,
-        authorId = authorId,
-        content = content
-      )
-      val resp = SupabaseNetworkClient.restApi.insertComment(
+      val resp = SupabaseNetworkClient.restApi.getNotifications(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
-        comment = dto
+        recipientIdFilter = "eq.$recipientId"
       )
-      if (resp.isSuccessful && !resp.body().isNullOrEmpty()) {
-        Result.success(resp.body()!!.first())
+      if (resp.isSuccessful && resp.body() != null) {
+        val seenKeys = mutableSetOf<String>()
+        val items = resp.body()!!.mapNotNull { dto ->
+          val id = dto.id ?: return@mapNotNull null
+          val dedupKey = if (dto.type == "COMMENT") id else "${dto.type}_${dto.actorId}_${dto.targetId}"
+          if (!seenKeys.add(dedupKey)) return@mapNotNull null
+
+          val notifType = when (dto.type.uppercase()) {
+            "LIKE", "REACTION" -> com.example.data.model.NotificationType.LIKE
+            "COMMENT", "COMMENT_OR_REPLY" -> com.example.data.model.NotificationType.COMMENT_OR_REPLY
+            "FOLLOW", "FOLLOW_REQUEST", "FOLLOW_ACCEPTED" -> com.example.data.model.NotificationType.FOLLOW
+            "DIRECT_MESSAGE", "MESSAGE" -> com.example.data.model.NotificationType.DIRECT_MESSAGE
+            "GROUP_MESSAGE" -> com.example.data.model.NotificationType.GROUP_MESSAGE
+            "SECURITY_ACCOUNT_UPDATE" -> com.example.data.model.NotificationType.SECURITY_ACCOUNT_UPDATE
+            else -> com.example.data.model.NotificationType.LIKE
+          }
+          val dest = when (notifType) {
+            com.example.data.model.NotificationType.FOLLOW -> "USER_PROFILE"
+            com.example.data.model.NotificationType.DIRECT_MESSAGE,
+            com.example.data.model.NotificationType.GROUP_MESSAGE -> "INBOX"
+            else -> "MAIN"
+          }
+          val actorStub = dto.actorId?.takeIf { it.isNotBlank() }?.let { aid ->
+            User(id = aid, username = "vyber", displayName = "VYBE Member")
+          }
+
+          NotificationItem(
+            id = id,
+            type = notifType,
+            title = dto.title,
+            message = dto.message,
+            timestamp = formatRelativeTimestamp(dto.createdAt),
+            isRead = dto.isRead ?: false,
+            actorUser = actorStub,
+            destinationScreen = dest,
+            targetEntityId = dto.targetId ?: dto.actorId
+          )
+        }
+        Result.success(items)
       } else {
-        Result.failure(Exception("Failed to post comment"))
+        Result.failure(Exception("Unable to load notifications"))
       }
     } catch (e: Exception) {
       Result.failure(e)
     }
   }
 
-  suspend fun followUser(followerId: String, followedId: String, accessToken: String = ""): Result<Unit> = withContext(Dispatchers.IO) {
-    if (!isConfigured) return@withContext Result.success(Unit)
-    try {
-      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
-      val resp = SupabaseNetworkClient.restApi.insertFollow(
-        apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = authHeader,
-        body = SupabaseFollowDto(followerId = followerId, followedId = followedId)
-      )
-      if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to follow"))
-    } catch (e: Exception) {
-      Result.failure(e)
-    }
-  }
-
-  suspend fun unfollowUser(followerId: String, followedId: String, accessToken: String = ""): Result<Unit> = withContext(Dispatchers.IO) {
-    if (!isConfigured) return@withContext Result.success(Unit)
-    try {
-      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
-      val resp = SupabaseNetworkClient.restApi.deleteFollow(
-        apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = authHeader,
-        followerFilter = "eq.$followerId",
-        followedFilter = "eq.$followedId"
-      )
-      if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to unfollow"))
-    } catch (e: Exception) {
-      Result.failure(e)
-    }
-  }
-
-  suspend fun blockUser(blockerId: String, blockedId: String, accessToken: String = ""): Result<Unit> = withContext(Dispatchers.IO) {
-    if (!isConfigured) return@withContext Result.success(Unit)
-    try {
-      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
-      val resp = SupabaseNetworkClient.restApi.insertBlock(
-        apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = authHeader,
-        body = SupabaseBlockDto(blockerId = blockerId, blockedId = blockedId)
-      )
-      if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to block user"))
-    } catch (e: Exception) {
-      Result.failure(e)
-    }
-  }
-
-  suspend fun unblockUser(blockerId: String, blockedId: String, accessToken: String = ""): Result<Unit> = withContext(Dispatchers.IO) {
-    if (!isConfigured) return@withContext Result.success(Unit)
-    try {
-      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
-      val resp = SupabaseNetworkClient.restApi.deleteBlock(
-        apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = authHeader,
-        blockerFilter = "eq.$blockerId",
-        blockedFilter = "eq.$blockedId"
-      )
-      if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to unblock user"))
-    } catch (e: Exception) {
-      Result.failure(e)
-    }
-  }
-
-  suspend fun submitReport(
-    reporterId: String,
-    targetType: String,
-    targetId: String,
-    reason: String,
-    details: String = "",
+  suspend fun createInteractionNotificationIfNeeded(
+    recipientId: String,
+    actorId: String,
+    type: String,
+    title: String,
+    message: String,
+    targetId: String? = null,
     accessToken: String = ""
-  ): Result<Unit> = withContext(Dispatchers.IO) {
-    if (!isConfigured) return@withContext Result.success(Unit)
+  ) = withContext(Dispatchers.IO) {
+    if (!isConfigured || recipientId.isBlank() || actorId.isBlank() || recipientId == actorId) return@withContext
+    val authHeader = authHeaderFor(accessToken) ?: return@withContext
     try {
-      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
-      val dto = SupabaseReportDto(
-        reporterId = reporterId,
-        targetType = targetType,
-        targetId = targetId,
-        reason = reason,
-        adminNotes = details.ifBlank { null }
-      )
-      val resp = SupabaseNetworkClient.restApi.submitReport(
+      SupabaseNetworkClient.restApi.insertNotification(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
-        body = dto
+        notification = SupabaseNotificationDto(
+          recipientId = recipientId,
+          actorId = actorId,
+          type = type,
+          title = title,
+          message = message,
+          targetId = targetId,
+          isRead = false
+        )
       )
-      if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to submit report"))
+    } catch (_: Exception) {
+      // Safe no-op when DB trigger already created it or RLS restricts duplicate insert
+    }
+  }
+
+  suspend fun markAllNotificationsRead(recipientId: String, accessToken: String = ""): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured || recipientId.isBlank()) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken) ?: return@withContext Result.success(Unit)
+    try {
+      val resp = SupabaseNetworkClient.restApi.markNotificationsRead(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        recipientIdFilter = "eq.$recipientId",
+        body = mapOf("is_read" to true)
+      )
+      if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to mark read"))
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun markNotificationRead(notificationId: String, accessToken: String = ""): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured || notificationId.isBlank()) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken) ?: return@withContext Result.success(Unit)
+    try {
+      SupabaseNetworkClient.restApi.markSingleNotificationRead(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        idFilter = "eq.$notificationId",
+        body = mapOf("is_read" to true)
+      )
+      Result.success(Unit)
     } catch (e: Exception) {
       Result.failure(e)
     }
@@ -814,8 +2238,9 @@ class SupabaseRepository {
 
   suspend fun deleteNotification(notificationId: String, accessToken: String = ""): Result<Unit> = withContext(Dispatchers.IO) {
     if (!isConfigured) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Authentication required."))
     try {
-      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
       val resp = SupabaseNetworkClient.restApi.deleteNotification(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
@@ -827,224 +2252,104 @@ class SupabaseRepository {
     }
   }
 
-  /**
-   * Uploads raw media (JPEG/PNG/MP4) to Supabase Storage and returns the public CDN URL.
-   */
-  suspend fun uploadMediaFile(
-    bucket: String,
-    fileName: String,
-    bytes: ByteArray,
-    mimeType: String,
-    accessToken: String = ""
-  ): Result<String> = withContext(Dispatchers.IO) {
-    if (!isConfigured) return@withContext Result.failure(IllegalStateException("Supabase backend not configured"))
-    try {
-      val cleanBucket = bucket.trim()
-      val cleanFileName = fileName.trim().removePrefix("/")
-      val uploadUrl = "${SupabaseConfig.supabaseUrl}/storage/v1/object/$cleanBucket/$cleanFileName"
-      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
+  // =========================================================================
+  // 9. HELPERS (TIMESTAMPS, AGE & ERROR PARSING)
+  // =========================================================================
 
-      val body = bytes.toRequestBody(mimeType.toMediaTypeOrNull())
-      val request = Request.Builder()
-        .url(uploadUrl)
-        .addHeader("apikey", SupabaseConfig.supabaseAnonKey)
-        .addHeader("Authorization", authHeader)
-        .addHeader("Content-Type", mimeType)
-        .addHeader("x-upsert", "true")
-        .post(body)
-        .build()
-
-      val response = SupabaseNetworkClient.okHttpClient.newCall(request).execute()
-      if (response.isSuccessful) {
-        val publicUrl = "${SupabaseConfig.supabaseUrl}/storage/v1/object/public/$cleanBucket/$cleanFileName"
-        Result.success(publicUrl)
-      } else {
-        Result.failure(Exception("Storage upload error HTTP ${response.code}: ${response.message}"))
-      }
-    } catch (e: Exception) {
-      Log.e(TAG, "Storage upload failed: ${e.message}", e)
-      Result.failure(e)
+  private fun calculateAge(dateOfBirth: String): Int {
+    return try {
+      val parts = dateOfBirth.split("-")
+      if (parts.size == 3) {
+        val y = parts[0].toInt()
+        val m = parts[1].toInt()
+        val d = parts[2].toInt()
+        val cal = java.util.Calendar.getInstance()
+        val cy = cal.get(java.util.Calendar.YEAR)
+        val cm = cal.get(java.util.Calendar.MONTH) + 1
+        val cd = cal.get(java.util.Calendar.DAY_OF_MONTH)
+        var calculated = cy - y
+        if (cm < m || (cm == m && cd < d)) calculated--
+        calculated
+      } else 20
+    } catch (_: Exception) {
+      20
     }
   }
 
-  /**
-   * Fetches posts from Supabase PostgREST, including post media and author profile.
-   */
-  suspend fun fetchPosts(accessToken: String = ""): Result<List<Post>> = withContext(Dispatchers.IO) {
-    if (!isConfigured) return@withContext Result.success(emptyList())
-    try {
-      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
-      val resp = SupabaseNetworkClient.restApi.getPosts(
-        apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = authHeader,
-        limit = 50
-      )
-      if (resp.isSuccessful && resp.body() != null) {
-        val dtos = resp.body()!!
-        val postsList = dtos.map { dto ->
-          val authorUser = if (dto.profiles != null) {
-            User(
-              id = dto.profiles.id,
-              username = dto.profiles.username,
-              displayName = dto.profiles.displayName,
-              avatarUrl = dto.profiles.avatarUrl ?: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400",
-              isVerified = dto.profiles.isVerified ?: false,
-              isVip = dto.profiles.isVip ?: false,
-              followersCount = dto.profiles.followersCount ?: 0,
-              followingCount = dto.profiles.followingCount ?: 0,
-              postsCount = dto.profiles.postsCount ?: 0
-            )
-          } else {
-            User(id = dto.authorId, username = "vyber", displayName = "Vyber")
-          }
+  private fun formatIsoUtc(epochMillis: Long): String {
+    val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
+    sdf.timeZone = TimeZone.getTimeZone("UTC")
+    return sdf.format(Date(epochMillis))
+  }
 
-          val mediaUrls = dto.postMedia?.sortedBy { it.displayOrder }?.map { it.mediaUrl } ?: emptyList()
-          val mediaType = try {
-            MediaType.valueOf(dto.mediaType ?: "IMAGE")
-          } catch (e: Exception) {
-            if (mediaUrls.any { it.endsWith(".mp4", ignoreCase = true) }) MediaType.VIDEO else MediaType.IMAGE
-          }
-          val moodZone = if (!dto.moodZone.isNullOrBlank()) {
-            try { MoodType.valueOf(dto.moodZone) } catch (e: Exception) { null }
-          } else null
-
-          Post(
-            id = dto.id,
-            author = authorUser,
-            caption = dto.caption ?: "",
-            mediaUrls = mediaUrls,
-            mediaType = mediaType,
-            timestamp = dto.createdAt?.take(10) ?: "Recently",
-            likesCount = dto.likesCount ?: 0,
-            commentsCount = dto.commentsCount ?: 0,
-            savesCount = dto.savesCount ?: 0,
-            viewsCount = dto.viewsCount ?: 0,
-            isUnfiltered = dto.isUnfiltered ?: false,
-            isVybesReel = dto.isVybesReel ?: false,
-            moodZone = moodZone
-          )
-        }
-        Result.success(postsList)
-      } else {
-        Result.failure(Exception("Failed to fetch posts: HTTP ${resp.code()}"))
-      }
-    } catch (e: Exception) {
-      Log.e(TAG, "Error fetching posts from Supabase: ${e.message}", e)
-      Result.failure(e)
+  private fun parseIsoMillis(iso: String?): Long? {
+    if (iso.isNullOrBlank()) return null
+    val clean = iso.trim()
+      .replace(Regex("\\.\\d+"), "")
+      .replace("+00:00", "Z")
+      .replace("+00", "Z")
+    return try {
+      val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
+      sdf.timeZone = TimeZone.getTimeZone("UTC")
+      sdf.parse(clean)?.time
+    } catch (_: Exception) {
+      null
     }
   }
 
-  /**
-   * Creates a post in Supabase and inserts associated media items.
-   */
-  suspend fun createPostOnSupabase(
-    post: Post,
-    accessToken: String = ""
-  ): Result<Post> = withContext(Dispatchers.IO) {
-    if (!isConfigured) return@withContext Result.success(post)
-    try {
-      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
-      val insertDto = SupabasePostInsertDto(
-        authorId = post.author.id,
-        caption = post.caption,
-        mediaType = post.mediaType.name,
-        moodZone = post.moodZone?.name,
-        isUnfiltered = post.isUnfiltered,
-        isVybesReel = post.isVybesReel,
-        viewsCount = 0
-      )
-
-      val postResp = SupabaseNetworkClient.restApi.insertPost(
-        apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = authHeader,
-        post = insertDto
-      )
-
-      if (postResp.isSuccessful && !postResp.body().isNullOrEmpty()) {
-        val createdPostDto = postResp.body()!!.first()
-        val createdId = createdPostDto.id
-
-        // Insert media if present
-        if (post.mediaUrls.isNotEmpty()) {
-          post.mediaUrls.forEachIndexed { index, url ->
-            val mediaDto = SupabasePostMediaDto(
-              postId = createdId,
-              mediaUrl = url,
-              mediaType = post.mediaType.name,
-              displayOrder = index
-            )
-            try {
-              SupabaseNetworkClient.restApi.insertPostMedia(
-                apiKey = SupabaseConfig.supabaseAnonKey,
-                authHeader = authHeader,
-                media = mediaDto
-              )
-            } catch (mediaErr: Exception) {
-              Log.w(TAG, "Media insertion warning: ${mediaErr.message}")
-            }
-          }
-        }
-
-        Result.success(post.copy(id = createdId))
-      } else {
-        Result.failure(Exception("Post creation failed on Supabase: HTTP ${postResp.code()}"))
-      }
-    } catch (e: Exception) {
-      Log.e(TAG, "Failed creating post on Supabase: ${e.message}", e)
-      Result.failure(e)
+  private fun formatRelativeTimestamp(iso: String?): String {
+    val millis = parseIsoMillis(iso) ?: return iso?.take(10) ?: "Recently"
+    val diffSec = ((System.currentTimeMillis() - millis) / 1000L).coerceAtLeast(0L)
+    return when {
+      diffSec < 60L -> "Just now"
+      diffSec < 3600L -> "${diffSec / 60L}m ago"
+      diffSec < 86_400L -> "${diffSec / 3600L}h ago"
+      diffSec < 604_800L -> "${diffSec / 86_400L}d ago"
+      else -> iso?.take(10) ?: "Recently"
     }
   }
 
-  /**
-   * Deletes a post from Supabase by post ID.
-   */
-  suspend fun deletePostOnSupabase(
-    postId: String,
-    accessToken: String = ""
-  ): Result<Unit> = withContext(Dispatchers.IO) {
-    if (!isConfigured) return@withContext Result.success(Unit)
-    try {
-      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
-      val resp = SupabaseNetworkClient.restApi.deletePost(
-        apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = authHeader,
-        idFilter = "eq.$postId"
-      )
-      if (resp.isSuccessful) {
-        Result.success(Unit)
-      } else {
-        Result.failure(Exception("Failed to delete post on Supabase: HTTP ${resp.code()}"))
+  private fun formatShortClock(iso: String?): String {
+    val millis = parseIsoMillis(iso) ?: return "Now"
+    val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+    return sdf.format(Date(millis))
+  }
+
+  private fun parseErrorMessage(jsonBody: String, fallback: String): String {
+    if (jsonBody.isBlank()) return fallback
+    return try {
+      val trimmed = jsonBody.trim()
+      val json = if (trimmed.startsWith("[")) JSONArray(trimmed).optJSONObject(0) ?: return fallback else JSONObject(trimmed)
+      val raw = when {
+        json.has("error_description") && !json.isNull("error_description") -> json.getString("error_description")
+        json.has("msg") && !json.isNull("msg") -> json.getString("msg")
+        json.has("message") && !json.isNull("message") -> json.getString("message")
+        json.has("error") && !json.isNull("error") -> json.getString("error")
+        else -> fallback
       }
-    } catch (e: Exception) {
-      Log.e(TAG, "Failed to delete post: ${e.message}", e)
-      Result.failure(e)
+      when {
+        raw.contains("otp_expired", true) || raw.contains("Token has expired", true) ->
+          "This verification or recovery link has expired. Please request a new one."
+        raw.contains("Invalid login credentials", true) ->
+          "Incorrect email or password. Please try again."
+        raw.contains("Email not confirmed", true) ->
+          "Your email address is not confirmed yet. Please check your inbox."
+        else -> raw
+      }
+    } catch (_: Exception) {
+      fallback
     }
   }
 
-  /**
-   * Increments post view count via Supabase RPC.
-   */
-  suspend fun recordPostView(
-    postId: String,
-    viewerId: String? = null,
-    accessToken: String = ""
-  ): Result<Int> = withContext(Dispatchers.IO) {
-    if (!isConfigured) return@withContext Result.success(1)
-    try {
-      val authHeader = if (accessToken.isNotBlank()) "Bearer $accessToken" else "Bearer ${SupabaseConfig.supabaseAnonKey}"
-      val resp = SupabaseNetworkClient.restApi.incrementPostView(
-        apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = authHeader,
-        request = SupabaseRpcIncrementViewRequest(postId = postId, viewerId = viewerId)
-      )
-      if (resp.isSuccessful && resp.body() != null) {
-        Result.success(resp.body()!!)
-      } else {
-        Result.success(1)
-      }
-    } catch (e: Exception) {
-      Result.failure(e)
+  private fun friendlyNetworkMessage(e: Exception, fallback: String): String {
+    val msg = e.message.orEmpty()
+    return when {
+      e is java.net.UnknownHostException || msg.contains("Unable to resolve host", true) ->
+        "No internet connection. Please reconnect and try again."
+      e is java.net.SocketTimeoutException || msg.contains("timeout", true) ->
+        "The server took too long to respond. Please retry."
+      msg.isNotBlank() -> msg
+      else -> fallback
     }
   }
 }
-

@@ -1,14 +1,18 @@
 package com.example.ui.screens
 
+import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -20,17 +24,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
+import com.example.data.model.MoodType
+import com.example.data.model.matchesMoodFilter
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.components.PostCard
 import com.example.ui.components.StoryCarousel
 import com.example.ui.components.StoryCreateDialog
 import com.example.ui.components.VybeAvatar
+import com.example.ui.components.VybeMatchesManagerDialog
 import com.example.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -38,12 +48,15 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeedScreen(viewModel: VybeViewModel) {
+  val context = LocalContext.current
   val currentUser by viewModel.currentUser.collectAsState()
   val posts by viewModel.posts.collectAsState()
   val stories by viewModel.stories.collectAsState()
   val selectedMood by viewModel.selectedMoodFilter.collectAsState()
   val notifications by viewModel.notifications.collectAsState()
   val followingUserIds by viewModel.followingUserIds.collectAsState()
+  val allUsers by viewModel.allUsers.collectAsState()
+  val vybeMatches by viewModel.vybeMatches.collectAsState()
   val coroutineScope = rememberCoroutineScope()
 
   var feedTab by remember { mutableStateOf("For You") }
@@ -51,34 +64,14 @@ fun FeedScreen(viewModel: VybeViewModel) {
 
   var isRefreshing by remember { mutableStateOf(false) }
   var showStoryCreateSheet by remember { mutableStateOf(false) }
-  var storyTypeSelected by remember { mutableStateOf<String?>(null) }
+  var showVybeMatchesDialog by remember { mutableStateOf(false) }
   var storyCreatedFeedback by remember { mutableStateOf<String?>(null) }
 
-  val context = androidx.compose.ui.platform.LocalContext.current
-  var availableRelease by remember { mutableStateOf<com.example.util.GitHubReleaseInfo?>(null) }
-  var isUpdateBannerDismissed by remember { mutableStateOf(false) }
-
-  LaunchedEffect(Unit) {
-    try {
-      val repo = com.example.util.GitHubUpdater.getSavedRepo(context)
-      if (repo.isNotBlank()) {
-        val res = com.example.util.GitHubUpdater.checkForUpdates(repo, currentVersion = "2.0.0")
-        res.onSuccess { release ->
-          if (release.isUpdateAvailable) {
-            availableRelease = release
-          }
-        }
-      }
-    } catch (_: Exception) {}
-  }
-
-  val filteredPosts = remember(posts, selectedMood, feedTab, followingUserIds) {
-    var list = posts
-    if (selectedMood != null) {
-      list = list.filter { it.moodZone == selectedMood }
-    }
-    if (feedTab == "Following") {
-      list = list.filter { followingUserIds.contains(it.author.id) }
+  val filteredPosts = remember(posts, selectedMood, feedTab, followingUserIds, currentUser?.id) {
+    var list = posts.filter { !it.isArchived && it.matchesMoodFilter(selectedMood) }
+    when (feedTab) {
+      "Following" -> list = list.filter { followingUserIds.contains(it.author.id) || it.author.id == currentUser?.id }
+      "Discover" -> list = list.sortedByDescending { it.likesCount + it.commentsCount + it.viewsCount }
     }
     list
   }
@@ -86,30 +79,14 @@ fun FeedScreen(viewModel: VybeViewModel) {
   fun triggerRefresh() {
     if (isRefreshing) return
     isRefreshing = true
+    viewModel.refreshAllData()
     coroutineScope.launch {
-      delay(700)
+      delay(650)
       isRefreshing = false
     }
   }
 
-  val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-
-  // Smart Autoplay: Determine the most centered visible post in the feed viewport
-  val activePlayingPostId by remember {
-    derivedStateOf {
-      val layoutInfo = listState.layoutInfo
-      val visibleItems = layoutInfo.visibleItemsInfo
-      if (visibleItems.isEmpty()) null
-      else {
-        val viewportHeight = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
-        val viewportCenter = layoutInfo.viewportStartOffset + (viewportHeight / 2)
-        visibleItems.minByOrNull { item ->
-          val itemCenter = item.offset + (item.size / 2)
-          kotlin.math.abs(itemCenter - viewportCenter)
-        }?.key as? String
-      }
-    }
-  }
+  val listState = rememberLazyListState()
 
   LaunchedEffect(Unit) {
     viewModel.feedRefreshTrigger.collect {
@@ -130,8 +107,8 @@ fun FeedScreen(viewModel: VybeViewModel) {
                 .size(32.dp)
                 .clip(RoundedCornerShape(8.dp))
             ) {
-              androidx.compose.foundation.Image(
-                painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.vybe_app_icon_clean),
+              Image(
+                painter = painterResource(id = R.drawable.vybe_app_icon_clean),
                 contentDescription = "VYBE",
                 modifier = Modifier.fillMaxSize()
               )
@@ -144,28 +121,15 @@ fun FeedScreen(viewModel: VybeViewModel) {
               letterSpacing = 1.sp,
               color = MaterialTheme.colorScheme.onBackground
             )
-            if (currentUser?.currentMood != null) {
-              Spacer(modifier = Modifier.width(8.dp))
-              Surface(
-                color = currentUser!!.currentMood!!.accentColor.copy(alpha = 0.2f),
-                shape = RoundedCornerShape(8.dp)
-              ) {
-                Text(
-                  text = "${currentUser!!.currentMood!!.emoji} ${currentUser!!.currentMood!!.title}",
-                  fontSize = 11.sp,
-                  fontWeight = FontWeight.SemiBold,
-                  color = currentUser!!.currentMood!!.accentColor,
-                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                )
-              }
-            }
           }
         },
         actions = {
           val unreadNotifsCount = remember(notifications) { notifications.count { !it.isRead } }
           IconButton(
             onClick = { viewModel.navigateTo(Screen.NOTIFICATIONS) },
-            modifier = Modifier.testTag("notification_bell_button")
+            modifier = Modifier
+              .size(48.dp)
+              .testTag("notification_bell_button")
           ) {
             BadgedBox(
               badge = {
@@ -181,14 +145,18 @@ fun FeedScreen(viewModel: VybeViewModel) {
           }
           IconButton(
             onClick = { viewModel.navigateTo(Screen.SETTINGS) },
-            modifier = Modifier.testTag("settings_top_button")
+            modifier = Modifier
+              .size(48.dp)
+              .testTag("settings_top_button")
           ) {
             Icon(Icons.Default.Settings, contentDescription = "Settings")
           }
           if (currentUser != null) {
             IconButton(
               onClick = { viewModel.openUserProfile(currentUser!!) },
-              modifier = Modifier.testTag("profile_avatar_top_button")
+              modifier = Modifier
+                .size(48.dp)
+                .testTag("profile_avatar_top_button")
             ) {
               VybeAvatar(user = currentUser!!, size = 32.dp)
             }
@@ -224,66 +192,82 @@ fun FeedScreen(viewModel: VybeViewModel) {
           .fillMaxSize()
           .testTag("feed_list")
       ) {
-        // In-App Git Update Banner
-        if (availableRelease != null && !isUpdateBannerDismissed) {
-          item {
-            com.example.ui.components.InAppUpdateBanner(
-              release = availableRelease!!,
-              onUpdateClick = { viewModel.navigateTo(Screen.SETTINGS) },
-              onDismiss = { isUpdateBannerDismissed = true }
-            )
-          }
-        }
-
-        // Stories Carousel Tray
+        // Stories Tray + VYBE Matches Quick Access
         item {
           StoryCarousel(
             stories = stories,
             currentUser = currentUser,
             onStoryClick = { story -> viewModel.openStory(story) },
-            onAddStoryClick = { showStoryCreateSheet = true }
+            onAddStoryClick = { showStoryCreateSheet = true },
+            onManageVybeMatchesClick = { showVybeMatchesDialog = true },
+            vybeMatchesCount = vybeMatches.size
           )
         }
 
-        // Active Mood Zone Filter Banner
-        if (selectedMood != null) {
-          item {
-            Surface(
-              color = selectedMood!!.accentColor.copy(alpha = 0.15f),
-              shape = RoundedCornerShape(12.dp),
-              border = androidx.compose.foundation.BorderStroke(1.dp, selectedMood!!.accentColor.copy(alpha = 0.4f)),
-              modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 6.dp)
-            ) {
-              Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+        // Single, Unified Mood Selector Bar (No Light/Dark theme toggles here — theme stays in Settings)
+        item {
+          LazyRow(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(top = 10.dp, bottom = 4.dp)
+              .testTag("feed_mood_selector_row"),
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            item(key = "mood_all") {
+              val isAllSelected = selectedMood == null
+              Surface(
+                color = if (isAllSelected) VybeViolet.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(14.dp),
+                border = if (isAllSelected) BorderStroke(1.5.dp, VybeViolet) else null,
+                modifier = Modifier
+                  .clip(RoundedCornerShape(14.dp))
+                  .clickable { viewModel.selectMoodFilter(null) }
+                  .testTag("feed_mood_chip_ALL")
               ) {
-                Text(text = selectedMood!!.emoji, fontSize = 24.sp)
-                Spacer(modifier = Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
+                Text(
+                  text = "All Vibes",
+                  fontSize = 12.sp,
+                  fontWeight = if (isAllSelected) FontWeight.Bold else FontWeight.Medium,
+                  color = if (isAllSelected) VybeViolet else MaterialTheme.colorScheme.onSurfaceVariant,
+                  modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                )
+              }
+            }
+
+            items(MoodType.values(), key = { it.name }) { mood ->
+              val isSelected = selectedMood == mood
+              Surface(
+                color = if (isSelected) mood.accentColor.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(14.dp),
+                border = if (isSelected) BorderStroke(1.5.dp, mood.accentColor) else null,
+                modifier = Modifier
+                  .clip(RoundedCornerShape(14.dp))
+                  .clickable {
+                    viewModel.selectMoodFilter(if (isSelected) null else mood)
+                  }
+                  .testTag("feed_mood_chip_${mood.name}")
+              ) {
+                Row(
+                  modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Text(text = mood.emoji, fontSize = 13.sp)
+                  Spacer(modifier = Modifier.width(5.dp))
                   Text(
-                    text = "Filtered by ${selectedMood!!.title} Zone",
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 14.sp
+                    text = mood.title,
+                    fontSize = 12.sp,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                    color = if (isSelected) mood.accentColor else MaterialTheme.colorScheme.onSurfaceVariant
                   )
-                  Text(
-                    text = selectedMood!!.vibeTagline,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp
-                  )
-                }
-                TextButton(onClick = { viewModel.selectMoodFilter(null) }) {
-                  Text("Clear", color = selectedMood!!.accentColor, fontWeight = FontWeight.Bold)
                 }
               }
             }
           }
         }
 
-        // Tab switcher ("For You", "Following", "Discover")
+        // Feed Stream Tabs ("For You", "Following", "Discover")
         item {
           Row(
             modifier = Modifier
@@ -296,7 +280,9 @@ fun FeedScreen(viewModel: VybeViewModel) {
               Surface(
                 color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                 shape = RoundedCornerShape(18.dp),
-                modifier = Modifier.clickable { feedTab = tab }
+                modifier = Modifier
+                  .clip(RoundedCornerShape(18.dp))
+                  .clickable { feedTab = tab }
               ) {
                 Text(
                   text = tab,
@@ -310,7 +296,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
           }
         }
 
-        // Feed Posts
+        // Feed Posts or Clean Empty State
         if (filteredPosts.isEmpty()) {
           item {
             Box(
@@ -344,19 +330,24 @@ fun FeedScreen(viewModel: VybeViewModel) {
                   }
                   Spacer(modifier = Modifier.height(14.dp))
                   Text(
-                    text = if (selectedMood != null) "No posts in this vibe yet" else "Welcome to VYBE",
+                    text = when {
+                      feedTab == "Following" -> "No posts from followed accounts yet"
+                      selectedMood != null -> "No posts in ${selectedMood?.title} yet"
+                      else -> "Welcome to VYBE"
+                    },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                   )
                   Spacer(modifier = Modifier.height(6.dp))
                   Text(
-                    text = if (selectedMood != null)
-                      "Be the first to share an authentic moment in the ${selectedMood?.title} zone!"
-                    else
-                      "Your feed is clean and ready. Share your first moment, photo, or story with the community!",
+                    text = when {
+                      feedTab == "Following" -> "Follow creators in Explore to see their latest posts and stories here."
+                      selectedMood != null -> "Be the first to share a moment in the ${selectedMood?.title} zone."
+                      else -> "Your feed is ready. Share a post, video, or story with the community."
+                    },
                     style = MaterialTheme.typography.bodySmall,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 18.sp
                   )
@@ -365,7 +356,8 @@ fun FeedScreen(viewModel: VybeViewModel) {
                     Button(
                       onClick = { viewModel.navigateTo(Screen.CREATE_POST) },
                       colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-                      shape = RoundedCornerShape(12.dp)
+                      shape = RoundedCornerShape(12.dp),
+                      modifier = Modifier.heightIn(min = 48.dp)
                     ) {
                       Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(16.dp))
                       Spacer(modifier = Modifier.width(6.dp))
@@ -373,7 +365,8 @@ fun FeedScreen(viewModel: VybeViewModel) {
                     }
                     OutlinedButton(
                       onClick = { showStoryCreateSheet = true },
-                      shape = RoundedCornerShape(12.dp)
+                      shape = RoundedCornerShape(12.dp),
+                      modifier = Modifier.heightIn(min = 48.dp)
                     ) {
                       Text("Add Story", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                     }
@@ -384,40 +377,43 @@ fun FeedScreen(viewModel: VybeViewModel) {
           }
         } else {
           items(filteredPosts, key = { it.id }) { post ->
-            val isFollowed = followingUserIds.contains(post.author.id)
-            val isAutoPlayActive = (post.id == activePlayingPostId)
             PostCard(
               post = post,
-              isFollowing = isFollowed,
-              onFollowClick = { viewModel.toggleFollowUser(post.author.id) },
               onLikeClick = { viewModel.toggleLike(post.id) },
               onSaveClick = { viewModel.toggleSave(post.id) },
-              onCommentClick = { viewModel.addComment(post.id, "Appreciating this vibe!") },
+              onCommentClick = { viewModel.loadCommentsForPost(post.id) },
               onAddComment = { text -> viewModel.addComment(post.id, text) },
+              onLoadComments = { viewModel.loadCommentsForPost(post.id) },
               onShareClick = {
-                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
                   type = "text/plain"
-                  putExtra(android.content.Intent.EXTRA_SUBJECT, "Check out this VYBE post")
-                  putExtra(android.content.Intent.EXTRA_TEXT, "${post.caption}\n\nhttps://vybe.app/p/${post.id}")
+                  putExtra(
+                    Intent.EXTRA_TEXT,
+                    "${post.author.displayName} (@${post.author.username}) on VYBE:\n${post.caption}"
+                  )
                 }
-                context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Post via"))
+                context.startActivity(Intent.createChooser(shareIntent, "Share VYBE Post"))
               },
               onUserClick = { user -> viewModel.openUserProfile(user) },
               onRemixClick = { viewModel.navigateTo(Screen.REELS_VIEWER) },
               onDeleteClick = { viewModel.deletePost(post.id) },
+              onReportPost = { reason ->
+                coroutineScope.launch {
+                  viewModel.submitReport("POST", post.id, reason)
+                  viewModel.postBannerMessage("Report submitted for review.")
+                }
+              },
               onPostViewed = { viewModel.recordPostView(it) },
-              currentUserId = currentUser?.id,
-              isAutoPlayActive = isAutoPlayActive
+              currentUserId = currentUser?.id
             )
           }
         }
 
         item {
-          Spacer(modifier = Modifier.height(80.dp))
+          Spacer(modifier = Modifier.height(84.dp))
         }
       }
 
-      // Visual feedback banner during double-tap feed refresh
       AnimatedVisibility(
         visible = isRefreshing,
         enter = fadeIn(),
@@ -442,7 +438,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-              text = "Refreshed with latest VYBES!",
+              text = "Syncing latest VYBE feed...",
               color = Color.White,
               fontSize = 12.sp,
               fontWeight = FontWeight.Bold
@@ -451,7 +447,6 @@ fun FeedScreen(viewModel: VybeViewModel) {
         }
       }
 
-      // Feedback for created story
       if (storyCreatedFeedback != null) {
         Snackbar(
           modifier = Modifier
@@ -469,7 +464,6 @@ fun FeedScreen(viewModel: VybeViewModel) {
     }
   }
 
-  // Instagram-style Story Creation Dialog with separate fields (Photo, Type/Text, Music, Video, Audience, Location)
   if (showStoryCreateSheet) {
     StoryCreateDialog(
       viewModel = viewModel,
@@ -480,5 +474,15 @@ fun FeedScreen(viewModel: VybeViewModel) {
       }
     )
   }
-}
 
+  if (showVybeMatchesDialog && currentUser != null) {
+    VybeMatchesManagerDialog(
+      currentUserId = currentUser!!.id,
+      allUsers = allUsers,
+      selectedMatches = vybeMatches,
+      onAddMatch = { viewModel.addVybeMatch(it) },
+      onRemoveMatch = { viewModel.removeVybeMatch(it) },
+      onDismiss = { showVybeMatchesDialog = false }
+    )
+  }
+}

@@ -3,17 +3,15 @@ package com.example.data.remote
 import com.example.BuildConfig
 
 /**
- * Supabase Configuration for VYBE.
+ * Supabase & Maps Configuration for VYBE.
  *
- * Reads SUPABASE_URL and SUPABASE_ANON_KEY from BuildConfig
- * (which is populated via .env or .env.example by the Secrets Gradle Plugin).
- * If BuildConfig contains default placeholders or is blank, it seamlessly
- * connects using the live project credentials so installing directly on a physical
- * Android phone works instantly out-of-the-box.
+ * Reads SUPABASE_URL, SUPABASE_ANON_KEY, and GOOGLE_MAPS_API_KEY from BuildConfig
+ * (populated via .env / AI Studio Secrets panel or .env.example by the Secrets Gradle Plugin).
  *
  * IMPORTANT SECURITY RULES:
  * - Only the publishable/anon key is accessed here.
- * - Service-role key is in the Gradle ignoreList and is NEVER included or exposed in Android code.
+ * - SUPABASE_SERVICE_ROLE_KEY is in the Gradle ignoreList and is NEVER included or exposed in Android code.
+ * - GOOGLE_MAPS_API_KEY is read via BuildConfig and never hardcoded in source code.
  */
 object SupabaseConfig {
   const val LIVE_SUPABASE_URL = "https://cppwadedazpbevkfrchg.supabase.co"
@@ -35,9 +33,41 @@ object SupabaseConfig {
       LIVE_SUPABASE_ANON_KEY
     }
 
+  val googleMapsApiKey: String
+    get() = try {
+      val key = BuildConfig.GOOGLE_MAPS_API_KEY.trim()
+      if (key.isNotBlank() && !key.contains("placeholder", ignoreCase = true)) key else ""
+    } catch (e: Throwable) {
+      ""
+    }
+
+  fun isGoogleMapsConfigured(): Boolean = googleMapsApiKey.isNotBlank()
+
   /**
-   * Returns true if a live, non-placeholder Supabase URL and Anon Key are configured.
+   * Returns true if a valid 3-segment JWT access token is provided.
+   * `sb_publishable_*` keys must ONLY be sent in `apikey` header, NEVER in `Authorization: Bearer ...`!
    */
+  fun isJwtAccessToken(token: String?): Boolean {
+    if (token.isNullOrBlank()) return false
+    val clean = token.trim().removePrefix("Bearer ").trim()
+    return clean.count { it == '.' } == 2 && !clean.startsWith("sb_publishable_")
+  }
+
+  /**
+   * Builds a valid `Authorization` header ONLY when a real user JWT or legacy JWT anon key exists.
+   * Returns `null` when only `sb_publishable_*` is available so PostgREST uses `apikey` without throwing 401 JWSInvalidCompact.
+   */
+  fun buildAuthHeader(accessToken: String?): String? {
+    val clean = accessToken?.trim()?.removePrefix("Bearer ")?.trim()
+    if (!clean.isNullOrBlank() && isJwtAccessToken(clean)) {
+      return "Bearer $clean"
+    }
+    if (isJwtAccessToken(supabaseAnonKey)) {
+      return "Bearer $supabaseAnonKey"
+    }
+    return null
+  }
+
   fun isConfigured(): Boolean {
     val url = supabaseUrl
     val key = supabaseAnonKey

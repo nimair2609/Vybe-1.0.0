@@ -45,7 +45,25 @@ data class Post(
   val remixOriginalAuthor: String? = null,
   val comments: List<PostComment> = emptyList(),
   val audioTrackTitle: String? = null,
+  val locationName: String? = null,
+  val latitude: Double? = null,
+  val longitude: Double? = null,
+  val mediaAspectRatio: Float? = null,
+  val storagePaths: List<String> = emptyList(),
+  val clientUploadId: String? = null,
   val isPinned: Boolean = false,
   val userReaction: VybeReaction? = null,
   val reactionsCount: Map<VybeReaction, Int> = emptyMap()
 )
+
+/**
+ * Ensures consistent mood filtering across Feed and Mood Zones:
+ * - `null` ("All") displays all posts.
+ * - `MoodType.GENERAL` displays posts explicitly tagged General AND posts without an explicit mood (`moodZone == null`).
+ * - Any specific mood displays posts tagged with that mood.
+ */
+fun Post.matchesMoodFilter(filter: MoodType?): Boolean = when (filter) {
+  null -> true
+  MoodType.GENERAL -> moodZone == null || moodZone == MoodType.GENERAL
+  else -> moodZone == filter
+}

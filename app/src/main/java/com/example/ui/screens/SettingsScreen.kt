@@ -1,12 +1,12 @@
 package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -18,23 +18,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
-import com.example.util.GitHubUpdater
-import com.example.util.GitHubReleaseInfo
+import com.example.R
 import com.example.data.model.AppThemeMode
+import com.example.data.model.UserRole
+import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VybeAvatar
-import com.example.ui.components.UpdateInstallPermissionDialog
-import com.example.ui.components.DeveloperGitReleaseGuideDialog
+import com.example.ui.components.VybeMatchesManagerDialog
 import com.example.ui.theme.*
-import java.io.File
-import java.util.Locale
+import com.example.util.GitHubReleaseInfo
+import com.example.util.GitHubUpdater
+import kotlinx.coroutines.launch
 
 enum class SettingsSubpage {
   NONE,
@@ -46,6 +49,7 @@ enum class SettingsSubpage {
   TIME_MANAGEMENT,
   HELP,
   SUPPORT_TICKETS,
+  CHECK_FOR_UPDATES,
   ABOUT
 }
 
@@ -70,36 +74,37 @@ fun SettingsScreen(viewModel: VybeViewModel) {
   val notifPrefs by viewModel.notificationPreferences.collectAsState()
   val activities by viewModel.userActivity.collectAsState()
   val posts by viewModel.posts.collectAsState()
+  val vybeMatches by viewModel.vybeMatches.collectAsState()
+  val allUsers by viewModel.allUsers.collectAsState()
+  val isOnline by viewModel.isOnline.collectAsState()
 
   var showDeactivateModal by remember { mutableStateOf(false) }
+  var showVybeMatchesDialog by remember { mutableStateOf(false) }
   var showTicketDialog by remember { mutableStateOf(false) }
   var ticketCategory by remember { mutableStateOf("Account & Verification") }
   var ticketSubject by remember { mutableStateOf("") }
   var ticketMessage by remember { mutableStateOf("") }
-  var ticketFeedback by remember { mutableStateOf<String?>(null) }
 
-  // Account Center state
-  var editFirstName by remember { mutableStateOf(currentUser?.firstName ?: "Siddharth") }
-  var editLastName by remember { mutableStateOf(currentUser?.lastName ?: "Verma") }
-  var editUserId by remember { mutableStateOf(currentUser?.username ?: "sid_verma") }
+  // Account Center state synced with authenticated user (no hardcoded demo names)
+  var editFirstName by remember { mutableStateOf(currentUser?.firstName.orEmpty()) }
+  var editLastName by remember { mutableStateOf(currentUser?.lastName.orEmpty()) }
+  var editUserId by remember { mutableStateOf(currentUser?.username.orEmpty()) }
   var userIdCheckStatus by remember { mutableStateOf<String?>(null) }
   var isUserIdAvailable by remember { mutableStateOf(true) }
   var profileSaveStatus by remember { mutableStateOf<String?>(null) }
 
-  // GitHub in-app updater state
+  LaunchedEffect(currentUser?.id) {
+    editFirstName = currentUser?.firstName.orEmpty()
+    editLastName = currentUser?.lastName.orEmpty()
+    editUserId = currentUser?.username.orEmpty()
+  }
+
+  // Designated single Check for Updates state
   val coroutineScope = rememberCoroutineScope()
   val context = LocalContext.current
-  var githubRepoInput by remember { mutableStateOf(GitHubUpdater.getSavedRepo(context)) }
+  var githubRepoInput by remember { mutableStateOf(GitHubUpdater.DEFAULT_GITHUB_REPO) }
   var isCheckingUpdate by remember { mutableStateOf(false) }
   var updateResult by remember { mutableStateOf<Result<GitHubReleaseInfo>?>(null) }
-  var isDownloadingApk by remember { mutableStateOf(false) }
-  var downloadProgress by remember { mutableStateOf(0f) }
-  var downloadedBytes by remember { mutableStateOf(0L) }
-  var totalBytes by remember { mutableStateOf(0L) }
-  var downloadedApkFile by remember { mutableStateOf<File?>(null) }
-  var installErrorMessage by remember { mutableStateOf<String?>(null) }
-  var showInstallPermissionDialog by remember { mutableStateOf(false) }
-  var showGitGuideDialog by remember { mutableStateOf(false) }
 
   Scaffold(
     topBar = {
@@ -128,8 +133,9 @@ fun SettingsScreen(viewModel: VybeViewModel) {
               SettingsSubpage.YOUR_ACTIVITY -> "Your Activity"
               SettingsSubpage.NOTIFICATIONS -> "Notification Preferences"
               SettingsSubpage.TIME_MANAGEMENT -> "Time Management"
-              SettingsSubpage.HELP -> "Help & Safety Guidelines"
+              SettingsSubpage.HELP -> "Privacy, Data & Safety"
               SettingsSubpage.SUPPORT_TICKETS -> "Support Tickets"
+              SettingsSubpage.CHECK_FOR_UPDATES -> "Check for Updates"
               SettingsSubpage.ABOUT -> "About VYBE"
             },
             fontWeight = FontWeight.Bold,
@@ -144,7 +150,6 @@ fun SettingsScreen(viewModel: VybeViewModel) {
   ) { paddingValues ->
     when (activeSubpage) {
       SettingsSubpage.NONE -> {
-        // Main Settings Directory (Section 5)
         LazyColumn(
           modifier = Modifier
             .fillMaxSize()
@@ -152,14 +157,13 @@ fun SettingsScreen(viewModel: VybeViewModel) {
             .padding(horizontal = 16.dp),
           verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-          // Profile summary card -> Leads to Account Center
           if (currentUser != null) {
             item {
               Spacer(modifier = Modifier.height(4.dp))
               Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(16.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, VybeViolet.copy(alpha = 0.35f)),
+                border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.35f)),
                 modifier = Modifier
                   .fillMaxWidth()
                   .clickable { activeSubpage = SettingsSubpage.ACCOUNT_CENTER }
@@ -174,6 +178,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                   Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                       Text(currentUser!!.displayName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                      Spacer(modifier = Modifier.width(4.dp))
                       VerificationBadge(user = currentUser!!)
                     }
                     Text("@${currentUser!!.username} • Account Center", fontSize = 12.sp, color = VybeViolet)
@@ -184,7 +189,136 @@ fun SettingsScreen(viewModel: VybeViewModel) {
             }
           }
 
-          // Section A: Account and Preferences
+          // Section: Privacy & Audience
+          item {
+            Text("Privacy & Audience", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+          }
+
+          item {
+            Card(
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+              shape = RoundedCornerShape(16.dp),
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+            ) {
+              Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                val isPrivateAccount = currentUser?.isPrivate == true
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                  Row(
+                    modifier = Modifier.weight(1f).padding(end = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Icon(
+                      imageVector = if (isPrivateAccount) Icons.Default.Lock else Icons.Default.Public,
+                      contentDescription = null,
+                      tint = VybeViolet,
+                      modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                      Text("Private Account", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                      Text(
+                        text = if (isPrivateAccount) {
+                          "Only approved followers can view your posts, reels, and stories."
+                        } else {
+                          "Your profile, public posts, and stories are visible on VYBE."
+                        },
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                      )
+                    }
+                  }
+                  Switch(
+                    checked = isPrivateAccount,
+                    onCheckedChange = { viewModel.setAccountPrivate(it) },
+                    modifier = Modifier.testTag("private_account_switch")
+                  )
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+
+                // Direct Message Privacy Control
+                val currentDmPrivacy = currentUser?.messagePrivacy ?: "EVERYONE"
+                Column {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.ChatBubbleOutline, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text("Who Can Message You", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                  }
+                  Spacer(modifier = Modifier.height(8.dp))
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                  ) {
+                    listOf(
+                      "EVERYONE" to "Everyone",
+                      "MUTUAL_FOLLOWS" to "Mutuals",
+                      "NONE" to "No One"
+                    ).forEach { (key, label) ->
+                      val isSelected = currentDmPrivacy == key
+                      Surface(
+                        color = if (isSelected) VybeViolet.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(10.dp),
+                        border = if (isSelected) BorderStroke(1.dp, VybeViolet) else null,
+                        modifier = Modifier
+                          .weight(1f)
+                          .heightIn(min = 40.dp)
+                          .clickable { viewModel.setMessagePrivacy(key) }
+                          .testTag("dm_privacy_${key.lowercase()}")
+                      ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)) {
+                          Text(
+                            text = label,
+                            fontSize = 12.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) VybeViolet else MaterialTheme.colorScheme.onSurface
+                          )
+                        }
+                      }
+                    }
+                  }
+                  Spacer(modifier = Modifier.height(4.dp))
+                  Text(
+                    text = when (currentDmPrivacy) {
+                      "MUTUAL_FOLLOWS" -> "Mutuals: Direct messaging opens only when both accounts follow each other."
+                      "NONE" -> "No One: New direct message threads from other users are disabled."
+                      else -> "Everyone: Registered VYBE members can start a conversation with you."
+                    },
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+
+                Row(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showVybeMatchesDialog = true }
+                    .padding(vertical = 4.dp)
+                    .testTag("manage_vybe_matches_settings_item"),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(22.dp))
+                  Spacer(modifier = Modifier.width(12.dp))
+                  Column(modifier = Modifier.weight(1f)) {
+                    Text("VYBE Matches Audience", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text(
+                      "${vybeMatches.size} people selected for restricted VYBE Matches stories",
+                      fontSize = 11.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                  }
+                  Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+              }
+            }
+          }
+
+          // Section: Account and Preferences
           item {
             Text("Account and Preferences", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
           }
@@ -193,7 +327,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
             Card(
               colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
               shape = RoundedCornerShape(16.dp),
-              border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
             ) {
               Column {
                 SettingsListItem(
@@ -208,7 +342,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                   icon = Icons.Default.Archive,
                   iconTint = VybeMagenta,
                   title = "Archive",
-                  subtitle = "Revisit and restore your private memories",
+                  subtitle = "Revisit and restore your archived posts",
                   onClick = { activeSubpage = SettingsSubpage.ARCHIVE }
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
@@ -224,7 +358,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                   icon = Icons.Default.Notifications,
                   iconTint = Color(0xFFFFB74D),
                   title = "Notifications",
-                  subtitle = "Push notifications, sound vibes, and email alerts",
+                  subtitle = "Push notifications and interaction preferences",
                   onClick = { activeSubpage = SettingsSubpage.NOTIFICATIONS }
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
@@ -232,14 +366,14 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                   icon = Icons.Default.Timer,
                   iconTint = Color(0xFF4ADE80),
                   title = "Time Management",
-                  subtitle = "Screen time insights, take-a-break reminders",
+                  subtitle = "Screen time insights and break reminders",
                   onClick = { activeSubpage = SettingsSubpage.TIME_MANAGEMENT }
                 )
               }
             }
           }
 
-          // Section B: Appearance / Theme (Section 4 requirement)
+          // Section: Appearance & Theme (kept exclusively in Settings)
           item {
             Text("Appearance & Theme", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
           }
@@ -248,37 +382,47 @@ fun SettingsScreen(viewModel: VybeViewModel) {
             Card(
               colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
               shape = RoundedCornerShape(16.dp),
-              border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
             ) {
               Column(modifier = Modifier.padding(14.dp)) {
-                Text("Select Application Theme:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Text("Application Theme", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(
                   modifier = Modifier.fillMaxWidth(),
                   horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                  listOf(AppThemeMode.DARK, AppThemeMode.LIGHT, AppThemeMode.SYSTEM).forEach { mode ->
+                  listOf(
+                    Triple(AppThemeMode.DARK, "Dark", Icons.Default.DarkMode),
+                    Triple(AppThemeMode.LIGHT, "Light", Icons.Default.LightMode),
+                    Triple(AppThemeMode.SYSTEM, "System", Icons.Default.SettingsBrightness)
+                  ).forEach { (mode, label, icon) ->
                     val isSelected = currentThemeMode == mode
                     Surface(
                       color = if (isSelected) VybeViolet.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant,
                       shape = RoundedCornerShape(12.dp),
-                      border = if (isSelected) androidx.compose.foundation.BorderStroke(1.5.dp, VybeViolet) else null,
+                      border = if (isSelected) BorderStroke(1.5.dp, VybeViolet) else null,
                       modifier = Modifier
                         .weight(1f)
+                        .heightIn(min = 48.dp)
                         .clickable { viewModel.setThemeMode(mode) }
+                        .testTag("theme_mode_${mode.name.lowercase()}")
                     ) {
-                      Column(
-                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 6.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                      Row(
+                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
                       ) {
+                        Icon(
+                          imageVector = icon,
+                          contentDescription = null,
+                          tint = if (isSelected) VybeViolet else MaterialTheme.colorScheme.onSurfaceVariant,
+                          modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                          text = when (mode) {
-                            AppThemeMode.DARK -> "🌙 Dark"
-                            AppThemeMode.LIGHT -> "☀️ Light"
-                            AppThemeMode.SYSTEM -> "📱 System"
-                          },
+                          text = label,
                           fontSize = 12.sp,
-                          fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                          fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                           color = if (isSelected) VybeViolet else MaterialTheme.colorScheme.onSurface
                         )
                       }
@@ -289,7 +433,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
             }
           }
 
-          // Section C: More Information
+          // Section: More Information & Single Designated Update Checker
           item {
             Text("More Information", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
           }
@@ -298,14 +442,23 @@ fun SettingsScreen(viewModel: VybeViewModel) {
             Card(
               colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
               shape = RoundedCornerShape(16.dp),
-              border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
             ) {
               Column {
                 SettingsListItem(
+                  icon = Icons.Default.SystemUpdate,
+                  iconTint = VybeOnlineGreen,
+                  title = "Check for Updates",
+                  subtitle = "Installed v${GitHubUpdater.INSTALLED_VERSION} • Check official GitHub releases",
+                  onClick = { activeSubpage = SettingsSubpage.CHECK_FOR_UPDATES },
+                  testTag = "settings_check_updates_item"
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                SettingsListItem(
                   icon = Icons.Default.HelpOutline,
                   iconTint = VybeBrandCyan,
-                  title = "Help & Guidelines",
-                  subtitle = "Safety standards, 16+ age policies, privacy FAQ",
+                  title = "Privacy, Data & Safety",
+                  subtitle = "Storage policies, RLS protection, and deletion retention",
                   onClick = { activeSubpage = SettingsSubpage.HELP }
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
@@ -321,33 +474,15 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                   icon = Icons.Default.Info,
                   iconTint = VybeBrandMagenta,
                   title = "About VYBE",
-                  subtitle = "Version 2.0.0 • Product of NR Next",
-                  onClick = { activeSubpage = SettingsSubpage.ABOUT }
-                )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
-                SettingsListItem(
-                  icon = Icons.Default.SystemUpdate,
-                  iconTint = VybeOnlineGreen,
-                  title = "Check for Updates",
-                  subtitle = "Over-the-air updates from Git without reinstalling",
-                  onClick = {
-                    activeSubpage = SettingsSubpage.ABOUT
-                    if (githubRepoInput.isNotBlank()) {
-                      isCheckingUpdate = true
-                      updateResult = null
-                      coroutineScope.launch {
-                        val res = GitHubUpdater.checkForUpdates(githubRepoInput)
-                        updateResult = res
-                        isCheckingUpdate = false
-                      }
-                    }
-                  }
+                  subtitle = "Version ${GitHubUpdater.INSTALLED_VERSION} • Product of NR Next",
+                  onClick = { activeSubpage = SettingsSubpage.ABOUT },
+                  testTag = "settings_about_vybe_item"
                 )
               }
             }
           }
 
-          if (currentUser?.role == com.example.data.model.UserRole.ADMIN) {
+          if (currentUser?.role == UserRole.ADMIN) {
             item {
               Text("Platform Administration", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
             }
@@ -355,7 +490,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
               Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(16.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, VybeVerifiedGold.copy(alpha = 0.5f))
+                border = BorderStroke(1.dp, VybeVerifiedGold.copy(alpha = 0.5f))
               ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                   SettingsListItem(
@@ -363,19 +498,18 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                     iconTint = VybeVerifiedGold,
                     title = "Admin & Trust Safety Console",
                     subtitle = "Review moderation reports, verified badges, and age compliance",
-                    onClick = { viewModel.navigateTo(com.example.ui.Screen.ADMIN_CONSOLE) }
+                    onClick = { viewModel.navigateTo(Screen.ADMIN_CONSOLE) }
                   )
                 }
               }
             }
           }
 
-          // Section D: Account Actions (Logout / Deactivate)
           item {
             Card(
               colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
               shape = RoundedCornerShape(16.dp),
-              border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
             ) {
               Column(modifier = Modifier.padding(14.dp)) {
                 Row(
@@ -415,7 +549,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
         }
       }
 
-      // SUBPAGE 1: ACCOUNT CENTER (Section 5)
+      // SUBPAGE: ACCOUNT CENTER
       SettingsSubpage.ACCOUNT_CENTER -> {
         LazyColumn(
           modifier = Modifier
@@ -426,13 +560,12 @@ fun SettingsScreen(viewModel: VybeViewModel) {
         ) {
           item {
             Text(
-              text = "Manage your identity, personal details, unique User ID, and security activity across VYBE.",
+              text = "Manage your identity, personal details, unique User ID, and active sessions.",
               fontSize = 13.sp,
               color = MaterialTheme.colorScheme.onSurfaceVariant
             )
           }
 
-          // Name and ID Management
           item {
             Card(
               colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -461,7 +594,6 @@ fun SettingsScreen(viewModel: VybeViewModel) {
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Unique User ID with live authoritative availability check (Section 5 & 6)
                 OutlinedTextField(
                   value = editUserId,
                   onValueChange = {
@@ -489,24 +621,25 @@ fun SettingsScreen(viewModel: VybeViewModel) {
 
                 Button(
                   onClick = {
-                    if (isUserIdAvailable) {
+                    if (isUserIdAvailable && editUserId.isNotBlank()) {
                       viewModel.updateAccountProfile(
                         firstName = editFirstName,
                         lastName = editLastName,
                         requestedUserId = editUserId,
-                        email = currentUser?.email ?: "",
-                        phone = currentUser?.phone ?: "",
-                        bio = currentUser?.bio ?: "",
-                        avatarUrl = currentUser?.avatarUrl ?: "",
-                        profileVideoUrl = currentUser?.profileVideoUrl
+                        email = currentUser?.email.orEmpty(),
+                        phone = currentUser?.phone.orEmpty(),
+                        bio = currentUser?.bio.orEmpty(),
+                        avatarUrl = currentUser?.avatarUrl,
+                        profileVideoUrl = currentUser?.profileVideoUrl,
+                        coverUrl = currentUser?.coverUrl
                       )
-                      profileSaveStatus = "Account identity updated successfully!"
+                      profileSaveStatus = "Account identity updated across devices."
                     }
                   },
                   colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
                   modifier = Modifier.fillMaxWidth()
                 ) {
-                  Text("Save Identity Changes", fontWeight = FontWeight.Bold)
+                  Text("Save Identity Changes", fontWeight = FontWeight.Bold, color = Color.White)
                 }
 
                 if (profileSaveStatus != null) {
@@ -522,7 +655,6 @@ fun SettingsScreen(viewModel: VybeViewModel) {
             }
           }
 
-          // Active Device Sessions & Security Activity
           item {
             Card(
               colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -560,7 +692,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
         }
       }
 
-      // SUBPAGE 2: SAVED
+      // SUBPAGE: SAVED
       SettingsSubpage.SAVED -> {
         val savedPosts = posts.filter { it.isSaved }
         LazyColumn(
@@ -573,11 +705,11 @@ fun SettingsScreen(viewModel: VybeViewModel) {
           if (savedPosts.isEmpty()) {
             item {
               Box(modifier = Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
-                Text("No saved items yet. Tap the bookmark icon on any post to save.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                Text("No saved items yet. Tap the bookmark icon on any post to save.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, textAlign = TextAlign.Center)
               }
             }
           } else {
-            items(savedPosts) { post ->
+            items(savedPosts, key = { it.id }) { post ->
               Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(14.dp),
@@ -591,7 +723,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                   Spacer(modifier = Modifier.width(12.dp))
                   Column(modifier = Modifier.weight(1f)) {
                     Text(post.author.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Text(post.caption, maxLines = 1, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(post.caption.ifBlank { post.mediaType.name }, maxLines = 1, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                   }
                   IconButton(onClick = { viewModel.toggleSave(post.id) }) {
                     Icon(Icons.Default.BookmarkRemove, contentDescription = "Remove", tint = VybeDanger)
@@ -603,9 +735,9 @@ fun SettingsScreen(viewModel: VybeViewModel) {
         }
       }
 
-      // SUBPAGE 3: ARCHIVE
+      // SUBPAGE: ARCHIVE
       SettingsSubpage.ARCHIVE -> {
-        val archivedPosts = posts.filter { it.isArchived }
+        val archivedPosts = posts.filter { it.isArchived && it.author.id == currentUser?.id }
         LazyColumn(
           modifier = Modifier
             .fillMaxSize()
@@ -614,7 +746,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
           verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
           item {
-            Text("Archived posts are hidden from your profile and feed but completely preserved. You can restore them anytime.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Archived posts are hidden from your profile and feed. You can restore them anytime.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
           }
           if (archivedPosts.isEmpty()) {
             item {
@@ -623,7 +755,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
               }
             }
           } else {
-            items(archivedPosts) { post ->
+            items(archivedPosts, key = { it.id }) { post ->
               Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(14.dp),
@@ -634,14 +766,14 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                   verticalAlignment = Alignment.CenterVertically
                 ) {
                   Column(modifier = Modifier.weight(1f)) {
-                    Text(post.caption, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Text("Archived memory • ${post.timestamp}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(post.caption.ifBlank { "Media Post" }, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text("Archived • ${post.timestamp}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                   }
                   Button(
                     onClick = { viewModel.restoreArchivedPost(post.id) },
                     colors = ButtonDefaults.buttonColors(containerColor = VybeViolet)
                   ) {
-                    Text("Restore", fontSize = 12.sp)
+                    Text("Restore", fontSize = 12.sp, color = Color.White)
                   }
                 }
               }
@@ -650,7 +782,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
         }
       }
 
-      // SUBPAGE 4: YOUR ACTIVITY
+      // SUBPAGE: YOUR ACTIVITY
       SettingsSubpage.YOUR_ACTIVITY -> {
         LazyColumn(
           modifier = Modifier
@@ -660,40 +792,49 @@ fun SettingsScreen(viewModel: VybeViewModel) {
           verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
           item {
-            Text("Complete audit trail of your interactions, reactions, comments, and sealed time capsules.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Audit trail of your posts, reactions, comments, and time capsules.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
           }
-          items(activities) { act ->
-            Card(
-              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-              shape = RoundedCornerShape(12.dp),
-              modifier = Modifier.fillMaxWidth()
-            ) {
-              Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+          if (activities.isEmpty()) {
+            item {
+              Box(modifier = Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                Text("No recent activity recorded yet.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+              }
+            }
+          } else {
+            items(activities) { act ->
+              Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
               ) {
-                Text(
-                  text = when (act.type) {
-                    "POST_CREATED" -> "📝"
-                    "REACTION_GIVEN" -> "✨"
-                    "CAPSULE_SEALED" -> "⏳"
-                    else -> "💬"
-                  },
-                  fontSize = 20.sp
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                  Text(act.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                  Text(act.details, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                  modifier = Modifier.padding(12.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Icon(
+                    imageVector = when (act.type) {
+                      "POST_CREATED" -> Icons.Default.PostAdd
+                      "REACTION_GIVEN" -> Icons.Default.Favorite
+                      "CAPSULE_SEALED" -> Icons.Default.LockClock
+                      else -> Icons.Default.ChatBubbleOutline
+                    },
+                    contentDescription = null,
+                    tint = VybeViolet
+                  )
+                  Spacer(modifier = Modifier.width(12.dp))
+                  Column(modifier = Modifier.weight(1f)) {
+                    Text(act.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text(act.details, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  }
+                  Text(act.timestamp, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text(act.timestamp, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
               }
             }
           }
         }
       }
 
-      // SUBPAGE 5: NOTIFICATIONS
+      // SUBPAGE: NOTIFICATIONS
       SettingsSubpage.NOTIFICATIONS -> {
         var pDm by remember { mutableStateOf(notifPrefs.pushDirectMessages) }
         var pReact by remember { mutableStateOf(notifPrefs.pushPostReactions) }
@@ -730,7 +871,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                   horizontalArrangement = Arrangement.SpaceBetween,
                   verticalAlignment = Alignment.CenterVertically
                 ) {
-                  Text("Reactions & Comments", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                  Text("Likes, Reactions & Comments", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                   Switch(checked = pReact, onCheckedChange = { pReact = it })
                 }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
@@ -757,7 +898,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
         }
       }
 
-      // SUBPAGE 6: TIME MANAGEMENT
+      // SUBPAGE: TIME MANAGEMENT
       SettingsSubpage.TIME_MANAGEMENT -> {
         var breakEnabled by remember { mutableStateOf(timeStats.isBreakReminderEnabled) }
         var breakMinutes by remember { mutableIntStateOf(timeStats.breakReminderMinutes) }
@@ -803,7 +944,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
               Column(modifier = Modifier.padding(16.dp)) {
                 Text("Break Reminders", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Spacer(modifier = Modifier.height(6.dp))
-                Text("Schedule a gentle reminder to take a breath and step away from the screen.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Schedule a gentle reminder to step away from the screen.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(
                   modifier = Modifier.fillMaxWidth(),
@@ -825,7 +966,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
         }
       }
 
-      // SUBPAGE 7: HELP
+      // SUBPAGE: PRIVACY, DATA & SAFETY
       SettingsSubpage.HELP -> {
         LazyColumn(
           modifier = Modifier
@@ -843,7 +984,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                 Text("VYBE Community Standards & Safety", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                  text = "1. 16+ Community Gate:\nVYBE requires all users to be aged 16 or older. Teen accounts (16-17) are shielded with mandatory privacy protections.\n\n2. Real-World Crossed Paths Consent:\nCrossed Paths never reveals precise GPS tracks. Both parties must mutually accept before any conversation can occur.\n\n3. Zero Audio Recording in UNLOAD:\nLive listening spaces transmit audio in real-time without server-side recording.\n\n4. UNFILTERED Authenticity:\nIn UNFILTERED, beauty filters, face reshaping, and vanity like/share counters are completely removed.",
+                  text = "1. 16+ Community Gate:\nVYBE requires all members to be aged 16 or older.\n\n2. Real-World Crossed Paths Consent:\nCrossed Paths never exposes continuous GPS tracks. Both parties must mutually accept before messaging.\n\n3. Live UNLOAD Rooms:\nLive listening spaces stream in real time without server-side audio recording.\n\n4. UNFILTERED Authenticity:\nBeauty filters and vanity counters are omitted in UNFILTERED spaces.",
                   fontSize = 12.sp,
                   lineHeight = 18.sp,
                   color = MaterialTheme.colorScheme.onSurface
@@ -851,10 +992,31 @@ fun SettingsScreen(viewModel: VybeViewModel) {
               }
             }
           }
+
+          item {
+            Card(
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+              shape = RoundedCornerShape(16.dp),
+              border = BorderStroke(1.dp, VybeBrandCyan.copy(alpha = 0.35f))
+            ) {
+              Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Data Storage, Access Security & Deletion Policy", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(
+                  text = "• Cloud Storage Architecture: Profile records, posts, comments, stories, story views, VYBE Matches, social graph edges, notifications, and messages are stored in Supabase PostgreSQL with Row Level Security (RLS) enforced per authenticated user JWT. Uploaded media files are stored in dedicated Supabase Storage buckets ('avatars', 'posts', 'stories', and 'chat-media').\n\n" +
+                    "• Private Content & Signed URLs: Private account posts/stories, VYBE Matches stories, and chat attachments use restricted Storage buckets and time-limited signed URLs so unauthorized users cannot bypass privacy rules via direct API requests.\n\n" +
+                    "• Media & Record Deletion: Deleting a post or story removes the database row (cascading associated likes, comments, and view records) and requests deletion of the corresponding Supabase Storage object.\n\n" +
+                    "• Retention, CDN & Backup Transparency: While deleted content is immediately removed from active VYBE feeds and primary Storage buckets, copies may temporarily persist in edge CDN caches until cache TTL expiration, in recipient device memory/image caches if already viewed, or in encrypted Supabase point-in-time recovery database backups until standard cloud backup rotation completes.",
+                  fontSize = 12.sp,
+                  lineHeight = 18.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+              }
+            }
+          }
         }
       }
 
-      // SUBPAGE 8: SUPPORT TICKETS
+      // SUBPAGE: SUPPORT TICKETS
       SettingsSubpage.SUPPORT_TICKETS -> {
         LazyColumn(
           modifier = Modifier
@@ -875,7 +1037,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                 colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
               ) {
-                Text("+ New Ticket", fontSize = 12.sp)
+                Text("+ New Ticket", fontSize = 12.sp, color = Color.White)
               }
             }
           }
@@ -887,7 +1049,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
               }
             }
           } else {
-            items(supportTickets) { ticket ->
+            items(supportTickets, key = { it.id }) { ticket ->
               Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(14.dp),
@@ -942,179 +1104,128 @@ fun SettingsScreen(viewModel: VybeViewModel) {
         }
       }
 
-      // SUBPAGE 9: ABOUT
-      SettingsSubpage.ABOUT -> {
+      // SUBPAGE: DESIGNATED SINGLE CHECK FOR UPDATES SCREEN
+      SettingsSubpage.CHECK_FOR_UPDATES -> {
         LazyColumn(
           modifier = Modifier
             .fillMaxSize()
             .padding(paddingValues)
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-          horizontalAlignment = Alignment.CenterHorizontally,
+            .padding(16.dp),
           verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-          item {
-            Spacer(modifier = Modifier.height(8.dp))
-            Box(
-              modifier = Modifier
-                .size(80.dp)
-                .clip(RoundedCornerShape(22.dp))
-            ) {
-              androidx.compose.foundation.Image(
-                painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.vybe_app_icon_clean),
-                contentDescription = "VYBE Logo",
-                modifier = Modifier.fillMaxSize()
-              )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-            Text("vybe", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
-            Text("Version 2.0.0 • Production Build", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(
-              text = "Product of NR Next",
-              fontSize = 11.sp,
-              fontWeight = FontWeight.Bold,
-              color = VybeBrandCyan,
-              letterSpacing = 1.sp
-            )
-          }
-
-          // GitHub In-App Live Updater Card
           item {
             Card(
               colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
               shape = RoundedCornerShape(18.dp),
-              border = androidx.compose.foundation.BorderStroke(1.dp, VybeViolet.copy(alpha = 0.4f)),
-              modifier = Modifier.fillMaxWidth().testTag("github_updater_card")
+              border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.4f)),
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("github_updater_card")
             ) {
               Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                  modifier = Modifier.fillMaxWidth(),
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                  Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
-                  ) {
-                    Icon(Icons.Default.CloudSync, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(24.dp))
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                      Text("GitHub Live Updates", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                      Text("Seamless in-place updates without uninstalling", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                  }
-
-                  IconButton(
-                    onClick = { showGitGuideDialog = true },
-                    modifier = Modifier.size(32.dp).testTag("git_release_guide_button")
-                  ) {
-                    Icon(Icons.Default.HelpOutline, contentDescription = "How to publish", tint = VybeBrandCyan, modifier = Modifier.size(20.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Icon(Icons.Default.SystemUpdate, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(26.dp))
+                  Spacer(modifier = Modifier.width(10.dp))
+                  Column {
+                    Text("VYBE Software Update", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(
+                      "Installed version: v${GitHubUpdater.INSTALLED_VERSION}",
+                      fontSize = 12.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                   }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 OutlinedTextField(
                   value = githubRepoInput,
-                  onValueChange = {
-                    githubRepoInput = it
-                    GitHubUpdater.saveRepo(context, it)
-                  },
-                  label = { Text("GitHub Repo (owner/repo)") },
-                  placeholder = { Text("e.g. your-org/vybe") },
+                  onValueChange = { githubRepoInput = it },
+                  label = { Text("GitHub Release Repository (owner/repo)") },
+                  placeholder = { Text(GitHubUpdater.DEFAULT_GITHUB_REPO) },
                   singleLine = true,
                   shape = RoundedCornerShape(12.dp),
-                  modifier = Modifier.fillMaxWidth().testTag("github_repo_input")
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("github_repo_input")
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                Row(
-                  modifier = Modifier.fillMaxWidth(),
-                  horizontalArrangement = Arrangement.SpaceBetween,
-                  verticalAlignment = Alignment.CenterVertically
-                ) {
-                  Text("Installed: v2.0.0", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-                  Button(
-                    onClick = {
-                      isCheckingUpdate = true
-                      updateResult = null
-                      coroutineScope.launch {
-                        val res = GitHubUpdater.checkForUpdates(githubRepoInput, currentVersion = "2.0.0")
-                        updateResult = res
-                        isCheckingUpdate = false
-                      }
-                    },
-                    enabled = !isCheckingUpdate && githubRepoInput.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                if (!isOnline) {
+                  Surface(
+                    color = VybeDanger.copy(alpha = 0.14f),
                     shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.testTag("check_github_updates_button")
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .padding(bottom = 10.dp)
                   ) {
-                    if (isCheckingUpdate) {
-                      CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-                      Spacer(modifier = Modifier.width(6.dp))
-                      Text("Checking...", fontSize = 12.sp)
-                    } else {
-                      Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                      Spacer(modifier = Modifier.width(6.dp))
-                      Text("Check for Update", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
+                    Text(
+                      text = "You are currently offline. Reconnect to the internet to check GitHub Releases.",
+                      color = VybeDanger,
+                      fontSize = 12.sp,
+                      modifier = Modifier.padding(10.dp)
+                    )
                   }
                 }
 
-                // Update Result Feedback
+                Button(
+                  onClick = {
+                    isCheckingUpdate = true
+                    updateResult = null
+                    coroutineScope.launch {
+                      val res = GitHubUpdater.checkForUpdates(githubRepoInput)
+                      updateResult = res
+                      isCheckingUpdate = false
+                    }
+                  },
+                  enabled = !isCheckingUpdate && githubRepoInput.isNotBlank(),
+                  colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                  shape = RoundedCornerShape(12.dp),
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .testTag("check_github_updates_button")
+                ) {
+                  if (isCheckingUpdate) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Checking GitHub Releases...", fontSize = 13.sp, color = Color.White)
+                  } else {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.White)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Check for Updates", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                  }
+                }
+
                 updateResult?.let { res ->
-                  Spacer(modifier = Modifier.height(12.dp))
+                  Spacer(modifier = Modifier.height(14.dp))
                   res.onSuccess { release ->
+                    val highlightColor = if (release.isNewerThanInstalled) VybeOnlineGreen else VybeBrandCyan
                     Surface(
-                      color = if (release.isUpdateAvailable) VybeOnlineGreen.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                      color = highlightColor.copy(alpha = 0.14f),
                       shape = RoundedCornerShape(12.dp),
-                      border = androidx.compose.foundation.BorderStroke(1.dp, if (release.isUpdateAvailable) VybeOnlineGreen.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
-                      modifier = Modifier.fillMaxWidth().testTag("release_info_card")
+                      border = BorderStroke(1.dp, highlightColor.copy(alpha = 0.4f)),
+                      modifier = Modifier.fillMaxWidth()
                     ) {
-                      Column(modifier = Modifier.padding(14.dp)) {
-                        Row(
-                          modifier = Modifier.fillMaxWidth(),
-                          verticalAlignment = Alignment.CenterVertically,
-                          horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                          Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                              imageVector = if (release.isUpdateAvailable) Icons.Default.NewReleases else Icons.Default.CheckCircle,
-                              contentDescription = null,
-                              tint = if (release.isUpdateAvailable) VybeOnlineGreen else MaterialTheme.colorScheme.primary,
-                              modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                              text = if (release.isUpdateAvailable) "Update Available: ${release.tagName}" else "Up to Date (${release.tagName})",
-                              fontWeight = FontWeight.Bold,
-                              fontSize = 13.sp,
-                              color = if (release.isUpdateAvailable) VybeOnlineGreen else MaterialTheme.colorScheme.primary
-                            )
-                          }
-
-                          if (release.apkSize > 0) {
-                            val sizeMb = String.format(Locale.US, "%.1f MB", release.apkSize / (1024.0 * 1024.0))
-                            Surface(
-                              color = MaterialTheme.colorScheme.surfaceVariant,
-                              shape = RoundedCornerShape(6.dp)
-                            ) {
-                              Text(
-                                text = sizeMb,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                              )
-                            }
-                          }
+                      Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                          Icon(Icons.Default.CheckCircle, contentDescription = null, tint = highlightColor, modifier = Modifier.size(18.dp))
+                          Spacer(modifier = Modifier.width(8.dp))
+                          Text(
+                            text = if (release.isNewerThanInstalled) {
+                              "Update Available: ${release.tagName}"
+                            } else {
+                              "Up to Date (${release.tagName})"
+                            },
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = highlightColor
+                          )
                         }
-
                         if (release.name.isNotBlank() && release.name != release.tagName) {
                           Text(release.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp))
                         }
-
                         if (release.body.isNotBlank()) {
                           Text(
                             text = release.body.take(240) + if (release.body.length > 240) "..." else "",
@@ -1124,164 +1235,47 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                           )
                         }
 
-                        // Progress bar during download
-                        if (isDownloadingApk) {
-                          Spacer(modifier = Modifier.height(12.dp))
-                          LinearProgressIndicator(
-                            progress = { downloadProgress },
-                            modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
-                            color = VybeOnlineGreen,
-                            trackColor = MaterialTheme.colorScheme.surfaceVariant
-                          )
-                          Spacer(modifier = Modifier.height(6.dp))
-                          Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                          ) {
-                            val percent = (downloadProgress * 100).toInt()
-                            Text("Downloading update... $percent%", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = VybeOnlineGreen)
-                            if (totalBytes > 0) {
-                              val cur = String.format(Locale.US, "%.1f", downloadedBytes / (1024.0 * 1024.0))
-                              val tot = String.format(Locale.US, "%.1f MB", totalBytes / (1024.0 * 1024.0))
-                              Text("$cur / $tot", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                          }
-                        }
-
-                        // Error message during install/download
-                        installErrorMessage?.let { err ->
-                          Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                          onClick = {
+                            val targetUrl = release.downloadUrl ?: release.htmlUrl
+                            GitHubUpdater.openDownloadUrl(context, targetUrl)
+                          },
+                          colors = ButtonDefaults.buttonColors(containerColor = highlightColor),
+                          shape = RoundedCornerShape(10.dp),
+                          modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("download_update_button")
+                        ) {
+                          Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
+                          Spacer(modifier = Modifier.width(6.dp))
                           Text(
-                            text = "Error: $err",
-                            color = VybeDanger,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
+                            text = if (release.isNewerThanInstalled) "Download & Install APK" else "View Release on GitHub",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = Color.White
                           )
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Actions: Install / Download
-                        val hasApk = release.apkFileName != null || (release.downloadUrl != null && release.downloadUrl.endsWith(".apk", ignoreCase = true))
-
-                        if (downloadedApkFile != null && downloadedApkFile!!.exists()) {
-                          // Already downloaded! Ready to install
-                          Button(
-                            onClick = {
-                              installErrorMessage = null
-                              if (GitHubUpdater.canRequestPackageInstalls(context)) {
-                                val installRes = GitHubUpdater.triggerApkInstall(context, downloadedApkFile!!)
-                                if (installRes.isFailure) {
-                                  installErrorMessage = installRes.exceptionOrNull()?.message
-                                }
-                              } else {
-                                showInstallPermissionDialog = true
-                              }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = VybeOnlineGreen),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth().testTag("install_now_button")
-                          ) {
-                            Icon(Icons.Default.InstallMobile, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Install In-Place Update Now", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                          }
-                        } else if (hasApk) {
-                          // Download & install button
-                          Button(
-                            onClick = {
-                              val url = release.downloadUrl ?: release.htmlUrl
-                              installErrorMessage = null
-                              isDownloadingApk = true
-                              downloadProgress = 0f
-                              coroutineScope.launch {
-                                val targetFileName = "vybe-${release.tagName}.apk"
-                                val downloadRes = GitHubUpdater.downloadApk(context, url, targetFileName) { prog, down, tot ->
-                                  downloadProgress = prog
-                                  downloadedBytes = down
-                                  totalBytes = tot
-                                }
-                                isDownloadingApk = false
-                                downloadRes.onSuccess { file ->
-                                  downloadedApkFile = file
-                                  if (GitHubUpdater.canRequestPackageInstalls(context)) {
-                                    val installRes = GitHubUpdater.triggerApkInstall(context, file)
-                                    if (installRes.isFailure) {
-                                      installErrorMessage = installRes.exceptionOrNull()?.message
-                                    }
-                                  } else {
-                                    showInstallPermissionDialog = true
-                                  }
-                                }.onFailure { err ->
-                                  installErrorMessage = err.message ?: "Failed to download update APK"
-                                }
-                              }
-                            },
-                            enabled = !isDownloadingApk,
-                            colors = ButtonDefaults.buttonColors(containerColor = VybeOnlineGreen),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth().testTag("download_update_button")
-                          ) {
-                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                              text = if (isDownloadingApk) "Downloading Update..." else "Download & Install Update",
-                              fontWeight = FontWeight.Bold,
-                              fontSize = 13.sp
-                            )
-                          }
-                        } else {
-                          // No APK asset attached to this git release
-                          Column {
-                            Surface(
-                              color = MaterialTheme.colorScheme.surfaceVariant,
-                              shape = RoundedCornerShape(8.dp),
-                              modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
-                            ) {
-                              Text(
-                                text = "Notice: This GitHub release does not have an attached .apk asset. Upload your built APK to this GitHub Release to enable in-app updates.",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(8.dp)
-                              )
-                            }
-                            OutlinedButton(
-                              onClick = { GitHubUpdater.openDownloadUrl(context, release.htmlUrl) },
-                              shape = RoundedCornerShape(8.dp),
-                              modifier = Modifier.fillMaxWidth()
-                            ) {
-                              Icon(Icons.Default.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
-                              Spacer(modifier = Modifier.width(6.dp))
-                              Text("View Release on GitHub", fontSize = 12.sp)
-                            }
-                          }
                         }
                       }
                     }
                   }.onFailure { err ->
                     Surface(
-                      color = VybeDanger.copy(alpha = 0.15f),
-                      shape = RoundedCornerShape(10.dp),
-                      border = androidx.compose.foundation.BorderStroke(1.dp, VybeDanger.copy(alpha = 0.4f)),
+                      color = VybeDanger.copy(alpha = 0.14f),
+                      shape = RoundedCornerShape(12.dp),
+                      border = BorderStroke(1.dp, VybeDanger.copy(alpha = 0.4f)),
                       modifier = Modifier.fillMaxWidth()
                     ) {
                       Column(modifier = Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                          Icon(Icons.Default.Info, contentDescription = null, tint = VybeDanger, modifier = Modifier.size(16.dp))
+                          Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = VybeDanger, modifier = Modifier.size(18.dp))
                           Spacer(modifier = Modifier.width(6.dp))
-                          Text("Release Status", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = VybeDanger)
+                          Text("Update Check Status", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = VybeDanger)
                         }
                         Text(
-                          text = err.message ?: "Could not fetch release from repository.",
-                          fontSize = 11.sp,
+                          text = err.message ?: "Could not verify release status.",
+                          fontSize = 12.sp,
                           color = MaterialTheme.colorScheme.onSurface,
-                          modifier = Modifier.padding(top = 4.dp)
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                          text = "Tip: When you publish a new release in your GitHub repository with an APK asset, VYBE detects it and updates the app in-place without losing user data.",
-                          fontSize = 10.sp,
-                          color = MaterialTheme.colorScheme.onSurfaceVariant
+                          modifier = Modifier.padding(top = 6.dp)
                         )
                       }
                     }
@@ -1290,13 +1284,82 @@ fun SettingsScreen(viewModel: VybeViewModel) {
               }
             }
           }
+        }
+      }
+
+      // SUBPAGE: CLEAN ABOUT VYBE (Redundant GitHub Updater Removed)
+      SettingsSubpage.ABOUT -> {
+        LazyColumn(
+          modifier = Modifier
+            .fillMaxSize()
+            .padding(paddingValues)
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+          item {
+            Spacer(modifier = Modifier.height(8.dp))
+            Box(
+              modifier = Modifier
+                .size(84.dp)
+                .clip(RoundedCornerShape(22.dp))
+            ) {
+              Image(
+                painter = painterResource(id = R.drawable.vybe_app_icon_clean),
+                contentDescription = "VYBE Logo",
+                modifier = Modifier.fillMaxSize()
+              )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            Text("VYBE", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+            Text(
+              "Version ${GitHubUpdater.INSTALLED_VERSION}",
+              fontSize = 12.sp,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+              text = "Product of NR Next",
+              fontSize = 12.sp,
+              fontWeight = FontWeight.Bold,
+              color = VybeBrandCyan,
+              letterSpacing = 1.sp
+            )
+          }
+
+          item {
+            Card(
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+              shape = RoundedCornerShape(18.dp),
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+              ) {
+                Text(
+                  text = "Designed for Authentic Expression",
+                  fontWeight = FontWeight.Bold,
+                  fontSize = 15.sp
+                )
+                Text(
+                  text = "VYBE brings together expressive social feeds, mood-aligned spaces, VYBE Matches stories, Time Capsules, and privacy-first connections built by NR Next.",
+                  fontSize = 13.sp,
+                  lineHeight = 19.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+              }
+            }
+          }
 
           item {
             Text(
-              text = "VYBE is built around authentic connections, creativity, memories, and distinctive social experiences.\n\nConnect • Share • Be You",
+              text = "Connect • Share • Be You",
               fontSize = 12.sp,
-              textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-              lineHeight = 17.sp,
+              fontWeight = FontWeight.SemiBold,
+              textAlign = TextAlign.Center,
               color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(20.dp))
@@ -1306,7 +1369,17 @@ fun SettingsScreen(viewModel: VybeViewModel) {
     }
   }
 
-  // Support Ticket Creation Dialog
+  if (showVybeMatchesDialog) {
+    VybeMatchesManagerDialog(
+      currentUserId = currentUser?.id.orEmpty(),
+      allUsers = allUsers,
+      selectedMatches = vybeMatches,
+      onAddMatch = { viewModel.addVybeMatch(it) },
+      onRemoveMatch = { viewModel.removeVybeMatch(it) },
+      onDismiss = { showVybeMatchesDialog = false }
+    )
+  }
+
   if (showTicketDialog) {
     AlertDialog(
       onDismissRequest = { showTicketDialog = false },
@@ -1341,7 +1414,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
           },
           colors = ButtonDefaults.buttonColors(containerColor = VybeViolet)
         ) {
-          Text("Submit Ticket")
+          Text("Submit Ticket", color = Color.White)
         }
       },
       dismissButton = {
@@ -1350,13 +1423,12 @@ fun SettingsScreen(viewModel: VybeViewModel) {
     )
   }
 
-  // Deactivate Modal
   if (showDeactivateModal) {
     AlertDialog(
       onDismissRequest = { showDeactivateModal = false },
       title = { Text("Deactivate VYBE Account?", fontWeight = FontWeight.Bold) },
       text = {
-        Text("Your profile, posts, and mood history will be hidden from other members. You can restore access anytime within 30 days.")
+        Text("Your profile, posts, and mood history will be hidden from other members. You can sign back in to restore access.")
       },
       confirmButton = {
         Button(
@@ -1366,7 +1438,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
           },
           colors = ButtonDefaults.buttonColors(containerColor = VybeDanger)
         ) {
-          Text("Confirm Deactivation")
+          Text("Confirm Deactivation", color = Color.White)
         }
       },
       dismissButton = {
@@ -1374,37 +1446,23 @@ fun SettingsScreen(viewModel: VybeViewModel) {
       }
     )
   }
-  // Install Permission Dialog for Android 8.0+
-  if (showInstallPermissionDialog) {
-    UpdateInstallPermissionDialog(
-      onGrantPermission = {
-        showInstallPermissionDialog = false
-        GitHubUpdater.openInstallPermissionSettings(context)
-      },
-      onDismiss = { showInstallPermissionDialog = false }
-    )
-  }
-
-  // Developer Git Release Guide Dialog
-  if (showGitGuideDialog) {
-    DeveloperGitReleaseGuideDialog(
-      onDismiss = { showGitGuideDialog = false }
-    )
-  }
 }
 
 @Composable
 fun SettingsListItem(
-  icon: androidx.compose.ui.graphics.vector.ImageVector,
+  icon: ImageVector,
   iconTint: Color,
   title: String,
   subtitle: String,
-  onClick: () -> Unit
+  onClick: () -> Unit,
+  testTag: String? = null
 ) {
   Row(
     modifier = Modifier
       .fillMaxWidth()
+      .heightIn(min = 52.dp)
       .clickable { onClick() }
+      .then(if (testTag != null) Modifier.testTag(testTag) else Modifier)
       .padding(horizontal = 14.dp, vertical = 12.dp),
     verticalAlignment = Alignment.CenterVertically
   ) {

@@ -2,10 +2,8 @@ package com.example.data.session
 
 import android.content.Context
 import android.content.SharedPreferences
-import com.example.data.model.MoodType
 import com.example.data.model.User
 import com.example.data.model.UserRole
-import org.json.JSONObject
 
 class SessionManager private constructor(context: Context) {
 
@@ -17,6 +15,7 @@ class SessionManager private constructor(context: Context) {
     private const val KEY_IS_LOGGED_IN = "is_logged_in"
     private const val KEY_ACCESS_TOKEN = "access_token"
     private const val KEY_REFRESH_TOKEN = "refresh_token"
+    private const val KEY_EXPIRES_AT_MS = "expires_at_ms"
     private const val KEY_USER_ID = "user_id"
     private const val KEY_USERNAME = "username"
     private const val KEY_DISPLAY_NAME = "display_name"
@@ -33,6 +32,11 @@ class SessionManager private constructor(context: Context) {
     private const val KEY_ROLE = "role"
     private const val KEY_IS_VERIFIED = "is_verified"
     private const val KEY_IS_VIP = "is_vip"
+    private const val KEY_IS_PRIVATE = "is_private"
+    private const val KEY_MESSAGE_PRIVACY = "message_privacy"
+    private const val KEY_FOLLOWERS_COUNT = "followers_count"
+    private const val KEY_FOLLOWING_COUNT = "following_count"
+    private const val KEY_POSTS_COUNT = "posts_count"
 
     @Volatile
     private var instance: SessionManager? = null
@@ -43,7 +47,6 @@ class SessionManager private constructor(context: Context) {
       }
     }
 
-    // Secondary accessor if initialized
     fun get(): SessionManager? = instance
   }
 
@@ -56,13 +59,24 @@ class SessionManager private constructor(context: Context) {
   val refreshToken: String?
     get() = prefs.getString(KEY_REFRESH_TOKEN, null)
 
+  val expiresAtMs: Long
+    get() = prefs.getLong(KEY_EXPIRES_AT_MS, 0L)
+
   val userId: String?
     get() = prefs.getString(KEY_USER_ID, null)
 
-  fun saveSession(user: User, accessToken: String = "", refreshToken: String = "") {
+  fun saveSession(
+    user: User,
+    accessToken: String = "",
+    refreshToken: String = "",
+    expiresInSeconds: Long = 3600L
+  ) {
     prefs.edit().apply {
       putBoolean(KEY_IS_LOGGED_IN, true)
-      if (accessToken.isNotEmpty()) putString(KEY_ACCESS_TOKEN, accessToken)
+      if (accessToken.isNotEmpty()) {
+        putString(KEY_ACCESS_TOKEN, accessToken)
+        putLong(KEY_EXPIRES_AT_MS, System.currentTimeMillis() + (expiresInSeconds * 1000L))
+      }
       if (refreshToken.isNotEmpty()) putString(KEY_REFRESH_TOKEN, refreshToken)
       putString(KEY_USER_ID, user.id)
       putString(KEY_USERNAME, user.username)
@@ -80,6 +94,23 @@ class SessionManager private constructor(context: Context) {
       putString(KEY_ROLE, user.role.name)
       putBoolean(KEY_IS_VERIFIED, user.isVerified)
       putBoolean(KEY_IS_VIP, user.isVip)
+      putBoolean(KEY_IS_PRIVATE, user.isPrivate)
+      putString(KEY_MESSAGE_PRIVACY, user.messagePrivacy)
+      putInt(KEY_FOLLOWERS_COUNT, user.followersCount)
+      putInt(KEY_FOLLOWING_COUNT, user.followingCount)
+      putInt(KEY_POSTS_COUNT, user.postsCount)
+      apply()
+    }
+  }
+
+  fun updateTokens(accessToken: String, refreshToken: String?, expiresInSeconds: Long = 3600L) {
+    if (!isLoggedIn) return
+    prefs.edit().apply {
+      putString(KEY_ACCESS_TOKEN, accessToken)
+      if (!refreshToken.isNullOrBlank()) {
+        putString(KEY_REFRESH_TOKEN, refreshToken)
+      }
+      putLong(KEY_EXPIRES_AT_MS, System.currentTimeMillis() + (expiresInSeconds * 1000L))
       apply()
     }
   }
@@ -96,6 +127,11 @@ class SessionManager private constructor(context: Context) {
       putString(KEY_AVATAR_URL, user.avatarUrl)
       putString(KEY_COVER_URL, user.coverUrl)
       putString(KEY_BIO, user.bio)
+      putBoolean(KEY_IS_PRIVATE, user.isPrivate)
+      putString(KEY_MESSAGE_PRIVACY, user.messagePrivacy)
+      putInt(KEY_FOLLOWERS_COUNT, user.followersCount)
+      putInt(KEY_FOLLOWING_COUNT, user.followingCount)
+      putInt(KEY_POSTS_COUNT, user.postsCount)
       apply()
     }
   }
@@ -122,6 +158,11 @@ class SessionManager private constructor(context: Context) {
     val roleStr = prefs.getString(KEY_ROLE, UserRole.USER.name) ?: UserRole.USER.name
     val isVerified = prefs.getBoolean(KEY_IS_VERIFIED, false)
     val isVip = prefs.getBoolean(KEY_IS_VIP, false)
+    val isPrivate = prefs.getBoolean(KEY_IS_PRIVATE, false)
+    val messagePrivacy = prefs.getString(KEY_MESSAGE_PRIVACY, "EVERYONE") ?: "EVERYONE"
+    val followersCount = prefs.getInt(KEY_FOLLOWERS_COUNT, 0)
+    val followingCount = prefs.getInt(KEY_FOLLOWING_COUNT, 0)
+    val postsCount = prefs.getInt(KEY_POSTS_COUNT, 0)
 
     val role = try {
       UserRole.valueOf(roleStr)
@@ -146,6 +187,11 @@ class SessionManager private constructor(context: Context) {
       role = role,
       isVerified = isVerified,
       isVip = isVip,
+      isPrivate = isPrivate,
+      messagePrivacy = messagePrivacy,
+      followersCount = followersCount,
+      followingCount = followingCount,
+      postsCount = postsCount,
       isOnboardingCompleted = true
     )
   }

@@ -5,6 +5,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,6 +15,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -35,22 +38,22 @@ import coil.compose.AsyncImage
 import com.example.data.model.Story
 import com.example.data.model.StoryAudience
 import com.example.data.model.StoryMediaType
+import com.example.data.repository.MessagingEligibility
 import com.example.ui.VybeViewModel
 import com.example.ui.components.StoryGradients
 import com.example.ui.components.VerificationBadge
-import com.example.ui.components.VideoPlayerView
+import com.example.ui.components.VideoFitMode
+import com.example.ui.components.VybeVideoPlayer
 import com.example.ui.theme.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
- * INSTAGRAM-STYLE FULL-SCREEN STORY VIEWER
- * Authentic Instagram story experience:
- * - Segmented progress bars at top with auto-advancement
- * - Pause on press-and-hold
- * - Tap left 30% for previous, tap right 70% for next story
- * - Author profile header with timestamp, Close Friends badge, and options
- * - Dynamic story content: High-res photos, typography gradients, music wave sticker, video
- * - Bottom Instagram interaction: "Send message...", direct quick-reply, heart reaction, emoji reactions
+ * VYBE Full-Screen Story Viewer:
+ * - Plays real uploaded video stories with `VybeVideoPlayer` (`VideoFitMode.FIT_CONTAIN`),
+ *   supporting both portrait (9:16) and landscape (16:9) dimensions cleanly without stretching or cropping.
+ * - Marks stories viewed in Supabase immediately as they are watched.
+ * - Sends real direct replies when messaging rules allow, and supports reporting (including Copyright Infringement) or deleting own stories.
  */
 @Composable
 fun StoryViewerScreen(viewModel: VybeViewModel) {
@@ -61,6 +64,7 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
   val stories by viewModel.stories.collectAsState()
   val currentIndex by viewModel.currentStoryIndex.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
+  val scope = rememberCoroutineScope()
 
   if (stories.isEmpty()) {
     LaunchedEffect(Unit) {
@@ -73,35 +77,47 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
   val currentStory = stories[safeIndex]
   val isMe = currentStory.author.id == currentUser?.id
 
-  // Interaction states
   var isPaused by remember { mutableStateOf(false) }
   var isMuted by remember { mutableStateOf(false) }
   var replyMessage by remember { mutableStateOf("") }
   var reactionToast by remember { mutableStateOf<String?>(null) }
   var showMenuDropdown by remember { mutableStateOf(false) }
+  var videoDurationMs by remember(currentStory.id) { mutableIntStateOf(15000) }
 
-  // Animated progress for current story segment (5-second duration)
-  val progress = remember { Animatable(0f) }
+  // Mark story viewed in backend whenever active story changes
+  LaunchedEffect(currentStory.id) {
+    viewModel.markStoryViewed(currentStory.id)
+  }
 
-  LaunchedEffect(safeIndex, isPaused) {
-    progress.snapTo(0f)
+  val progress = remember(currentStory.id) { Animatable(0f) }
+
+  LaunchedEffect(currentStory.id, isPaused, videoDurationMs) {
     if (!isPaused) {
+      val targetDuration = if (currentStory.mediaType == StoryMediaType.VIDEO) {
+        videoDurationMs.coerceIn(4000, 60000)
+      } else {
+        5500
+      }
+      val remainingFraction = (1f - progress.value).coerceIn(0.05f, 1f)
       progress.animateTo(
         targetValue = 1f,
-        animationSpec = tween(durationMillis = 5000, easing = LinearEasing)
+        animationSpec = tween(
+          durationMillis = (targetDuration * remainingFraction).toInt().coerceAtLeast(300),
+          easing = LinearEasing
+        )
       )
-      // Advance to next story when timer completes
-      val hasNext = viewModel.nextStory()
-      if (!hasNext) {
-        viewModel.navigateBack()
+      if (currentStory.mediaType != StoryMediaType.VIDEO) {
+        val hasNext = viewModel.nextStory()
+        if (!hasNext) {
+          viewModel.navigateBack()
+        }
       }
     }
   }
 
-  // Clear reaction toast after delay
   LaunchedEffect(reactionToast) {
     if (reactionToast != null) {
-      delay(1500)
+      delay(1600)
       reactionToast = null
     }
   }
@@ -110,26 +126,25 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
     modifier = Modifier
       .fillMaxSize()
       .background(Color.Black)
+      .imePadding()
       .testTag("story_viewer_screen")
   ) {
     // 1. Story Visual Content Canvas with Gesture Handler
     Box(
       modifier = Modifier
         .fillMaxSize()
-        .pointerInput(safeIndex) {
+        .pointerInput(currentStory.id) {
           detectTapGestures(
             onPress = {
               isPaused = true
-              val released = tryAwaitRelease()
+              tryAwaitRelease()
               isPaused = false
             },
             onTap = { offset ->
               val screenWidth = size.width
               if (offset.x < screenWidth * 0.33f) {
-                // Tap left: previous story
                 viewModel.prevStory()
               } else {
-                // Tap right: next story
                 val hasNext = viewModel.nextStory()
                 if (!hasNext) {
                   viewModel.navigateBack()
@@ -140,10 +155,21 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
         },
       contentAlignment = Alignment.Center
     ) {
-      StoryCanvas(currentStory)
+      StoryCanvas(
+        story = currentStory,
+        isPaused = isPaused,
+        isMuted = isMuted,
+        onVideoDurationDetected = { dur -> videoDurationMs = dur },
+        onVideoCompleted = {
+          val hasNext = viewModel.nextStory()
+          if (!hasNext) {
+            viewModel.navigateBack()
+          }
+        }
+      )
     }
 
-    // 2. Reaction Floating Toast
+    // 2. Reaction / Status Toast
     AnimatedVisibility(
       visible = reactionToast != null,
       enter = fadeIn() + scaleIn(),
@@ -151,25 +177,26 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
       modifier = Modifier.align(Alignment.Center)
     ) {
       Surface(
-        color = Color.Black.copy(alpha = 0.75f),
+        color = Color.Black.copy(alpha = 0.78f),
         shape = RoundedCornerShape(24.dp)
       ) {
         Text(
           text = reactionToast ?: "",
-          fontSize = 44.sp,
-          modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
+          color = Color.White,
+          fontSize = if ((reactionToast?.length ?: 0) <= 4) 36.sp else 14.sp,
+          fontWeight = FontWeight.SemiBold,
+          modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp)
         )
       }
     }
 
-    // 3. Top Overlay: Segmented Bars & Header Profile
+    // 3. Top Overlay: Segmented Bars & Author Header
     Column(
       modifier = Modifier
         .fillMaxWidth()
         .statusBarsPadding()
         .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
-      // Segmented Progress Bars (Instagram style)
       Row(
         modifier = Modifier
           .fillMaxWidth()
@@ -199,27 +226,26 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
         }
       }
 
-      // Author Header Bar
       Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
       ) {
-        // Author avatar
         Box(
           modifier = Modifier
-            .size(34.dp)
+            .size(36.dp)
             .clip(CircleShape)
             .border(
               width = 1.dp,
-              color = if (currentStory.audience == StoryAudience.CLOSE_FRIENDS) Color(0xFF2ECC71) else Color.White.copy(alpha = 0.6f),
+              color = if (currentStory.audience == StoryAudience.VYBE_MATCHES || currentStory.audience == StoryAudience.CLOSE_FRIENDS) Color(0xFF10B981) else Color.White.copy(alpha = 0.6f),
               shape = CircleShape
-            ),
+            )
+            .clickable { viewModel.openUserProfile(currentStory.author) },
           contentAlignment = Alignment.Center
         ) {
           if (!currentStory.author.avatarUrl.isNullOrBlank()) {
             AsyncImage(
               model = currentStory.author.avatarUrl,
-              contentDescription = null,
+              contentDescription = currentStory.author.displayName,
               contentScale = ContentScale.Crop,
               modifier = Modifier.fillMaxSize()
             )
@@ -234,7 +260,7 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
                 currentStory.author.displayName.take(1).uppercase(),
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
-                fontSize = 12.sp
+                fontSize = 13.sp
               )
             }
           }
@@ -242,8 +268,11 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
 
         Spacer(modifier = Modifier.width(8.dp))
 
-        // Name & Timestamp
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+          modifier = Modifier
+            .weight(1f)
+            .clickable { viewModel.openUserProfile(currentStory.author) }
+        ) {
           Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
               text = currentStory.author.username,
@@ -260,35 +289,40 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
             Spacer(modifier = Modifier.width(6.dp))
             Text(
               text = currentStory.timestamp,
-              color = Color.White.copy(alpha = 0.7f),
+              color = Color.White.copy(alpha = 0.72f),
               fontSize = 11.sp
             )
           }
 
-          // VYBE Matches indicator (Renamed per Section 4)
           if (currentStory.audience == StoryAudience.VYBE_MATCHES || currentStory.audience == StoryAudience.CLOSE_FRIENDS) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-              Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFF2ECC71), modifier = Modifier.size(10.dp))
+              Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(11.dp))
               Spacer(modifier = Modifier.width(3.dp))
-              Text("VYBE Matches", color = Color(0xFF2ECC71), fontWeight = FontWeight.Bold, fontSize = 10.sp)
+              Text("VYBE Matches", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 10.sp)
             }
           }
         }
 
-        // Sound Toggle
-        IconButton(onClick = { isMuted = !isMuted }) {
-          Icon(
-            imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
-            contentDescription = "Sound toggle",
-            tint = Color.White,
-            modifier = Modifier.size(20.dp)
-          )
+        if (currentStory.mediaType == StoryMediaType.VIDEO || currentStory.mediaType == StoryMediaType.MUSIC) {
+          IconButton(
+            onClick = { isMuted = !isMuted },
+            modifier = Modifier.size(48.dp).testTag("story_mute_toggle")
+          ) {
+            Icon(
+              imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+              contentDescription = if (isMuted) "Unmute story" else "Mute story",
+              tint = Color.White,
+              modifier = Modifier.size(20.dp)
+            )
+          }
         }
 
-        // More options dropdown
         Box {
-          IconButton(onClick = { showMenuDropdown = true }) {
-            Icon(Icons.Default.MoreVert, contentDescription = "More", tint = Color.White)
+          IconButton(
+            onClick = { showMenuDropdown = true },
+            modifier = Modifier.size(48.dp)
+          ) {
+            Icon(Icons.Default.MoreVert, contentDescription = "Story options", tint = Color.White)
           }
 
           DropdownMenu(
@@ -300,130 +334,133 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
                 text = { Text("Delete Story", color = VybeDanger) },
                 leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = VybeDanger) },
                 onClick = {
-                  viewModel.deleteStory(currentStory.id)
                   showMenuDropdown = false
+                  viewModel.deleteStory(currentStory.id)
                   val hasNext = viewModel.nextStory()
                   if (!hasNext) viewModel.navigateBack()
                 }
               )
             } else {
               DropdownMenuItem(
-                text = { Text("Report Inappropriate") },
+                text = { Text("Report Inappropriate Content") },
                 leadingIcon = { Icon(Icons.Default.Flag, contentDescription = null) },
                 onClick = {
-                  reactionToast = "Reported"
                   showMenuDropdown = false
+                  scope.launch {
+                    viewModel.submitReport("STORY", currentStory.id, "Inappropriate Story")
+                    reactionToast = "Report submitted"
+                  }
+                }
+              )
+              DropdownMenuItem(
+                text = { Text("Report Copyright Infringement") },
+                leadingIcon = { Icon(Icons.Default.Gavel, contentDescription = null) },
+                onClick = {
+                  showMenuDropdown = false
+                  scope.launch {
+                    viewModel.submitReport("STORY", currentStory.id, "Copyright Infringement")
+                    reactionToast = "Copyright report submitted"
+                  }
                 }
               )
             }
           }
         }
 
-        // Close 'X' button
         IconButton(
           onClick = { viewModel.navigateBack() },
-          modifier = Modifier.testTag("story_viewer_close_button")
+          modifier = Modifier.size(48.dp).testTag("story_viewer_close_button")
         ) {
           Icon(Icons.Default.Close, contentDescription = "Close Story", tint = Color.White)
         }
       }
     }
 
-    // 4. Bottom Overlay: Instagram Message Reply Field & Reactions
-    Column(
-      modifier = Modifier
-        .align(Alignment.BottomCenter)
-        .fillMaxWidth()
-        .navigationBarsPadding()
-        .padding(horizontal = 12.dp, vertical = 10.dp)
-    ) {
-      // Quick Emoji Reactions Row
-      Row(
+    // 4. Bottom Overlay: Reply & Like Controls (Hidden on own story to prevent self-DM noise)
+    if (!isMe) {
+      Column(
         modifier = Modifier
+          .align(Alignment.BottomCenter)
           .fillMaxWidth()
-          .padding(bottom = 8.dp),
-        horizontalArrangement = Arrangement.SpaceAround
+          .navigationBarsPadding()
+          .padding(horizontal = 12.dp, vertical = 10.dp)
       ) {
-        listOf("❤️", "🔥", "😂", "😮", "😢", "👏").forEach { emoji ->
-          Box(
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          OutlinedTextField(
+            value = replyMessage,
+            onValueChange = {
+              replyMessage = it
+              if (it.isNotEmpty()) isPaused = true
+            },
+            placeholder = {
+              Text(
+                "Reply to @${currentStory.author.username}...",
+                color = Color.White.copy(alpha = 0.65f),
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+              focusedTextColor = Color.White,
+              unfocusedTextColor = Color.White,
+              focusedBorderColor = Color.White.copy(alpha = 0.85f),
+              unfocusedBorderColor = Color.White.copy(alpha = 0.4f),
+              focusedContainerColor = Color.Black.copy(alpha = 0.55f),
+              unfocusedContainerColor = Color.Black.copy(alpha = 0.45f)
+            ),
+            shape = RoundedCornerShape(24.dp),
             modifier = Modifier
-              .size(36.dp)
-              .clip(CircleShape)
-              .background(Color.Black.copy(alpha = 0.5f))
-              .clickable {
-                reactionToast = emoji
-                viewModel.toggleStoryLike(currentStory.id)
-              },
-            contentAlignment = Alignment.Center
-          ) {
-            Text(emoji, fontSize = 20.sp)
-          }
-        }
-      }
-
-      // Input Row (Reply message & Heart button)
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-      ) {
-        OutlinedTextField(
-          value = replyMessage,
-          onValueChange = { replyMessage = it },
-          placeholder = {
-            Text(
-              "Send message to @${currentStory.author.username}...",
-              color = Color.White.copy(alpha = 0.6f),
-              fontSize = 12.sp
-            )
-          },
-          colors = OutlinedTextFieldDefaults.colors(
-            focusedTextColor = Color.White,
-            unfocusedTextColor = Color.White,
-            focusedBorderColor = Color.White.copy(alpha = 0.8f),
-            unfocusedBorderColor = Color.White.copy(alpha = 0.4f),
-            focusedContainerColor = Color.Black.copy(alpha = 0.5f),
-            unfocusedContainerColor = Color.Black.copy(alpha = 0.4f)
-          ),
-          shape = RoundedCornerShape(24.dp),
-          modifier = Modifier
-            .weight(1f)
-            .height(50.dp)
-            .testTag("story_reply_input"),
-          singleLine = true,
-          trailingIcon = {
-            if (replyMessage.isNotBlank()) {
-              IconButton(
-                onClick = {
-                  reactionToast = "Message sent ✈️"
-                  replyMessage = ""
+              .weight(1f)
+              .heightIn(min = 52.dp)
+              .testTag("story_reply_input"),
+            singleLine = true,
+            trailingIcon = {
+              if (replyMessage.isNotBlank()) {
+                IconButton(
+                  onClick = {
+                    val msgText = replyMessage.trim()
+                    val eligibility = viewModel.checkMessagingEligibility(currentStory.author)
+                    if (eligibility is MessagingEligibility.Denied) {
+                      reactionToast = eligibility.reason
+                    } else {
+                      val conv = viewModel.getOrCreateConversation(currentStory.author)
+                      viewModel.sendDirectMessage(conv.id, "Replied to story: $msgText")
+                      reactionToast = "Reply sent"
+                      replyMessage = ""
+                    }
+                    isPaused = false
+                  }
+                ) {
+                  Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send reply", tint = Color.White)
                 }
-              ) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = Color.White)
               }
             }
-          }
-        )
-
-        // Heart Like Button
-        IconButton(
-          onClick = {
-            viewModel.toggleStoryLike(currentStory.id)
-            reactionToast = if (!currentStory.isLikedByMe) "❤️" else null
-          },
-          modifier = Modifier
-            .size(46.dp)
-            .clip(CircleShape)
-            .background(Color.Black.copy(alpha = 0.5f))
-            .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
-            .testTag("story_like_button")
-        ) {
-          Icon(
-            imageVector = if (currentStory.isLikedByMe) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-            contentDescription = "Like",
-            tint = if (currentStory.isLikedByMe) Color(0xFFFF2D55) else Color.White,
-            modifier = Modifier.size(24.dp)
           )
+
+          IconButton(
+            onClick = {
+              viewModel.toggleStoryLike(currentStory.id)
+              reactionToast = if (!currentStory.isLikedByMe) "Liked" else null
+            },
+            modifier = Modifier
+              .size(48.dp)
+              .clip(CircleShape)
+              .background(Color.Black.copy(alpha = 0.5f))
+              .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+              .testTag("story_like_button")
+          ) {
+            Icon(
+              imageVector = if (currentStory.isLikedByMe) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+              contentDescription = "Like story",
+              tint = if (currentStory.isLikedByMe) Color(0xFFFF2D55) else Color.White,
+              modifier = Modifier.size(24.dp)
+            )
+          }
         }
       }
     }
@@ -431,7 +468,13 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
 }
 
 @Composable
-private fun StoryCanvas(story: Story) {
+private fun StoryCanvas(
+  story: Story,
+  isPaused: Boolean,
+  isMuted: Boolean,
+  onVideoDurationDetected: (Int) -> Unit,
+  onVideoCompleted: () -> Unit
+) {
   Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
     when (story.mediaType) {
       StoryMediaType.PHOTO -> {
@@ -439,14 +482,14 @@ private fun StoryCanvas(story: Story) {
           AsyncImage(
             model = story.mediaUrl,
             contentDescription = "Story photo",
-            contentScale = ContentScale.Crop,
+            contentScale = ContentScale.Fit,
             modifier = Modifier.fillMaxSize()
           )
         } else {
           Box(
             modifier = Modifier
               .fillMaxSize()
-              .background(Brush.verticalGradient(listOf(Color(0xFF833AB4), Color(0xFFFD1D1D), Color(0xFFFCB045))))
+              .background(Brush.verticalGradient(listOf(VybeViolet, VybeMagenta)))
           )
         }
       }
@@ -487,7 +530,7 @@ private fun StoryCanvas(story: Story) {
             AsyncImage(
               model = story.mediaUrl,
               contentDescription = null,
-              contentScale = ContentScale.Crop,
+              contentScale = ContentScale.Fit,
               modifier = Modifier
                 .fillMaxSize()
                 .alpha(0.35f)
@@ -503,12 +546,12 @@ private fun StoryCanvas(story: Story) {
           ) {
             Box(
               modifier = Modifier
-                .size(110.dp)
+                .size(104.dp)
                 .clip(CircleShape)
                 .background(Brush.linearGradient(listOf(VybeMagenta, VybeBrandCyan))),
               contentAlignment = Alignment.Center
             ) {
-              Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(54.dp))
+              Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(50.dp))
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -516,7 +559,7 @@ private fun StoryCanvas(story: Story) {
             Surface(
               color = Color.Black.copy(alpha = 0.6f),
               shape = RoundedCornerShape(16.dp),
-              border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+              border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
             ) {
               Row(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
@@ -525,7 +568,7 @@ private fun StoryCanvas(story: Story) {
                 Icon(Icons.Default.GraphicEq, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                  text = story.musicTrackTitle ?: "Trending Indian Indie Vibe",
+                  text = story.musicTrackTitle ?: "Audio Track",
                   color = Color.White,
                   fontWeight = FontWeight.Bold,
                   fontSize = 14.sp
@@ -537,65 +580,56 @@ private fun StoryCanvas(story: Story) {
       }
 
       StoryMediaType.VIDEO -> {
-        if (story.mediaUrl.isNotBlank()) {
-          AsyncImage(
-            model = story.mediaUrl,
-            contentDescription = "Story video still",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
-          )
-        } else {
-          Box(
-            modifier = Modifier
-              .fillMaxSize()
-              .background(Color(0xFF0D1117))
-          )
-        }
-
-        Surface(
-          color = Color.Black.copy(alpha = 0.5f),
-          shape = RoundedCornerShape(20.dp),
-          modifier = Modifier.align(Alignment.Center)
-        ) {
-          Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(6.dp))
-            Text("Video Playing", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-          }
-        }
+        // Real uploaded video playback supporting both portrait & landscape dimensions cleanly
+        VybeVideoPlayer(
+          videoUrl = story.mediaUrl,
+          autoPlay = true,
+          isLooping = false,
+          initialMuted = isMuted,
+          isPausedExternal = isPaused,
+          fitMode = VideoFitMode.FIT_CONTAIN,
+          showControls = false,
+          onDurationDetected = onVideoDurationDetected,
+          onVideoCompleted = onVideoCompleted,
+          modifier = Modifier.fillMaxSize()
+        )
       }
     }
 
-    // Story Caption & Location overlay pill (Instagram style)
+    // Story Caption & Location overlay pill
     Column(
       modifier = Modifier
         .align(Alignment.BottomCenter)
-        .padding(bottom = 120.dp)
+        .navigationBarsPadding()
+        .padding(bottom = 84.dp)
         .padding(horizontal = 24.dp),
       horizontalAlignment = Alignment.CenterHorizontally
     ) {
       if (!story.location.isNullOrBlank()) {
         Surface(
-          color = Color.Black.copy(alpha = 0.6f),
+          color = Color.Black.copy(alpha = 0.65f),
           shape = RoundedCornerShape(12.dp),
           modifier = Modifier.padding(bottom = 8.dp)
         ) {
-          Text(
-            text = story.location ?: "",
-            color = Color.White,
-            fontWeight = FontWeight.Bold,
-            fontSize = 11.sp,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-          )
+          Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Icon(Icons.Default.LocationOn, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(13.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+              text = story.location ?: "",
+              color = Color.White,
+              fontWeight = FontWeight.Bold,
+              fontSize = 11.sp
+            )
+          }
         }
       }
 
       if (story.caption.isNotBlank() && story.mediaType != StoryMediaType.TEXT) {
         Surface(
-          color = Color.Black.copy(alpha = 0.65f),
+          color = Color.Black.copy(alpha = 0.68f),
           shape = RoundedCornerShape(14.dp)
         ) {
           Text(
