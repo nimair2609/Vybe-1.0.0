@@ -58,6 +58,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
   val followingUserIds by viewModel.followingUserIds.collectAsState()
   val allUsers by viewModel.allUsers.collectAsState()
   val vybeMatches by viewModel.vybeMatches.collectAsState()
+  val unloadRooms by viewModel.unloadRooms.collectAsState()
   val hasMoreFeedPosts by viewModel.hasMoreFeedPosts.collectAsState()
   val isLoadingMorePosts by viewModel.isLoadingMorePosts.collectAsState()
   val coroutineScope = rememberCoroutineScope()
@@ -279,7 +280,9 @@ fun FeedScreen(viewModel: VybeViewModel) {
             onStoryClick = { story -> viewModel.openStory(story) },
             onAddStoryClick = { showStoryCreateSheet = true },
             onManageVybeMatchesClick = { showVybeMatchesDialog = true },
-            vybeMatchesCount = vybeMatches.size
+            vybeMatchesCount = vybeMatches.size,
+            activeLiveRooms = unloadRooms.filter { it.isActive },
+            onJoinLiveRoom = { room -> viewModel.joinUnloadRoom(room) }
           )
         }
 
@@ -459,7 +462,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
                   context.startActivity(Intent.createChooser(shareIntent, "Share VYBE Post"))
                 },
                 onUserClick = { user -> viewModel.openUserProfile(user) },
-                onRemixClick = { viewModel.navigateTo(Screen.REELS_VIEWER) },
+                onRemixClick = { viewModel.openReelViewer(post.id) },
                 onDeleteClick = { viewModel.deletePost(post.id) },
                 onReportPost = { reason ->
                   coroutineScope.launch {

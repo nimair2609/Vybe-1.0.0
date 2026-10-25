@@ -1,8 +1,11 @@
 package com.example.ui.screens
 
+import android.content.Intent
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,6 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,11 +51,13 @@ import kotlinx.coroutines.delay
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReelsViewerScreen(viewModel: VybeViewModel) {
+  val context = LocalContext.current
   val currentScreen by viewModel.currentScreen.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
   val posts by viewModel.posts.collectAsState()
   val conversations by viewModel.conversations.collectAsState()
   val allUsers by viewModel.allUsers.collectAsState()
+  val targetReelId by viewModel.targetReelId.collectAsState()
 
   fun handleBackFromReels() {
     if (currentScreen == Screen.MAIN) {
@@ -149,7 +156,27 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
     return
   }
 
-  val pagerState = rememberPagerState(pageCount = { videoPosts.size })
+  val initialPageIndex = remember(videoPosts, targetReelId) {
+    if (!targetReelId.isNullOrBlank()) {
+      val found = videoPosts.indexOfFirst { it.id == targetReelId }
+      if (found >= 0) found else 0
+    } else 0
+  }
+
+  val pagerState = rememberPagerState(
+    initialPage = initialPageIndex,
+    pageCount = { videoPosts.size }
+  )
+
+  LaunchedEffect(targetReelId, videoPosts.size) {
+    if (!targetReelId.isNullOrBlank()) {
+      val found = videoPosts.indexOfFirst { it.id == targetReelId }
+      if (found >= 0 && found != pagerState.currentPage) {
+        pagerState.scrollToPage(found)
+      }
+      viewModel.clearTargetReelId()
+    }
+  }
 
   LaunchedEffect(pagerState.settledPage, videoPosts.size) {
     val activeReel = videoPosts.getOrNull(pagerState.settledPage) ?: return@LaunchedEffect
@@ -172,11 +199,28 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
       val reelPost = videoPosts[pageIndex]
       val isCurrentPage = pageIndex == pagerState.settledPage
       val reelRelativeTime = rememberRelativeTimestamp(reelPost.createdAtIso, reelPost.timestamp)
+      var showDoubleTapResonance by remember { mutableStateOf(false) }
+
+      LaunchedEffect(showDoubleTapResonance) {
+        if (showDoubleTapResonance) {
+          delay(850L)
+          showDoubleTapResonance = false
+        }
+      }
 
       Box(
         modifier = Modifier
           .fillMaxSize()
           .background(Color.Black)
+          .pointerInput(reelPost.id) {
+            detectTapGestures(
+              onTap = { isPlaying = !isPlaying },
+              onDoubleTap = {
+                showDoubleTapResonance = true
+                viewModel.toggleLike(reelPost.id)
+              }
+            )
+          }
       ) {
         VybeVideoPlayer(
           videoUrl = reelPost.mediaUrls.first(),
@@ -190,7 +234,29 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
           modifier = Modifier.fillMaxSize()
         )
 
-        if (!isPlaying && isCurrentPage) {
+        // Double-Tap Resonance Like Animation Overlay
+        AnimatedVisibility(
+          visible = showDoubleTapResonance,
+          enter = scaleIn(initialScale = 0.4f) + fadeIn(),
+          exit = scaleOut(targetScale = 1.35f) + fadeOut(),
+          modifier = Modifier.align(Alignment.Center)
+        ) {
+          Box(
+            modifier = Modifier
+              .size(100.dp)
+              .clip(CircleShape)
+              .background(Color.Black.copy(alpha = 0.55f)),
+            contentAlignment = Alignment.Center
+          ) {
+            VybeLikeIcon(
+              isLiked = true,
+              size = 60.dp,
+              activeTintOverride = VybeMagenta
+            )
+          }
+        }
+
+        if (!isPlaying && isCurrentPage && !showDoubleTapResonance) {
           Box(
             modifier = Modifier
               .size(64.dp)
@@ -244,14 +310,14 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
             )
 
             IconButton(
-              onClick = { isMuted = !isMuted },
+              onClick = { viewModel.navigateTo(Screen.CREATE_POST) },
               modifier = Modifier
                 .size(48.dp)
-                .testTag("reels_mute_button")
+                .testTag("reels_create_shortcut_button")
             ) {
               Icon(
-                imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                contentDescription = if (isMuted) "Unmute audio" else "Mute audio",
+                imageVector = Icons.Default.AddCircleOutline,
+                contentDescription = "Create Reel",
                 tint = Color.White
               )
             }
@@ -333,7 +399,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
             )
           }
 
-          // Share to Inbox
+          // Share to Inbox / External
           Column(horizontalAlignment = Alignment.CenterHorizontally) {
             IconButton(
               onClick = { showShareInboxSheet = true },
@@ -343,10 +409,34 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                 .background(Color.Black.copy(alpha = 0.5f))
                 .testTag("reel_share_button")
             ) {
-              Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Share to Inbox", tint = Color.White)
+              Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Share Reel", tint = Color.White)
             }
             Text(
               text = "Share",
+              color = Color.White,
+              fontWeight = FontWeight.Bold,
+              fontSize = 11.sp
+            )
+          }
+
+          // Volume Control (Moved below Share control per specification)
+          Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            IconButton(
+              onClick = { isMuted = !isMuted },
+              modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.5f))
+                .testTag("reel_volume_button")
+            ) {
+              Icon(
+                imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                contentDescription = if (isMuted) "Unmute audio" else "Mute audio",
+                tint = if (isMuted) Color.White.copy(alpha = 0.7f) else VybeBrandCyan
+              )
+            }
+            Text(
+              text = if (isMuted) "Muted" else "Audio",
               color = Color.White,
               fontWeight = FontWeight.Bold,
               fontSize = 11.sp
@@ -465,16 +555,45 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
               .padding(horizontal = 20.dp, vertical = 8.dp)
               .navigationBarsPadding()
           ) {
-            Text(
-              text = "Share Reel to Inbox",
-              style = MaterialTheme.typography.titleMedium,
-              fontWeight = FontWeight.Bold
-            )
-            Text(
-              text = "Send this reel to an active conversation or eligible contact.",
-              fontSize = 12.sp,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Column(modifier = Modifier.weight(1f)) {
+                Text(
+                  text = "Share VYBES Reel",
+                  style = MaterialTheme.typography.titleMedium,
+                  fontWeight = FontWeight.Bold
+                )
+                Text(
+                  text = "Send to contacts or share externally to other apps.",
+                  fontSize = 12.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+              }
+              OutlinedButton(
+                onClick = {
+                  val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "VYBES Reel by @${currentReel.author.username}")
+                    putExtra(
+                      Intent.EXTRA_TEXT,
+                      "Watch @${currentReel.author.username}'s reel on VYBE:\n${currentReel.caption}\n${currentReel.mediaUrls.firstOrNull() ?: ""}"
+                    )
+                  }
+                  context.startActivity(Intent.createChooser(shareIntent, "Share Reel Link"))
+                  showShareInboxSheet = false
+                },
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                modifier = Modifier.testTag("reel_external_share_button")
+              ) {
+                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("External Share", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+              }
+            }
             Spacer(modifier = Modifier.height(10.dp))
 
             OutlinedTextField(

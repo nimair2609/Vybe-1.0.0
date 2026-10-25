@@ -1089,6 +1089,7 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
             onAddComment = { text -> viewModel.addComment(post.id, text) },
             onShareClick = {},
             onUserClick = { viewModel.openUserProfile(post.author) },
+            onRemixClick = { viewModel.openReelViewer(post.id) },
             onDeleteClick = { viewModel.deletePost(post.id) },
             onPostViewed = { viewModel.recordPostView(it) },
             currentUserId = currentUser?.id

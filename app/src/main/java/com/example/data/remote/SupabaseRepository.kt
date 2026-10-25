@@ -90,21 +90,32 @@ class SupabaseRepository {
    * refreshing via refresh_token automatically if within 60 seconds of expiry.
    */
   suspend fun resolveValidAccessToken(explicitToken: String? = null): String? {
-    if (!explicitToken.isNullOrBlank() && SupabaseConfig.isJwtAccessToken(explicitToken)) {
-      return explicitToken.trim()
+    val cleanExplicit = explicitToken?.trim()?.removePrefix("Bearer ")?.trim()
+    val sm = SessionManager.get()
+
+    // 1. If an explicit token was provided and is still fresh, use it
+    if (!cleanExplicit.isNullOrBlank() && SupabaseConfig.isJwtAccessToken(cleanExplicit) && !SupabaseConfig.isJwtExpired(cleanExplicit)) {
+      return cleanExplicit
     }
-    val sm = SessionManager.get() ?: return null
+
+    if (sm == null) {
+      return if (!cleanExplicit.isNullOrBlank() && SupabaseConfig.isJwtAccessToken(cleanExplicit)) cleanExplicit else null
+    }
+
     val currentToken = sm.accessToken
     val refreshToken = sm.refreshToken
     val expiresAt = sm.expiresAtMs
 
-    if (!currentToken.isNullOrBlank() && SupabaseConfig.isJwtAccessToken(currentToken)) {
-      val needsRefresh = expiresAt > 0L && System.currentTimeMillis() > (expiresAt - 60_000L)
-      if (!needsRefresh) {
-        return currentToken
-      }
+    val isCurrentValid = !currentToken.isNullOrBlank() &&
+      SupabaseConfig.isJwtAccessToken(currentToken) &&
+      !SupabaseConfig.isJwtExpired(currentToken) &&
+      (expiresAt <= 0L || System.currentTimeMillis() <= (expiresAt - 60_000L))
+
+    if (isCurrentValid) {
+      return currentToken
     }
 
+    // 2. Proactively refresh token when expired or near expiry to eliminate 'exp claim timestamp check failed'
     if (!refreshToken.isNullOrBlank()) {
       try {
         val resp = SupabaseNetworkClient.authApi.refreshSession(
@@ -124,7 +135,7 @@ class SupabaseRepository {
       }
     }
 
-    return if (SupabaseConfig.isJwtAccessToken(currentToken)) currentToken else null
+    return if (!currentToken.isNullOrBlank() && SupabaseConfig.isJwtAccessToken(currentToken)) currentToken else cleanExplicit
   }
 
   private suspend fun authHeaderFor(explicitToken: String? = null): String? {
@@ -804,8 +815,10 @@ class SupabaseRepository {
     } else {
       LivePulseStatus.NONE
     }
-    val onlineNow = TimestampUtils.isRecentlyOnline(p.lastSeenAt) ||
-      (parsedPulse != LivePulseStatus.NONE && parsedPulse != LivePulseStatus.QUIET_TIME)
+    // Online presence is based on authoritative recent activity (last 5 minutes),
+    // ensuring stale mood pulses do NOT keep offline users perpetually active.
+    val isSeenRecently = TimestampUtils.isRecentlyOnline(p.lastSeenAt, thresholdSeconds = 300L)
+    val onlineNow = isSeenRecently
 
     return User(
       id = p.id,
@@ -2426,7 +2439,7 @@ class SupabaseRepository {
       val convResp = SupabaseNetworkClient.restApi.insertConversation(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
-        conversation = SupabaseConversationInsertDto(isGroup = false)
+        conversation = SupabaseConversationInsertDto(isGroup = false, createdBy = myUserId)
       )
       if (convResp.isSuccessful && !convResp.body().isNullOrEmpty()) {
         val convId = convResp.body()!!.first().id ?: return@withContext Result.failure(Exception("Missing conversation ID."))

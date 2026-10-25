@@ -74,6 +74,9 @@ class VybeViewModel : ViewModel() {
   private val _uiBannerMessage = MutableStateFlow<String?>(null)
   val uiBannerMessage: StateFlow<String?> = _uiBannerMessage.asStateFlow()
 
+  private val _targetReelId = MutableStateFlow<String?>(null)
+  val targetReelId: StateFlow<String?> = _targetReelId.asStateFlow()
+
   private val _feedRefreshTrigger = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
   val feedRefreshTrigger = _feedRefreshTrigger
 
@@ -324,6 +327,19 @@ class VybeViewModel : ViewModel() {
       screenBackStack.add(_currentScreen.value)
       _currentScreen.value = screen
     }
+  }
+
+  fun openReelViewer(reelId: String? = null) {
+    _targetReelId.value = reelId
+    if (_currentScreen.value == Screen.MAIN) {
+      selectTab(MainTab.VYBES)
+    } else {
+      navigateTo(Screen.REELS_VIEWER)
+    }
+  }
+
+  fun clearTargetReelId() {
+    _targetReelId.value = null
   }
 
   fun navigateBack(): Boolean {

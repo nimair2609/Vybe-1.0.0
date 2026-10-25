@@ -535,4 +535,54 @@ class VybeLocalStore private constructor(context: Context) {
       emptySet()
     }
   }
+
+  // --- Real Time Management & Usage Tracking ---
+  fun addUsageMinutes(minutes: Int) {
+    if (minutes <= 0) return
+    val sdf = java.text.SimpleDateFormat("yyyy_MM_dd", java.util.Locale.US)
+    val todayKey = "usage_min_" + sdf.format(java.util.Date())
+    val current = prefs.getInt(todayKey, 0)
+    prefs.edit().putInt(todayKey, current + minutes).apply()
+  }
+
+  fun getWeeklyUsageStats(): TimeManagementStats {
+    val sdf = java.text.SimpleDateFormat("yyyy_MM_dd", java.util.Locale.US)
+    val todayKey = "usage_min_" + sdf.format(java.util.Date())
+    val todayMinutes = prefs.getInt(todayKey, 0)
+    var totalWeekMinutes = 0
+    var activeDays = 0
+
+    for (i in 0..6) {
+      val dayCal = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, -i) }
+      val dayKey = "usage_min_" + sdf.format(dayCal.time)
+      val m = prefs.getInt(dayKey, 0)
+      totalWeekMinutes += m
+      if (m > 0 || i == 0) {
+        activeDays++
+      }
+    }
+
+    val dailyAvg = if (activeDays > 0) totalWeekMinutes / activeDays else todayMinutes
+    val breakMin = prefs.getInt("time_mgmt_break_minutes", 45)
+    val breakEnabled = prefs.getBoolean("time_mgmt_break_enabled", true)
+    val limitMin = prefs.getInt("time_mgmt_daily_limit_minutes", 90)
+    val limitEnabled = prefs.getBoolean("time_mgmt_daily_limit_enabled", false)
+
+    return TimeManagementStats(
+      todayUsageMinutes = todayMinutes,
+      dailyAverageMinutes = dailyAvg,
+      weeklyTotalHours = (totalWeekMinutes / 60f),
+      breakReminderMinutes = breakMin,
+      isBreakReminderEnabled = breakEnabled,
+      dailyLimitMinutes = limitMin,
+      isDailyLimitEnabled = limitEnabled
+    )
+  }
+
+  fun saveTimeManagementSettings(breakMinutes: Int, isEnabled: Boolean) {
+    prefs.edit()
+      .putInt("time_mgmt_break_minutes", breakMinutes)
+      .putBoolean("time_mgmt_break_enabled", isEnabled)
+      .apply()
+  }
 }

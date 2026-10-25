@@ -343,6 +343,16 @@ class VybeRepository private constructor() {
     appContext = context.applicationContext
     val localStore = VybeLocalStore.getInstance(context)
     _themeMode.value = localStore.getThemeMode()
+    _timeManagementStats.value = localStore.getWeeklyUsageStats()
+
+    // Real session active screen-time tracking
+    ioScope.launch {
+      while (true) {
+        kotlinx.coroutines.delay(60_000L)
+        localStore.addUsageMinutes(1)
+        _timeManagementStats.value = localStore.getWeeklyUsageStats()
+      }
+    }
 
     // Attach real-time ConnectivityManager monitor
     val monitor = NetworkMonitor.getInstance(context)
@@ -4036,7 +4046,12 @@ class VybeRepository private constructor() {
   }
 
   fun updateTimeManagement(breakMinutes: Int, isEnabled: Boolean) {
-    _timeManagementStats.value = _timeManagementStats.value.copy(breakReminderMinutes = breakMinutes, isBreakReminderEnabled = isEnabled)
+    val store = appContext?.let { VybeLocalStore.getInstance(it) } ?: VybeLocalStore.get()
+    store?.saveTimeManagementSettings(breakMinutes, isEnabled)
+    _timeManagementStats.value = _timeManagementStats.value.copy(
+      breakReminderMinutes = breakMinutes,
+      isBreakReminderEnabled = isEnabled
+    )
   }
 
   fun submitSupportTicket(category: String, subject: String, message: String): SupportTicket {

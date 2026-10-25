@@ -252,7 +252,6 @@ fun StoryCreateDialog(
               onClick = { showVybeMatchesManager = true },
               enabled = !isPublishingStory,
               modifier = Modifier
-                .padding(end = 8.dp)
                 .heightIn(min = 48.dp)
                 .testTag("manage_vybe_matches_header_button")
             ) {
@@ -262,13 +261,48 @@ fun StoryCreateDialog(
                 tint = Color(0xFF10B981),
                 modifier = Modifier.size(18.dp)
               )
-              Spacer(modifier = Modifier.width(6.dp))
+              Spacer(modifier = Modifier.width(4.dp))
               Text(
                 text = "Matches (${vybeMatches.size})",
                 color = Color(0xFF10B981),
                 fontWeight = FontWeight.Bold,
-                fontSize = 12.sp
+                fontSize = 11.sp
               )
+            }
+
+            Button(
+              onClick = {
+                if (selectedAudience == StoryAudience.VYBE_MATCHES) {
+                  val (valid, errOrUri) = validateStoryInputs()
+                  if (!valid) {
+                    validationError = errOrUri
+                    return@Button
+                  }
+                  if (vybeMatches.isEmpty()) {
+                    showEmptyMatchesAlert = true
+                  } else {
+                    showMatchesConfirmDialog = true
+                  }
+                } else {
+                  executeStoryPublish(StoryAudience.EVERYONE)
+                }
+              },
+              enabled = !isPublishingStory,
+              colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+              shape = RoundedCornerShape(16.dp),
+              contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+              modifier = Modifier
+                .padding(end = 8.dp)
+                .heightIn(min = 36.dp)
+                .testTag("publish_story_header_button")
+            ) {
+              if (isPublishingStory) {
+                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(14.dp))
+              } else {
+                Icon(Icons.Default.Upload, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Share", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+              }
             }
           },
           colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -368,21 +402,28 @@ fun StoryCreateDialog(
                     modifier = Modifier.size(16.dp)
                   )
                   Spacer(modifier = Modifier.width(8.dp))
-                  Text("Publishing...", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                  Text("Sharing Story...", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 } else {
+                  Icon(
+                    Icons.Default.Upload,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                  )
+                  Spacer(modifier = Modifier.width(6.dp))
                   Text(
-                    text = "Your Story",
+                    text = "Share to Story",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp,
                     maxLines = 1
                   )
-                  Spacer(modifier = Modifier.width(6.dp))
+                  Spacer(modifier = Modifier.width(4.dp))
                   Icon(
                     Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(15.dp)
                   )
                 }
               }

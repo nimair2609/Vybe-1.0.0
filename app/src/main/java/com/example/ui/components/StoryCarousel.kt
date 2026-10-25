@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
@@ -31,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.data.model.Story
 import com.example.data.model.StoryAudience
+import com.example.data.model.UnloadRoom
 import com.example.data.model.User
 import com.example.ui.theme.*
 import com.example.util.TimestampUtils
@@ -62,6 +64,8 @@ fun StoryCarousel(
   onAddStoryClick: () -> Unit,
   onManageVybeMatchesClick: (() -> Unit)? = null,
   vybeMatchesCount: Int = 0,
+  activeLiveRooms: List<UnloadRoom> = emptyList(),
+  onJoinLiveRoom: ((UnloadRoom) -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
   val nowMillis = System.currentTimeMillis()
@@ -213,6 +217,85 @@ fun StoryCarousel(
               textAlign = TextAlign.Center,
               overflow = TextOverflow.Ellipsis
             )
+          }
+        }
+
+        // 2. LIVE Highlight bubble for active live sessions
+        val firstActiveRoom = activeLiveRooms.firstOrNull { it.isActive }
+        if (firstActiveRoom != null) {
+          item(key = "live_highlight_room_${firstActiveRoom.id}") {
+            Column(
+              horizontalAlignment = Alignment.CenterHorizontally,
+              modifier = Modifier
+                .width(74.dp)
+                .clickable { onJoinLiveRoom?.invoke(firstActiveRoom) }
+                .testTag("live_highlight_item")
+            ) {
+              Box(
+                modifier = Modifier.size(68.dp),
+                contentAlignment = Alignment.Center
+              ) {
+                // Pulsing Gradient Ring for Active Live Session
+                Box(
+                  modifier = Modifier
+                    .size(68.dp)
+                    .clip(CircleShape)
+                    .background(
+                      Brush.sweepGradient(
+                        listOf(
+                          VybeMagenta,
+                          Color(0xFFEF4444),
+                          VybeViolet,
+                          Color(0xFF10B981),
+                          VybeMagenta
+                        )
+                      )
+                    )
+                    .padding(2.5.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(2.dp)
+                    .clip(CircleShape)
+                    .background(VybeMagenta.copy(alpha = 0.2f)),
+                  contentAlignment = Alignment.Center
+                ) {
+                  Icon(
+                    imageVector = Icons.Default.GraphicEq,
+                    contentDescription = "Active Live Room",
+                    tint = VybeMagenta,
+                    modifier = Modifier.size(28.dp)
+                  )
+                }
+
+                // "LIVE" Badge
+                Surface(
+                  color = Color(0xFFEF4444),
+                  shape = RoundedCornerShape(4.dp),
+                  modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .offset(y = 4.dp)
+                ) {
+                  Text(
+                    text = "LIVE",
+                    color = Color.White,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                  )
+                }
+              }
+
+              Spacer(modifier = Modifier.height(6.dp))
+              Text(
+                text = firstActiveRoom.topicTag.ifBlank { "Live Room" },
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = VybeMagenta,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center
+              )
+            }
           }
         }
 

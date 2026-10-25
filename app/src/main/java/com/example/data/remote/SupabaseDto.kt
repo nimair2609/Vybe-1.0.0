@@ -134,6 +134,7 @@ data class SupabasePresencePatchDto(
 
 data class SupabaseConversationDto(
   val id: String? = null,
+  @Json(name = "created_by") val createdBy: String? = null,
   @Json(name = "is_group") val isGroup: Boolean = false,
   @Json(name = "group_name") val groupName: String? = null,
   @Json(name = "created_at") val createdAt: String? = null,
@@ -141,6 +142,7 @@ data class SupabaseConversationDto(
 )
 
 data class SupabaseConversationInsertDto(
+  @Json(name = "created_by") val createdBy: String? = null,
   @Json(name = "is_group") val isGroup: Boolean = false,
   @Json(name = "group_name") val groupName: String? = null
 )
@@ -542,7 +544,8 @@ data class SupabaseRpcIncrementViewRequest(
 )
 
 data class SupabaseRpcPeerConversationRequest(
-  @Json(name = "p_peer_id") val peerId: String
+  @Json(name = "p_peer_id") val peerId: String,
+  @Json(name = "p_other_user_id") val otherUserId: String? = peerId
 )
 
 data class SupabaseRpcResolveIdentifierRequest(

@@ -745,6 +745,7 @@ export async function fetchConversations(currentUserId: string): Promise<Convers
 
 export async function getOrCreateDirectConversation(myId: string, peerId: string): Promise<string> {
   const { data: rpcId, error: rpcErr } = await supabase.rpc('get_or_create_direct_conversation', {
+    p_peer_id: peerId,
     p_other_user_id: peerId
   });
   if (!rpcErr && rpcId) return String(rpcId);

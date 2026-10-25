@@ -86,6 +86,35 @@ object SupabaseConfig {
   }
 
   /**
+   * Safely checks whether a JWT access token has expired or is within [clockSkewSeconds] of expiry,
+   * resolving the "exp claim timestamp check failed" error without weakening auth security.
+   */
+  fun isJwtExpired(token: String?, clockSkewSeconds: Long = 60L): Boolean {
+    if (!isJwtAccessToken(token)) return true
+    return try {
+      val clean = token!!.trim().removePrefix("Bearer ").trim()
+      val parts = clean.split(".")
+      if (parts.size < 2) return true
+      val payload = parts[1]
+      val decodedBytes = android.util.Base64.decode(
+        payload,
+        android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP
+      )
+      val json = String(decodedBytes, Charsets.UTF_8)
+      val expMatch = Regex("\"exp\"\\s*:\\s*(\\d+)").find(json)
+      if (expMatch != null) {
+        val expSeconds = expMatch.groupValues[1].toLongOrNull() ?: return false
+        val nowSeconds = System.currentTimeMillis() / 1000L
+        nowSeconds >= (expSeconds - clockSkewSeconds)
+      } else {
+        false
+      }
+    } catch (_: Throwable) {
+      false
+    }
+  }
+
+  /**
    * Builds a valid `Authorization` header ONLY when a real user JWT or legacy JWT anon key exists.
    * Returns `null` when only `sb_publishable_*` is available so PostgREST uses `apikey` without throwing 401 JWSInvalidCompact.
    */

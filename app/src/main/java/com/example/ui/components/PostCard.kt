@@ -1,8 +1,10 @@
 package com.example.ui.components
 
+import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,12 +20,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import coil.compose.AsyncImage
 import com.example.data.model.MediaType
 import com.example.data.model.Post
@@ -58,6 +62,14 @@ fun PostCard(
   var selectedReportReason by remember { mutableStateOf("Spam or Misleading") }
   var commentText by remember { mutableStateOf("") }
   var detectedMediaRatio by remember(post.id, post.mediaAspectRatio) { mutableStateOf(post.mediaAspectRatio) }
+  var showDoubleTapResonance by remember { mutableStateOf(false) }
+
+  LaunchedEffect(showDoubleTapResonance) {
+    if (showDoubleTapResonance) {
+      delay(850L)
+      showDoubleTapResonance = false
+    }
+  }
 
   val isAuthor = currentUserId != null && currentUserId == post.author.id
   val relativeTimestamp = rememberRelativeTimestamp(post.createdAtIso, post.timestamp)
@@ -285,46 +297,78 @@ fun PostCard(
         )
 
         Spacer(modifier = Modifier.height(12.dp))
-        if (isVideo) {
-          val anySheetOpen = showCommentDialog || showAnalyticsSheet || showDeleteConfirm || showReportDialog
-          VybeVideoPlayer(
-            videoUrl = mediaUrl,
-            autoPlay = shouldAutoPlay,
-            isLooping = true,
-            initialMuted = true,
-            isPausedExternal = !shouldAutoPlay || anySheetOpen,
-            respectReducedMotion = true,
-            fitMode = VideoFitMode.COVER_PROPORTIONAL,
-            onAspectRatioDetected = { ratio ->
-              detectedMediaRatio = ratio
-            },
-            modifier = Modifier
-              .fillMaxWidth()
-              .aspectRatio(containerRatio)
-              .clip(RoundedCornerShape(16.dp))
-          )
-        } else {
-          Box(
-            modifier = Modifier
-              .fillMaxWidth()
-              .aspectRatio(containerRatio)
-              .clip(RoundedCornerShape(16.dp))
-              .background(MaterialTheme.colorScheme.surfaceVariant)
-          ) {
-            AsyncImage(
-              model = mediaUrl,
-              contentDescription = "Post media by ${post.author.displayName}",
-              contentScale = ContentScale.Crop,
-              onSuccess = { state ->
-                if (post.mediaAspectRatio == null) {
-                  val d = state.result.drawable
-                  if (d.intrinsicWidth > 0 && d.intrinsicHeight > 0) {
-                    detectedMediaRatio = d.intrinsicWidth.toFloat() / d.intrinsicHeight.toFloat()
-                  }
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(containerRatio)
+            .clip(RoundedCornerShape(16.dp))
+            .pointerInput(post.id) {
+              detectTapGestures(
+                onDoubleTap = {
+                  showDoubleTapResonance = true
+                  onLikeClick()
                 }
+              )
+            }
+        ) {
+          if (isVideo) {
+            val anySheetOpen = showCommentDialog || showAnalyticsSheet || showDeleteConfirm || showReportDialog
+            VybeVideoPlayer(
+              videoUrl = mediaUrl,
+              autoPlay = shouldAutoPlay,
+              isLooping = true,
+              initialMuted = true,
+              isPausedExternal = !shouldAutoPlay || anySheetOpen,
+              respectReducedMotion = true,
+              fitMode = VideoFitMode.COVER_PROPORTIONAL,
+              onAspectRatioDetected = { ratio ->
+                detectedMediaRatio = ratio
               },
               modifier = Modifier.fillMaxSize()
             )
+          } else {
+            Box(
+              modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+              AsyncImage(
+                model = mediaUrl,
+                contentDescription = "Post media by ${post.author.displayName}",
+                contentScale = ContentScale.Crop,
+                onSuccess = { state ->
+                  if (post.mediaAspectRatio == null) {
+                    val d = state.result.drawable
+                    if (d.intrinsicWidth > 0 && d.intrinsicHeight > 0) {
+                      detectedMediaRatio = d.intrinsicWidth.toFloat() / d.intrinsicHeight.toFloat()
+                    }
+                  }
+                },
+                modifier = Modifier.fillMaxSize()
+              )
+            }
+          }
+
+          // Double-Tap Animated Resonance Feedback
+          androidx.compose.animation.AnimatedVisibility(
+            visible = showDoubleTapResonance,
+            enter = scaleIn(initialScale = 0.4f) + fadeIn(),
+            exit = scaleOut(targetScale = 1.35f) + fadeOut(),
+            modifier = Modifier.align(Alignment.Center)
+          ) {
+            Box(
+              modifier = Modifier
+                .size(90.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.55f)),
+              contentAlignment = Alignment.Center
+            ) {
+              VybeLikeIcon(
+                isLiked = true,
+                size = 54.dp,
+                activeTintOverride = VybeMagenta
+              )
+            }
           }
         }
       }
