@@ -1349,7 +1349,7 @@ class VybeRepository private constructor() {
     if (index != -1) {
       val post = current[index]
       val newIsLiked = !post.isLiked
-      val nextReaction = if (newIsLiked) VybeReaction.PURE_ENERGY else null
+      val nextReaction = if (newIsLiked) VybeReaction.PULSE else null
       val newCount = if (newIsLiked) post.likesCount + 1 else maxOf(0, post.likesCount - 1)
       current[index] = post.copy(isLiked = newIsLiked, userReaction = nextReaction, likesCount = newCount)
       _posts.value = current
