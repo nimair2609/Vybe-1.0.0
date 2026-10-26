@@ -145,6 +145,82 @@ export async function updatePresenceHeartbeat(userId: string): Promise<void> {
     .eq('id', userId);
 }
 
+const KNOWN_BUCKETS = new Set(['posts', 'stories', 'avatars', 'chat-media']);
+const signedMediaCache = new Map<string, { url: string; expiresAt: number }>();
+
+function parseBucketAndObject(
+  defaultBucket: 'posts' | 'stories' | 'avatars' | 'chat-media',
+  storagePath?: string | null,
+  rawUrl?: string | null
+): { bucket: string; objectPath: string } | null {
+  const sp = (storagePath || '').trim();
+  if (sp && sp.includes('/')) {
+    const first = sp.split('/')[0];
+    if (KNOWN_BUCKETS.has(first)) {
+      return { bucket: first, objectPath: sp.slice(first.length + 1) };
+    }
+    return { bucket: defaultBucket, objectPath: sp };
+  }
+
+  const cleanUrl = (rawUrl || '').split('?')[0].trim();
+  const markers = [
+    '/storage/v1/object/public/',
+    '/storage/v1/object/sign/',
+    '/storage/v1/object/authenticated/',
+    '/storage/v1/object/'
+  ];
+  for (const marker of markers) {
+    const idx = cleanUrl.indexOf(marker);
+    if (idx >= 0) {
+      const rest = cleanUrl.slice(idx + marker.length);
+      const slash = rest.indexOf('/');
+      if (slash > 0 && slash < rest.length - 1) {
+        return { bucket: rest.slice(0, slash), objectPath: rest.slice(slash + 1) };
+      }
+    }
+  }
+  return null;
+}
+
+export async function resolveAccessibleMediaUrl(
+  defaultBucket: 'posts' | 'stories' | 'avatars' | 'chat-media',
+  storagePath?: string | null,
+  fallbackUrl?: string | null
+): Promise<string> {
+  const raw = (fallbackUrl || '').trim();
+  if (!isSupabaseConfigured) return raw;
+  if (raw.startsWith('vybe://')) return raw;
+
+  const parsed = parseBucketAndObject(defaultBucket, storagePath, raw);
+  if (!parsed) return raw;
+
+  const { bucket, objectPath } = parsed;
+  const publicUrl = supabase.storage.from(bucket).getPublicUrl(objectPath).data?.publicUrl || raw;
+  if (bucket === 'avatars') return publicUrl;
+
+  const cacheKey = `${bucket}/${objectPath}`;
+  const now = Date.now();
+  const cached = signedMediaCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.url;
+  }
+
+  try {
+    const { data: sessData } = await supabase.auth.getSession();
+    if (sessData?.session?.access_token) {
+      const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(objectPath, 604800);
+      if (signed?.signedUrl) {
+        signedMediaCache.set(cacheKey, { url: signed.signedUrl, expiresAt: now + 6 * 3600_000 });
+        return signed.signedUrl;
+      }
+    }
+  } catch {
+    // Fall back to public bucket URL
+  }
+
+  return publicUrl;
+}
+
 export async function uploadMediaToBucket(
   bucket: 'posts' | 'stories' | 'avatars' | 'chat-media',
   userId: string,
@@ -155,10 +231,11 @@ export async function uploadMediaToBucket(
     throw new Error('Supabase backend is not configured.');
   }
   const safeExt = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '');
-  const storagePath = `${userId}/${Date.now()}_${crypto.randomUUID().slice(0, 8)}.${safeExt}`;
+  const objectPath = `${userId}/${Date.now()}_${crypto.randomUUID().slice(0, 8)}.${safeExt}`;
+  const fullStoragePath = `${bucket}/${objectPath}`;
   onStatus?.(`Uploading ${file.name}…`);
 
-  const { error: uploadErr } = await supabase.storage.from(bucket).upload(storagePath, file, {
+  const { error: uploadErr } = await supabase.storage.from(bucket).upload(objectPath, file, {
     cacheControl: '3600',
     upsert: false,
     contentType: file.type || undefined
@@ -167,11 +244,11 @@ export async function uploadMediaToBucket(
     throw new Error(`Media upload failed: ${uploadErr.message}`);
   }
 
-  const { data } = supabase.storage.from(bucket).getPublicUrl(storagePath);
-  if (!data?.publicUrl) {
+  const accessibleUrl = await resolveAccessibleMediaUrl(bucket, fullStoragePath, null);
+  if (!accessibleUrl) {
     throw new Error('Could not resolve uploaded media URL.');
   }
-  return { publicUrl: data.publicUrl, storagePath };
+  return { publicUrl: accessibleUrl, storagePath: fullStoragePath };
 }
 
 export async function fetchFeedPosts(
@@ -193,16 +270,18 @@ export async function fetchFeedPosts(
       comments (*, profiles:author_id (*))
     `
     )
-    .eq('is_archived', false)
+    .or('is_archived.is.null,is_archived.eq.false')
     .order('created_at', { ascending: false })
     .range(from, to);
 
   if (error || !rows) return [];
 
+  const activeRows = rows.filter((r: any) => !Boolean(r.is_archived));
+
   let likedIds = new Set<string>();
   let savedIds = new Set<string>();
-  if (currentUserId && rows.length > 0) {
-    const postIds = rows.map((r: any) => r.id);
+  if (currentUserId && activeRows.length > 0 && currentUserId !== 'guest_viewer') {
+    const postIds = activeRows.map((r: any) => r.id);
     const [{ data: reactions }, { data: saves }] = await Promise.all([
       supabase
         .from('post_reactions')
@@ -219,43 +298,51 @@ export async function fetchFeedPosts(
     savedIds = new Set((saves || []).map((x: any) => String(x.post_id)));
   }
 
-  return rows.map((row: any) => {
-    const author = mapProfileRow(row.profiles || { id: row.author_id });
-    const sortedMedia = Array.isArray(row.post_media)
-      ? [...row.post_media].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
-      : [];
-    const mediaUrls = sortedMedia.map((m: any) => String(m.media_url)).filter(Boolean);
-    const comments: VybeComment[] = Array.isArray(row.comments)
-      ? row.comments.map((c: any) => ({
-          id: String(c.id),
-          postId: String(c.post_id),
-          author: mapProfileRow(c.profiles || { id: c.author_id }),
-          content: String(c.content || ''),
-          createdAtIso: c.created_at || null
-        }))
-      : [];
+  return Promise.all(
+    activeRows.map(async (row: any) => {
+      const author = mapProfileRow(row.profiles || { id: row.author_id });
+      const sortedMedia = Array.isArray(row.post_media)
+        ? [...row.post_media].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+        : [];
+      const mediaUrls = (
+        await Promise.all(
+          sortedMedia.map((m: any) =>
+            resolveAccessibleMediaUrl('posts', m.storage_path, m.media_url)
+          )
+        )
+      ).filter(Boolean);
+      const comments: VybeComment[] = Array.isArray(row.comments)
+        ? row.comments.map((c: any) => ({
+            id: String(c.id),
+            postId: String(c.post_id),
+            author: mapProfileRow(c.profiles || { id: c.author_id }),
+            content: String(c.content || ''),
+            createdAtIso: c.created_at || null
+          }))
+        : [];
 
-    return {
-      id: String(row.id),
-      author,
-      caption: String(row.caption || ''),
-      mediaUrls,
-      mediaType: (row.media_type || (mediaUrls.length > 0 ? 'IMAGE' : 'TEXT')) as MediaType,
-      moodZone: (row.mood_zone || null) as MoodZone | null,
-      isUnfiltered: Boolean(row.is_unfiltered),
-      isVybesReel: Boolean(row.is_vybes_reel) || row.media_type === 'REEL',
-      locationName: row.location_name || null,
-      musicTitle: row.music_title || null,
-      likesCount: Math.max(0, Number(row.likes_count ?? 0)),
-      commentsCount: Math.max(comments.length, Number(row.comments_count ?? 0)),
-      savesCount: Math.max(0, Number(row.saves_count ?? 0)),
-      viewsCount: Math.max(0, Number(row.views_count ?? 0)),
-      isLiked: likedIds.has(String(row.id)),
-      isSaved: savedIds.has(String(row.id)),
-      createdAtIso: row.created_at || null,
-      comments
-    };
-  });
+      return {
+        id: String(row.id),
+        author,
+        caption: String(row.caption || ''),
+        mediaUrls,
+        mediaType: (row.media_type || (mediaUrls.length > 0 ? 'IMAGE' : 'TEXT')) as MediaType,
+        moodZone: (row.mood_zone || null) as MoodZone | null,
+        isUnfiltered: Boolean(row.is_unfiltered),
+        isVybesReel: Boolean(row.is_vybes_reel) || row.media_type === 'REEL',
+        locationName: row.location_name || null,
+        musicTitle: row.music_title || null,
+        likesCount: Math.max(0, Number(row.likes_count ?? 0)),
+        commentsCount: Math.max(comments.length, Number(row.comments_count ?? 0)),
+        savesCount: Math.max(0, Number(row.saves_count ?? 0)),
+        viewsCount: Math.max(0, Number(row.views_count ?? 0)),
+        isLiked: likedIds.has(String(row.id)),
+        isSaved: savedIds.has(String(row.id)),
+        createdAtIso: row.created_at || null,
+        comments
+      };
+    })
+  );
 }
 
 export async function publishPostPersisted(params: {
@@ -383,7 +470,7 @@ export async function fetchActiveStories(currentUserId: string | null): Promise<
   if (error || !rows) return [];
 
   let viewedIds = new Set<string>();
-  if (currentUserId && rows.length > 0) {
+  if (currentUserId && rows.length > 0 && currentUserId !== 'guest_viewer') {
     const { data: views } = await supabase
       .from('story_views')
       .select('story_id')
@@ -395,18 +482,20 @@ export async function fetchActiveStories(currentUserId: string | null): Promise<
     viewedIds = new Set((views || []).map((v: any) => String(v.story_id)));
   }
 
-  return rows.map((row: any) => ({
-    id: String(row.id),
-    author: mapProfileRow(row.profiles || { id: row.author_id }),
-    mediaUrl: String(row.media_url || ''),
-    mediaType: ((row.media_type || row.story_type || 'PHOTO') as string).toUpperCase() as VybeStory['mediaType'],
-    caption: String(row.caption || ''),
-    audience: (row.audience === 'VYBE_MATCHES' ? 'VYBE_MATCHES' : 'EVERYONE') as VybeStory['audience'],
-    textBgKey: row.text_bg_key || null,
-    createdAtIso: row.created_at || null,
-    expiresAtIso: row.expires_at || null,
-    isViewed: viewedIds.has(String(row.id))
-  }));
+  return Promise.all(
+    rows.map(async (row: any) => ({
+      id: String(row.id),
+      author: mapProfileRow(row.profiles || { id: row.author_id }),
+      mediaUrl: await resolveAccessibleMediaUrl('stories', row.storage_path, row.media_url),
+      mediaType: ((row.media_type || row.story_type || 'PHOTO') as string).toUpperCase() as VybeStory['mediaType'],
+      caption: String(row.caption || ''),
+      audience: (row.audience === 'VYBE_MATCHES' ? 'VYBE_MATCHES' : 'EVERYONE') as VybeStory['audience'],
+      textBgKey: row.text_bg_key || null,
+      createdAtIso: row.created_at || null,
+      expiresAtIso: row.expires_at || null,
+      isViewed: viewedIds.has(String(row.id))
+    }))
+  );
 }
 
 export async function publishStoryPersisted(params: {
@@ -839,36 +928,54 @@ export async function searchUsersAndPosts(
     ? supabase
         .from('posts')
         .select(`*, profiles:author_id (*), post_media (*), comments (*, profiles:author_id (*))`)
+        .or('is_archived.is.null,is_archived.eq.false')
         .ilike('caption', `%${q}%`)
         .limit(limit)
     : supabase
         .from('posts')
         .select(`*, profiles:author_id (*), post_media (*), comments (*, profiles:author_id (*))`)
+        .or('is_archived.is.null,is_archived.eq.false')
         .order('created_at', { ascending: false })
         .limit(limit);
 
   const [{ data: uRows }, { data: sRows }, { data: pRows }] = await Promise.all([userReq, shopReq, postReq]);
 
-  const mappedPosts: VybePost[] = (pRows || []).map((r: any) => ({
-    id: String(r.id),
-    author: mapProfileRow(r.profiles || { id: r.author_id }),
-    caption: String(r.caption || ''),
-    moodZone: (r.mood_zone || 'GENERAL') as MoodZone,
-    mediaType: ((r.media_type || 'IMAGE') as string).toUpperCase() as MediaType,
-    mediaUrls: (r.post_media || []).map((pm: any) => pm.media_url || ''),
-    isUnfiltered: Boolean(r.is_unfiltered),
-    isVybesReel: Boolean(r.is_vybes_reel),
-    locationName: r.location_name || null,
-    musicTitle: r.music_title || null,
-    likesCount: Number(r.likes_count ?? r.reactions_count ?? 0),
-    commentsCount: Number(r.comments_count ?? (r.comments ? r.comments.length : 0)),
-    savesCount: Number(r.saves_count ?? 0),
-    viewsCount: Number(r.views_count ?? 0),
-    isLiked: false,
-    isSaved: false,
-    createdAtIso: r.created_at || null,
-    comments: []
-  }));
+  const mappedPosts: VybePost[] = await Promise.all(
+    (pRows || [])
+      .filter((r: any) => !Boolean(r.is_archived))
+      .map(async (r: any) => {
+        const sortedMedia = Array.isArray(r.post_media)
+          ? [...r.post_media].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+          : [];
+        const resolvedUrls = (
+          await Promise.all(
+            sortedMedia.map((pm: any) =>
+              resolveAccessibleMediaUrl('posts', pm.storage_path, pm.media_url)
+            )
+          )
+        ).filter(Boolean);
+        return {
+          id: String(r.id),
+          author: mapProfileRow(r.profiles || { id: r.author_id }),
+          caption: String(r.caption || ''),
+          moodZone: (r.mood_zone || 'GENERAL') as MoodZone,
+          mediaType: ((r.media_type || 'IMAGE') as string).toUpperCase() as MediaType,
+          mediaUrls: resolvedUrls,
+          isUnfiltered: Boolean(r.is_unfiltered),
+          isVybesReel: Boolean(r.is_vybes_reel),
+          locationName: r.location_name || null,
+          musicTitle: r.music_title || null,
+          likesCount: Number(r.likes_count ?? r.reactions_count ?? 0),
+          commentsCount: Number(r.comments_count ?? (r.comments ? r.comments.length : 0)),
+          savesCount: Number(r.saves_count ?? 0),
+          viewsCount: Number(r.views_count ?? 0),
+          isLiked: false,
+          isSaved: false,
+          createdAtIso: r.created_at || null,
+          comments: []
+        };
+      })
+  );
 
   return {
     users: (uRows || []).map(mapProfileRow),

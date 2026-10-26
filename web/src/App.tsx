@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Routes, Route, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useSearchParams, useParams, useLocation } from 'react-router-dom';
 import { Sparkles, Download, RefreshCw, X } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import {
@@ -34,24 +34,58 @@ import type {
   VybeUser
 } from './types/vybe';
 
-// Wrapper for Profile route that supports ?user=username or ?id=userId query params
+const GUEST_VIEWER: VybeUser = {
+  id: 'guest_viewer',
+  username: 'guest',
+  displayName: 'Guest Viewer',
+  firstName: 'Guest',
+  lastName: '',
+  bio: '',
+  avatarUrl: '',
+  coverUrl: '',
+  email: '',
+  phone: '',
+  dateOfBirth: '',
+  isEmailVerified: false,
+  isPhoneVerified: false,
+  isVerified: false,
+  isVip: false,
+  isVerifiedBusiness: false,
+  isPrivate: false,
+  messagePrivacy: 'EVERYONE',
+  role: 'USER',
+  followersCount: 0,
+  followingCount: 0,
+  postsCount: 0,
+  livePulse: 'NONE',
+  createdAtIso: null,
+  lastSeenAtIso: null,
+  isOnline: false
+};
+
+// Wrapper for Profile route that supports ?user=username, ?id=userId, or /u/:username
 const ProfileRouteWrapper: React.FC<{
   currentUser: VybeUser;
   onUpdateCurrentUser: (u: VybeUser) => void;
   onStartCall: (peer: VybeUser, isVideo: boolean) => void;
 }> = ({ currentUser, onUpdateCurrentUser, onStartCall }) => {
   const [searchParams] = useSearchParams();
+  const params = useParams<{ username?: string }>();
   const navigate = useNavigate();
   const [targetUser, setTargetUser] = useState<VybeUser>(currentUser);
   const [loading, setLoading] = useState(false);
 
-  const queryUsername = searchParams.get('user');
+  const queryUsername = params.username || searchParams.get('user');
   const queryId = searchParams.get('id');
 
   useEffect(() => {
     let active = true;
     const resolveTarget = async () => {
       if (!queryUsername && !queryId) {
+        if (currentUser.id === 'guest_viewer') {
+          navigate('/login', { replace: true });
+          return;
+        }
         setTargetUser(currentUser);
         return;
       }
@@ -143,6 +177,7 @@ const InboxRouteWrapper: React.FC<{
 
 export const App: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Current session & profile
   const [authChecking, setAuthChecking] = useState(true);
@@ -284,14 +319,14 @@ export const App: React.FC = () => {
     };
   }, [hydrateUserFromSession]);
 
-  // 2. Refresh feed, stories, rooms, suggested users, and unread counts
+  // 2. Refresh feed, stories, rooms, suggested users, and unread counts (works for both signed-in & public guest viewers)
   const refreshFeedAndStories = useCallback(async () => {
-    if (!currentUser) return;
     setLoadingFeed(true);
     try {
+      const viewerId = currentUser?.id ?? null;
       const [feedPosts, storiesRes] = await Promise.all([
-        fetchFeedPosts(currentUser.id, 0, 20),
-        fetchActiveStories(currentUser.id)
+        fetchFeedPosts(viewerId, 0, 20),
+        fetchActiveStories(viewerId)
       ]);
       setPosts(feedPosts);
       setStories(storiesRes);
@@ -302,49 +337,76 @@ export const App: React.FC = () => {
     } finally {
       setLoadingFeed(false);
     }
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   const loadMorePosts = useCallback(async () => {
-    if (!currentUser || !hasMorePosts || loadingFeed) return;
+    if (!hasMorePosts || loadingFeed) return;
     const nextPage = feedPage + 1;
     try {
-      const morePosts = await fetchFeedPosts(currentUser.id, nextPage, 20);
-      setPosts((prev) => [...prev, ...morePosts]);
+      const morePosts = await fetchFeedPosts(currentUser?.id ?? null, nextPage, 20);
+      setPosts((prev) => {
+        const seen = new Set(prev.map((p) => p.id));
+        return [...prev, ...morePosts.filter((p) => !seen.has(p.id))];
+      });
       setFeedPage(nextPage);
       setHasMorePosts(morePosts.length >= 20);
     } catch (err) {
       console.error('Load more posts error:', err);
     }
-  }, [currentUser, hasMorePosts, loadingFeed, feedPage]);
+  }, [currentUser?.id, hasMorePosts, loadingFeed, feedPage]);
 
   const refreshSidebarAndBadges = useCallback(async () => {
-    if (!currentUser) return;
     try {
-      const [rooms, notifs, convs, searchRes] = await Promise.all([
+      const [rooms, searchRes] = await Promise.all([
         fetchRooms(),
-        fetchNotifications(currentUser.id),
-        fetchConversations(currentUser.id),
         searchUsersAndPosts('', 10)
       ]);
       setActiveRooms(rooms);
-      setUnreadNotificationsCount(notifs.filter((n) => !n.isRead).length);
-      setUnreadMessagesCount(
-        convs.reduce((acc, c) => acc + (c.unreadCount || 0), 0)
-      );
       setSuggestedUsers(
-        searchRes.users.filter((u) => u.id !== currentUser.id).slice(0, 5)
+        searchRes.users.filter((u) => u.id !== currentUser?.id).slice(0, 5)
       );
+      if (currentUser) {
+        const [notifs, convs] = await Promise.all([
+          fetchNotifications(currentUser.id),
+          fetchConversations(currentUser.id)
+        ]);
+        setUnreadNotificationsCount(notifs.filter((n) => !n.isRead).length);
+        setUnreadMessagesCount(
+          convs.reduce((acc, c) => acc + (c.unreadCount || 0), 0)
+        );
+      } else {
+        setUnreadNotificationsCount(0);
+        setUnreadMessagesCount(0);
+      }
     } catch {
       // Non-blocking fallback
     }
   }, [currentUser]);
 
   useEffect(() => {
-    if (currentUser) {
+    if (!authChecking) {
       void refreshFeedAndStories();
       void refreshSidebarAndBadges();
     }
-  }, [currentUser, refreshFeedAndStories, refreshSidebarAndBadges]);
+  }, [authChecking, currentUser?.id, refreshFeedAndStories, refreshSidebarAndBadges]);
+
+  // Live Realtime synchronization for newly published posts & stories across all sessions
+  useEffect(() => {
+    if (!isSupabaseConfigured || authChecking) return;
+    const feedChannel = supabase
+      .channel('vybe-global-feed-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => {
+        void refreshFeedAndStories();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stories' }, () => {
+        void refreshFeedAndStories();
+      })
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(feedChannel);
+    };
+  }, [authChecking, refreshFeedAndStories]);
 
   // 3. WebRTC Call Manager & Presence Heartbeat
   useEffect(() => {
@@ -468,20 +530,24 @@ export const App: React.FC = () => {
     );
   }
 
-  // Unauthenticated Flow
-  if (!currentUser) {
+  const isAuthRoute = ['/login', '/register', '/auth', '/reset-password'].includes(location.pathname);
+  if (isAuthRoute) {
+    if (currentUser && location.pathname !== '/reset-password') {
+      return <Navigate to="/" replace />;
+    }
     return (
       <Routes>
         <Route path="/login" element={<AuthScreenWeb onAuthSuccess={hydrateUserFromSession} />} />
         <Route path="/register" element={<AuthScreenWeb onAuthSuccess={hydrateUserFromSession} />} />
         <Route path="/auth" element={<AuthScreenWeb onAuthSuccess={hydrateUserFromSession} />} />
         <Route path="/reset-password" element={<ResetPasswordPageWeb />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
   }
 
-  // Authenticated App Shell Flow
+  const effectiveUser = currentUser ?? GUEST_VIEWER;
+
+  // App Shell Flow (Public Feed/Reels/Explore accessible to ALL users; private features gated behind auth)
   return (
     <>
       {/* PWA One-Click Install Banner */}
@@ -566,12 +632,18 @@ export const App: React.FC = () => {
 
       {/* Main Navigation Shell */}
       <NavigationShell
-        currentUser={currentUser}
+        currentUser={effectiveUser}
         unreadMessagesCount={unreadMessagesCount}
         unreadNotificationsCount={unreadNotificationsCount}
         suggestedUsers={suggestedUsers}
         activeRooms={activeRooms}
-        onOpenCreatePost={handleOpenCreatePost}
+        onOpenCreatePost={() => {
+          if (!currentUser) {
+            navigate('/login');
+            return;
+          }
+          handleOpenCreatePost();
+        }}
         onLogout={handleLogout}
       >
         <Routes>
@@ -579,7 +651,7 @@ export const App: React.FC = () => {
             path="/"
             element={
               <FeedAndStoriesPage
-                currentUser={currentUser}
+                currentUser={effectiveUser}
                 posts={posts}
                 stories={stories}
                 loadingFeed={loadingFeed}
@@ -593,53 +665,89 @@ export const App: React.FC = () => {
           />
           <Route
             path="/reels"
-            element={<ReelsPage currentUser={currentUser} onRefreshAll={refreshFeedAndStories} />}
+            element={<ReelsPage currentUser={effectiveUser} onRefreshAll={refreshFeedAndStories} />}
           />
           <Route
             path="/explore"
             element={
               <ExplorePage
-                currentUser={currentUser}
+                currentUser={effectiveUser}
                 onOpenUserProfile={(u) => navigate(`/profile?user=${u.username}`)}
               />
             }
           />
           <Route
             path="/rooms"
-            element={<UnloadRoomsPage currentUser={currentUser} />}
+            element={currentUser ? <UnloadRoomsPage currentUser={currentUser} /> : <Navigate to="/login" replace />}
           />
           <Route
             path="/messages"
-            element={<InboxRouteWrapper currentUser={currentUser} onStartCall={handleStartCall} />}
+            element={
+              currentUser ? (
+                <InboxRouteWrapper currentUser={currentUser} onStartCall={handleStartCall} />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
           />
           <Route
             path="/notifications"
             element={
-              <NotificationsPage
-                currentUser={currentUser}
-                onOpenUserProfile={(u) => navigate(`/profile?user=${u.username}`)}
-                onOpenInbox={() => navigate('/messages')}
-              />
+              currentUser ? (
+                <NotificationsPage
+                  currentUser={currentUser}
+                  onOpenUserProfile={(u) => navigate(`/profile?user=${u.username}`)}
+                  onOpenInbox={() => navigate('/messages')}
+                />
+              ) : (
+                <Navigate to="/login" replace />
+              )
             }
           />
           <Route
             path="/profile"
             element={
               <ProfileRouteWrapper
-                currentUser={currentUser}
+                currentUser={effectiveUser}
                 onUpdateCurrentUser={setCurrentUser}
-                onStartCall={handleStartCall}
+                onStartCall={(peer, isVid) => {
+                  if (!currentUser) {
+                    navigate('/login');
+                    return;
+                  }
+                  handleStartCall(peer, isVid);
+                }}
+              />
+            }
+          />
+          <Route
+            path="/u/:username"
+            element={
+              <ProfileRouteWrapper
+                currentUser={effectiveUser}
+                onUpdateCurrentUser={setCurrentUser}
+                onStartCall={(peer, isVid) => {
+                  if (!currentUser) {
+                    navigate('/login');
+                    return;
+                  }
+                  handleStartCall(peer, isVid);
+                }}
               />
             }
           />
           <Route
             path="/settings"
             element={
-              <SettingsAndLegalPage
-                currentUser={currentUser}
-                onUpdateCurrentUser={setCurrentUser}
-                onLogout={handleLogout}
-              />
+              currentUser ? (
+                <SettingsAndLegalPage
+                  currentUser={currentUser}
+                  onUpdateCurrentUser={setCurrentUser}
+                  onLogout={handleLogout}
+                />
+              ) : (
+                <Navigate to="/login" replace />
+              )
             }
           />
           <Route path="*" element={<Navigate to="/" replace />} />

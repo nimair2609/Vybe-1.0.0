@@ -54,14 +54,27 @@ export const FeedAndStoriesPage: React.FC<{
   externalOpenComposer
 }) => {
   const navigate = useNavigate();
+  const isGuest = currentUser.id === 'guest_viewer';
   const [selectedMood, setSelectedMood] = useState<MoodZone | null>(null);
   const [showPostComposer, setShowPostComposer] = useState(false);
 
+  const requireAuth = () => {
+    if (isGuest) {
+      navigate('/login');
+      return false;
+    }
+    return true;
+  };
+
   React.useEffect(() => {
     if (externalOpenComposer) {
-      setShowPostComposer(true);
+      if (isGuest) {
+        navigate('/login');
+      } else {
+        setShowPostComposer(true);
+      }
     }
-  }, [externalOpenComposer]);
+  }, [externalOpenComposer, isGuest, navigate]);
   const [showStoryComposer, setShowStoryComposer] = useState(false);
   const [activeStory, setActiveStory] = useState<VybeStory | null>(null);
   const [openCommentsPostId, setOpenCommentsPostId] = useState<string | null>(null);
@@ -249,6 +262,7 @@ export const FeedAndStoriesPage: React.FC<{
           <button
             type="button"
             onClick={() => {
+              if (!requireAuth()) return;
               setShowPostComposer(true);
               onDraftDirtyChange(true);
             }}
@@ -264,13 +278,14 @@ export const FeedAndStoriesPage: React.FC<{
               fontSize: '0.9rem'
             }}
           >
-            Share your current vybe, @{currentUser.username}…
+            {isGuest ? 'Sign in to share your current vybe…' : `Share your current vybe, @${currentUser.username}…`}
           </button>
         </div>
         <button
           type="button"
           className="vybe-btn vybe-btn-primary"
           onClick={() => {
+            if (!requireAuth()) return;
             setShowPostComposer(true);
             onDraftDirtyChange(true);
           }}
@@ -281,6 +296,7 @@ export const FeedAndStoriesPage: React.FC<{
           type="button"
           className="vybe-btn vybe-btn-outline"
           onClick={() => {
+            if (!requireAuth()) return;
             setShowStoryComposer(true);
             onDraftDirtyChange(true);
           }}
@@ -294,6 +310,7 @@ export const FeedAndStoriesPage: React.FC<{
         <div className="vybe-scroll-row">
           <div
             onClick={() => {
+              if (!requireAuth()) return;
               setShowStoryComposer(true);
               onDraftDirtyChange(true);
             }}
@@ -409,7 +426,10 @@ export const FeedAndStoriesPage: React.FC<{
           <button
             type="button"
             className="vybe-btn vybe-btn-primary"
-            onClick={() => setShowPostComposer(true)}
+            onClick={() => {
+              if (!requireAuth()) return;
+              setShowPostComposer(true);
+            }}
           >
             Create Post
           </button>
@@ -428,7 +448,7 @@ export const FeedAndStoriesPage: React.FC<{
                 }}
               >
                 <div
-                  onClick={() => navigate(`/u/${post.author.username}`)}
+                  onClick={() => navigate(`/profile?user=${post.author.username}`)}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
                 >
                   <VybeAvatar user={post.author} size={40} />
@@ -463,7 +483,10 @@ export const FeedAndStoriesPage: React.FC<{
                   )}
                   <button
                     type="button"
-                    onClick={() => setReportingPost(post)}
+                    onClick={() => {
+                      if (!requireAuth()) return;
+                      setReportingPost(post);
+                    }}
                     aria-label="Report or copyright claim"
                     style={{
                       background: 'none',
@@ -523,6 +546,7 @@ export const FeedAndStoriesPage: React.FC<{
                   <button
                     type="button"
                     onClick={async () => {
+                      if (!requireAuth()) return;
                       await togglePostResonance(post.id, currentUser.id, post.isLiked);
                       await onRefreshAll();
                     }}
@@ -591,6 +615,7 @@ export const FeedAndStoriesPage: React.FC<{
                 <button
                   type="button"
                   onClick={async () => {
+                    if (!requireAuth()) return;
                     await toggleSavePost(post.id, currentUser.id, post.isSaved);
                     await onRefreshAll();
                   }}
@@ -623,6 +648,7 @@ export const FeedAndStoriesPage: React.FC<{
                   <form
                     onSubmit={async (e) => {
                       e.preventDefault();
+                      if (!requireAuth()) return;
                       if (!commentInput.trim()) return;
                       await addPostComment(post.id, currentUser.id, commentInput);
                       setCommentInput('');

@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Film,
   Plus,
@@ -32,6 +33,8 @@ export const ReelsPage: React.FC<{
   currentUser: VybeUser;
   onRefreshAll?: () => Promise<void>;
 }> = ({ currentUser }) => {
+  const navigate = useNavigate();
+  const isGuest = currentUser.id === 'guest_viewer';
   const [reels, setReels] = useState<VybePost[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeReelIndex, setActiveReelIndex] = useState(0);
@@ -100,6 +103,10 @@ export const ReelsPage: React.FC<{
   };
 
   const handleToggleLike = async (reel: VybePost) => {
+    if (isGuest) {
+      navigate('/login');
+      return;
+    }
     const nextLiked = !reel.isLiked;
     const nextCount = nextLiked ? reel.likesCount + 1 : Math.max(0, reel.likesCount - 1);
     setReels((prev) =>
@@ -117,6 +124,10 @@ export const ReelsPage: React.FC<{
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isGuest) {
+      navigate('/login');
+      return;
+    }
     if (!activeCommentsReel || !commentText.trim()) return;
     const clean = commentText.trim();
     setSubmittingComment(true);

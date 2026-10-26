@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   User,
   Settings,
@@ -44,8 +45,10 @@ export const ProfilePage: React.FC<{
   onStartCall,
   onOpenSettings
 }) => {
+  const navigate = useNavigate();
+  const isGuest = currentUser.id === 'guest_viewer';
   const profile = targetUser || currentUser;
-  const isMe = profile.id === currentUser.id;
+  const isMe = !isGuest && profile.id === currentUser.id;
 
   const [posts, setPosts] = useState<VybePost[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(true);
@@ -76,7 +79,7 @@ export const ProfilePage: React.FC<{
         const userPosts = res.filter((p: VybePost) => p.author.id === profile.id);
         setPosts(userPosts);
 
-        if (!isMe) {
+        if (!isMe && !isGuest) {
           const status = await checkFollowStatus(currentUser.id, profile.id);
           setFollowStatus(status);
           setIsFollowing(status === 'ACCEPTED');
@@ -88,9 +91,13 @@ export const ProfilePage: React.FC<{
       }
     };
     void loadProfileData();
-  }, [profile.id, currentUser.id, isMe]);
+  }, [profile.id, currentUser.id, isMe, isGuest]);
 
   const handleToggleFollow = async () => {
+    if (isGuest) {
+      navigate('/login');
+      return;
+    }
     const nextFollowing = !isFollowing;
     setIsFollowing(nextFollowing);
     setFollowStatus(nextFollowing ? (profile.isPrivate ? 'PENDING' : 'ACCEPTED') : 'NONE');

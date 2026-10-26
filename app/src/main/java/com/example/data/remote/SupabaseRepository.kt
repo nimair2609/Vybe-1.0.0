@@ -1648,14 +1648,24 @@ class SupabaseRepository {
     }
 
     val sortedMedia = dto.postMedia?.sortedBy { it.displayOrder }.orEmpty()
+    val knownBuckets = setOf("posts", "stories", "avatars", "chat-media")
     val mediaUrls = sortedMedia.map { media ->
-      val sp = media.storagePath
+      val sp = media.storagePath?.trim()
       if (!sp.isNullOrBlank() && sp.contains('/')) {
-        val bucket = sp.substringBefore('/')
-        val obj = sp.substringAfter('/')
+        val firstSeg = sp.substringBefore('/')
+        val (bucket, obj) = if (firstSeg in knownBuckets) {
+          firstSeg to sp.substringAfter('/')
+        } else {
+          "posts" to sp
+        }
         resolveAccessibleMediaUrl(bucket, obj, accessToken)
       } else {
-        media.mediaUrl
+        val extracted = extractBucketAndObjectPath(media.mediaUrl)
+        if (extracted != null) {
+          resolveAccessibleMediaUrl(extracted.first, extracted.second, accessToken)
+        } else {
+          media.mediaUrl
+        }
       }
     }
     val storagePaths = sortedMedia.mapNotNull { it.storagePath ?: extractBucketAndObjectPath(it.mediaUrl)?.let { p -> "${p.first}/${p.second}" } }
@@ -2078,14 +2088,23 @@ class SupabaseRepository {
         val author = dto.profiles?.let { mapProfileDtoToUser(it) }
           ?: User(id = dto.authorId, username = "vyber", displayName = "VYBE Member")
 
+        val knownStoryBuckets = setOf("stories", "posts", "avatars", "chat-media")
         val resolvedMediaUrl = if (!dto.storagePath.isNullOrBlank() && dto.storagePath.contains('/')) {
-          resolveAccessibleMediaUrl(
-            dto.storagePath.substringBefore('/'),
-            dto.storagePath.substringAfter('/'),
-            accessToken
-          )
+          val sp = dto.storagePath.trim()
+          val firstSeg = sp.substringBefore('/')
+          val (bucket, obj) = if (firstSeg in knownStoryBuckets) {
+            firstSeg to sp.substringAfter('/')
+          } else {
+            "stories" to sp
+          }
+          resolveAccessibleMediaUrl(bucket, obj, accessToken)
         } else {
-          dto.mediaUrl
+          val extracted = extractBucketAndObjectPath(dto.mediaUrl)
+          if (extracted != null) {
+            resolveAccessibleMediaUrl(extracted.first, extracted.second, accessToken)
+          } else {
+            dto.mediaUrl
+          }
         }
 
         val mediaType = try {

@@ -41,6 +41,7 @@ export const NavigationShell: React.FC<{
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const isGuest = currentUser.id === 'guest_viewer';
 
   const navItems = [
     { to: '/', label: 'Feed', icon: Home, badge: 0 },
@@ -165,42 +166,68 @@ export const NavigationShell: React.FC<{
         </div>
 
         {/* User Card at bottom of Left Sidebar */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '10px 12px',
-            background: 'var(--bg-surface)',
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--border-subtle)',
-            marginTop: '16px'
-          }}
-        >
+        {isGuest ? (
           <div
-            onClick={() => navigate('/profile')}
-            style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', minWidth: 0, flex: 1 }}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              padding: '12px',
+              background: 'var(--bg-surface)',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border-subtle)',
+              marginTop: '16px'
+            }}
           >
-            <VybeAvatar user={currentUser} size={36} />
-            <div className="vybe-nav-label" style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <span style={{ fontSize: '0.88rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {currentUser.displayName}
-                </span>
-                <VerifiedBadge user={currentUser} />
-              </div>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>@{currentUser.username}</span>
-            </div>
+            <span className="vybe-nav-label" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+              Sign in to post, resonate, chat & join live rooms.
+            </span>
+            <button
+              onClick={() => navigate('/login')}
+              className="vybe-btn vybe-btn-primary"
+              style={{ width: '100%', padding: '9px 12px', fontSize: '0.85rem' }}
+            >
+              Sign In / Join VYBE
+            </button>
           </div>
-
-          <button
-            onClick={onLogout}
-            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '6px' }}
-            title="Log Out"
+        ) : (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 12px',
+              background: 'var(--bg-surface)',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border-subtle)',
+              marginTop: '16px'
+            }}
           >
-            <LogOut size={16} />
-          </button>
-        </div>
+            <div
+              onClick={() => navigate('/profile')}
+              style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', minWidth: 0, flex: 1 }}
+            >
+              <VybeAvatar user={currentUser} size={36} />
+              <div className="vybe-nav-label" style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ fontSize: '0.88rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {currentUser.displayName}
+                  </span>
+                  <VerifiedBadge user={currentUser} />
+                </div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>@{currentUser.username}</span>
+              </div>
+            </div>
+
+            <button
+              onClick={onLogout}
+              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '6px' }}
+              title="Log Out"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
+        )}
       </aside>
 
       {/* 2. Main Content Center Column */}
@@ -227,25 +254,37 @@ export const NavigationShell: React.FC<{
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <NavLink to="/notifications" style={{ position: 'relative', color: 'var(--text-primary)', padding: '6px' }}>
-              <Bell size={22} />
-              {unreadNotificationsCount > 0 && (
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: '2px',
-                    right: '2px',
-                    background: 'var(--vybe-magenta)',
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%'
-                  }}
-                />
-              )}
-            </NavLink>
-            <NavLink to="/settings" style={{ color: 'var(--text-primary)', padding: '6px' }}>
-              <Settings size={22} />
-            </NavLink>
+            {isGuest ? (
+              <button
+                onClick={() => navigate('/login')}
+                className="vybe-btn vybe-btn-primary"
+                style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: 'var(--radius-pill)' }}
+              >
+                Sign In
+              </button>
+            ) : (
+              <>
+                <NavLink to="/notifications" style={{ position: 'relative', color: 'var(--text-primary)', padding: '6px' }}>
+                  <Bell size={22} />
+                  {unreadNotificationsCount > 0 && (
+                    <span
+                      style={{
+                        position: 'absolute',
+                        top: '2px',
+                        right: '2px',
+                        background: 'var(--vybe-magenta)',
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%'
+                      }}
+                    />
+                  )}
+                </NavLink>
+                <NavLink to="/settings" style={{ color: 'var(--text-primary)', padding: '6px' }}>
+                  <Settings size={22} />
+                </NavLink>
+              </>
+            )}
           </div>
         </header>
 
