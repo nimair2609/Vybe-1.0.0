@@ -42,6 +42,7 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
 
   val prompts by viewModel.doubleTakePrompts.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
+  val allUsers by viewModel.allUsers.collectAsState()
 
   var showCreateDialog by remember { mutableStateOf(false) }
   var newQuestion by remember { mutableStateOf("") }
@@ -443,25 +444,10 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
 
   // Create Double Take Dialog (Public vs Private Mode)
   if (showCreateDialog) {
-    var isPublicMode by remember { mutableStateOf(false) }
-    val peerOptions = remember {
-      listOf(
-        com.example.data.model.User(
-          id = "u_priya",
-          username = "priya_design",
-          displayName = "Priya Krishnamurthy",
-          avatarUrl = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400",
-          bio = "UX Designer"
-        ),
-        com.example.data.model.User(
-          id = "u_aarav",
-          username = "aarav_beats",
-          displayName = "Aarav Mehta",
-          avatarUrl = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400",
-          bio = "Music Producer"
-        )
-      )
+    val peerOptions = remember(allUsers, currentUser?.id) {
+      allUsers.filter { it.id != currentUser?.id }.take(12)
     }
+    var isPublicMode by remember(peerOptions.isEmpty()) { mutableStateOf(peerOptions.isEmpty()) }
 
     AlertDialog(
       onDismissRequest = { showCreateDialog = false },
@@ -474,14 +460,15 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
             horizontalArrangement = Arrangement.spacedBy(8.dp)
           ) {
             FilterChip(
-              selected = !isPublicMode,
-              onClick = { isPublicMode = false },
-              label = { Text("Private (Tag Friends)", fontSize = 11.sp) }
-            )
-            FilterChip(
               selected = isPublicMode,
               onClick = { isPublicMode = true },
               label = { Text("Public (Anyone Answers)", fontSize = 11.sp) }
+            )
+            FilterChip(
+              selected = !isPublicMode,
+              onClick = { if (peerOptions.isNotEmpty()) isPublicMode = false },
+              enabled = peerOptions.isNotEmpty(),
+              label = { Text("Private (Tag Friend)", fontSize = 11.sp) }
             )
           }
 
@@ -517,10 +504,11 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
             )
           }
 
-          if (!isPublicMode) {
+          if (!isPublicMode && peerOptions.isNotEmpty()) {
             Text("Tag Friend to Answer:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-              peerOptions.forEachIndexed { idx, peer ->
+            androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              items(peerOptions.size) { idx ->
+                val peer = peerOptions[idx]
                 FilterChip(
                   selected = selectedPeerIndex == idx,
                   onClick = { selectedPeerIndex = idx },
@@ -535,7 +523,7 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
               modifier = Modifier.fillMaxWidth()
             ) {
               Text(
-                text = "🌐 Public mode: Community members can answer your prompt. You can check all their answers and tap Connect to start chatting!",
+                text = "🌐 Public mode: Any VYBE member across devices can answer your prompt and unlock a chat when compatible!",
                 fontSize = 11.sp,
                 color = VybeBrandCyan,
                 modifier = Modifier.padding(10.dp),
@@ -549,14 +537,19 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
         Button(
           onClick = {
             if (newQuestion.isNotBlank()) {
-              val peer = peerOptions[selectedPeerIndex]
+              val safeIdx = selectedPeerIndex.coerceIn(0, (peerOptions.size - 1).coerceAtLeast(0))
+              val peer = if (!isPublicMode && peerOptions.isNotEmpty()) {
+                peerOptions[safeIdx]
+              } else {
+                currentUser ?: com.example.data.model.User(id = "public", username = "community", displayName = "VYBE Community")
+              }
               viewModel.createDoubleTakePrompt(
                 question = newQuestion.trim(),
                 category = newCategory,
                 optA = newOptA.trim().ifBlank { "Yes" },
                 optB = newOptB.trim().ifBlank { "No" },
                 peer = peer,
-                isPublic = isPublicMode
+                isPublic = isPublicMode || peerOptions.isEmpty()
               )
               showCreateDialog = false
             }

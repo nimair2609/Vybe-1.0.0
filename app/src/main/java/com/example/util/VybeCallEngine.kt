@@ -14,6 +14,7 @@ import android.os.Build
 import android.util.Base64
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.example.data.remote.SupabaseCallSignalInsertDto
 import com.example.data.remote.SupabaseConfig
 import com.example.data.remote.SupabaseNetworkClient
 import kotlinx.coroutines.CoroutineScope
@@ -36,7 +37,9 @@ import java.net.InetAddress
 import java.net.NetworkInterface
 import java.nio.ByteBuffer
 import java.security.SecureRandom
+import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Real-time Voice & Video Call Engine for VYBE.
@@ -44,9 +47,12 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Implements:
  * 1. RFC 5389 UDP STUN reflexive candidate gathering against `SupabaseConfig.stunServerUrl`
  *    + TURN server metadata (`SupabaseConfig.turnServerUrl`) for SDP/ICE negotiation.
- * 2. Supabase Phoenix Realtime WebSocket (`realtime:call:<callId>`) for sub-100ms call state events
- *    (`ANSWER`, `DECLINE`, `HANGUP`, `MUTE_STATE`, `CAMERA_STATE`), bidirectional PCM µ-law voice
- *    audio streaming (`AudioRecord` -> Realtime broadcast -> `AudioTrack`), and live video frames.
+ * 2. Dual-path low-latency transport:
+ *    - Primary: Supabase Phoenix Realtime WebSocket (`realtime:call:<callId>`) for sub-100ms
+ *      call state events, PCM µ-law voice audio streaming, and live video frames.
+ *    - Guaranteed Fallback/Relay: `public.call_signals` REST sync for `VIDEO_FRAME` (latest-frame
+ *      replacement per sender) and `ANSWER`/`DECLINE`/`HANGUP`/`MUTE_STATE`/`CAMERA_STATE` so
+ *      mutual video and call controls work reliably across all devices, NATs, and Android <-> Web.
  * 3. `AudioManager` speakerphone / earpiece routing and guaranteed resource cleanup on call end.
  */
 class VybeCallEngine(
@@ -57,6 +63,9 @@ class VybeCallEngine(
     private const val TAG = "VybeCallEngine"
     private const val SAMPLE_RATE_HZ = 8000
     private const val FRAME_SAMPLES = 800 // 100ms voice frame
+    private const val MAX_JPEG_FRAME_BYTES = 96_000
+    private const val DB_VIDEO_RELAY_INTERVAL_MS = 650L
+    private const val DB_SIGNAL_POLL_INTERVAL_MS = 650L
   }
 
   interface Listener {
@@ -73,14 +82,21 @@ class VybeCallEngine(
   private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   private var webSocket: WebSocket? = null
   private var heartbeatJob: Job? = null
+  private var signalPollingJob: Job? = null
   private var audioCaptureJob: Job? = null
   private var audioRecord: AudioRecord? = null
   private var audioTrack: AudioTrack? = null
 
   private val isRunning = AtomicBoolean(false)
   private val isMicMuted = AtomicBoolean(false)
+  private val isDbFrameUploadInFlight = AtomicBoolean(false)
+  private val lastDbVideoRelayMs = AtomicLong(0L)
+  private val processedSignalIds = Collections.synchronizedSet( LinkedHashSet<String>() )
+  private var latestRemoteFrameKey: String = ""
+
   private var activeCallId: String = ""
   private var localUserId: String = ""
+  private var localAccessToken: String = ""
   private var listener: Listener? = null
 
   /**
@@ -130,12 +146,18 @@ class VybeCallEngine(
     stopSession()
     activeCallId = callId
     localUserId = myUserId
+    localAccessToken = accessToken
     listener = callback
     isMicMuted.set(initialMuted)
+    isDbFrameUploadInFlight.set(false)
+    lastDbVideoRelayMs.set(0L)
+    processedSignalIds.clear()
+    latestRemoteFrameKey = ""
     isRunning.set(true)
 
     configureAudioRouting(enableCallMode = true, speakerOn = initialSpeakerOn)
     connectRealtimeChannel(callId, accessToken)
+    startDatabaseSignalRelayLoop(callId, accessToken)
   }
 
   fun startMediaStreaming() {
@@ -147,6 +169,7 @@ class VybeCallEngine(
   fun setMuted(muted: Boolean) {
     isMicMuted.set(muted)
     sendRealtimeBroadcast("MUTE_STATE", JSONObject().put("muted", muted))
+    postSignalAsync("MUTE_STATE", mapOf("muted" to muted.toString()))
   }
 
   fun setSpeakerphone(enabled: Boolean) {
@@ -155,22 +178,151 @@ class VybeCallEngine(
 
   fun notifyCameraState(cameraOff: Boolean) {
     sendRealtimeBroadcast("CAMERA_STATE", JSONObject().put("cameraOff", cameraOff))
+    postSignalAsync("CAMERA_STATE", mapOf("cameraOff" to cameraOff.toString()))
   }
 
   fun sendVideoFrameJpeg(jpegBytes: ByteArray) {
-    if (!isRunning.get() || jpegBytes.isEmpty() || jpegBytes.size > 48_000) return
+    if (!isRunning.get() || jpegBytes.isEmpty() || jpegBytes.size > MAX_JPEG_FRAME_BYTES) return
     val encoded = Base64.encodeToString(jpegBytes, Base64.NO_WRAP)
     sendRealtimeBroadcast("VIDEO_FRAME", JSONObject().put("frame", encoded))
+
+    val now = System.currentTimeMillis()
+    val prev = lastDbVideoRelayMs.get()
+    if (
+      now - prev >= DB_VIDEO_RELAY_INTERVAL_MS &&
+      lastDbVideoRelayMs.compareAndSet(prev, now) &&
+      isDbFrameUploadInFlight.compareAndSet(false, true)
+    ) {
+      val callId = activeCallId
+      val senderId = localUserId
+      val authHeader = SupabaseConfig.buildAuthHeader(localAccessToken)
+      if (SupabaseConfig.isConfigured() && callId.isNotBlank() && senderId.isNotBlank() && !authHeader.isNullOrBlank()) {
+        engineScope.launch {
+          try {
+            SupabaseNetworkClient.restApi.deleteCallSignalsBySender(
+              apiKey = SupabaseConfig.supabaseAnonKey,
+              authHeader = authHeader,
+              callIdFilter = "eq.$callId",
+              senderIdFilter = "eq.$senderId",
+              signalTypeFilter = "eq.VIDEO_FRAME"
+            )
+            SupabaseNetworkClient.restApi.insertCallSignal(
+              apiKey = SupabaseConfig.supabaseAnonKey,
+              authHeader = authHeader,
+              signal = SupabaseCallSignalInsertDto(
+                callId = callId,
+                senderId = senderId,
+                signalType = "VIDEO_FRAME",
+                payload = mapOf(
+                  "frame" to encoded,
+                  "ts" to now.toString()
+                )
+              )
+            )
+          } catch (e: Exception) {
+            Log.d(TAG, "DB video frame relay skipped: ${e.message}")
+          } finally {
+            isDbFrameUploadInFlight.set(false)
+          }
+        }
+      } else {
+        isDbFrameUploadInFlight.set(false)
+      }
+    }
   }
 
   fun sendCallControlEvent(eventType: String) {
-    sendRealtimeBroadcast(eventType, JSONObject().put("ts", System.currentTimeMillis()))
+    val ts = System.currentTimeMillis().toString()
+    sendRealtimeBroadcast(eventType, JSONObject().put("ts", ts))
+    postSignalAsync(eventType, mapOf("ts" to ts))
+  }
+
+  private fun postSignalAsync(signalType: String, payload: Map<String, String>) {
+    val callId = activeCallId
+    val senderId = localUserId
+    val authHeader = SupabaseConfig.buildAuthHeader(localAccessToken)
+    if (!SupabaseConfig.isConfigured() || callId.isBlank() || senderId.isBlank() || authHeader.isNullOrBlank()) return
+    engineScope.launch {
+      try {
+        SupabaseNetworkClient.restApi.insertCallSignal(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          signal = SupabaseCallSignalInsertDto(
+            callId = callId,
+            senderId = senderId,
+            signalType = signalType,
+            payload = payload
+          )
+        )
+      } catch (_: Exception) {}
+    }
+  }
+
+  private fun startDatabaseSignalRelayLoop(callId: String, accessToken: String) {
+    if (!SupabaseConfig.isConfigured() || callId.isBlank()) return
+    signalPollingJob?.cancel()
+    signalPollingJob = engineScope.launch {
+      val authHeader = SupabaseConfig.buildAuthHeader(accessToken)
+      if (authHeader.isNullOrBlank()) return@launch
+      while (isActive && isRunning.get() && activeCallId == callId) {
+        try {
+          val resp = SupabaseNetworkClient.restApi.getCallSignals(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = authHeader,
+            callIdFilter = "eq.$callId",
+            order = "created_at.desc",
+            limit = 25
+          )
+          if (resp.isSuccessful) {
+            val signals = resp.body().orEmpty()
+            var newestFrameHandled = false
+            // Signals are ordered newest first (`created_at.desc`).
+            // Process the newest remote VIDEO_FRAME immediately, and process control signals in chronological order.
+            for (sig in signals) {
+              if (sig.senderId == localUserId) continue
+              if (sig.signalType == "VIDEO_FRAME" && !newestFrameHandled) {
+                newestFrameHandled = true
+                val frame = sig.payload?.get("frame")?.toString().orEmpty()
+                val key = sig.id ?: sig.payload?.get("ts")?.toString() ?: sig.createdAt.orEmpty()
+                if (frame.isNotBlank() && key != latestRemoteFrameKey) {
+                  latestRemoteFrameKey = key
+                  listener?.onRemoteVideoFrame(frame)
+                }
+              }
+            }
+            for (sig in signals.asReversed()) {
+              if (sig.senderId == localUserId || sig.signalType == "VIDEO_FRAME") continue
+              val sigKey = sig.id ?: "${sig.signalType}_${sig.senderId}_${sig.createdAt}"
+              if (!processedSignalIds.add(sigKey)) continue
+              when (sig.signalType) {
+                "ANSWER" -> listener?.onRemoteAccepted()
+                "DECLINE" -> listener?.onRemoteDeclined()
+                "HANGUP" -> listener?.onRemoteEnded()
+                "MUTE_STATE" -> {
+                  val muted = sig.payload?.get("muted")?.toString()?.toBooleanStrictOrNull() ?: false
+                  listener?.onRemoteMuteChanged(muted)
+                }
+                "CAMERA_STATE" -> {
+                  val camOff = sig.payload?.get("cameraOff")?.toString()?.toBooleanStrictOrNull() ?: false
+                  listener?.onRemoteCameraChanged(camOff)
+                }
+              }
+            }
+          }
+        } catch (e: Exception) {
+          Log.d(TAG, "Signal poll warning: ${e.message}")
+        }
+        delay(DB_SIGNAL_POLL_INTERVAL_MS)
+      }
+    }
   }
 
   fun stopSession() {
-    if (!isRunning.getAndSet(false) && webSocket == null) return
+    if (!isRunning.getAndSet(false) && webSocket == null && signalPollingJob == null) return
     heartbeatJob?.cancel()
     heartbeatJob = null
+    signalPollingJob?.cancel()
+    signalPollingJob = null
     audioCaptureJob?.cancel()
     audioCaptureJob = null
 
@@ -198,6 +350,7 @@ class VybeCallEngine(
     configureAudioRouting(enableCallMode = false, speakerOn = false)
     listener = null
     activeCallId = ""
+    localAccessToken = ""
   }
 
   private fun connectRealtimeChannel(callId: String, accessToken: String) {
@@ -218,11 +371,20 @@ class VybeCallEngine(
               put("broadcast", JSONObject().put("self", false).put("ack", false))
             })
             if (SupabaseConfig.isJwtAccessToken(accessToken)) {
-              put("access_token", accessToken)
+              put("access_token", accessToken.removePrefix("Bearer ").trim())
             }
           })
         }
         webSocket.send(joinPayload.toString())
+        if (SupabaseConfig.isJwtAccessToken(accessToken)) {
+          val authMsg = JSONObject().apply {
+            put("topic", topic)
+            put("event", "access_token")
+            put("ref", "2")
+            put("payload", JSONObject().put("access_token", accessToken.removePrefix("Bearer ").trim()))
+          }
+          webSocket.send(authMsg.toString())
+        }
         listener?.onSignalingConnected("Realtime channel live")
 
         heartbeatJob?.cancel()
@@ -247,7 +409,7 @@ class VybeCallEngine(
           if (root.optString("event") != "broadcast") return
           val payload = root.optJSONObject("payload") ?: return
           val subEvent = payload.optString("event")
-          val data = payload.optJSONObject("payload") ?: return
+          val data = payload.optJSONObject("payload") ?: payload
           val sender = data.optString("senderId")
           if (sender.isNotBlank() && sender == localUserId) return
 
@@ -277,7 +439,7 @@ class VybeCallEngine(
       }
 
       override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-        Log.w(TAG, "Realtime WebSocket fallback to REST polling: ${t.message}")
+        Log.w(TAG, "Realtime WebSocket fallback to DB signal relay: ${t.message}")
       }
     })
   }

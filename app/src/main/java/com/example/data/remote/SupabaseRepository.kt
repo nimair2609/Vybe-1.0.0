@@ -1589,12 +1589,21 @@ class SupabaseRepository {
     if (!isConfigured) return@withContext Result.success(emptyList())
     try {
       val authHeader = authHeaderFor(accessToken)
-      val resp = SupabaseNetworkClient.restApi.getPosts(
+      var resp = SupabaseNetworkClient.restApi.getPosts(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
         offset = offset,
         limit = limit
       )
+      if (!resp.isSuccessful) {
+        resp = SupabaseNetworkClient.restApi.getPosts(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          select = "*,post_media(*)",
+          offset = offset,
+          limit = limit
+        )
+      }
       if (!resp.isSuccessful || resp.body() == null) {
         val err = parseErrorMessage(resp.errorBody()?.string().orEmpty(), "Failed to load feed (HTTP ${resp.code()}).")
         return@withContext Result.failure(Exception(err))
@@ -2055,11 +2064,19 @@ class SupabaseRepository {
     val authHeader = authHeaderFor(accessToken)
     try {
       val nowIso = formatIsoUtc(System.currentTimeMillis())
-      val resp = SupabaseNetworkClient.restApi.getActiveStories(
+      var resp = SupabaseNetworkClient.restApi.getActiveStories(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
         expiresAtFilter = "gt.$nowIso"
       )
+      if (!resp.isSuccessful) {
+        resp = SupabaseNetworkClient.restApi.getActiveStories(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          expiresAtFilter = "gt.$nowIso",
+          select = "*"
+        )
+      }
       if (!resp.isSuccessful || resp.body() == null) {
         return@withContext Result.failure(Exception("Unable to load stories (${resp.code()})."))
       }
@@ -2108,7 +2125,7 @@ class SupabaseRepository {
         }
 
         val mediaType = try {
-          StoryMediaType.valueOf(dto.mediaType)
+          StoryMediaType.valueOf(dto.resolvedMediaType)
         } catch (_: Exception) {
           if (resolvedMediaUrl.contains(".mp4", true) || resolvedMediaUrl.contains(".webm", true)) {
             StoryMediaType.VIDEO
@@ -2190,7 +2207,7 @@ class SupabaseRepository {
           story = SupabaseStoryLegacyInsertDto(
             authorId = story.author.id,
             mediaUrl = story.mediaUrl.ifBlank { "text://story" },
-            mediaType = story.mediaType.name,
+            storyType = story.mediaType.name,
             caption = story.caption,
             expiresAt = expiresIso
           )

@@ -271,4 +271,47 @@ class VybeCoreUnitTest {
     assertEquals("24.0 MB", com.example.util.GitHubUpdater.formatFileSize(24L * 1024L * 1024L))
     assertEquals("", com.example.util.GitHubUpdater.formatFileSize(0L))
   }
+
+  @Test
+  fun testNoSampleUnloadRoomsSeededByDefault() {
+    assertFalse(
+      "Sample Unload rooms (ul_1, ul_2) must not be seeded",
+      repository.unloadRooms.value.any { it.id == "ul_1" || it.id == "ul_2" }
+    )
+  }
+
+  @Test
+  fun testCallHistoryRecordedInChatWithDuration() {
+    repository.loginUser("eligible@vybe.in", "Password123!")
+    val onlinePeer = User(
+      id = "peer_call_history_1",
+      username = "online_peer",
+      displayName = "Online Peer",
+      isOnline = true,
+      livePulse = LivePulseStatus.OPEN_TO_CHAT
+    )
+    val startRes = repository.initiateCall(onlinePeer, isVideo = true)
+    assertTrue("Online peer call must start", startRes is CallAvailabilityResult.Available)
+    assertNotNull("Active call session must exist", repository.activeCall.value)
+
+    repository.endCall()
+    assertNull("Active call must clear after endCall", repository.activeCall.value)
+
+    val conv = repository.conversations.value.firstOrNull { it.peerUser.id == onlinePeer.id }
+    assertNotNull("Conversation with peer must exist after call ends", conv)
+    val callLogMsg = conv!!.messages.lastOrNull { it.mediaType == "CALL_LOG" }
+    assertNotNull("Call history entry must be added to chat messages", callLogMsg)
+    assertTrue(
+      "Call history metadata must record call type",
+      callLogMsg!!.mediaUrl.orEmpty().contains("type=video", ignoreCase = true)
+    )
+    assertEquals(
+      "Video call • 01:25",
+      repository.formatCallLogSummary(isVideo = true, status = "COMPLETED", durationSeconds = 85)
+    )
+    assertEquals(
+      "Voice call • 00:42",
+      repository.formatCallLogSummary(isVideo = false, status = "COMPLETED", durationSeconds = 42)
+    )
+  }
 }

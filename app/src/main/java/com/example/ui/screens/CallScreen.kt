@@ -2,8 +2,10 @@ package com.example.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
+import android.graphics.Matrix
 import android.graphics.Rect
 import android.graphics.YuvImage
 import android.util.Base64
@@ -15,6 +17,7 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import androidx.camera.core.UseCase
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.BorderStroke
@@ -52,12 +55,13 @@ import com.example.ui.theme.*
 import java.io.ByteArrayOutputStream
 import java.util.Locale
 import java.util.concurrent.Executors
+import kotlin.math.max
 
 /**
  * VYBE CALL SCREEN 2.0
  * Real-time Voice & Video calling screen with runtime Microphone + Camera permissions,
  * incoming Accept/Decline controls, live MM:SS duration timer, speaker/mute/camera/flip toggles,
- * CameraX viewfinder with throttled frame streaming, and remote peer video rendering.
+ * stable single-slot CameraX viewfinder with upright downscaled JPEG streaming, and remote peer video rendering.
  */
 @Composable
 fun CallScreen(viewModel: VybeViewModel) {
@@ -136,7 +140,8 @@ fun CallScreen(viewModel: VybeViewModel) {
       null
     } else {
       try {
-        val bytes = Base64.decode(encoded, Base64.DEFAULT)
+        val clean = encoded.substringAfter("base64,", encoded)
+        val bytes = Base64.decode(clean, Base64.DEFAULT)
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
       } catch (_: Exception) {
         null
@@ -144,7 +149,7 @@ fun CallScreen(viewModel: VybeViewModel) {
     }
   }
 
-  val showRemoteVideo = call.isVideo && !call.isPeerCameraOff && call.state == CallState.CONNECTED
+  val showRemoteVideo = call.isVideo && !call.isPeerCameraOff && call.state == CallState.CONNECTED && remoteBitmap != null
   val showLocalCamera = call.isVideo && !call.isCameraOff && hasCameraPermission
 
   Box(
@@ -156,51 +161,54 @@ fun CallScreen(viewModel: VybeViewModel) {
         )
       )
   ) {
-    // 1. Primary Video Surface (Remote video full-screen if available; otherwise local CameraX full-screen)
+    // 1. Remote Peer Video Surface (Full-screen when peer frames are arriving)
     if (showRemoteVideo && remoteBitmap != null) {
       Image(
         bitmap = remoteBitmap,
         contentDescription = "Peer video stream",
         contentScale = ContentScale.Crop,
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+          .fillMaxSize()
+          .testTag("remote_video_surface")
       )
       Box(
         modifier = Modifier
           .fillMaxSize()
-          .background(Color.Black.copy(alpha = 0.25f))
-      )
-    } else if (showLocalCamera) {
-      CameraPreviewView(
-        isFrontCamera = call.isFrontCamera,
-        streamFrames = call.state == CallState.CONNECTED && !call.isCameraOff,
-        onFrameCaptured = { jpegBytes -> viewModel.pushLocalVideoFrame(jpegBytes) },
-        modifier = Modifier.fillMaxSize()
-      )
-      Box(
-        modifier = Modifier
-          .fillMaxSize()
-          .background(Color.Black.copy(alpha = 0.35f))
+          .background(Color.Black.copy(alpha = 0.20f))
       )
     }
 
-    // 2. Local Camera PiP tile when Remote Video is occupying full-screen
-    if (showRemoteVideo && showLocalCamera) {
-      Box(
-        modifier = Modifier
+    // 2. Single Persistent Local CameraX Surface
+    // Keeping ONE stable composition slot prevents CameraX from unbinding when transitioning
+    // from full-screen preview to Picture-in-Picture once the first remote frame arrives!
+    if (showLocalCamera) {
+      val cameraContainerModifier = if (showRemoteVideo) {
+        Modifier
           .align(Alignment.TopEnd)
           .statusBarsPadding()
           .padding(top = 84.dp, end = 16.dp)
-          .size(width = 108.dp, height = 152.dp)
+          .size(width = 112.dp, height = 158.dp)
           .clip(RoundedCornerShape(16.dp))
-          .border(1.5.dp, VybeCyan.copy(alpha = 0.7f), RoundedCornerShape(16.dp))
+          .border(1.5.dp, VybeCyan.copy(alpha = 0.75f), RoundedCornerShape(16.dp))
           .background(ObsidianSurface)
-      ) {
+      } else {
+        Modifier.fillMaxSize()
+      }
+
+      Box(modifier = cameraContainerModifier) {
         CameraPreviewView(
           isFrontCamera = call.isFrontCamera,
           streamFrames = call.state == CallState.CONNECTED && !call.isCameraOff,
           onFrameCaptured = { jpegBytes -> viewModel.pushLocalVideoFrame(jpegBytes) },
           modifier = Modifier.fillMaxSize()
         )
+        if (!showRemoteVideo) {
+          Box(
+            modifier = Modifier
+              .fillMaxSize()
+              .background(Color.Black.copy(alpha = 0.30f))
+          )
+        }
       }
     }
 
@@ -327,8 +335,10 @@ fun CallScreen(viewModel: VybeViewModel) {
         }
       }
 
-      // Middle: Peer profile & avatar
-      if ((showLocalCamera || showRemoteVideo) && call.state != CallState.INCOMING) {
+      // Middle: Peer profile & avatar (hidden when remote video is playing full-screen to keep video unobstructed)
+      if (showRemoteVideo) {
+        Spacer(modifier = Modifier.height(1.dp))
+      } else if (showLocalCamera && call.state != CallState.INCOMING) {
         Surface(
           color = ObsidianSurface.copy(alpha = 0.82f),
           shape = RoundedCornerShape(16.dp),
@@ -353,7 +363,11 @@ fun CallScreen(viewModel: VybeViewModel) {
                 VerificationBadge(user = call.peerUser)
               }
               Text(
-                text = "@${call.peerUser.username}",
+                text = if (call.state == CallState.CONNECTED) {
+                  "Waiting for @${call.peerUser.username}'s camera…"
+                } else {
+                  "@${call.peerUser.username}"
+                },
                 fontSize = 12.sp,
                 color = ObsidianTextSecondary
               )
@@ -551,14 +565,71 @@ fun CameraPreviewView(
   val context = LocalContext.current
   val lifecycleOwner = LocalLifecycleOwner.current
   val currentStreamFrames by rememberUpdatedState(streamFrames)
+  val currentIsFrontCamera by rememberUpdatedState(isFrontCamera)
   val currentOnFrameCaptured by rememberUpdatedState(onFrameCaptured)
   val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
+  var previewViewRef by remember { mutableStateOf<PreviewView?>(null) }
+  var boundUseCases by remember { mutableStateOf<List<UseCase>>(emptyList()) }
   var lastFrameSentMs by remember { mutableLongStateOf(0L) }
+
+  // Bind CameraX ONLY when lifecycleOwner, camera lens, or PreviewView instance changes —
+  // NEVER inside AndroidView(update = ...) which fires on every timer/frame recomposition!
+  LaunchedEffect(lifecycleOwner, isFrontCamera, previewViewRef) {
+    val previewView = previewViewRef ?: return@LaunchedEffect
+    val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+    cameraProviderFuture.addListener({
+      try {
+        val cameraProvider = cameraProviderFuture.get()
+        if (boundUseCases.isNotEmpty()) {
+          cameraProvider.unbind(*boundUseCases.toTypedArray())
+        }
+        val preview = Preview.Builder().build().also {
+          it.surfaceProvider = previewView.surfaceProvider
+        }
+        val imageAnalysis = ImageAnalysis.Builder()
+          .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+          .build()
+          .also { analysis ->
+            analysis.setAnalyzer(analysisExecutor) { imageProxy ->
+              try {
+                val now = System.currentTimeMillis()
+                if (currentStreamFrames && currentOnFrameCaptured != null && now - lastFrameSentMs >= 320L) {
+                  val jpeg = imageProxyToCompressedJpeg(
+                    image = imageProxy,
+                    mirrorHorizontal = currentIsFrontCamera
+                  )
+                  if (jpeg != null) {
+                    lastFrameSentMs = now
+                    currentOnFrameCaptured?.invoke(jpeg)
+                  }
+                }
+              } catch (_: Exception) {
+              } finally {
+                imageProxy.close()
+              }
+            }
+          }
+
+        val cameraSelector = if (isFrontCamera) {
+          CameraSelector.DEFAULT_FRONT_CAMERA
+        } else {
+          CameraSelector.DEFAULT_BACK_CAMERA
+        }
+        cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalysis)
+        boundUseCases = listOf(preview, imageAnalysis)
+      } catch (e: Exception) {
+        Log.e("CallScreen", "Camera bind error: ${e.message}")
+      }
+    }, ContextCompat.getMainExecutor(context))
+  }
 
   DisposableEffect(Unit) {
     onDispose {
       try {
-        ProcessCameraProvider.getInstance(context).get().unbindAll()
+        val provider = ProcessCameraProvider.getInstance(context).get()
+        if (boundUseCases.isNotEmpty()) {
+          provider.unbind(*boundUseCases.toTypedArray())
+        }
       } catch (_: Exception) {
       }
       analysisExecutor.shutdown()
@@ -569,54 +640,22 @@ fun CameraPreviewView(
     factory = { ctx ->
       PreviewView(ctx).apply {
         scaleType = PreviewView.ScaleType.FILL_CENTER
+        previewViewRef = this
       }
-    },
-    update = { previewView ->
-      val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-      cameraProviderFuture.addListener({
-        try {
-          val cameraProvider = cameraProviderFuture.get()
-          val preview = Preview.Builder().build().also {
-            it.surfaceProvider = previewView.surfaceProvider
-          }
-          val imageAnalysis = ImageAnalysis.Builder()
-            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-            .build()
-            .also { analysis ->
-              analysis.setAnalyzer(analysisExecutor) { imageProxy ->
-                try {
-                  val now = System.currentTimeMillis()
-                  if (currentStreamFrames && currentOnFrameCaptured != null && now - lastFrameSentMs >= 260L) {
-                    val jpeg = imageProxyToCompressedJpeg(imageProxy)
-                    if (jpeg != null) {
-                      lastFrameSentMs = now
-                      currentOnFrameCaptured?.invoke(jpeg)
-                    }
-                  }
-                } catch (_: Exception) {
-                } finally {
-                  imageProxy.close()
-                }
-              }
-            }
-
-          val cameraSelector = if (isFrontCamera) {
-            CameraSelector.DEFAULT_FRONT_CAMERA
-          } else {
-            CameraSelector.DEFAULT_BACK_CAMERA
-          }
-          cameraProvider.unbindAll()
-          cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalysis)
-        } catch (e: Exception) {
-          Log.e("CallScreen", "Camera bind error: ${e.message}")
-        }
-      }, ContextCompat.getMainExecutor(context))
     },
     modifier = modifier
   )
 }
 
-private fun imageProxyToCompressedJpeg(image: ImageProxy): ByteArray? {
+/**
+ * Converts a CameraX YUV_420_888 [ImageProxy] into a compact (~10-16 KB), upright,
+ * downscaled JPEG so frames are never dropped by size limits and render right-side-up on peer devices.
+ */
+internal fun imageProxyToCompressedJpeg(
+  image: ImageProxy,
+  mirrorHorizontal: Boolean = false,
+  maxDimensionPx: Int = 260
+): ByteArray? {
   if (image.format != ImageFormat.YUV_420_888 || image.planes.size < 3) return null
   val width = image.width
   val height = image.height
@@ -654,8 +693,37 @@ private fun imageProxyToCompressedJpeg(image: ImageProxy): ByteArray? {
     }
   }
 
+  val rawOut = ByteArrayOutputStream()
   val yuvImage = YuvImage(nv21, ImageFormat.NV21, width, height, null)
-  val out = ByteArrayOutputStream()
-  yuvImage.compressToJpeg(Rect(0, 0, width, height), 42, out)
-  return out.toByteArray()
+  if (!yuvImage.compressToJpeg(Rect(0, 0, width, height), 72, rawOut)) return null
+  val rawBytes = rawOut.toByteArray()
+
+  val largestRawDim = max(width, height)
+  var sampleSize = 1
+  while (largestRawDim / (sampleSize * 2) >= maxDimensionPx) {
+    sampleSize *= 2
+  }
+  val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+  val decoded = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, decodeOpts) ?: return rawBytes
+
+  val rotation = image.imageInfo.rotationDegrees
+  val scale = (maxDimensionPx.toFloat() / max(decoded.width, decoded.height).toFloat()).coerceAtMost(1f)
+  val matrix = Matrix().apply {
+    if (rotation != 0) postRotate(rotation.toFloat())
+    if (mirrorHorizontal) postScale(-scale, scale) else if (scale < 1f) postScale(scale, scale)
+  }
+
+  val transformed: Bitmap = try {
+    Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+  } catch (_: Throwable) {
+    decoded
+  }
+
+  val finalOut = ByteArrayOutputStream()
+  transformed.compress(Bitmap.CompressFormat.JPEG, 60, finalOut)
+  if (transformed !== decoded) {
+    transformed.recycle()
+  }
+  decoded.recycle()
+  return finalOut.toByteArray()
 }

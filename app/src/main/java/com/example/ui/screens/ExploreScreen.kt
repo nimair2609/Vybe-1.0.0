@@ -42,6 +42,7 @@ fun ExploreScreen(viewModel: VybeViewModel) {
   val shops by viewModel.shops.collectAsState()
   val posts by viewModel.posts.collectAsState()
   val unloadRooms by viewModel.unloadRooms.collectAsState()
+  val liveStreams by viewModel.liveStreams.collectAsState()
   val allUsers by viewModel.allUsers.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
   val adminReports by viewModel.adminReports.collectAsState()
@@ -51,14 +52,23 @@ fun ExploreScreen(viewModel: VybeViewModel) {
   var roomCodeJoining by remember { mutableStateOf(false) }
   var roomCodeError by remember { mutableStateOf<String?>(null) }
 
-  val trendingTags = listOf(
-    "MumbaiLoFi",
-    "CricketIndia",
-    "DesignEthics",
-    "MonsoonCoffee",
-    "BangaloreTech",
-    "IndieCinema"
-  )
+  val trendingTags = remember(posts) {
+    val regex = Regex("#([A-Za-z0-9_]{2,30})")
+    posts
+      .asSequence()
+      .filter { !it.isArchived }
+      .flatMap { post ->
+        val fromCaption = regex.findAll(post.caption).map { it.groupValues[1] }.toList()
+        val fromList = post.tags.map { it.removePrefix("#").trim() }.filter { it.isNotBlank() }
+        (fromCaption + fromList).asSequence()
+      }
+      .groupingBy { it }
+      .eachCount()
+      .entries
+      .sortedByDescending { it.value }
+      .map { it.key }
+      .take(10)
+  }
 
   val isSearching = searchQuery.isNotBlank()
   val cleanQuery = remember(searchQuery) {
@@ -103,6 +113,19 @@ fun ExploreScreen(viewModel: VybeViewModel) {
           room.roomCode.lowercase().contains(cleanQuery) ||
             room.title.lowercase().contains(cleanQuery) ||
             room.topicTag.lowercase().contains(cleanQuery)
+          )
+      }
+    }
+  }
+
+  val matchedLiveStreams = remember(cleanQuery, liveStreams) {
+    if (cleanQuery.isBlank()) emptyList() else {
+      liveStreams.filter { stream ->
+        stream.isLive && (
+          stream.title.lowercase().contains(cleanQuery) ||
+            stream.category.lowercase().contains(cleanQuery) ||
+            stream.host.username.lowercase().contains(cleanQuery) ||
+            stream.host.displayName.lowercase().contains(cleanQuery)
           )
       }
     }
@@ -159,7 +182,7 @@ fun ExploreScreen(viewModel: VybeViewModel) {
           Spacer(modifier = Modifier.height(8.dp))
         }
 
-        if (matchedUsers.isEmpty() && matchedShops.isEmpty() && matchedPosts.isEmpty() && matchedRooms.isEmpty()) {
+        if (matchedUsers.isEmpty() && matchedShops.isEmpty() && matchedPosts.isEmpty() && matchedRooms.isEmpty() && matchedLiveStreams.isEmpty()) {
           item {
             Card(
               modifier = Modifier
@@ -191,6 +214,42 @@ fun ExploreScreen(viewModel: VybeViewModel) {
             }
           }
         } else {
+          if (matchedLiveStreams.isNotEmpty()) {
+            item {
+              Text(
+                text = "Live Zone Broadcasts (${matchedLiveStreams.size})",
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                color = VybeDanger,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+              )
+            }
+            items(matchedLiveStreams, key = { "search_live_${it.id}" }) { stream ->
+              Card(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(horizontal = 16.dp, vertical = 5.dp)
+                  .clip(RoundedCornerShape(14.dp))
+                  .clickable { viewModel.joinLiveBroadcast(stream) },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, VybeDanger.copy(alpha = 0.45f))
+              ) {
+                Row(
+                  modifier = Modifier.padding(12.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  VybeAvatar(user = stream.host, size = 38.dp)
+                  Spacer(modifier = Modifier.width(12.dp))
+                  Column(modifier = Modifier.weight(1f)) {
+                    Text(stream.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("@${stream.host.username} • ${stream.viewerCount} watching live", fontSize = 11.sp, color = VybeDanger)
+                  }
+                  Text("Watch", color = VybeDanger, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+              }
+            }
+          }
           if (matchedRooms.isNotEmpty()) {
             item {
               Text(
@@ -526,6 +585,103 @@ fun ExploreScreen(viewModel: VybeViewModel) {
             )
           }
           Spacer(modifier = Modifier.height(12.dp))
+        }
+
+        // Live Zone Video Broadcasts (Synced across all users via Supabase)
+        item {
+          val activeStreams = liveStreams.filter { it.isLive }
+          Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(18.dp),
+            border = BorderStroke(1.dp, VybeDanger.copy(alpha = 0.45f)),
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 16.dp, vertical = 4.dp)
+              .testTag("explore_live_zone_card")
+          ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Box(
+                    modifier = Modifier
+                      .size(9.dp)
+                      .clip(CircleShape)
+                      .background(VybeDanger)
+                  )
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Text(
+                    text = "Live Zone (${activeStreams.size} on air)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                  )
+                }
+                Button(
+                  onClick = { viewModel.openGoLiveStudio() },
+                  colors = ButtonDefaults.buttonColors(containerColor = VybeDanger),
+                  shape = RoundedCornerShape(12.dp),
+                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                  modifier = Modifier.testTag("explore_go_live_button")
+                ) {
+                  Icon(Icons.Default.Podcasts, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text("Go Live", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+              }
+
+              if (activeStreams.isEmpty()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                  text = "No creators are broadcasting right now. Tap Go Live to stream in real time to everyone on VYBE.",
+                  fontSize = 11.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+              } else {
+                Spacer(modifier = Modifier.height(10.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                  items(activeStreams, key = { "explore_live_stream_${it.id}" }) { stream ->
+                    Surface(
+                      color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                      shape = RoundedCornerShape(14.dp),
+                      border = BorderStroke(1.dp, VybeDanger.copy(alpha = 0.4f)),
+                      modifier = Modifier
+                        .width(215.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable { viewModel.joinLiveBroadcast(stream) }
+                        .testTag("explore_live_stream_${stream.id}")
+                    ) {
+                      Column(modifier = Modifier.padding(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                          VybeAvatar(user = stream.host, size = 28.dp)
+                          Spacer(modifier = Modifier.width(8.dp))
+                          Column(modifier = Modifier.weight(1f)) {
+                            Text(stream.host.displayName, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
+                            Text("@${stream.host.username}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                          }
+                          Surface(color = VybeDanger, shape = RoundedCornerShape(6.dp)) {
+                            Text(
+                              text = "LIVE • ${stream.viewerCount}",
+                              color = Color.White,
+                              fontWeight = FontWeight.ExtraBold,
+                              fontSize = 9.sp,
+                              modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                          }
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(stream.title, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1)
+                        Text(stream.category, fontSize = 10.sp, color = VybeBrandCyan, maxLines = 1)
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          Spacer(modifier = Modifier.height(8.dp))
         }
 
         // Live Persistent Rooms Discovery & Join by Room ID
@@ -893,36 +1049,38 @@ fun ExploreScreen(viewModel: VybeViewModel) {
           }
         }
 
-        // Trending Topics (Clickable to search)
-        item {
-          Spacer(modifier = Modifier.height(18.dp))
-          Text(
-            text = "Trending Topics",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 16.dp)
-          )
-          Spacer(modifier = Modifier.height(8.dp))
-          LazyRow(
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-          ) {
-            items(trendingTags) { tag ->
-              Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                  .clip(RoundedCornerShape(12.dp))
-                  .clickable { viewModel.setSearchQuery("#$tag") }
-              ) {
-                Text(
-                  text = "#$tag",
-                  fontWeight = FontWeight.SemiBold,
-                  fontSize = 12.sp,
-                  color = VybeViolet,
-                  modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                )
+        // Trending Topics derived strictly from real published posts (never mock tags)
+        if (trendingTags.isNotEmpty()) {
+          item {
+            Spacer(modifier = Modifier.height(18.dp))
+            Text(
+              text = "Trending Topics",
+              style = MaterialTheme.typography.titleMedium,
+              fontWeight = FontWeight.Bold,
+              modifier = Modifier.padding(horizontal = 16.dp)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            LazyRow(
+              modifier = Modifier.fillMaxWidth(),
+              contentPadding = PaddingValues(horizontal = 16.dp),
+              horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+              items(trendingTags) { tag ->
+                Surface(
+                  color = MaterialTheme.colorScheme.surfaceVariant,
+                  shape = RoundedCornerShape(12.dp),
+                  modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { viewModel.setSearchQuery("#$tag") }
+                ) {
+                  Text(
+                    text = "#$tag",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                    color = VybeViolet,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                  )
+                }
               }
             }
           }

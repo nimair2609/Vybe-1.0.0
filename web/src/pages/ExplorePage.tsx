@@ -1,54 +1,269 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Compass, Sparkles, TrendingUp, Filter, Play, Heart, MessageCircle, X } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  Search,
+  Compass,
+  Sparkles,
+  Play,
+  Radio,
+  BarChart2,
+  Plus,
+  Send,
+  Eye,
+  X
+} from 'lucide-react';
 import { VybeAvatar, VerifiedBadge, VybeResonanceIcon } from '../components/VybeCoreComponents';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { MOOD_OPTIONS, matchesMoodFilter } from '../lib/utils';
-import { searchUsersAndPosts, fetchFeedPosts, toggleFollowUser } from '../lib/vybeApi';
-import type { MoodZone, VybePost, VybeUser } from '../types/vybe';
+import {
+  searchUsersAndPosts,
+  fetchFeedPosts,
+  fetchLiveStreams,
+  startLiveStreamWeb,
+  endLiveStreamWeb,
+  pushLiveStreamFrameWeb,
+  fetchLiveStreamComments,
+  postLiveStreamComment,
+  fetchAudiencePolls,
+  createAudiencePollWeb,
+  voteAudiencePollWeb
+} from '../lib/vybeApi';
+import type {
+  AudiencePoll,
+  LiveStreamComment,
+  LiveStreamSession,
+  MoodZone,
+  VybePost,
+  VybeUser
+} from '../types/vybe';
 
 export const ExplorePage: React.FC<{
   currentUser: VybeUser;
   onOpenUserProfile?: (user: VybeUser) => void;
 }> = ({ currentUser, onOpenUserProfile }) => {
+  const isGuest = currentUser.id === 'guest_viewer';
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMood, setSelectedMood] = useState<MoodZone | null>(null);
   const [allPosts, setAllPosts] = useState<VybePost[]>([]);
+  const [liveStreams, setLiveStreams] = useState<LiveStreamSession[]>([]);
+  const [polls, setPolls] = useState<AudiencePoll[]>([]);
   const [searchResults, setSearchResults] = useState<{ users: VybeUser[]; posts: VybePost[] } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [searching, setSearching] = useState(false);
   const [selectedPost, setSelectedPost] = useState<VybePost | null>(null);
 
+  // Live Zone Modal (Host or Viewer)
+  const [activeStream, setActiveStream] = useState<LiveStreamSession | null>(null);
+  const [streamComments, setStreamComments] = useState<LiveStreamComment[]>([]);
+  const [commentText, setCommentText] = useState('');
+  const [showGoLiveModal, setShowGoLiveModal] = useState(false);
+  const [liveTitle, setLiveTitle] = useState('');
+  const [liveCategory, setLiveCategory] = useState('LiveZone');
+  const [startingLive, setStartingLive] = useState(false);
+  const hostVideoRef = useRef<HTMLVideoElement | null>(null);
+  const hostStreamRef = useRef<MediaStream | null>(null);
+  const hostFrameTimerRef = useRef<number | null>(null);
+
+  // Poll Creator Modal
+  const [showCreatePoll, setShowCreatePoll] = useState(false);
+  const [pollQuestion, setPollQuestion] = useState('');
+  const [pollOptA, setPollOptA] = useState('');
+  const [pollOptB, setPollOptB] = useState('');
+  const [creatingPoll, setCreatingPoll] = useState(false);
+
+  const loadExploreAll = useCallback(async () => {
+    try {
+      const [postRes, streamRes, pollRes] = await Promise.all([
+        fetchFeedPosts(currentUser.id, 0, 60),
+        fetchLiveStreams(),
+        fetchAudiencePolls(currentUser.id)
+      ]);
+      setAllPosts(postRes);
+      setLiveStreams(streamRes);
+      setPolls(pollRes);
+    } catch {
+      // Non-blocking fallback
+    } finally {
+      setLoading(false);
+    }
+  }, [currentUser.id]);
+
   useEffect(() => {
-    const loadExplore = async () => {
-      setLoading(true);
-      try {
-        const res = await fetchFeedPosts(currentUser.id, 0, 60);
-        setAllPosts(res);
-      } catch {
-        // Fallback
-      } finally {
-        setLoading(false);
+    setLoading(true);
+    void loadExploreAll();
+    const interval = window.setInterval(() => {
+      void loadExploreAll();
+    }, 12_000);
+
+    if (!isSupabaseConfigured) {
+      return () => window.clearInterval(interval);
+    }
+
+    const ch = supabase
+      .channel('vybe-explore-live-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_streams' }, () => {
+        void fetchLiveStreams().then(setLiveStreams);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'audience_pools' }, () => {
+        void fetchAudiencePolls(currentUser.id).then(setPolls);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'audience_pool_votes' }, () => {
+        void fetchAudiencePolls(currentUser.id).then(setPolls);
+      })
+      .subscribe();
+
+    return () => {
+      window.clearInterval(interval);
+      void supabase.removeChannel(ch);
+    };
+  }, [currentUser.id, loadExploreAll]);
+
+  // Active Live Stream viewer/host sync
+  useEffect(() => {
+    if (!activeStream) return;
+    let mounted = true;
+    const syncActiveStream = async () => {
+      const [streamsNow, commentsNow] = await Promise.all([
+        fetchLiveStreams(),
+        fetchLiveStreamComments(activeStream.id)
+      ]);
+      if (!mounted) return;
+      setStreamComments(commentsNow);
+      const updated = streamsNow.find((s) => s.id === activeStream.id);
+      if (updated) {
+        setActiveStream(updated);
       }
     };
-    void loadExplore();
-  }, [currentUser.id]);
+    void syncActiveStream();
+    const timer = window.setInterval(() => void syncActiveStream(), 1200);
+    return () => {
+      mounted = false;
+      window.clearInterval(timer);
+    };
+  }, [activeStream?.id]);
+
+  const stopHostCamera = () => {
+    if (hostFrameTimerRef.current) {
+      window.clearInterval(hostFrameTimerRef.current);
+      hostFrameTimerRef.current = null;
+    }
+    hostStreamRef.current?.getTracks().forEach((t) => t.stop());
+    hostStreamRef.current = null;
+  };
+
+  const handleStartLive = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isGuest || startingLive) return;
+    setStartingLive(true);
+    try {
+      const media = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: true
+      });
+      hostStreamRef.current = media;
+      const created = await startLiveStreamWeb({
+        host: currentUser,
+        title: liveTitle.trim() || `${currentUser.displayName} Live`,
+        category: liveCategory
+      });
+      setShowGoLiveModal(false);
+      setLiveTitle('');
+      setActiveStream(created);
+      await loadExploreAll();
+
+      window.setTimeout(() => {
+        if (hostVideoRef.current && hostStreamRef.current) {
+          hostVideoRef.current.srcObject = hostStreamRef.current;
+          void hostVideoRef.current.play().catch(() => {});
+        }
+      }, 100);
+
+      const canvas = document.createElement('canvas');
+      hostFrameTimerRef.current = window.setInterval(() => {
+        const v = hostVideoRef.current;
+        if (!v || !v.videoWidth || !v.videoHeight) return;
+        const scale = Math.min(1, 260 / Math.max(v.videoWidth, v.videoHeight));
+        canvas.width = Math.max(1, Math.round(v.videoWidth * scale));
+        canvas.height = Math.max(1, Math.round(v.videoHeight * scale));
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.45);
+        const raw = dataUrl.includes('base64,') ? dataUrl.split('base64,')[1] : dataUrl;
+        void pushLiveStreamFrameWeb(created.id, raw);
+      }, 950);
+    } catch (err: unknown) {
+      stopHostCamera();
+      alert(err instanceof Error ? err.message : 'Unable to start live stream.');
+    } finally {
+      setStartingLive(false);
+    }
+  };
+
+  const handleCloseLiveModal = async () => {
+    if (activeStream && activeStream.host.id === currentUser.id) {
+      await endLiveStreamWeb(activeStream.id);
+    }
+    stopHostCamera();
+    setActiveStream(null);
+    await loadExploreAll();
+  };
+
+  const handleSendLiveComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeStream || !commentText.trim() || isGuest) return;
+    const body = commentText.trim();
+    setCommentText('');
+    await postLiveStreamComment({
+      streamId: activeStream.id,
+      authorId: currentUser.id,
+      authorName: currentUser.displayName,
+      content: body
+    });
+    const refreshed = await fetchLiveStreamComments(activeStream.id);
+    setStreamComments(refreshed);
+  };
+
+  const handleCreatePoll = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isGuest || !pollQuestion.trim() || creatingPoll) return;
+    setCreatingPoll(true);
+    try {
+      await createAudiencePollWeb({
+        creatorId: currentUser.id,
+        question: pollQuestion.trim(),
+        category: 'WhatNext',
+        options: [pollOptA.trim() || 'Option A', pollOptB.trim() || 'Option B']
+      });
+      setShowCreatePoll(false);
+      setPollQuestion('');
+      setPollOptA('');
+      setPollOptB('');
+      setPolls(await fetchAudiencePolls(currentUser.id));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Unable to create poll');
+    } finally {
+      setCreatingPoll(false);
+    }
+  };
+
+  const handleVotePoll = async (pollId: string, optionId: string) => {
+    if (isGuest) return;
+    await voteAudiencePollWeb(pollId, optionId, currentUser.id);
+    setPolls(await fetchAudiencePolls(currentUser.id));
+  };
 
   // Live search debounce
   useEffect(() => {
     const clean = searchQuery.trim();
     if (clean.length < 2) {
       setSearchResults(null);
-      setSearching(false);
       return;
     }
-    setSearching(true);
     const timer = setTimeout(async () => {
       try {
         const results = await searchUsersAndPosts(clean);
         setSearchResults(results);
       } catch {
         // Fallback
-      } finally {
-        setSearching(false);
       }
     }, 320);
     return () => clearTimeout(timer);
@@ -64,11 +279,35 @@ export const ExplorePage: React.FC<{
     <div style={{ maxWidth: '960px', margin: '0 auto', padding: '24px 16px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Header & Search */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <Compass size={28} color="var(--vybe-cyan)" />
-          <h2 className="vybe-brand-font" style={{ fontSize: '1.6rem', fontWeight: 800, margin: 0 }}>
-            Explore & Discover
-          </h2>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Compass size={28} color="var(--vybe-cyan)" />
+            <h2 className="vybe-brand-font" style={{ fontSize: '1.6rem', fontWeight: 800, margin: 0 }}>
+              Explore & Live Zone
+            </h2>
+          </div>
+          {!isGuest && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                className="vybe-btn"
+                onClick={() => setShowCreatePoll(true)}
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', fontSize: '0.82rem', padding: '8px 14px' }}
+              >
+                <BarChart2 size={15} color="var(--vybe-cyan)" />
+                <span>New Poll</span>
+              </button>
+              <button
+                type="button"
+                className="vybe-btn"
+                onClick={() => setShowGoLiveModal(true)}
+                style={{ background: '#FF4D6D', color: '#fff', fontSize: '0.82rem', padding: '8px 14px' }}
+              >
+                <Radio size={15} />
+                <span>Go Live</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Search Bar */}
@@ -76,7 +315,7 @@ export const ExplorePage: React.FC<{
           <Search size={18} color="var(--text-muted)" style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)' }} />
           <input
             type="text"
-            placeholder="Search creators, keywords, moods, or topics..."
+            placeholder="Search creators, @username, #hashtags, or moods..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{
@@ -87,8 +326,7 @@ export const ExplorePage: React.FC<{
               padding: '12px 18px 12px 44px',
               color: 'var(--text-primary)',
               fontSize: '0.95rem',
-              outline: 'none',
-              transition: 'border-color 0.2s ease'
+              outline: 'none'
             }}
           />
           {searchQuery && (
@@ -139,6 +377,142 @@ export const ExplorePage: React.FC<{
           })}
         </div>
       </div>
+
+      {/* Live Zone Strip (Synced Across Android & Web) */}
+      {!searchResults && (
+        <div
+          className="vybe-card"
+          style={{
+            border: '1px solid rgba(255, 77, 109, 0.38)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px'
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#FF4D6D', display: 'inline-block' }} />
+              <span style={{ fontWeight: 800, fontSize: '0.95rem' }}>
+                Live Zone ({liveStreams.length} on air)
+              </span>
+            </div>
+            {!isGuest && (
+              <button
+                type="button"
+                className="vybe-btn"
+                onClick={() => setShowGoLiveModal(true)}
+                style={{ padding: '5px 12px', fontSize: '0.78rem', background: 'rgba(255,77,109,0.16)', color: '#FF4D6D' }}
+              >
+                <Plus size={14} /> Start Broadcast
+              </button>
+            )}
+          </div>
+
+          {liveStreams.length === 0 ? (
+            <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--text-muted)' }}>
+              No creators are live right now. Start a live broadcast to stream across VYBE Android and Web.
+            </p>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
+              {liveStreams.map((stream) => (
+                <div
+                  key={stream.id}
+                  onClick={() => setActiveStream(stream)}
+                  style={{
+                    padding: '12px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-elevated)',
+                    border: '1px solid rgba(255,77,109,0.35)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                      <VybeAvatar user={stream.host} size={32} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {stream.host.displayName}
+                        </div>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>@{stream.host.username}</div>
+                      </div>
+                    </div>
+                    <span style={{ background: '#FF4D6D', color: '#fff', fontSize: '0.68rem', fontWeight: 800, padding: '2px 7px', borderRadius: 6 }}>
+                      LIVE • {stream.viewerCount}
+                    </span>
+                  </div>
+                  <div style={{ fontWeight: 600, fontSize: '0.86rem' }}>{stream.title}</div>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--vybe-cyan)' }}>{stream.category}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Synced Community Polls (What Next) */}
+      {!searchResults && polls.length > 0 && (
+        <div className="vybe-card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <BarChart2 size={18} color="var(--vybe-cyan)" />
+            <span style={{ fontWeight: 800, fontSize: '0.95rem' }}>What Next • Live Community Polls</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(270px, 1fr))', gap: '12px' }}>
+            {polls.slice(0, 6).map((poll) => {
+              const totalVotes = poll.options.reduce((acc, o) => acc + o.votesCount, 0);
+              return (
+                <div
+                  key={poll.id}
+                  style={{
+                    padding: '14px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-elevated)',
+                    border: '1px solid var(--border-subtle)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px'
+                  }}
+                >
+                  <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                    @{poll.creator.username} • {totalVotes} {totalVotes === 1 ? 'vote' : 'votes'}
+                  </div>
+                  <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{poll.question}</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {poll.options.map((opt) => {
+                      const pct = totalVotes > 0 ? Math.round((opt.votesCount * 100) / totalVotes) : 0;
+                      const isVoted = poll.votedOptionId === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => void handleVotePoll(poll.id, opt.id)}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '8px 10px',
+                            borderRadius: 8,
+                            border: isVoted ? '1px solid var(--vybe-cyan)' : '1px solid var(--border-subtle)',
+                            background: isVoted ? 'rgba(0,229,255,0.14)' : 'var(--bg-surface)',
+                            color: 'var(--text-primary)',
+                            cursor: isGuest ? 'default' : 'pointer',
+                            fontSize: '0.82rem'
+                          }}
+                        >
+                          <span>{opt.text}</span>
+                          <span style={{ fontWeight: 700, color: 'var(--vybe-cyan)' }}>{pct}%</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Search Results - Creators preview */}
       {searchResults && searchResults.users.length > 0 && (
@@ -226,7 +600,6 @@ export const ExplorePage: React.FC<{
                   </div>
                 )}
 
-                {/* Video Badge */}
                 {isVideo && (
                   <div style={{ position: 'absolute', top: '10px', right: '10px', background: 'rgba(0,0,0,0.6)', padding: '4px 8px', borderRadius: 'var(--radius-pill)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: '#fff' }}>
                     <Play size={12} fill="#fff" />
@@ -234,7 +607,6 @@ export const ExplorePage: React.FC<{
                   </div>
                 )}
 
-                {/* Bottom Overlay with Author and Likes */}
                 <div
                   style={{
                     position: 'absolute',
@@ -261,6 +633,174 @@ export const ExplorePage: React.FC<{
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Go Live Setup Modal */}
+      {showGoLiveModal && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 95, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          onClick={() => setShowGoLiveModal(false)}
+        >
+          <form
+            onSubmit={handleStartLive}
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: 420, background: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h4 style={{ margin: 0, fontWeight: 800 }}>Start Live Broadcast</h4>
+              <button type="button" onClick={() => setShowGoLiveModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                <X size={18} />
+              </button>
+            </div>
+            <input
+              type="text"
+              placeholder="Broadcast title..."
+              value={liveTitle}
+              onChange={(e) => setLiveTitle(e.target.value)}
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: '10px 14px', color: 'var(--text-primary)' }}
+            />
+            <select
+              value={liveCategory}
+              onChange={(e) => setLiveCategory(e.target.value)}
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: '10px 14px', color: 'var(--text-primary)' }}
+            >
+              <option value="LiveZone">LiveZone</option>
+              <option value="Music & Jam">Music & Jam</option>
+              <option value="Talk & Q&A">Talk & Q&A</option>
+              <option value="Creator Lab">Creator Lab</option>
+            </select>
+            <button type="submit" disabled={startingLive} className="vybe-btn" style={{ background: '#FF4D6D', color: '#fff', padding: '10px 16px' }}>
+              {startingLive ? 'Starting…' : 'Go Live Now'}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* New Poll Modal */}
+      {showCreatePoll && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 95, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          onClick={() => setShowCreatePoll(false)}
+        >
+          <form
+            onSubmit={handleCreatePoll}
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: 420, background: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)', padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h4 style={{ margin: 0, fontWeight: 800 }}>Create Community Poll</h4>
+              <button type="button" onClick={() => setShowCreatePoll(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                <X size={18} />
+              </button>
+            </div>
+            <input
+              type="text"
+              placeholder="Ask the VYBE community..."
+              value={pollQuestion}
+              onChange={(e) => setPollQuestion(e.target.value)}
+              required
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: '10px 14px', color: 'var(--text-primary)' }}
+            />
+            <input
+              type="text"
+              placeholder="Option 1"
+              value={pollOptA}
+              onChange={(e) => setPollOptA(e.target.value)}
+              required
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: '10px 14px', color: 'var(--text-primary)' }}
+            />
+            <input
+              type="text"
+              placeholder="Option 2"
+              value={pollOptB}
+              onChange={(e) => setPollOptB(e.target.value)}
+              required
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: '10px 14px', color: 'var(--text-primary)' }}
+            />
+            <button type="submit" disabled={creatingPoll} className="vybe-btn vybe-btn-primary" style={{ padding: '10px 16px' }}>
+              {creatingPoll ? 'Publishing…' : 'Publish Poll'}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* Active Live Broadcast Viewer / Host Modal */}
+      {activeStream && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(6,8,15,0.92)', zIndex: 105, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        >
+          <div style={{ width: '100%', maxWidth: 780, background: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid rgba(255,77,109,0.45)', overflow: 'hidden', display: 'grid', gridTemplateColumns: '1.2fr 1fr', maxHeight: '88vh' }}>
+            <div style={{ background: '#05070d', position: 'relative', minHeight: 360, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {activeStream.host.id === currentUser.id ? (
+                <video ref={hostVideoRef} autoPlay muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : activeStream.latestFrameBase64 ? (
+                <img
+                  src={activeStream.latestFrameBase64.startsWith('data:image') ? activeStream.latestFrameBase64 : `data:image/jpeg;base64,${activeStream.latestFrameBase64}`}
+                  alt={activeStream.title}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              ) : (
+                <div style={{ textAlign: 'center', color: '#fff', padding: 24 }}>
+                  <VybeAvatar user={activeStream.host} size={72} />
+                  <p style={{ marginTop: 12 }}>Connecting live stream…</p>
+                </div>
+              )}
+              <div style={{ position: 'absolute', top: 12, left: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ background: '#FF4D6D', color: '#fff', fontWeight: 800, fontSize: '0.75rem', padding: '4px 10px', borderRadius: 8 }}>
+                  LIVE
+                </span>
+                <span style={{ background: 'rgba(0,0,0,0.65)', color: '#fff', fontSize: '0.75rem', padding: '4px 10px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Eye size={13} /> {activeStream.viewerCount}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '88vh' }}>
+              <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '0.95rem' }}>{activeStream.title}</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>@{activeStream.host.username}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleCloseLiveModal()}
+                  className="vybe-btn"
+                  style={{ background: '#FF4D6D', color: '#fff', padding: '6px 12px', fontSize: '0.78rem' }}
+                >
+                  {activeStream.host.id === currentUser.id ? 'End Live' : 'Leave'}
+                </button>
+              </div>
+
+              <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {streamComments.length === 0 ? (
+                  <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Live chat is open. Say hi!</p>
+                ) : (
+                  streamComments.map((c) => (
+                    <div key={c.id} style={{ fontSize: '0.84rem' }}>
+                      <strong style={{ color: 'var(--vybe-cyan)' }}>{c.authorName}: </strong>
+                      <span>{c.content}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {!isGuest && (
+                <form onSubmit={handleSendLiveComment} style={{ padding: 12, borderTop: '1px solid var(--border-subtle)', display: 'flex', gap: 8 }}>
+                  <input
+                    type="text"
+                    placeholder="Comment live..."
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    style={{ flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 20, padding: '8px 14px', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                  />
+                  <button type="submit" className="vybe-btn vybe-btn-primary" style={{ padding: '8px 12px' }}>
+                    <Send size={15} />
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

@@ -2,10 +2,13 @@ package com.example.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
+import android.util.Base64
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,42 +27,34 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VybeAvatar
+import com.example.ui.theme.VybeBrandCyan
 import com.example.ui.theme.VybeDanger
-import com.example.ui.theme.VybeOnlineGreen
 import com.example.ui.theme.VybeViolet
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-data class LiveComment(
-  val id: String,
-  val authorName: String,
-  val text: String,
-  val timestamp: String = "Just now",
-  val isHost: Boolean = false
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LiveStudioScreen(viewModel: VybeViewModel) {
   val context = LocalContext.current
   val currentUser by viewModel.currentUser.collectAsState()
+  val activeStream by viewModel.activeLiveStream.collectAsState()
+  val comments by viewModel.liveStreamComments.collectAsState()
   val coroutineScope = rememberCoroutineScope()
 
-  // Permission states
+  val isViewerMode = activeStream != null && activeStream?.host?.id != currentUser?.id
+  val isHostBroadcasting = activeStream != null && activeStream?.host?.id == currentUser?.id && activeStream?.isLive == true
+
   var hasCameraPermission by remember {
     mutableStateOf(
       ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
@@ -78,43 +73,47 @@ fun LiveStudioScreen(viewModel: VybeViewModel) {
     hasMicPermission = perms[Manifest.permission.RECORD_AUDIO] ?: hasMicPermission
   }
 
-  // Live session states
-  var isBroadcasting by remember { mutableStateOf(false) }
-  var streamTitle by remember { mutableStateOf("Vibing live with community ✨") }
+  var streamTitle by remember { mutableStateOf("") }
+  var streamCategory by remember { mutableStateOf("LiveZone") }
+  var startingBroadcast by remember { mutableStateOf(false) }
+  var startError by remember { mutableStateOf<String?>(null) }
   var isFrontCamera by remember { mutableStateOf(true) }
   var isMuted by remember { mutableStateOf(false) }
   var isVideoPaused by remember { mutableStateOf(false) }
-  var viewerCount by remember { mutableStateOf(1) }
   var showEndConfirmDialog by remember { mutableStateOf(false) }
 
-  // Comments stream
   var commentInput by remember { mutableStateOf("") }
-  var comments by remember {
-    mutableStateOf(
-      listOf(
-        LiveComment("c_1", "Aarav Beats", "Ayy sound check sounds clean! 🎧"),
-        LiveComment("c_2", "Priya Sharma", "Great lighting today! ✨")
-      )
-    )
-  }
   val commentListState = rememberLazyListState()
 
-  BackHandler {
-    if (isBroadcasting) {
-      showEndConfirmDialog = true
-    } else {
-      viewModel.navigateBack()
+  // Auto-scroll comments when new real comments arrive from Supabase
+  LaunchedEffect(comments.size) {
+    if (comments.isNotEmpty()) {
+      commentListState.animateScrollToItem(comments.size - 1)
     }
   }
 
-  // Periodic simulated live comments and viewer fluctuations
-  LaunchedEffect(isBroadcasting) {
-    if (isBroadcasting) {
-      viewerCount = 14
-      while (isBroadcasting) {
-        delay(6000)
-        viewerCount = (viewerCount + (-1..3).random()).coerceAtLeast(5)
+  // Decode remote host video frame in Viewer Mode
+  val remoteLiveBitmap = remember(activeStream?.latestFrameBase64) {
+    val raw = activeStream?.latestFrameBase64
+    if (raw.isNullOrBlank()) null else {
+      try {
+        val clean = raw.substringAfter("base64,", raw)
+        val bytes = Base64.decode(clean, Base64.DEFAULT)
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+      } catch (_: Throwable) {
+        null
       }
+    }
+  }
+
+  // Throttle outgoing host frames to ~1.2fps to keep Supabase light and responsive
+  var lastFramePushedAt by remember { mutableLongStateOf(0L) }
+
+  BackHandler {
+    when {
+      isHostBroadcasting -> showEndConfirmDialog = true
+      isViewerMode -> viewModel.leaveOrEndLiveBroadcast()
+      else -> viewModel.navigateBack()
     }
   }
 
@@ -123,7 +122,7 @@ fun LiveStudioScreen(viewModel: VybeViewModel) {
       .fillMaxSize()
       .background(Color(0xFF0A0E17))
   ) {
-    // 1. Camera Viewfinder (Simulated Fullscreen Live View with grid lines and video overlay)
+    // 1. Video Layer (Viewer remote stream OR Host CameraX viewfinder)
     Box(
       modifier = Modifier
         .fillMaxSize()
@@ -138,7 +137,29 @@ fun LiveStudioScreen(viewModel: VybeViewModel) {
         ),
       contentAlignment = Alignment.Center
     ) {
-      if (isVideoPaused) {
+      if (isViewerMode) {
+        if (remoteLiveBitmap != null) {
+          Image(
+            bitmap = remoteLiveBitmap,
+            contentDescription = "Live broadcast video",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+          )
+        } else {
+          Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (activeStream?.host != null) {
+              VybeAvatar(user = activeStream!!.host, size = 88.dp)
+              Spacer(modifier = Modifier.height(14.dp))
+            }
+            Text(
+              text = if (activeStream?.isLive == false) "Broadcast ended" else "Connecting live video stream…",
+              color = Color.White,
+              fontWeight = FontWeight.SemiBold,
+              fontSize = 14.sp
+            )
+          }
+        }
+      } else if (isVideoPaused) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
           Icon(
             imageVector = Icons.Default.VideocamOff,
@@ -172,7 +193,7 @@ fun LiveStudioScreen(viewModel: VybeViewModel) {
             "To broadcast live to the VYBE community, grant camera and microphone permissions.",
             color = Color.White.copy(alpha = 0.7f),
             fontSize = 12.sp,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            textAlign = TextAlign.Center
           )
           Spacer(modifier = Modifier.height(20.dp))
           Button(
@@ -187,52 +208,16 @@ fun LiveStudioScreen(viewModel: VybeViewModel) {
           }
         }
       } else {
-        // Real Live CameraX Viewfinder
-        val lifecycleOwner = LocalLifecycleOwner.current
-        AndroidView(
-          factory = { ctx ->
-            val previewView = PreviewView(ctx).apply {
-              scaleType = PreviewView.ScaleType.FILL_CENTER
+        CameraPreviewView(
+          isFrontCamera = isFrontCamera,
+          onFrameCaptured = { jpegBase64 ->
+            if (isHostBroadcasting && !isVideoPaused) {
+              val now = System.currentTimeMillis()
+              if (now - lastFramePushedAt >= 850L) {
+                lastFramePushedAt = now
+                viewModel.pushLiveBroadcastFrame(jpegBase64)
+              }
             }
-            val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-            cameraProviderFuture.addListener({
-              try {
-                val cameraProvider = cameraProviderFuture.get()
-                val preview = Preview.Builder().build().also {
-                  it.setSurfaceProvider(previewView.surfaceProvider)
-                }
-                val cameraSelector = if (isFrontCamera) {
-                  CameraSelector.DEFAULT_FRONT_CAMERA
-                } else {
-                  CameraSelector.DEFAULT_BACK_CAMERA
-                }
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview)
-              } catch (e: Exception) {
-                e.printStackTrace()
-              }
-            }, ContextCompat.getMainExecutor(ctx))
-            previewView
-          },
-          update = { previewView ->
-            val cameraProviderFuture = ProcessCameraProvider.getInstance(previewView.context)
-            cameraProviderFuture.addListener({
-              try {
-                val cameraProvider = cameraProviderFuture.get()
-                val preview = Preview.Builder().build().also {
-                  it.setSurfaceProvider(previewView.surfaceProvider)
-                }
-                val cameraSelector = if (isFrontCamera) {
-                  CameraSelector.DEFAULT_FRONT_CAMERA
-                } else {
-                  CameraSelector.DEFAULT_BACK_CAMERA
-                }
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview)
-              } catch (e: Exception) {
-                e.printStackTrace()
-              }
-            }, ContextCompat.getMainExecutor(previewView.context))
           },
           modifier = Modifier.fillMaxSize()
         )
@@ -240,6 +225,10 @@ fun LiveStudioScreen(viewModel: VybeViewModel) {
     }
 
     // 2. Top Header Bar (HUD overlay)
+    val displayHost = activeStream?.host ?: currentUser
+    val displayTitle = activeStream?.title?.ifBlank { "VYBE Live" }
+      ?: streamTitle.ifBlank { "Ready to go live" }
+
     Row(
       modifier = Modifier
         .fillMaxWidth()
@@ -248,10 +237,14 @@ fun LiveStudioScreen(viewModel: VybeViewModel) {
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.SpaceBetween
     ) {
-      Row(verticalAlignment = Alignment.CenterVertically) {
+      Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
         IconButton(
           onClick = {
-            if (isBroadcasting) showEndConfirmDialog = true else viewModel.navigateBack()
+            when {
+              isHostBroadcasting -> showEndConfirmDialog = true
+              isViewerMode -> viewModel.leaveOrEndLiveBroadcast()
+              else -> viewModel.navigateBack()
+            }
           },
           modifier = Modifier
             .size(38.dp)
@@ -264,19 +257,18 @@ fun LiveStudioScreen(viewModel: VybeViewModel) {
 
         Spacer(modifier = Modifier.width(10.dp))
 
-        if (currentUser != null) {
-          VybeAvatar(user = currentUser!!, size = 34.dp)
+        if (displayHost != null) {
+          VybeAvatar(user = displayHost, size = 34.dp)
           Spacer(modifier = Modifier.width(8.dp))
           Column {
-            Text(currentUser!!.displayName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            Text(streamTitle, color = Color.White.copy(alpha = 0.8f), fontSize = 11.sp, maxLines = 1)
+            Text(displayHost.displayName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+            Text(displayTitle, color = Color.White.copy(alpha = 0.8f), fontSize = 11.sp, maxLines = 1)
           }
         }
       }
 
       Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (isBroadcasting) {
-          // LIVE Badge
+        if (isHostBroadcasting || isViewerMode) {
           Surface(
             color = VybeDanger,
             shape = RoundedCornerShape(8.dp)
@@ -296,7 +288,6 @@ fun LiveStudioScreen(viewModel: VybeViewModel) {
             }
           }
 
-          // Viewer Count
           Surface(
             color = Color.Black.copy(alpha = 0.6f),
             shape = RoundedCornerShape(8.dp)
@@ -307,26 +298,27 @@ fun LiveStudioScreen(viewModel: VybeViewModel) {
             ) {
               Icon(Icons.Default.Visibility, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
               Spacer(modifier = Modifier.width(4.dp))
-              Text("$viewerCount", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+              Text("${activeStream?.viewerCount ?: 1}", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
           }
         }
 
-        // Camera flip button
-        IconButton(
-          onClick = { isFrontCamera = !isFrontCamera },
-          modifier = Modifier
-            .size(38.dp)
-            .clip(CircleShape)
-            .background(Color.Black.copy(alpha = 0.5f))
-            .testTag("flip_camera_button")
-        ) {
-          Icon(Icons.Default.FlipCameraAndroid, contentDescription = "Flip Camera", tint = Color.White, modifier = Modifier.size(18.dp))
+        if (!isViewerMode) {
+          IconButton(
+            onClick = { isFrontCamera = !isFrontCamera },
+            modifier = Modifier
+              .size(38.dp)
+              .clip(CircleShape)
+              .background(Color.Black.copy(alpha = 0.5f))
+              .testTag("flip_camera_button")
+          ) {
+            Icon(Icons.Default.FlipCameraAndroid, contentDescription = "Flip Camera", tint = Color.White, modifier = Modifier.size(18.dp))
+          }
         }
       }
     }
 
-    // 3. Bottom Controls & Live Comments HUD
+    // 3. Bottom Controls & Real-Time Synced Comments HUD
     Column(
       modifier = Modifier
         .fillMaxWidth()
@@ -335,44 +327,44 @@ fun LiveStudioScreen(viewModel: VybeViewModel) {
         .imePadding()
         .padding(16.dp)
     ) {
-      if (isBroadcasting) {
-        // Comments Stream
-        LazyColumn(
-          state = commentListState,
-          modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 180.dp),
-          verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-          items(comments, key = { it.id }) { c ->
-            Surface(
-              color = Color.Black.copy(alpha = 0.45f),
-              shape = RoundedCornerShape(10.dp)
-            ) {
-              Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                verticalAlignment = Alignment.CenterVertically
+      if (isHostBroadcasting || isViewerMode) {
+        if (comments.isNotEmpty()) {
+          LazyColumn(
+            state = commentListState,
+            modifier = Modifier
+              .fillMaxWidth()
+              .heightIn(max = 180.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            items(comments, key = { it.id }) { c ->
+              val isCommentFromHost = c.authorId == activeStream?.host?.id
+              Surface(
+                color = Color.Black.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(10.dp)
               ) {
-                Text(
-                  text = c.authorName,
-                  color = if (c.isHost) VybeViolet else Color(0xFF64B5F6),
-                  fontWeight = FontWeight.Bold,
-                  fontSize = 12.sp
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                  text = c.text,
-                  color = Color.White,
-                  fontSize = 12.sp
-                )
+                Row(
+                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Text(
+                    text = c.authorName,
+                    color = if (isCommentFromHost) VybeViolet else VybeBrandCyan,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                  )
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text(
+                    text = c.content,
+                    color = Color.White,
+                    fontSize = 12.sp
+                  )
+                }
               }
             }
           }
+          Spacer(modifier = Modifier.height(10.dp))
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Comment Input + Actions Row
         Row(
           modifier = Modifier.fillMaxWidth(),
           verticalAlignment = Alignment.CenterVertically
@@ -382,35 +374,30 @@ fun LiveStudioScreen(viewModel: VybeViewModel) {
             onValueChange = { commentInput = it },
             placeholder = { Text("Comment live...", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp) },
             shape = RoundedCornerShape(24.dp),
+            singleLine = true,
             colors = OutlinedTextFieldDefaults.colors(
               focusedTextColor = Color.White,
               unfocusedTextColor = Color.White,
               focusedContainerColor = Color.Black.copy(alpha = 0.5f),
               unfocusedContainerColor = Color.Black.copy(alpha = 0.5f)
             ),
-            modifier = Modifier.weight(1f).testTag("live_comment_input")
+            modifier = Modifier
+              .weight(1f)
+              .testTag("live_comment_input")
           )
 
           Spacer(modifier = Modifier.width(8.dp))
 
           IconButton(
             onClick = {
-              if (commentInput.isNotBlank()) {
-                val newC = LiveComment(
-                  id = "c_${System.currentTimeMillis()}",
-                  authorName = currentUser?.displayName ?: "Host",
-                  text = commentInput.trim(),
-                  isHost = true
-                )
-                comments = comments + newC
+              val clean = commentInput.trim()
+              if (clean.isNotBlank()) {
+                viewModel.sendLiveBroadcastComment(clean)
                 commentInput = ""
-                coroutineScope.launch {
-                  commentListState.animateScrollToItem(comments.size - 1)
-                }
               }
             },
             modifier = Modifier
-              .size(42.dp)
+              .size(44.dp)
               .clip(CircleShape)
               .background(VybeViolet)
               .testTag("send_live_comment")
@@ -418,74 +405,139 @@ fun LiveStudioScreen(viewModel: VybeViewModel) {
             Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(18.dp))
           }
 
-          Spacer(modifier = Modifier.width(6.dp))
+          if (isHostBroadcasting) {
+            Spacer(modifier = Modifier.width(6.dp))
+            IconButton(
+              onClick = { isMuted = !isMuted },
+              modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(if (isMuted) VybeDanger else Color.Black.copy(alpha = 0.5f))
+            ) {
+              Icon(
+                if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                contentDescription = "Mute",
+                tint = Color.White,
+                modifier = Modifier.size(18.dp)
+              )
+            }
 
-          // Mute toggle
-          IconButton(
-            onClick = { isMuted = !isMuted },
-            modifier = Modifier
-              .size(42.dp)
-              .clip(CircleShape)
-              .background(if (isMuted) VybeDanger else Color.Black.copy(alpha = 0.5f))
-          ) {
-            Icon(
-              if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
-              contentDescription = "Mute",
-              tint = Color.White,
-              modifier = Modifier.size(18.dp)
-            )
-          }
+            Spacer(modifier = Modifier.width(6.dp))
+            IconButton(
+              onClick = { isVideoPaused = !isVideoPaused },
+              modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(if (isVideoPaused) VybeDanger else Color.Black.copy(alpha = 0.5f))
+            ) {
+              Icon(
+                if (isVideoPaused) Icons.Default.VideocamOff else Icons.Default.Videocam,
+                contentDescription = "Toggle Camera",
+                tint = Color.White,
+                modifier = Modifier.size(18.dp)
+              )
+            }
 
-          Spacer(modifier = Modifier.width(6.dp))
-
-          // End Live Button
-          Button(
-            onClick = { showEndConfirmDialog = true },
-            colors = ButtonDefaults.buttonColors(containerColor = VybeDanger),
-            shape = RoundedCornerShape(20.dp),
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-            modifier = Modifier.testTag("end_live_button")
-          ) {
-            Text("End", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Spacer(modifier = Modifier.width(6.dp))
+            Button(
+              onClick = { showEndConfirmDialog = true },
+              colors = ButtonDefaults.buttonColors(containerColor = VybeDanger),
+              shape = RoundedCornerShape(20.dp),
+              contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+              modifier = Modifier.testTag("end_live_button")
+            ) {
+              Text("End", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+          } else {
+            Spacer(modifier = Modifier.width(6.dp))
+            OutlinedButton(
+              onClick = { viewModel.leaveOrEndLiveBroadcast() },
+              border = BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)),
+              shape = RoundedCornerShape(20.dp),
+              modifier = Modifier.testTag("leave_live_button")
+            ) {
+              Text("Leave", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
           }
         }
       } else {
-        // Pre-Live Configuration Card
+        // Pre-Live Configuration Card (Host Setup)
         Surface(
           color = Color(0xFF131C2E).copy(alpha = 0.95f),
           shape = RoundedCornerShape(18.dp),
-          border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
+          border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
           modifier = Modifier.fillMaxWidth()
         ) {
           Column(modifier = Modifier.padding(16.dp)) {
-            Text("Set Stream Title:", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            Spacer(modifier = Modifier.height(6.dp))
+            Text("Go Live Across All VYBE Devices", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Spacer(modifier = Modifier.height(8.dp))
             OutlinedTextField(
               value = streamTitle,
-              onValueChange = { streamTitle = it },
-              placeholder = { Text("What are you sharing today?") },
+              onValueChange = {
+                streamTitle = it
+                startError = null
+              },
+              placeholder = { Text("What are you streaming today?") },
               singleLine = true,
               shape = RoundedCornerShape(12.dp),
-              modifier = Modifier.fillMaxWidth().testTag("stream_title_input")
+              colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White
+              ),
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("stream_title_input")
             )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              listOf("LiveZone", "Music & Jam", "Talk & Q&A", "Creator Lab").forEach { cat ->
+                FilterChip(
+                  selected = streamCategory == cat,
+                  onClick = { streamCategory = cat },
+                  label = { Text(cat, fontSize = 11.sp) }
+                )
+              }
+            }
+            if (startError != null) {
+              Spacer(modifier = Modifier.height(6.dp))
+              Text(startError!!, color = VybeDanger, fontSize = 11.sp)
+            }
             Spacer(modifier = Modifier.height(14.dp))
             Button(
               onClick = {
                 if (hasCameraPermission && hasMicPermission) {
-                  isBroadcasting = true
+                  if (startingBroadcast) return@Button
+                  startingBroadcast = true
+                  startError = null
+                  viewModel.startLiveBroadcast(
+                    title = streamTitle.trim().ifBlank { "${currentUser?.displayName ?: "Creator"} Live" },
+                    category = streamCategory
+                  )
+                  coroutineScope.launch {
+                    kotlinx.coroutines.delay(1500)
+                    startingBroadcast = false
+                  }
                 } else {
                   permissionLauncher.launch(
                     arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
                   )
                 }
               },
+              enabled = !startingBroadcast,
               colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
               shape = RoundedCornerShape(14.dp),
-              modifier = Modifier.fillMaxWidth().height(48.dp).testTag("start_broadcasting_button")
+              modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .testTag("start_broadcasting_button")
             ) {
               Icon(Icons.Default.Podcasts, contentDescription = null, tint = Color.White)
               Spacer(modifier = Modifier.width(8.dp))
-              Text("Go Live Now", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+              Text(
+                if (startingBroadcast) "Starting Live Stream…" else "Go Live Now",
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp
+              )
             }
           }
         }
@@ -493,18 +545,16 @@ fun LiveStudioScreen(viewModel: VybeViewModel) {
     }
   }
 
-  // End Live Confirmation Dialog
   if (showEndConfirmDialog) {
     AlertDialog(
       onDismissRequest = { showEndConfirmDialog = false },
       title = { Text("End Live Stream?", fontWeight = FontWeight.Bold) },
-      text = { Text("Your stream will end and viewers will be disconnected.") },
+      text = { Text("Your broadcast will end across all connected devices.") },
       confirmButton = {
         Button(
           onClick = {
-            isBroadcasting = false
             showEndConfirmDialog = false
-            viewModel.navigateBack()
+            viewModel.leaveOrEndLiveBroadcast()
           },
           colors = ButtonDefaults.buttonColors(containerColor = VybeDanger)
         ) {

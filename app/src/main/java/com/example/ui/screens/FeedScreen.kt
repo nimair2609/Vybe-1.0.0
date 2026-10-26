@@ -59,6 +59,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
   val allUsers by viewModel.allUsers.collectAsState()
   val vybeMatches by viewModel.vybeMatches.collectAsState()
   val unloadRooms by viewModel.unloadRooms.collectAsState()
+  val liveStreams by viewModel.liveStreams.collectAsState()
   val hasMoreFeedPosts by viewModel.hasMoreFeedPosts.collectAsState()
   val isLoadingMorePosts by viewModel.isLoadingMorePosts.collectAsState()
   val coroutineScope = rememberCoroutineScope()
@@ -284,6 +285,57 @@ fun FeedScreen(viewModel: VybeViewModel) {
             activeLiveRooms = unloadRooms.filter { it.isActive },
             onJoinLiveRoom = { room -> viewModel.joinUnloadRoom(room) }
           )
+        }
+
+        val activeStreams = liveStreams.filter { it.isLive }
+        if (activeStreams.isNotEmpty()) {
+          item(key = "feed_live_zone_strip") {
+            LazyRow(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp, bottom = 2.dp)
+                .testTag("feed_live_streams_row"),
+              contentPadding = PaddingValues(horizontal = 16.dp),
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              items(activeStreams, key = { "feed_live_${it.id}" }) { stream ->
+                Surface(
+                  color = VybeDanger.copy(alpha = 0.14f),
+                  shape = RoundedCornerShape(16.dp),
+                  border = BorderStroke(1.dp, VybeDanger.copy(alpha = 0.6f)),
+                  modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable { viewModel.joinLiveBroadcast(stream) }
+                    .testTag("feed_live_pill_${stream.id}")
+                ) {
+                  Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    VybeAvatar(user = stream.host, size = 24.dp)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                      text = "${stream.host.displayName}: ${stream.title}",
+                      fontSize = 11.sp,
+                      fontWeight = FontWeight.Bold,
+                      maxLines = 1
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(color = VybeDanger, shape = RoundedCornerShape(6.dp)) {
+                      Text(
+                        text = "LIVE • ${stream.viewerCount}",
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                      )
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
 
         // Single, Unified Mood Selector Bar (No duplicate "All Vibes" + "General" clutter; tapping selected chip resets to unfiltered feed)

@@ -559,6 +559,94 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
       ) {
         items(conv.messages, key = { it.id }) { msg ->
           val isMe = msg.isMe
+          if (msg.mediaType == "CALL_LOG" && !msg.isDeletedForEveryone) {
+            val rawMeta = msg.mediaUrl.orEmpty()
+            val isVideoCallLog = rawMeta.contains("type=video", ignoreCase = true) ||
+              msg.text.contains("video call", ignoreCase = true)
+            val statusParam = Regex("status=([^&]+)").find(rawMeta)?.groupValues?.getOrNull(1)?.uppercase().orEmpty()
+            val durationSec = Regex("duration=(\\d+)").find(rawMeta)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+            val formattedDuration = if (durationSec > 0) {
+              String.format("%02d:%02d", durationSec / 60, durationSec % 60)
+            } else null
+            val isMissedOrDeclined = statusParam == "MISSED" || statusParam == "DECLINED" ||
+              msg.text.contains("Missed", ignoreCase = true) || msg.text.contains("Declined", ignoreCase = true)
+            val dynamicCallTimestamp = rememberMessageTimestamp(msg.createdAtIso, msg.timestamp)
+
+            Column(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalAlignment = if (isMe) Alignment.End else Alignment.Start
+            ) {
+              Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(
+                  1.dp,
+                  if (isMissedOrDeclined) VybeDanger.copy(alpha = 0.45f) else VybeBrandCyan.copy(alpha = 0.4f)
+                ),
+                modifier = Modifier
+                  .widthIn(min = 220.dp, max = 300.dp)
+                  .testTag("chat_call_log_${msg.id}")
+              ) {
+                Row(
+                  modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Box(
+                    modifier = Modifier
+                      .size(38.dp)
+                      .clip(CircleShape)
+                      .background(
+                        if (isMissedOrDeclined) VybeDanger.copy(alpha = 0.16f)
+                        else VybeViolet.copy(alpha = 0.18f)
+                      ),
+                    contentAlignment = Alignment.Center
+                  ) {
+                    Icon(
+                      imageVector = if (isVideoCallLog) Icons.Default.Videocam else Icons.Default.Call,
+                      contentDescription = if (isVideoCallLog) "Video call" else "Voice call",
+                      tint = if (isMissedOrDeclined) VybeDanger else VybeBrandCyan,
+                      modifier = Modifier.size(20.dp)
+                    )
+                  }
+                  Spacer(modifier = Modifier.width(10.dp))
+                  Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                      text = msg.text.ifBlank { if (isVideoCallLog) "Video call" else "Voice call" },
+                      fontWeight = FontWeight.Bold,
+                      fontSize = 13.sp,
+                      color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                      text = buildString {
+                        if (formattedDuration != null) {
+                          append("Duration $formattedDuration • ")
+                        }
+                        append(dynamicCallTimestamp)
+                      },
+                      fontSize = 11.sp,
+                      color = if (isMissedOrDeclined) VybeDanger else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                  }
+                  if (!conv.isGroup) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    TextButton(
+                      onClick = { viewModel.initiateCall(conv.peerUser, isVideo = isVideoCallLog) },
+                      contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                      modifier = Modifier.testTag("call_back_${msg.id}")
+                    ) {
+                      Text(
+                        text = "Call",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = VybeBrandCyan
+                      )
+                    }
+                  }
+                }
+              }
+            }
+          } else {
           Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = if (isMe) Alignment.End else Alignment.Start
@@ -773,6 +861,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                 }
               }
             }
+          }
           }
         }
       }
@@ -1043,7 +1132,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
   // Shared Media Gallery Dialog
   if (showGalleryDialog) {
     val mediaMessages = remember(conv.messages) {
-      conv.messages.filter { !it.mediaUrl.isNullOrEmpty() && !it.isDeletedForEveryone }
+      conv.messages.filter { !it.mediaUrl.isNullOrEmpty() && it.mediaType != "CALL_LOG" && !it.isDeletedForEveryone }
     }
     AlertDialog(
       onDismissRequest = { showGalleryDialog = false },

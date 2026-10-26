@@ -171,7 +171,44 @@ export interface ActiveCallSession {
   isCameraOff: boolean;
   isPeerMuted: boolean;
   isPeerCameraOff: boolean;
+  remoteFrameDataUrl?: string | null;
   statusText: string;
+}
+
+export interface LiveStreamSession {
+  id: string;
+  host: VybeUser;
+  title: string;
+  category: string;
+  isLive: boolean;
+  viewerCount: number;
+  latestFrameBase64?: string | null;
+  startedAtIso: string | null;
+}
+
+export interface LiveStreamComment {
+  id: string;
+  streamId: string;
+  authorId: string;
+  authorName: string;
+  content: string;
+  createdAtIso: string | null;
+}
+
+export interface AudiencePollOption {
+  id: string;
+  text: string;
+  votesCount: number;
+}
+
+export interface AudiencePoll {
+  id: string;
+  creator: VybeUser;
+  question: string;
+  category: string;
+  options: AudiencePollOption[];
+  votedOptionId: string | null;
+  createdAtIso: string | null;
 }
 
 export interface VybeNotificationItem {

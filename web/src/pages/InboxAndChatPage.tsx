@@ -394,7 +394,11 @@ export const InboxAndChatPage: React.FC<{
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }}>
-                        {lastMsg ? lastMsg.text || 'Media attachment' : 'No messages yet'}
+                        {lastMsg
+                          ? lastMsg.mediaType === 'CALL_LOG'
+                            ? `📞 ${lastMsg.text || 'Call'}`
+                            : lastMsg.text || 'Media attachment'
+                          : 'No messages yet'}
                       </span>
                       {conv.unreadCount > 0 && (
                         <span
@@ -491,6 +495,95 @@ export const InboxAndChatPage: React.FC<{
             ) : (
               activeConversation.messages.map((msg) => {
                 const isMe = msg.senderId === currentUser.id;
+
+                if (msg.mediaType === 'CALL_LOG' && !msg.isDeletedForEveryone) {
+                  const meta = msg.mediaUrl || '';
+                  const isVideoLog = /type=video/i.test(meta) || /video call/i.test(msg.text);
+                  const statusMatch = meta.match(/status=([^&]+)/i);
+                  const durMatch = meta.match(/duration=(\d+)/i);
+                  const durSecs = durMatch ? Number(durMatch[1]) : 0;
+                  const formattedDur =
+                    durSecs > 0
+                      ? `${String(Math.floor(durSecs / 60)).padStart(2, '0')}:${String(durSecs % 60).padStart(2, '0')}`
+                      : null;
+                  const statusStr = (statusMatch?.[1] || '').toUpperCase();
+                  const isMissed =
+                    statusStr === 'MISSED' ||
+                    statusStr === 'DECLINED' ||
+                    /missed|declined/i.test(msg.text);
+
+                  return (
+                    <div
+                      key={msg.id}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: isMe ? 'flex-end' : 'flex-start',
+                        width: '100%'
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          padding: '10px 14px',
+                          borderRadius: 'var(--radius-md)',
+                          background: 'var(--bg-elevated)',
+                          border: isMissed
+                            ? '1px solid rgba(255, 77, 109, 0.45)'
+                            : '1px solid rgba(0, 229, 255, 0.35)',
+                          minWidth: '230px',
+                          maxWidth: '320px'
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: 36,
+                            height: 36,
+                            borderRadius: '50%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            background: isMissed
+                              ? 'rgba(255, 77, 109, 0.16)'
+                              : 'rgba(124, 77, 255, 0.18)'
+                          }}
+                        >
+                          {isVideoLog ? (
+                            <Video size={18} color={isMissed ? '#FF4D6D' : 'var(--vybe-cyan)'} />
+                          ) : (
+                            <Phone size={18} color={isMissed ? '#FF4D6D' : 'var(--vybe-cyan)'} />
+                          )}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
+                            {msg.text || (isVideoLog ? 'Video call' : 'Voice call')}
+                          </div>
+                          <div style={{ fontSize: '0.74rem', color: isMissed ? '#FF4D6D' : 'var(--text-muted)' }}>
+                            {formattedDur ? `Duration ${formattedDur} • ` : ''}
+                            {formatMessageTimestamp(msg.createdAtIso)}
+                          </div>
+                        </div>
+                        {!activeConversation.isGroup && (
+                          <button
+                            type="button"
+                            className="vybe-btn"
+                            onClick={() => onStartCall(activeConversation.peerUser, isVideoLog)}
+                            style={{
+                              padding: '6px 10px',
+                              fontSize: '0.75rem',
+                              background: 'rgba(0, 229, 255, 0.14)',
+                              color: 'var(--vybe-cyan)'
+                            }}
+                          >
+                            Call
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
 
                 return (
                   <div

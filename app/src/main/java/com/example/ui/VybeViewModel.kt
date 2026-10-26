@@ -111,6 +111,9 @@ class VybeViewModel : ViewModel() {
   val doubleTakePrompts = repository.doubleTakePrompts
   val predictions = repository.predictions
   val shops = repository.shops
+  val liveStreams = repository.liveStreams
+  val activeLiveStream = repository.activeLiveStream
+  val liveStreamComments = repository.liveStreamComments
   val conversations = repository.conversations
   val activeCall = repository.activeCall
   val creatorStats = repository.creatorStats
@@ -155,6 +158,20 @@ class VybeViewModel : ViewModel() {
           }
           if (updated != null) {
             _selectedConversation.value = updated
+          }
+        }
+      }
+    }
+
+    viewModelScope.launch {
+      var hadActiveCall = false
+      repository.activeCall.collect { call ->
+        if (call != null) {
+          hadActiveCall = true
+        } else if (hadActiveCall) {
+          hadActiveCall = false
+          if (_currentScreen.value == Screen.CALL_SCREEN) {
+            navigateBack()
           }
         }
       }
@@ -818,6 +835,30 @@ class VybeViewModel : ViewModel() {
   fun updateUnloadRoom(roomId: String, title: String, description: String, topicTag: String, mode: UnloadRoomMode, durationMinutes: Int, capacity: Int) =
     repository.updateUnloadRoom(roomId, title, description, topicTag, mode, durationMinutes, capacity)
   fun deleteUnloadRoom(roomId: String) = repository.deleteUnloadRoom(roomId)
+
+  // --- Live Zone Broadcast & Viewing ---
+  fun openGoLiveStudio() {
+    navigateTo(Screen.LIVE_STUDIO)
+  }
+  fun startLiveBroadcast(title: String, category: String) {
+    repository.startLiveBroadcast(title, category)
+    if (_currentScreen.value != Screen.LIVE_STUDIO) {
+      navigateTo(Screen.LIVE_STUDIO)
+    }
+  }
+  fun joinLiveBroadcast(stream: LiveStreamSession) {
+    repository.joinLiveBroadcast(stream)
+    navigateTo(Screen.LIVE_STUDIO)
+  }
+  fun leaveOrEndLiveBroadcast() {
+    repository.leaveOrEndLiveBroadcast()
+    if (_currentScreen.value == Screen.LIVE_STUDIO) {
+      navigateBack()
+    }
+  }
+  fun sendLiveBroadcastComment(content: String) = repository.sendLiveBroadcastComment(content)
+  fun pushLiveBroadcastFrame(jpegBytes: ByteArray) = repository.pushLiveBroadcastFrame(jpegBytes)
+
   fun createUnfilteredPost(caption: String, imageUrl: String) = repository.createUnfilteredPost(caption, imageUrl)
   fun addUnfilteredComment(postId: String, text: String) = repository.addUnfilteredComment(postId, text)
   fun submitDoubleTakeAnswer(promptId: String, answer: String) = repository.submitDoubleTakeAnswer(promptId, answer)

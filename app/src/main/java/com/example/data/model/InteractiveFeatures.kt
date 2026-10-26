@@ -47,7 +47,31 @@ data class SocialPrediction(
   val resolvedOptionId: Int? = null,
   val isResolved: Boolean = false,
   val resolutionNotes: String = "",
-  val authorId: String = "u_me",
-  val authorUsername: String = "sid_verma",
+  val authorId: String = "",
+  val authorUsername: String = "vyber",
   val isDraft: Boolean = false
 )
+
+data class LiveStreamComment(
+  val id: String,
+  val streamId: String,
+  val authorId: String,
+  val authorName: String,
+  val content: String,
+  val timestamp: String = "Just now",
+  val createdAtIso: String? = null
+)
+
+data class LiveStreamSession(
+  val id: String,
+  val host: User,
+  val title: String,
+  val category: String = "Live Vibe",
+  val visibility: String = "PUBLIC",
+  val isLive: Boolean = true,
+  val viewerCount: Int = 1,
+  val thumbnailUrl: String? = null,
+  val latestFrameBase64: String? = null,
+  val startedAtIso: String? = null
+)
+

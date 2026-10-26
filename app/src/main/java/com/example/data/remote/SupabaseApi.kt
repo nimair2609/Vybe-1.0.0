@@ -247,7 +247,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("post_id") postIdFilter: String,
-    @Query("select") select: String = "*,profiles(*)",
+    @Query("select") select: String = "*,profiles:author_id(*)",
     @Query("order") order: String = "created_at.asc",
     @Query("limit") limit: Int = 100
   ): Response<List<SupabaseCommentDto>>
@@ -465,7 +465,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("expires_at") expiresAtFilter: String,
-    @Query("select") select: String = "*,profiles(*)",
+    @Query("select") select: String = "*,profiles:author_id(*)",
     @Query("order") order: String = "created_at.desc",
     @Query("limit") limit: Int = 80
   ): Response<List<SupabaseStoryDto>>
@@ -522,7 +522,7 @@ interface SupabaseRestApi {
   suspend fun getPosts(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
-    @Query("select") select: String = "*,post_media(*),profiles(*)",
+    @Query("select") select: String = "*,post_media(*),profiles:author_id(*)",
     @Query("order") order: String = "created_at.desc",
     @Query("offset") offset: Int = 0,
     @Query("limit") limit: Int = 60
@@ -533,7 +533,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("client_upload_id") clientUploadFilter: String,
-    @Query("select") select: String = "*,post_media(*),profiles(*)"
+    @Query("select") select: String = "*,post_media(*),profiles:author_id(*)"
   ): Response<List<SupabasePostDto>>
 
   @POST("posts")
@@ -596,7 +596,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("is_active") activeFilter: String = "eq.true",
-    @Query("select") select: String = "*,profiles(*)",
+    @Query("select") select: String = "*,profiles:host_id(*)",
     @Query("order") order: String = "created_at.desc",
     @Query("limit") limit: Int = 50
   ): Response<List<SupabaseRoomDto>>
@@ -606,7 +606,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("room_code") roomCodeFilter: String,
-    @Query("select") select: String = "*,profiles(*)"
+    @Query("select") select: String = "*,profiles:host_id(*)"
   ): Response<List<SupabaseRoomDto>>
 
   @GET("rooms")
@@ -614,7 +614,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("id") idFilter: String,
-    @Query("select") select: String = "*,profiles(*)"
+    @Query("select") select: String = "*,profiles:host_id(*)"
   ): Response<List<SupabaseRoomDto>>
 
   @POST("rooms")
@@ -677,7 +677,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("room_id") roomIdFilter: String,
-    @Query("select") select: String = "*,profiles(*)",
+    @Query("select") select: String = "*,profiles:sender_id(*)",
     @Query("order") order: String = "created_at.asc",
     @Query("limit") limit: Int = 80
   ): Response<List<SupabaseRoomMessageDto>>
@@ -745,7 +745,274 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("call_id") callIdFilter: String,
+    @Query("created_at") createdAtFilter: String? = null,
+    @Query("order") order: String = "created_at.desc",
+    @Query("limit") limit: Int = 30
+  ): Response<List<SupabaseCallSignalDto>>
+
+  @DELETE("call_signals")
+  suspend fun deleteCallSignalsBySender(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("call_id") callIdFilter: String,
+    @Query("sender_id") senderIdFilter: String,
+    @Query("signal_type") signalTypeFilter: String = "eq.VIDEO_FRAME"
+  ): Response<Unit>
+
+  // --- LIVE ZONE (`live_streams` & `live_stream_comments`) ---
+  @GET("live_streams")
+  suspend fun getActiveLiveStreams(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("is_live") isLiveFilter: String = "eq.true",
+    @Query("select") select: String = "*,profiles:host_id(*)",
+    @Query("order") order: String = "started_at.desc",
+    @Query("limit") limit: Int = 30
+  ): Response<List<SupabaseLiveStreamDto>>
+
+  @GET("live_streams")
+  suspend fun getLiveStreamById(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("id") idFilter: String,
+    @Query("select") select: String = "*,profiles:host_id(*)"
+  ): Response<List<SupabaseLiveStreamDto>>
+
+  @POST("live_streams")
+  suspend fun insertLiveStream(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body stream: SupabaseLiveStreamInsertDto
+  ): Response<List<SupabaseLiveStreamDto>>
+
+  @POST("live_streams")
+  suspend fun insertLiveStreamLegacy(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body stream: SupabaseLiveStreamLegacyInsertDto
+  ): Response<List<SupabaseLiveStreamDto>>
+
+  @PATCH("live_streams")
+  suspend fun patchLiveStream(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("id") idFilter: String,
+    @Body patch: SupabaseLiveStreamPatchDto
+  ): Response<Unit>
+
+  @GET("live_stream_comments")
+  suspend fun getLiveStreamComments(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("stream_id") streamIdFilter: String,
     @Query("order") order: String = "created_at.asc",
     @Query("limit") limit: Int = 100
-  ): Response<List<SupabaseCallSignalDto>>
+  ): Response<List<SupabaseLiveStreamCommentDto>>
+
+  @POST("live_stream_comments")
+  suspend fun insertLiveStreamComment(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body comment: SupabaseLiveStreamCommentInsertDto
+  ): Response<List<SupabaseLiveStreamCommentDto>>
+
+  // --- EXPLORE ZONE: AUDIENCE POLLS ("WHAT NEXT") ---
+  @GET("audience_pools")
+  suspend fun getAudiencePools(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("select") select: String = "*,audience_pool_options(*),profiles:creator_id(*)",
+    @Query("order") order: String = "created_at.desc",
+    @Query("limit") limit: Int = 40
+  ): Response<List<SupabaseAudiencePoolDto>>
+
+  @POST("audience_pools")
+  suspend fun insertAudiencePool(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body pool: SupabaseAudiencePoolInsertDto
+  ): Response<List<SupabaseAudiencePoolDto>>
+
+  @DELETE("audience_pools")
+  suspend fun deleteAudiencePool(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("id") idFilter: String
+  ): Response<Unit>
+
+  @POST("audience_pool_options")
+  suspend fun insertAudiencePoolOptions(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body options: List<SupabaseAudiencePoolOptionInsertDto>
+  ): Response<List<SupabaseAudiencePoolOptionDto>>
+
+  @GET("audience_pool_votes")
+  suspend fun getMyAudiencePoolVotes(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("user_id") userIdFilter: String
+  ): Response<List<SupabaseAudiencePoolVoteDto>>
+
+  @POST("audience_pool_votes")
+  suspend fun upsertAudiencePoolVote(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "resolution=merge-duplicates",
+    @Body vote: SupabaseAudiencePoolVoteDto
+  ): Response<Unit>
+
+  // --- EXPLORE ZONE: DOUBLE TAKE ---
+  @GET("double_takes")
+  suspend fun getDoubleTakes(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("select") select: String = "*,double_take_answers(*,profiles:user_id(*))",
+    @Query("order") order: String = "created_at.desc",
+    @Query("limit") limit: Int = 40
+  ): Response<List<SupabaseDoubleTakeDto>>
+
+  @POST("double_takes")
+  suspend fun insertDoubleTake(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body body: SupabaseDoubleTakeInsertDto
+  ): Response<List<SupabaseDoubleTakeDto>>
+
+  @POST("double_takes")
+  suspend fun insertDoubleTakeLegacy(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body body: SupabaseDoubleTakeLegacyInsertDto
+  ): Response<List<SupabaseDoubleTakeDto>>
+
+  @PATCH("double_takes")
+  suspend fun patchDoubleTake(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("id") idFilter: String,
+    @Body patch: SupabaseDoubleTakePatchDto
+  ): Response<Unit>
+
+  @DELETE("double_takes")
+  suspend fun deleteDoubleTake(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("id") idFilter: String
+  ): Response<Unit>
+
+  @POST("double_take_answers")
+  suspend fun upsertDoubleTakeAnswer(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "resolution=merge-duplicates,return=representation",
+    @Body answer: SupabaseDoubleTakeAnswerInsertDto
+  ): Response<List<SupabaseDoubleTakeAnswerDto>>
+
+  @PATCH("double_take_answers")
+  suspend fun patchDoubleTakeAnswer(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("id") idFilter: String,
+    @Body patch: Map<String, Boolean>
+  ): Response<Unit>
+
+  // --- EXPLORE ZONE: TIME CAPSULES ---
+  @GET("time_capsules")
+  suspend fun getTimeCapsules(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("select") select: String = "*,profiles:creator_id(*)",
+    @Query("order") order: String = "created_at.desc",
+    @Query("limit") limit: Int = 40
+  ): Response<List<SupabaseTimeCapsuleDto>>
+
+  @POST("time_capsules")
+  suspend fun insertTimeCapsule(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body capsule: SupabaseTimeCapsuleInsertDto
+  ): Response<List<SupabaseTimeCapsuleDto>>
+
+  @PATCH("time_capsules")
+  suspend fun patchTimeCapsule(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("id") idFilter: String,
+    @Body patch: Map<String, Boolean>
+  ): Response<Unit>
+
+  // --- EXPLORE ZONE: CROSSED PATHS ---
+  @GET("crossed_paths")
+  suspend fun getCrossedPaths(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("select") select: String = "*,profiles:creator_id(*)",
+    @Query("order") order: String = "created_at.desc",
+    @Query("limit") limit: Int = 40
+  ): Response<List<SupabaseCrossedPathDto>>
+
+  @POST("crossed_paths")
+  suspend fun insertCrossedPath(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body encounter: SupabaseCrossedPathInsertDto
+  ): Response<List<SupabaseCrossedPathDto>>
+
+  @POST("crossed_paths")
+  suspend fun insertCrossedPathLegacy(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body encounter: SupabaseCrossedPathLegacyInsertDto
+  ): Response<List<SupabaseCrossedPathDto>>
+
+  @GET("crossed_path_requests")
+  suspend fun getMyCrossedPathRequests(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("sender_id") senderIdFilter: String
+  ): Response<List<SupabaseCrossedPathRequestDto>>
+
+  @POST("crossed_path_requests")
+  suspend fun insertCrossedPathRequest(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Body request: SupabaseCrossedPathRequestDto
+  ): Response<Unit>
+
+  // --- EXPLORE ZONE: VERIFIED SHOPS & REVIEWS ---
+  @GET("business_profiles")
+  suspend fun getBusinessProfiles(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("select") select: String = "*,business_reviews(*,profiles:author_id(*))",
+    @Query("order") order: String = "created_at.desc",
+    @Query("limit") limit: Int = 40
+  ): Response<List<SupabaseBusinessProfileDto>>
+
+  @POST("business_profiles")
+  suspend fun insertBusinessProfile(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body profile: SupabaseBusinessProfileInsertDto
+  ): Response<List<SupabaseBusinessProfileDto>>
+
+  @POST("business_reviews")
+  suspend fun insertBusinessReview(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body review: SupabaseBusinessReviewInsertDto
+  ): Response<List<SupabaseBusinessReviewDto>>
 }

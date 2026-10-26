@@ -103,10 +103,17 @@ object SupabaseRoomsAndCallsRemote {
   ): Result<List<UnloadRoom>> = withContext(Dispatchers.IO) {
     if (!SupabaseConfig.isConfigured()) return@withContext Result.success(emptyList())
     try {
-      val resp = SupabaseNetworkClient.restApi.getRooms(
+      var resp = SupabaseNetworkClient.restApi.getRooms(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader
       )
+      if (!resp.isSuccessful) {
+        resp = SupabaseNetworkClient.restApi.getRooms(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          select = "*"
+        )
+      }
       if (!resp.isSuccessful || resp.body() == null) {
         return@withContext Result.failure(Exception("Unable to fetch rooms (${resp.code()})."))
       }
@@ -389,11 +396,19 @@ object SupabaseRoomsAndCallsRemote {
       return@withContext emptyList()
     }
     try {
-      val resp = SupabaseNetworkClient.restApi.getRoomMessages(
+      var resp = SupabaseNetworkClient.restApi.getRoomMessages(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
         roomIdFilter = "eq.$roomId"
       )
+      if (!resp.isSuccessful) {
+        resp = SupabaseNetworkClient.restApi.getRoomMessages(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          roomIdFilter = "eq.$roomId",
+          select = "*"
+        )
+      }
       if (resp.isSuccessful && resp.body() != null) {
         return@withContext resp.body()!!.map { m ->
           val anon = m.isAnonymous == true

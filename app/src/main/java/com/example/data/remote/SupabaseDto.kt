@@ -281,7 +281,8 @@ data class SupabaseStoryDto(
   val id: String? = null,
   @Json(name = "author_id") val authorId: String,
   @Json(name = "media_url") val mediaUrl: String,
-  @Json(name = "media_type") val mediaType: String = "PHOTO",
+  @Json(name = "media_type") val mediaType: String? = null,
+  @Json(name = "story_type") val storyType: String? = null,
   val caption: String? = "",
   val audience: String? = "EVERYONE",
   @Json(name = "music_title") val musicTitle: String? = null,
@@ -292,12 +293,16 @@ data class SupabaseStoryDto(
   @Json(name = "expires_at") val expiresAt: String? = null,
   @Json(name = "created_at") val createdAt: String? = null,
   val profiles: SupabaseProfileDto? = null
-)
+) {
+  val resolvedMediaType: String
+    get() = (mediaType ?: storyType ?: "PHOTO").uppercase()
+}
 
 data class SupabaseStoryInsertDto(
   @Json(name = "author_id") val authorId: String,
   @Json(name = "media_url") val mediaUrl: String,
   @Json(name = "media_type") val mediaType: String = "PHOTO",
+  @Json(name = "story_type") val storyType: String = mediaType,
   val caption: String? = "",
   val audience: String? = "EVERYONE",
   @Json(name = "music_title") val musicTitle: String? = null,
@@ -311,7 +316,7 @@ data class SupabaseStoryInsertDto(
 data class SupabaseStoryLegacyInsertDto(
   @Json(name = "author_id") val authorId: String,
   @Json(name = "media_url") val mediaUrl: String,
-  @Json(name = "media_type") val mediaType: String = "PHOTO",
+  @Json(name = "story_type") val storyType: String = "PHOTO",
   val caption: String? = "",
   @Json(name = "expires_at") val expiresAt: String
 )
@@ -561,4 +566,272 @@ data class SupabaseResolvedIdentifierDto(
 
 data class SupabaseRpcCheckUsernameRequest(
   @Json(name = "p_username") val username: String
+)
+
+// --- LIVE ZONE DTOs ---
+data class SupabaseLiveStreamDto(
+  val id: String,
+  @Json(name = "host_id") val hostId: String,
+  val title: String,
+  val category: String? = "Live Vibe",
+  val visibility: String? = "PUBLIC",
+  @Json(name = "is_live") val isLive: Boolean = true,
+  @Json(name = "viewer_count") val viewerCount: Int = 1,
+  @Json(name = "thumbnail_url") val thumbnailUrl: String? = null,
+  @Json(name = "latest_frame_base64") val latestFrameBase64: String? = null,
+  @Json(name = "started_at") val startedAt: String? = null,
+  @Json(name = "ended_at") val endedAt: String? = null,
+  @Json(name = "last_heartbeat_at") val lastHeartbeatAt: String? = null,
+  val profiles: SupabaseProfileDto? = null
+)
+
+data class SupabaseLiveStreamInsertDto(
+  @Json(name = "host_id") val hostId: String,
+  val title: String,
+  val category: String = "Live Vibe",
+  val visibility: String = "PUBLIC",
+  @Json(name = "is_live") val isLive: Boolean = true,
+  @Json(name = "viewer_count") val viewerCount: Int = 1
+)
+
+data class SupabaseLiveStreamLegacyInsertDto(
+  @Json(name = "host_id") val hostId: String,
+  val title: String,
+  val visibility: String = "PUBLIC",
+  @Json(name = "is_live") val isLive: Boolean = true,
+  @Json(name = "viewer_count") val viewerCount: Int = 1
+)
+
+data class SupabaseLiveStreamPatchDto(
+  @Json(name = "is_live") val isLive: Boolean? = null,
+  @Json(name = "viewer_count") val viewerCount: Int? = null,
+  @Json(name = "latest_frame_base64") val latestFrameBase64: String? = null,
+  @Json(name = "last_heartbeat_at") val lastHeartbeatAt: String? = null,
+  @Json(name = "ended_at") val endedAt: String? = null
+)
+
+data class SupabaseLiveStreamCommentDto(
+  val id: String? = null,
+  @Json(name = "stream_id") val streamId: String,
+  @Json(name = "author_id") val authorId: String,
+  @Json(name = "author_name") val authorName: String? = null,
+  val content: String,
+  @Json(name = "created_at") val createdAt: String? = null
+)
+
+data class SupabaseLiveStreamCommentInsertDto(
+  @Json(name = "stream_id") val streamId: String,
+  @Json(name = "author_id") val authorId: String,
+  @Json(name = "author_name") val authorName: String,
+  val content: String
+)
+
+// --- EXPLORE ZONE DTOs ---
+data class SupabaseAudiencePoolOptionDto(
+  val id: Int? = null,
+  @Json(name = "pool_id") val poolId: String,
+  @Json(name = "option_text") val optionText: String,
+  @Json(name = "votes_count") val votesCount: Int = 0
+)
+
+data class SupabaseAudiencePoolOptionInsertDto(
+  @Json(name = "pool_id") val poolId: String,
+  @Json(name = "option_text") val optionText: String,
+  @Json(name = "votes_count") val votesCount: Int = 0
+)
+
+data class SupabaseAudiencePoolDto(
+  val id: String,
+  @Json(name = "creator_id") val creatorId: String,
+  val title: String,
+  val category: String? = "Community",
+  @Json(name = "closes_at") val closesAt: String? = null,
+  @Json(name = "total_votes") val totalVotes: Int = 0,
+  @Json(name = "created_at") val createdAt: String? = null,
+  @Json(name = "audience_pool_options") val options: List<SupabaseAudiencePoolOptionDto>? = null,
+  val profiles: SupabaseProfileDto? = null
+)
+
+data class SupabaseAudiencePoolInsertDto(
+  @Json(name = "creator_id") val creatorId: String,
+  val title: String,
+  val category: String,
+  @Json(name = "closes_at") val closesAt: String
+)
+
+data class SupabaseAudiencePoolVoteDto(
+  @Json(name = "pool_id") val poolId: String,
+  @Json(name = "user_id") val userId: String,
+  @Json(name = "option_id") val optionId: Int
+)
+
+data class SupabaseDoubleTakeAnswerDto(
+  val id: String? = null,
+  @Json(name = "prompt_id") val promptId: String,
+  @Json(name = "user_id") val userId: String,
+  @Json(name = "answer_text") val answerText: String,
+  @Json(name = "is_connected") val isConnected: Boolean = false,
+  @Json(name = "created_at") val createdAt: String? = null,
+  val profiles: SupabaseProfileDto? = null
+)
+
+data class SupabaseDoubleTakeAnswerInsertDto(
+  @Json(name = "prompt_id") val promptId: String,
+  @Json(name = "user_id") val userId: String,
+  @Json(name = "answer_text") val answerText: String
+)
+
+data class SupabaseDoubleTakeDto(
+  val id: String,
+  @Json(name = "creator_id") val creatorId: String,
+  @Json(name = "partner_id") val partnerId: String? = null,
+  @Json(name = "prompt_question") val promptQuestion: String,
+  val category: String? = "Perspective",
+  @Json(name = "option_a") val optionA: String? = "Yes",
+  @Json(name = "option_b") val optionB: String? = "No",
+  @Json(name = "creator_answer") val creatorAnswer: String? = null,
+  @Json(name = "partner_answer") val partnerAnswer: String? = null,
+  @Json(name = "is_creator_submitted") val isCreatorSubmitted: Boolean = false,
+  @Json(name = "is_partner_submitted") val isPartnerSubmitted: Boolean = false,
+  @Json(name = "is_revealed") val isRevealed: Boolean = false,
+  @Json(name = "is_public") val isPublic: Boolean? = true,
+  @Json(name = "is_creator_accepted") val isCreatorAccepted: Boolean = false,
+  @Json(name = "is_chat_unlocked") val isChatUnlocked: Boolean = false,
+  @Json(name = "created_at") val createdAt: String? = null,
+  @Json(name = "double_take_answers") val publicAnswers: List<SupabaseDoubleTakeAnswerDto>? = null
+)
+
+data class SupabaseDoubleTakeInsertDto(
+  @Json(name = "creator_id") val creatorId: String,
+  @Json(name = "partner_id") val partnerId: String? = null,
+  @Json(name = "prompt_question") val promptQuestion: String,
+  val category: String,
+  @Json(name = "option_a") val optionA: String,
+  @Json(name = "option_b") val optionB: String,
+  @Json(name = "is_public") val isPublic: Boolean = true
+)
+
+data class SupabaseDoubleTakeLegacyInsertDto(
+  @Json(name = "creator_id") val creatorId: String,
+  @Json(name = "partner_id") val partnerId: String,
+  @Json(name = "prompt_question") val promptQuestion: String,
+  val category: String
+)
+
+data class SupabaseDoubleTakePatchDto(
+  @Json(name = "creator_answer") val creatorAnswer: String? = null,
+  @Json(name = "partner_answer") val partnerAnswer: String? = null,
+  @Json(name = "is_creator_submitted") val isCreatorSubmitted: Boolean? = null,
+  @Json(name = "is_partner_submitted") val isPartnerSubmitted: Boolean? = null,
+  @Json(name = "is_revealed") val isRevealed: Boolean? = null,
+  @Json(name = "is_creator_accepted") val isCreatorAccepted: Boolean? = null,
+  @Json(name = "is_chat_unlocked") val isChatUnlocked: Boolean? = null
+)
+
+data class SupabaseTimeCapsuleDto(
+  val id: String,
+  @Json(name = "creator_id") val creatorId: String,
+  val title: String,
+  @Json(name = "recipient_summary") val recipientSummary: String,
+  @Json(name = "sealed_message") val sealedMessage: String,
+  @Json(name = "media_url") val mediaUrl: String? = null,
+  @Json(name = "unlock_date") val unlockDate: String,
+  @Json(name = "is_unlocked") val isUnlocked: Boolean = false,
+  @Json(name = "created_at") val createdAt: String? = null,
+  val profiles: SupabaseProfileDto? = null
+)
+
+data class SupabaseTimeCapsuleInsertDto(
+  @Json(name = "creator_id") val creatorId: String,
+  val title: String,
+  @Json(name = "recipient_summary") val recipientSummary: String,
+  @Json(name = "sealed_message") val sealedMessage: String,
+  @Json(name = "unlock_date") val unlockDate: String,
+  @Json(name = "is_unlocked") val isUnlocked: Boolean = false
+)
+
+data class SupabaseCrossedPathDto(
+  val id: String,
+  @Json(name = "creator_id") val creatorId: String,
+  @Json(name = "neighborhood_or_venue") val neighborhoodOrVenue: String? = null,
+  val description: String,
+  @Json(name = "time_window") val timeWindow: String? = null,
+  @Json(name = "encounter_type") val encounterType: String? = "MISSED_CONNECTION",
+  val title: String? = null,
+  @Json(name = "broad_location") val broadLocation: String? = null,
+  @Json(name = "venue_name") val venueName: String? = null,
+  @Json(name = "photo_url") val photoUrl: String? = null,
+  @Json(name = "expires_at") val expiresAt: String? = null,
+  @Json(name = "created_at") val createdAt: String? = null,
+  val profiles: SupabaseProfileDto? = null
+)
+
+data class SupabaseCrossedPathInsertDto(
+  @Json(name = "creator_id") val creatorId: String,
+  @Json(name = "neighborhood_or_venue") val neighborhoodOrVenue: String,
+  val description: String,
+  @Json(name = "time_window") val timeWindow: String = "Today",
+  @Json(name = "encounter_type") val encounterType: String = "MISSED_CONNECTION",
+  val title: String? = null,
+  @Json(name = "broad_location") val broadLocation: String? = null,
+  @Json(name = "venue_name") val venueName: String? = null,
+  @Json(name = "photo_url") val photoUrl: String? = null
+)
+
+data class SupabaseCrossedPathLegacyInsertDto(
+  @Json(name = "creator_id") val creatorId: String,
+  @Json(name = "neighborhood_or_venue") val neighborhoodOrVenue: String,
+  val description: String,
+  @Json(name = "time_window") val timeWindow: String = "Today",
+  @Json(name = "photo_url") val photoUrl: String? = null
+)
+
+data class SupabaseCrossedPathRequestDto(
+  val id: String? = null,
+  @Json(name = "encounter_id") val encounterId: String,
+  @Json(name = "sender_id") val senderId: String,
+  val status: String = "PENDING"
+)
+
+data class SupabaseBusinessReviewDto(
+  val id: String? = null,
+  @Json(name = "business_id") val businessId: String,
+  @Json(name = "author_id") val authorId: String,
+  val rating: Int,
+  @Json(name = "review_text") val reviewText: String,
+  @Json(name = "created_at") val createdAt: String? = null,
+  val profiles: SupabaseProfileDto? = null
+)
+
+data class SupabaseBusinessReviewInsertDto(
+  @Json(name = "business_id") val businessId: String,
+  @Json(name = "author_id") val authorId: String,
+  val rating: Int,
+  @Json(name = "review_text") val reviewText: String
+)
+
+data class SupabaseBusinessProfileDto(
+  val id: String,
+  @Json(name = "owner_id") val ownerId: String,
+  @Json(name = "business_name") val businessName: String,
+  val category: String,
+  @Json(name = "gstin_or_registration_number") val gstNumber: String? = null,
+  val description: String? = null,
+  @Json(name = "logo_url") val logoUrl: String? = null,
+  @Json(name = "cover_image_url") val coverImageUrl: String? = null,
+  val city: String? = null,
+  @Json(name = "full_address") val fullAddress: String? = null,
+  @Json(name = "verification_status") val verificationStatus: String? = "PENDING",
+  @Json(name = "created_at") val createdAt: String? = null,
+  @Json(name = "business_reviews") val reviews: List<SupabaseBusinessReviewDto>? = null
+)
+
+data class SupabaseBusinessProfileInsertDto(
+  @Json(name = "owner_id") val ownerId: String,
+  @Json(name = "business_name") val businessName: String,
+  val category: String,
+  @Json(name = "gstin_or_registration_number") val gstNumber: String,
+  val description: String,
+  val city: String,
+  @Json(name = "full_address") val fullAddress: String
 )

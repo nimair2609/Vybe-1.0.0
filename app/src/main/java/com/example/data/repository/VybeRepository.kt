@@ -5,6 +5,7 @@ import android.util.Log
 import com.example.data.local.VybeLocalStore
 import com.example.data.model.*
 import com.example.data.remote.SupabaseConfig
+import com.example.data.remote.SupabaseExploreAndLiveRemote
 import com.example.data.remote.SupabaseRepository
 import com.example.data.remote.SupabaseRoomsAndCallsRemote
 import com.example.data.session.SessionManager
@@ -96,6 +97,9 @@ class VybeRepository private constructor() {
   private var callEngine: VybeCallEngine? = null
   private var presenceLoopJob: Job? = null
   private var callSignalingPollJob: Job? = null
+  private var callDurationJob: Job? = null
+  private var liveStreamSyncJob: Job? = null
+  private val loggedCallIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
   private val feedPageSize = 30
 
@@ -230,6 +234,15 @@ class VybeRepository private constructor() {
   private val _shops = MutableStateFlow<List<VybeShop>>(emptyList())
   val shops: StateFlow<List<VybeShop>> = _shops.asStateFlow()
 
+  private val _liveStreams = MutableStateFlow<List<LiveStreamSession>>(emptyList())
+  val liveStreams: StateFlow<List<LiveStreamSession>> = _liveStreams.asStateFlow()
+
+  private val _activeLiveStream = MutableStateFlow<LiveStreamSession?>(null)
+  val activeLiveStream: StateFlow<LiveStreamSession?> = _activeLiveStream.asStateFlow()
+
+  private val _liveStreamComments = MutableStateFlow<List<LiveStreamComment>>(emptyList())
+  val liveStreamComments: StateFlow<List<LiveStreamComment>> = _liveStreamComments.asStateFlow()
+
   private val _activeCall = MutableStateFlow<CallSession?>(null)
   val activeCall: StateFlow<CallSession?> = _activeCall.asStateFlow()
 
@@ -276,35 +289,20 @@ class VybeRepository private constructor() {
   }
 
   private fun seedPreservedFeatureSpaces() {
-    // Only non-user-impersonating community spaces & reflections (zero fake users, zero fake chats, zero fake notifications, zero fake stories)
+    // Zero sample/mock rooms, users, posts, stories, polls, or streams
     _stories.value = emptyList()
     _posts.value = emptyList()
+    _unfilteredPosts.value = emptyList()
     _conversations.value = emptyList()
     _notifications.value = emptyList()
     _vybeMatches.value = emptyList()
-
-    _unloadRooms.value = listOf(
-      UnloadRoom(
-        id = "ul_1",
-        roomCode = "VYB-LOFI-2401",
-        title = "Late Night Overthinking & Lo-Fi Space",
-        description = "A calm listening room for quiet reflection. Text and voice available.",
-        topicTag = "Late Night Reflection",
-        mode = UnloadRoomMode.VOICE_AND_TEXT,
-        activeListenersCount = 0,
-        isHostOnline = true
-      ),
-      UnloadRoom(
-        id = "ul_2",
-        roomCode = "VYB-CALM-2402",
-        title = "Work Burnout & Reset",
-        description = "Share openly about demanding schedules and workplace balance.",
-        topicTag = "Work Balance",
-        mode = UnloadRoomMode.TEXT_ONLY,
-        activeListenersCount = 0,
-        isHostOnline = true
-      )
-    )
+    _unloadRooms.value = emptyList()
+    _liveStreams.value = emptyList()
+    _predictions.value = emptyList()
+    _doubleTakePrompts.value = emptyList()
+    _timeCapsules.value = emptyList()
+    _crossedPaths.value = emptyList()
+    _shops.value = emptyList()
 
     _spiritualReflections.value = listOf(
       SpiritualReflection(
@@ -485,8 +483,9 @@ class VybeRepository private constructor() {
       // 6. Sync Stories & Viewed State (public stories visible even to newly created users)
       syncStoriesFromSupabase(myId, validToken)
 
-      // 7. Sync Persistent Live Rooms
+      // 7. Sync Persistent Live Rooms, Live Zone & Explore Zone across all users
       syncRoomsFromSupabase(validToken)
+      syncExploreAndLiveFromSupabase(validToken)
 
       // 8. Sync Conversations & Notifications for authenticated user
       if (myId.isNotBlank() && validToken.isNotBlank()) {
@@ -497,7 +496,7 @@ class VybeRepository private constructor() {
           accessToken = validToken
         )
         if (convRes.isSuccess) {
-          val remoteConvs = convRes.getOrThrow()
+          val remoteConvs = dedupeConversationCallLogs(convRes.getOrThrow())
           _conversations.value = remoteConvs
           VybeLocalStore.get()?.saveConversations(remoteConvs)
         }
@@ -688,21 +687,52 @@ class VybeRepository private constructor() {
   suspend fun syncRoomsFromSupabase(explicitToken: String? = null) {
     if (!supabaseRepo.isConfigured) return
     val token = explicitToken ?: supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+    val authHeader = SupabaseConfig.buildAuthHeader(token)
     val myId = _currentUser.value?.id.orEmpty()
-    val res = SupabaseRoomsAndCallsRemote.fetchActiveRooms(myId, token)
+    val res = SupabaseRoomsAndCallsRemote.fetchActiveRooms(myId, authHeader)
     if (res.isSuccess) {
       val remoteRooms = res.getOrThrow()
-      if (remoteRooms.isNotEmpty()) {
-        val localFallbacks = _unloadRooms.value.filter { it.id.startsWith("ul_") }
-        val merged = (remoteRooms + localFallbacks).distinctBy { it.roomCode.ifBlank { it.id } }
-        _unloadRooms.value = merged
-        val active = _activeUnloadRoom.value
-        if (active != null) {
-          merged.firstOrNull { it.id == active.id || (it.roomCode.isNotBlank() && it.roomCode == active.roomCode) }?.let {
-            _activeUnloadRoom.value = it
-          }
-        }
+      val inFlightLocal = _unloadRooms.value.filter {
+        it.id.startsWith("room_") && remoteRooms.none { r -> r.roomCode.equals(it.roomCode, ignoreCase = true) }
       }
+      val merged = (remoteRooms + inFlightLocal).distinctBy { it.roomCode.ifBlank { it.id } }
+      _unloadRooms.value = merged
+      val active = _activeUnloadRoom.value
+      if (active != null) {
+        val refreshed = merged.firstOrNull { it.id == active.id || (it.roomCode.isNotBlank() && it.roomCode == active.roomCode) }
+        _activeUnloadRoom.value = refreshed
+      }
+    }
+  }
+
+  suspend fun syncExploreAndLiveFromSupabase(explicitToken: String? = null) {
+    if (!supabaseRepo.isConfigured) return
+    val token = explicitToken ?: supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+    val authHeader = SupabaseConfig.buildAuthHeader(token)
+    val myId = _currentUser.value?.id.orEmpty()
+    val usersMap = _allUsers.value.associateBy { it.id }
+
+    val streams = SupabaseExploreAndLiveRemote.fetchActiveLiveStreams(usersMap, authHeader)
+    _liveStreams.value = streams
+    val curStream = _activeLiveStream.value
+    if (curStream != null && !curStream.id.startsWith("local_")) {
+      streams.firstOrNull { it.id == curStream.id }?.let { _activeLiveStream.value = it }
+    }
+
+    SupabaseExploreAndLiveRemote.fetchAudiencePools(myId, usersMap, authHeader)?.let {
+      _predictions.value = it
+    }
+    SupabaseExploreAndLiveRemote.fetchDoubleTakes(myId, usersMap, authHeader)?.let {
+      _doubleTakePrompts.value = it
+    }
+    SupabaseExploreAndLiveRemote.fetchTimeCapsules(usersMap, authHeader)?.let {
+      _timeCapsules.value = it
+    }
+    SupabaseExploreAndLiveRemote.fetchCrossedPaths(myId, usersMap, authHeader)?.let {
+      _crossedPaths.value = it
+    }
+    SupabaseExploreAndLiveRemote.fetchBusinessShops(usersMap, authHeader)?.let {
+      _shops.value = it
     }
   }
 
@@ -2235,9 +2265,9 @@ class VybeRepository private constructor() {
             }
           }
 
-          // Upload local chat media if present
+          // Upload local chat media if present (skipping http(s) URLs and vybe:// call-log metadata URIs)
           var resolvedMediaUrl = mediaUrl
-          if (ctx != null && !mediaUrl.isNullOrBlank() && !mediaUrl.startsWith("http", true)) {
+          if (ctx != null && !mediaUrl.isNullOrBlank() && !mediaUrl.startsWith("http", true) && !mediaUrl.startsWith("vybe://", true)) {
             val payload = MediaUtils.readMediaPayload(ctx, mediaUrl)
             if (payload != null) {
               val uploadRes = supabaseRepo.uploadMediaWithProgress(
@@ -2874,17 +2904,33 @@ class VybeRepository private constructor() {
   fun logout() {
     presenceLoopJob?.cancel()
     callSignalingPollJob?.cancel()
+    stopCallDurationTimer()
+    liveStreamSyncJob?.cancel()
     callEngine?.stopSession()
     callEngine = null
     _activeCall.value = null
+    _activeLiveStream.value = null
+    _liveStreamComments.value = emptyList()
     val token = SessionManager.get()?.accessToken.orEmpty()
     ioScope.launch {
       supabaseRepo.signOut(token)
     }
     SessionManager.get()?.clearSession()
     VybeLocalStore.get()?.clearUserScopedCaches()
+    viewedStoryIdsLocal = emptySet()
+    vybeMatchIdsCache = emptySet()
     _currentUser.value = null
     _isLoggedIn.value = false
+    _posts.value = emptyList()
+    _stories.value = emptyList()
+    _unfilteredPosts.value = emptyList()
+    _unloadRooms.value = emptyList()
+    _liveStreams.value = emptyList()
+    _predictions.value = emptyList()
+    _doubleTakePrompts.value = emptyList()
+    _timeCapsules.value = emptyList()
+    _crossedPaths.value = emptyList()
+    _shops.value = emptyList()
     _conversations.value = emptyList()
     _notifications.value = emptyList()
     _vybeMatches.value = emptyList()
@@ -2892,7 +2938,15 @@ class VybeRepository private constructor() {
     _requestedFollowUserIds.value = emptySet()
     _followerUserIds.value = emptySet()
     _incomingFollowRequestUserIds.value = emptySet()
+    _blockedUserIds.value = emptySet()
+    _restrictedUserIds.value = emptySet()
     _uploadStatus.value = UploadStatus.Idle
+
+    if (supabaseRepo.isConfigured) {
+      ioScope.launch {
+        syncAllFromSupabase()
+      }
+    }
   }
 
   fun deactivateAccount() {
@@ -3245,7 +3299,7 @@ class VybeRepository private constructor() {
               val incoming = SupabaseRoomsAndCallsRemote.fetchIncomingCalls(me.id, authHeader)
                 .firstOrNull { !_blockedUserIds.value.contains(it.callerId) }
               if (incoming != null) {
-                val incomingId = incoming.id ?: ""
+                val incomingId = incoming.id
                 if (incomingId.isNotBlank()) {
                   val caller = _allUsers.value.firstOrNull { it.id == incoming.callerId }
                     ?: supabaseRepo.fetchUserProfile(incoming.callerId, token)
@@ -3266,10 +3320,142 @@ class VybeRepository private constructor() {
             if (openRoom != null && !openRoom.id.startsWith("ul_") && !openRoom.id.startsWith("room_")) {
               refreshActiveRoomMessages(openRoom.id, token)
             }
+            // Periodic cross-device sync (~13.5s) for Feed, Stories, Live Zone, Explore Zone & Chat/Call History
+            if (tick > 0 && tick % 3 == 0 && !isUploadInFlight) {
+              syncFeedFromSupabase(token)
+              syncStoriesFromSupabase(me.id, token)
+              syncRoomsFromSupabase(token)
+              syncExploreAndLiveFromSupabase(token)
+              val convRes = supabaseRepo.fetchConversationsForUser(
+                myUserId = me.id,
+                blockedIds = _blockedUserIds.value,
+                restrictedIds = _restrictedUserIds.value,
+                accessToken = token.orEmpty()
+              )
+              if (convRes.isSuccess) {
+                val remoteConvs = dedupeConversationCallLogs(convRes.getOrThrow())
+                _conversations.value = remoteConvs
+                VybeLocalStore.get()?.saveConversations(remoteConvs)
+              }
+            }
           }
         } catch (_: Exception) {}
         tick++
         delay(4500L)
+      }
+    }
+  }
+
+  private fun startCallDurationTimer(callId: String) {
+    if (callDurationJob?.isActive == true && _activeCall.value?.callId == callId) return
+    callDurationJob?.cancel()
+    callDurationJob = ioScope.launch {
+      while (isActive) {
+        delay(1000L)
+        val cur = _activeCall.value ?: break
+        if (cur.callId != callId && !cur.callId.startsWith("local_") && !callId.startsWith("local_")) break
+        if (cur.state == CallState.CONNECTED) {
+          _activeCall.value = cur.copy(durationSeconds = cur.durationSeconds + 1)
+        } else if (cur.state in setOf(CallState.ENDED, CallState.DECLINED, CallState.MISSED, CallState.FAILED)) {
+          break
+        }
+      }
+    }
+  }
+
+  private fun stopCallDurationTimer() {
+    callDurationJob?.cancel()
+    callDurationJob = null
+  }
+
+  private fun dedupeConversationCallLogs(conversations: List<Conversation>): List<Conversation> {
+    return conversations.map { conv ->
+      val seenCallIds = HashSet<String>()
+      val filteredMsgs = conv.messages.filter { msg ->
+        if (msg.mediaType == "CALL_LOG" && !msg.mediaUrl.isNullOrBlank()) {
+          val callIdParam = msg.mediaUrl.substringAfter("callId=", "").substringBefore("&")
+          if (callIdParam.isNotBlank()) {
+            seenCallIds.add(callIdParam)
+          } else true
+        } else true
+      }
+      conv.copy(messages = filteredMsgs)
+    }
+  }
+
+  fun formatCallLogSummary(isVideo: Boolean, status: String, durationSeconds: Int): String {
+    val kind = if (isVideo) "Video call" else "Voice call"
+    val durText = String.format(java.util.Locale.US, "%02d:%02d", durationSeconds / 60, durationSeconds % 60)
+    return when (status.uppercase()) {
+      "MISSED" -> "Missed ${kind.lowercase()}"
+      "DECLINED" -> "Declined ${kind.lowercase()}"
+      else -> if (durationSeconds > 0) "$kind • $durText" else "$kind • 00:00"
+    }
+  }
+
+  private fun recordCallHistoryInChat(call: CallSession, finalStatus: String, persistRemote: Boolean) {
+    val me = _currentUser.value ?: return
+    val dedupeKey = call.callId.ifBlank { "call_${System.currentTimeMillis()}" }
+    if (!loggedCallIds.add(dedupeKey)) return
+
+    val effectiveStatus = when {
+      call.durationSeconds > 0 -> "COMPLETED"
+      finalStatus.equals("DECLINED", true) -> "DECLINED"
+      finalStatus.equals("MISSED", true) -> "MISSED"
+      call.state == CallState.OUTGOING || call.state == CallState.INCOMING -> "MISSED"
+      else -> "COMPLETED"
+    }
+    val summary = formatCallLogSummary(call.isVideo, effectiveStatus, call.durationSeconds)
+    val callLogUri = "vybe://call-log?type=${if (call.isVideo) "VIDEO" else "VOICE"}&status=$effectiveStatus&duration=${call.durationSeconds}&callId=$dedupeKey"
+    val conv = getOrCreateConversation(call.peerUser)
+
+    if (persistRemote || !supabaseRepo.isConfigured || dedupeKey.startsWith("local_")) {
+      sendExtendedDirectMessage(
+        conversationId = conv.id,
+        text = summary,
+        mediaUrl = callLogUri,
+        mediaType = "CALL_LOG"
+      )
+    } else {
+      // Passive side shows optimistic call log immediately unless already synced, then reconciles with Supabase
+      val currentList = _conversations.value.toMutableList()
+      val idx = currentList.indexOfFirst { it.id == conv.id }
+      if (idx != -1 && currentList[idx].messages.none { it.mediaUrl?.contains("callId=$dedupeKey") == true }) {
+        val localLog = DirectMessage(
+          id = "clog_$dedupeKey",
+          senderId = me.id,
+          text = summary,
+          timestamp = "Just now",
+          isMe = false,
+          mediaUrl = callLogUri,
+          mediaType = "CALL_LOG",
+          isRead = true,
+          status = MessageStatus.SENT
+        )
+        val c = currentList[idx]
+        currentList[idx] = c.copy(
+          lastMessage = summary,
+          lastMessageTimestamp = "Just now",
+          messages = c.messages + localLog
+        )
+        _conversations.value = currentList
+      }
+      ioScope.launch {
+        delay(1200L)
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+        if (token.isNotBlank()) {
+          val convRes = supabaseRepo.fetchConversationsForUser(
+            myUserId = me.id,
+            blockedIds = _blockedUserIds.value,
+            restrictedIds = _restrictedUserIds.value,
+            accessToken = token
+          )
+          if (convRes.isSuccess) {
+            val remoteConvs = dedupeConversationCallLogs(convRes.getOrThrow())
+            _conversations.value = remoteConvs
+            VybeLocalStore.get()?.saveConversations(remoteConvs)
+          }
+        }
       }
     }
   }
@@ -3302,26 +3488,31 @@ class VybeRepository private constructor() {
           if (cur != null && cur.state != CallState.CONNECTED) {
             _activeCall.value = cur.copy(
               state = CallState.CONNECTED,
-              connectionStatusText = "Encrypted audio/video connected"
+              connectionStatusText = if (cur.isVideo) "HD Video & Audio connected" else "Encrypted Voice connected"
             )
+            startCallDurationTimer(cur.callId)
             callEngine?.startMediaStreaming()
           }
         }
 
         override fun onRemoteDeclined() {
-          _activeCall.value = _activeCall.value?.copy(
-            state = CallState.DECLINED,
-            connectionStatusText = "Call declined"
-          )
+          val cur = _activeCall.value
+          stopCallDurationTimer()
+          if (cur != null) {
+            recordCallHistoryInChat(cur, "DECLINED", persistRemote = false)
+          }
+          _activeCall.value = null
           callEngine?.stopSession()
           callEngine = null
         }
 
         override fun onRemoteEnded() {
-          _activeCall.value = _activeCall.value?.copy(
-            state = CallState.ENDED,
-            connectionStatusText = "Call ended"
-          )
+          val cur = _activeCall.value
+          stopCallDurationTimer()
+          if (cur != null) {
+            recordCallHistoryInChat(cur, "ENDED", persistRemote = false)
+          }
+          _activeCall.value = null
           callEngine?.stopSession()
           callEngine = null
         }
@@ -3335,7 +3526,19 @@ class VybeRepository private constructor() {
         }
 
         override fun onRemoteVideoFrame(jpegBase64: String) {
-          _activeCall.value = _activeCall.value?.copy(remoteVideoFrameBase64 = jpegBase64)
+          val cur = _activeCall.value ?: return
+          // If video frames are arriving from peer, ensure state is CONNECTED and timer is running!
+          if (cur.state != CallState.CONNECTED) {
+            _activeCall.value = cur.copy(
+              state = CallState.CONNECTED,
+              remoteVideoFrameBase64 = jpegBase64,
+              connectionStatusText = "HD Video & Audio connected"
+            )
+            startCallDurationTimer(cur.callId)
+            callEngine?.startMediaStreaming()
+          } else {
+            _activeCall.value = cur.copy(remoteVideoFrameBase64 = jpegBase64)
+          }
         }
 
         override fun onError(message: String) {
@@ -3359,29 +3562,36 @@ class VybeRepository private constructor() {
         val authHeader = SupabaseConfig.buildAuthHeader(token)
         val remoteSession = SupabaseRoomsAndCallsRemote.fetchCallSessionById(callId, authHeader)
         if (remoteSession != null) {
-          when ((remoteSession.status ?: "").uppercase()) {
+          when (remoteSession.status.uppercase()) {
             "CONNECTED" -> {
               if (current.state != CallState.CONNECTED) {
                 _activeCall.value = current.copy(
                   state = CallState.CONNECTED,
-                  connectionStatusText = "Connected"
+                  connectionStatusText = if (current.isVideo) "HD Video & Audio connected" else "Encrypted Voice connected"
                 )
+                startCallDurationTimer(callId)
                 callEngine?.startMediaStreaming()
               }
             }
             "DECLINED" -> {
-              _activeCall.value = current.copy(state = CallState.DECLINED)
+              stopCallDurationTimer()
+              recordCallHistoryInChat(current, "DECLINED", persistRemote = false)
+              _activeCall.value = null
               callEngine?.stopSession()
               callEngine = null
               break
             }
             "MISSED" -> {
-              _activeCall.value = current.copy(state = CallState.MISSED)
+              stopCallDurationTimer()
+              recordCallHistoryInChat(current, "MISSED", persistRemote = false)
+              _activeCall.value = null
               callEngine?.stopSession()
               callEngine = null
               break
             }
             "ENDED" -> {
+              stopCallDurationTimer()
+              recordCallHistoryInChat(current, "ENDED", persistRemote = false)
               _activeCall.value = null
               callEngine?.stopSession()
               callEngine = null
@@ -3391,18 +3601,20 @@ class VybeRepository private constructor() {
         }
         // Ringing timeout after 45 seconds if unanswered
         if (current.state == CallState.OUTGOING && System.currentTimeMillis() - startedMs > 45_000L) {
+          stopCallDurationTimer()
           SupabaseRoomsAndCallsRemote.patchCallSession(
             callId = callId,
             status = "MISSED",
             endedAt = TimestampUtils.nowIsoUtc(),
             authHeader = authHeader
           )
-          _activeCall.value = current.copy(state = CallState.MISSED)
+          recordCallHistoryInChat(current, "MISSED", persistRemote = true)
+          _activeCall.value = null
           callEngine?.stopSession()
           callEngine = null
           break
         }
-        delay(2500L)
+        delay(1800L)
       }
     }
   }
@@ -3413,7 +3625,9 @@ class VybeRepository private constructor() {
       return CallAvailabilityResult.Blocked("Cannot call a blocked user.")
     }
     val latestPeer = _allUsers.value.firstOrNull { it.id == peerUser.id } ?: peerUser
-    val isPeerOnline = latestPeer.isOnline ||
+    val isRealCloudUser = supabaseRepo.isConfigured && latestPeer.id.count { it == '-' } == 4
+    val isPeerOnline = isRealCloudUser ||
+      latestPeer.isOnline ||
       TimestampUtils.isRecentlyOnline(latestPeer.lastSeenAtIso) ||
       (latestPeer.livePulse != LivePulseStatus.NONE && latestPeer.livePulse != LivePulseStatus.QUIET_TIME)
 
@@ -3425,6 +3639,7 @@ class VybeRepository private constructor() {
   }
 
   fun startCall(peerUser: User, isVideo: Boolean, explicitCallerId: String? = null) {
+    stopCallDurationTimer()
     callEngine?.stopSession()
     callEngine = null
     val localId = "local_${System.currentTimeMillis()}"
@@ -3452,7 +3667,8 @@ class VybeRepository private constructor() {
         )
         if (createRes.isSuccess) {
           val serverCall = createRes.getOrThrow()
-          val serverId = serverCall.id ?: return@launch
+          val serverId = serverCall.id
+          if (serverId.isBlank()) return@launch
           _activeCall.value = _activeCall.value?.copy(
             callId = serverId,
             iceCandidateSummary = iceSummary,
@@ -3467,7 +3683,12 @@ class VybeRepository private constructor() {
 
   fun acceptCall() {
     val cur = _activeCall.value ?: return
-    _activeCall.value = cur.copy(state = CallState.CONNECTED, connectionStatusText = "Connecting audio…")
+    _activeCall.value = cur.copy(
+      state = CallState.CONNECTED,
+      connectionStatusText = if (cur.isVideo) "HD Video & Audio connected" else "Encrypted Voice connected"
+    )
+    startCallDurationTimer(cur.callId)
+
     if (supabaseRepo.isConfigured && cur.callId.isNotBlank() && !cur.callId.startsWith("local_")) {
       ioScope.launch {
         val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
@@ -3498,10 +3719,12 @@ class VybeRepository private constructor() {
 
   fun declineCall() {
     val cur = _activeCall.value ?: return
+    stopCallDurationTimer()
     callEngine?.sendCallControlEvent("DECLINE")
     callEngine?.stopSession()
     callEngine = null
     _activeCall.value = null
+    recordCallHistoryInChat(cur, "DECLINED", persistRemote = true)
     if (supabaseRepo.isConfigured && cur.callId.isNotBlank() && !cur.callId.startsWith("local_")) {
       ioScope.launch {
         val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
@@ -3517,21 +3740,29 @@ class VybeRepository private constructor() {
 
   fun endCall() {
     val cur = _activeCall.value
+    stopCallDurationTimer()
     callEngine?.sendCallControlEvent("HANGUP")
     callEngine?.stopSession()
     callEngine = null
     callSignalingPollJob?.cancel()
     _activeCall.value = null
-    if (cur != null && supabaseRepo.isConfigured && cur.callId.isNotBlank() && !cur.callId.startsWith("local_")) {
-      ioScope.launch {
-        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
-        val finalStatus = if (cur.state == CallState.INCOMING) "DECLINED" else "ENDED"
-        SupabaseRoomsAndCallsRemote.patchCallSession(
-          callId = cur.callId,
-          status = finalStatus,
-          endedAt = TimestampUtils.nowIsoUtc(),
-          authHeader = SupabaseConfig.buildAuthHeader(token)
-        )
+    if (cur != null) {
+      val finalStatus = when {
+        cur.durationSeconds > 0 || cur.state == CallState.CONNECTED -> "ENDED"
+        cur.state == CallState.INCOMING -> "DECLINED"
+        else -> "MISSED"
+      }
+      recordCallHistoryInChat(cur, finalStatus, persistRemote = true)
+      if (supabaseRepo.isConfigured && cur.callId.isNotBlank() && !cur.callId.startsWith("local_")) {
+        ioScope.launch {
+          val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+          SupabaseRoomsAndCallsRemote.patchCallSession(
+            callId = cur.callId,
+            status = finalStatus,
+            endedAt = TimestampUtils.nowIsoUtc(),
+            authHeader = SupabaseConfig.buildAuthHeader(token)
+          )
+        }
       }
     }
   }
@@ -3567,6 +3798,171 @@ class VybeRepository private constructor() {
 
   fun pushLocalVideoFrame(jpegBytes: ByteArray) {
     callEngine?.sendVideoFrameJpeg(jpegBytes)
+  }
+
+  // --- LIVE ZONE: REAL CROSS-DEVICE BROADCAST & VIEWING (`live_streams` + `live_stream_comments`) ---
+
+  fun startLiveBroadcast(title: String, category: String) {
+    val host = _currentUser.value ?: return
+    val cleanTitle = title.trim().ifBlank { "${host.displayName} is Live" }
+    val cleanCategory = category.trim().ifBlank { "Live Vibe" }
+    val localStream = LiveStreamSession(
+      id = "local_live_${System.currentTimeMillis()}",
+      host = host,
+      title = cleanTitle,
+      category = cleanCategory,
+      isLive = true,
+      viewerCount = 1,
+      startedAtIso = TimestampUtils.nowIsoUtc()
+    )
+    _activeLiveStream.value = localStream
+    _liveStreamComments.value = emptyList()
+    _liveStreams.value = listOf(localStream) + _liveStreams.value.filterNot { it.host.id == host.id }
+
+    if (supabaseRepo.isConfigured) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        val authHeader = SupabaseConfig.buildAuthHeader(token)
+        val res = SupabaseExploreAndLiveRemote.startLiveStream(host, cleanTitle, cleanCategory, authHeader)
+        if (res.isSuccess) {
+          val created = res.getOrThrow()
+          _activeLiveStream.value = created
+          _liveStreams.value = listOf(created) + _liveStreams.value.filterNot {
+            it.id == localStream.id || it.id == created.id
+          }
+          startActiveLiveStreamWatcher(created.id, isHost = true)
+        }
+      }
+    }
+  }
+
+  fun joinLiveBroadcast(stream: LiveStreamSession) {
+    val bumped = stream.copy(viewerCount = stream.viewerCount + 1)
+    _activeLiveStream.value = bumped
+    _liveStreamComments.value = emptyList()
+    if (supabaseRepo.isConfigured && !stream.id.startsWith("local_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        val authHeader = SupabaseConfig.buildAuthHeader(token)
+        SupabaseExploreAndLiveRemote.updateLiveStreamState(
+          streamId = stream.id,
+          viewerCount = bumped.viewerCount,
+          authHeader = authHeader
+        )
+        _liveStreamComments.value = SupabaseExploreAndLiveRemote.fetchLiveStreamComments(stream.id, authHeader)
+      }
+      startActiveLiveStreamWatcher(stream.id, isHost = stream.host.id == _currentUser.value?.id)
+    }
+  }
+
+  fun leaveOrEndLiveBroadcast() {
+    val active = _activeLiveStream.value ?: return
+    val me = _currentUser.value
+    liveStreamSyncJob?.cancel()
+    liveStreamSyncJob = null
+    _activeLiveStream.value = null
+    _liveStreamComments.value = emptyList()
+
+    val isHost = me != null && active.host.id == me.id
+    if (isHost) {
+      _liveStreams.value = _liveStreams.value.filterNot { it.id == active.id }
+    }
+    if (supabaseRepo.isConfigured && !active.id.startsWith("local_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        val authHeader = SupabaseConfig.buildAuthHeader(token)
+        if (isHost) {
+          SupabaseExploreAndLiveRemote.updateLiveStreamState(
+            streamId = active.id,
+            isLive = false,
+            endedAt = TimestampUtils.nowIsoUtc(),
+            authHeader = authHeader
+          )
+        } else {
+          SupabaseExploreAndLiveRemote.updateLiveStreamState(
+            streamId = active.id,
+            viewerCount = (active.viewerCount - 1).coerceAtLeast(1),
+            authHeader = authHeader
+          )
+        }
+        syncExploreAndLiveFromSupabase(token)
+      }
+    }
+  }
+
+  fun sendLiveBroadcastComment(content: String) {
+    val active = _activeLiveStream.value ?: return
+    val me = _currentUser.value ?: return
+    val clean = content.trim()
+    if (clean.isBlank()) return
+    val optimistic = LiveStreamComment(
+      id = "lsc_${System.currentTimeMillis()}",
+      streamId = active.id,
+      authorId = me.id,
+      authorName = me.displayName,
+      content = clean,
+      timestamp = "Just now"
+    )
+    _liveStreamComments.value = _liveStreamComments.value + optimistic
+    if (supabaseRepo.isConfigured && !active.id.startsWith("local_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        val saved = SupabaseExploreAndLiveRemote.sendLiveStreamComment(
+          streamId = active.id,
+          authorId = me.id,
+          authorName = me.displayName,
+          content = clean,
+          authHeader = SupabaseConfig.buildAuthHeader(token)
+        )
+        if (saved != null) {
+          _liveStreamComments.value = _liveStreamComments.value.map {
+            if (it.id == optimistic.id) saved else it
+          }
+        }
+      }
+    }
+  }
+
+  fun pushLiveBroadcastFrame(jpegBytes: ByteArray) {
+    val active = _activeLiveStream.value ?: return
+    val me = _currentUser.value ?: return
+    if (active.host.id != me.id || active.id.startsWith("local_") || jpegBytes.isEmpty() || jpegBytes.size > 96_000) return
+    val encoded = android.util.Base64.encodeToString(jpegBytes, android.util.Base64.NO_WRAP)
+    ioScope.launch {
+      val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+      SupabaseExploreAndLiveRemote.updateLiveStreamState(
+        streamId = active.id,
+        latestFrameBase64 = encoded,
+        authHeader = SupabaseConfig.buildAuthHeader(token)
+      )
+    }
+  }
+
+  private fun startActiveLiveStreamWatcher(streamId: String, isHost: Boolean) {
+    liveStreamSyncJob?.cancel()
+    if (!supabaseRepo.isConfigured || streamId.startsWith("local_")) return
+    liveStreamSyncJob = ioScope.launch {
+      while (isActive && _activeLiveStream.value?.id == streamId) {
+        try {
+          val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+          val authHeader = SupabaseConfig.buildAuthHeader(token)
+          val usersMap = _allUsers.value.associateBy { it.id }
+          if (isHost) {
+            SupabaseExploreAndLiveRemote.updateLiveStreamState(streamId = streamId, isLive = true, authHeader = authHeader)
+          }
+          val remote = SupabaseExploreAndLiveRemote.fetchLiveStreamById(streamId, usersMap, authHeader)
+          if (remote != null) {
+            if (!remote.isLive && !isHost) {
+              _activeLiveStream.value = remote
+              break
+            }
+            _activeLiveStream.value = remote
+          }
+          _liveStreamComments.value = SupabaseExploreAndLiveRemote.fetchLiveStreamComments(streamId, authHeader)
+        } catch (_: Exception) {}
+        delay(2000L)
+      }
+    }
   }
 
   // --- Persistent Live Rooms + Join by Unique Room ID (`VYB-XXXX-XXXX`) ---
@@ -3825,8 +4221,17 @@ class VybeRepository private constructor() {
   }
 
   fun submitDoubleTakeAnswer(promptId: String, answer: String) {
+    val me = _currentUser.value ?: return
+    val target = _doubleTakePrompts.value.firstOrNull { it.id == promptId } ?: return
     _doubleTakePrompts.value = _doubleTakePrompts.value.map { p ->
       if (p.id == promptId) p.copy(myAnswer = answer, isMyAnswerSubmitted = true, isRevealed = p.isPeerAnswerSubmitted) else p
+    }
+    if (supabaseRepo.isConfigured) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        SupabaseExploreAndLiveRemote.submitDoubleTakeAnswer(target, me.id, answer, isPublicAnswer = false, authHeader = SupabaseConfig.buildAuthHeader(token))
+        syncExploreAndLiveFromSupabase(token)
+      }
     }
   }
 
@@ -3839,8 +4244,9 @@ class VybeRepository private constructor() {
     isPublic: Boolean = false
   ) {
     val user = _currentUser.value ?: return
+    val tempId = "dt_${System.currentTimeMillis()}"
     val newPrompt = DoubleTakePrompt(
-      id = "dt_${System.currentTimeMillis()}",
+      id = tempId,
       promptQuestion = question,
       category = category,
       optionA = optionA,
@@ -3850,15 +4256,44 @@ class VybeRepository private constructor() {
       isPublic = isPublic
     )
     _doubleTakePrompts.value = listOf(newPrompt) + _doubleTakePrompts.value
+    if (supabaseRepo.isConfigured) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        val createdId = SupabaseExploreAndLiveRemote.createDoubleTake(
+          creatorId = user.id,
+          partnerId = peerUser.id.takeIf { it.isNotBlank() && it != user.id },
+          question = question,
+          category = category,
+          optionA = optionA,
+          optionB = optionB,
+          isPublic = isPublic,
+          authHeader = SupabaseConfig.buildAuthHeader(token)
+        )
+        if (createdId != null) {
+          _doubleTakePrompts.value = _doubleTakePrompts.value.map {
+            if (it.id == tempId) it.copy(id = createdId) else it
+          }
+          syncExploreAndLiveFromSupabase(token)
+        }
+      }
+    }
   }
 
   fun submitPublicDoubleTakeAnswer(promptId: String, answer: String) {
     val user = _currentUser.value ?: return
+    val target = _doubleTakePrompts.value.firstOrNull { it.id == promptId } ?: return
     _doubleTakePrompts.value = _doubleTakePrompts.value.map { prompt ->
       if (prompt.id == promptId) {
         val ans = PublicAnswer("pa_${System.currentTimeMillis()}", user, answer, "Just now", false)
         prompt.copy(publicAnswers = prompt.publicAnswers + ans, myAnswer = answer, isMyAnswerSubmitted = true)
       } else prompt
+    }
+    if (supabaseRepo.isConfigured) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        SupabaseExploreAndLiveRemote.submitDoubleTakeAnswer(target, user.id, answer, isPublicAnswer = true, authHeader = SupabaseConfig.buildAuthHeader(token))
+        syncExploreAndLiveFromSupabase(token)
+      }
     }
   }
 
@@ -3875,6 +4310,12 @@ class VybeRepository private constructor() {
 
   fun deleteDoubleTakePrompt(promptId: String) {
     _doubleTakePrompts.value = _doubleTakePrompts.value.filterNot { it.id == promptId }
+    if (supabaseRepo.isConfigured) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        SupabaseExploreAndLiveRemote.deleteDoubleTake(promptId, SupabaseConfig.buildAuthHeader(token))
+      }
+    }
   }
 
   fun acceptDoubleTakeMatch(promptId: String) {
@@ -3884,6 +4325,7 @@ class VybeRepository private constructor() {
   }
 
   fun votePrediction(predictionId: String, optionId: Int) {
+    val me = _currentUser.value
     _predictions.value = _predictions.value.map { pred ->
       if (pred.id == predictionId && pred.userSelectedOptionId == null) {
         val total = pred.totalVotes + 1
@@ -3894,13 +4336,21 @@ class VybeRepository private constructor() {
         pred.copy(totalVotes = total, options = opts, userSelectedOptionId = optionId)
       } else pred
     }
+    if (supabaseRepo.isConfigured && me != null && !predictionId.startsWith("pred_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        SupabaseExploreAndLiveRemote.voteAudiencePool(predictionId, me.id, optionId, SupabaseConfig.buildAuthHeader(token))
+        syncExploreAndLiveFromSupabase(token)
+      }
+    }
   }
 
   fun createPredictionPoll(title: String, category: String, durationHours: Int, optionTexts: List<String>) {
     val user = _currentUser.value ?: return
+    val tempId = "pred_${System.currentTimeMillis()}"
     val opts = optionTexts.mapIndexed { idx, txt -> PredictionOption(idx + 1, txt, 0, 0) }
     val poll = SocialPrediction(
-      id = "pred_${System.currentTimeMillis()}",
+      id = tempId,
       title = title,
       category = category,
       closingTimeText = if (durationHours <= 24) "Closes in ${durationHours}h" else "Closes in ${durationHours / 24}d",
@@ -3911,16 +4361,39 @@ class VybeRepository private constructor() {
       authorUsername = user.username
     )
     _predictions.value = listOf(poll) + _predictions.value
+    if (supabaseRepo.isConfigured) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        val created = SupabaseExploreAndLiveRemote.createAudiencePool(
+          creator = user,
+          title = title,
+          category = category,
+          durationHours = durationHours,
+          optionTexts = optionTexts,
+          authHeader = SupabaseConfig.buildAuthHeader(token)
+        )
+        if (created != null) {
+          _predictions.value = _predictions.value.map { if (it.id == tempId) created else it }
+        }
+      }
+    }
   }
 
   fun deletePredictionPoll(pollId: String) {
     _predictions.value = _predictions.value.filterNot { it.id == pollId }
+    if (supabaseRepo.isConfigured && !pollId.startsWith("pred_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        SupabaseExploreAndLiveRemote.deleteAudiencePool(pollId, SupabaseConfig.buildAuthHeader(token))
+      }
+    }
   }
 
   fun createTimeCapsule(title: String, message: String, recipient: String, unlockDate: String) {
     val user = _currentUser.value ?: return
+    val tempId = "tc_${System.currentTimeMillis()}"
     val capsule = TimeCapsule(
-      id = "tc_${System.currentTimeMillis()}",
+      id = tempId,
       title = title,
       sender = user,
       recipientSummary = recipient,
@@ -3931,10 +4404,32 @@ class VybeRepository private constructor() {
       createdAtFormatted = "Today"
     )
     _timeCapsules.value = listOf(capsule) + _timeCapsules.value
+    if (supabaseRepo.isConfigured) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        val createdId = SupabaseExploreAndLiveRemote.createTimeCapsule(
+          creatorId = user.id,
+          title = title,
+          recipient = recipient,
+          message = message,
+          unlockDateRaw = unlockDate,
+          authHeader = SupabaseConfig.buildAuthHeader(token)
+        )
+        if (createdId != null) {
+          _timeCapsules.value = _timeCapsules.value.map { if (it.id == tempId) it.copy(id = createdId) else it }
+        }
+      }
+    }
   }
 
   fun unlockTimeCapsule(capsuleId: String) {
     _timeCapsules.value = _timeCapsules.value.map { if (it.id == capsuleId) it.copy(isUnlocked = true) else it }
+    if (supabaseRepo.isConfigured) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        SupabaseExploreAndLiveRemote.unlockTimeCapsule(capsuleId, SupabaseConfig.buildAuthHeader(token))
+      }
+    }
   }
 
   fun respondToCapsuleInvitation(capsuleId: String, accept: Boolean) {
@@ -3950,6 +4445,12 @@ class VybeRepository private constructor() {
         val review = ShopReview("sr_${System.currentTimeMillis()}", user, rating, reviewText, "Just now", true)
         shop.copy(reviews = listOf(review) + shop.reviews, reviewsCount = shop.reviewsCount + 1)
       } else shop
+    }
+    if (supabaseRepo.isConfigured) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        SupabaseExploreAndLiveRemote.addBusinessReview(shopId, user.id, rating, reviewText, SupabaseConfig.buildAuthHeader(token))
+      }
     }
   }
 
@@ -3975,6 +4476,22 @@ class VybeRepository private constructor() {
       submittedAt = "Today"
     )
     _businessApplications.value = listOf(app) + _businessApplications.value
+    if (supabaseRepo.isConfigured && user != null) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        SupabaseExploreAndLiveRemote.createBusinessShop(
+          ownerId = user.id,
+          businessName = businessName,
+          category = category,
+          gstNumber = gstOrReg,
+          description = "Official VYBE community business ($email • $phone)",
+          city = address,
+          fullAddress = address,
+          authHeader = SupabaseConfig.buildAuthHeader(token)
+        )
+        syncExploreAndLiveFromSupabase(token)
+      }
+    }
     return app
   }
 
@@ -3993,8 +4510,15 @@ class VybeRepository private constructor() {
   }
 
   fun sendCrossedPathRequest(encounterId: String) {
+    val me = _currentUser.value
     _crossedPaths.value = _crossedPaths.value.map {
       if (it.id == encounterId) it.copy(hasSentRequest = true, requestStatus = ConnectionRequestStatus.PENDING) else it
+    }
+    if (supabaseRepo.isConfigured && me != null) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        SupabaseExploreAndLiveRemote.sendCrossedPathRequest(encounterId, me.id, SupabaseConfig.buildAuthHeader(token))
+      }
     }
   }
 
@@ -4009,8 +4533,9 @@ class VybeRepository private constructor() {
     val cleanVenue = venueOrEventName.trim()
     val cleanBroad = broadLocation.trim().ifBlank { cleanVenue.ifBlank { "Community Area" } }
     val title = if (cleanVenue.isNotBlank()) "Noticed at $cleanVenue" else "Missed Connection in $cleanBroad"
+    val tempId = "cp_${System.currentTimeMillis()}"
     val encounter = CrossedPathEncounter(
-      id = "cp_${System.currentTimeMillis()}",
+      id = tempId,
       type = type,
       title = title,
       description = description.trim(),
@@ -4024,6 +4549,24 @@ class VybeRepository private constructor() {
       mapQueryLocation = cleanVenue.ifBlank { cleanBroad }
     )
     _crossedPaths.value = listOf(encounter) + _crossedPaths.value
+    if (supabaseRepo.isConfigured) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+        val createdId = SupabaseExploreAndLiveRemote.createCrossedPath(
+          creatorId = me.id,
+          type = type,
+          title = title,
+          venue = cleanVenue,
+          broadLocation = cleanBroad,
+          description = description.trim(),
+          photoUrl = photoUrl,
+          authHeader = SupabaseConfig.buildAuthHeader(token)
+        )
+        if (createdId != null) {
+          _crossedPaths.value = _crossedPaths.value.map { if (it.id == tempId) it.copy(id = createdId) else it }
+        }
+      }
+    }
   }
 
   fun setSpiritualMode(enabled: Boolean) {

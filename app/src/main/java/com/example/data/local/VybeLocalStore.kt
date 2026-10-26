@@ -49,6 +49,7 @@ class VybeLocalStore private constructor(context: Context) {
       .remove(KEY_VIEWED_STORIES)
       .remove(KEY_VYBE_MATCHES)
       .remove(KEY_POSTS)
+      .remove(KEY_UNFILTERED)
       .apply()
   }
 

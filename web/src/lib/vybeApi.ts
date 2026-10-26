@@ -6,9 +6,12 @@ import {
   normalizeRoomCode
 } from './utils';
 import type {
+  AudiencePoll,
   BusinessShop,
   Conversation,
   DirectMessage,
+  LiveStreamComment,
+  LiveStreamSession,
   MediaType,
   ModerationReport,
   MoodZone,
@@ -260,7 +263,7 @@ export async function fetchFeedPosts(
   const from = page * pageSize;
   const to = from + pageSize - 1;
 
-  const { data: rows, error } = await supabase
+  let { data: rows, error } = await supabase
     .from('posts')
     .select(
       `
@@ -274,7 +277,16 @@ export async function fetchFeedPosts(
     .order('created_at', { ascending: false })
     .range(from, to);
 
-  if (error || !rows) return [];
+  if (error || !rows) {
+    const fallback = await supabase
+      .from('posts')
+      .select('*, post_media (*)')
+      .or('is_archived.is.null,is_archived.eq.false')
+      .order('created_at', { ascending: false })
+      .range(from, to);
+    rows = fallback.data;
+    if (!rows) return [];
+  }
 
   const activeRows = rows.filter((r: any) => !Boolean(r.is_archived));
 
@@ -460,14 +472,23 @@ export async function addPostComment(postId: string, authorId: string, content: 
 export async function fetchActiveStories(currentUserId: string | null): Promise<VybeStory[]> {
   if (!isSupabaseConfigured) return [];
   const nowIso = new Date().toISOString();
-  const { data: rows, error } = await supabase
+  let { data: rows, error } = await supabase
     .from('stories')
     .select('*, profiles:author_id (*)')
     .gt('expires_at', nowIso)
     .order('created_at', { ascending: false })
     .limit(80);
 
-  if (error || !rows) return [];
+  if (error || !rows) {
+    const fallback = await supabase
+      .from('stories')
+      .select('*')
+      .gt('expires_at', nowIso)
+      .order('created_at', { ascending: false })
+      .limit(80);
+    rows = fallback.data;
+    if (!rows) return [];
+  }
 
   let viewedIds = new Set<string>();
   if (currentUserId && rows.length > 0 && currentUserId !== 'guest_viewer') {
@@ -1105,4 +1126,225 @@ export async function fetchAdminModerationQueue(): Promise<{
       createdAtIso: b.created_at || null
     }))
   };
+}
+
+// ============================================================================
+// LIVE ZONE BROADCASTS & EXPLORE ZONE AUDIENCE POLLS (CROSS-USER SYNC)
+// ============================================================================
+
+export async function fetchLiveStreams(): Promise<LiveStreamSession[]> {
+  if (!isSupabaseConfigured) return [];
+  let { data: rows, error } = await supabase
+    .from('live_streams')
+    .select('*, profiles:host_id (*)')
+    .eq('is_live', true)
+    .order('started_at', { ascending: false })
+    .limit(30);
+
+  if (error || !rows) {
+    const fb = await supabase
+      .from('live_streams')
+      .select('*')
+      .eq('is_live', true)
+      .order('started_at', { ascending: false })
+      .limit(30);
+    rows = fb.data || [];
+  }
+
+  return (rows || []).map((r: any) => ({
+    id: String(r.id),
+    host: mapProfileRow(r.profiles || { id: r.host_id }),
+    title: String(r.title || 'Live on VYBE'),
+    category: String(r.category || 'LiveZone'),
+    isLive: r.is_live !== false,
+    viewerCount: Math.max(1, Number(r.viewer_count ?? 1)),
+    latestFrameBase64: r.latest_frame_base64 || null,
+    startedAtIso: r.started_at || null
+  }));
+}
+
+export async function startLiveStreamWeb(params: {
+  host: VybeUser;
+  title: string;
+  category: string;
+}): Promise<LiveStreamSession> {
+  await supabase
+    .from('live_streams')
+    .update({ is_live: false, ended_at: new Date().toISOString() })
+    .eq('host_id', params.host.id)
+    .eq('is_live', true);
+
+  const { data, error } = await supabase
+    .from('live_streams')
+    .insert({
+      host_id: params.host.id,
+      title: params.title.trim() || `${params.host.displayName} Live`,
+      category: params.category.trim() || 'LiveZone',
+      is_live: true,
+      viewer_count: 1,
+      last_heartbeat_at: new Date().toISOString()
+    })
+    .select('*')
+    .single();
+
+  if (error || !data) throw new Error(error?.message || 'Unable to start live broadcast.');
+  return {
+    id: String(data.id),
+    host: params.host,
+    title: String(data.title || params.title),
+    category: String(data.category || params.category),
+    isLive: true,
+    viewerCount: 1,
+    latestFrameBase64: null,
+    startedAtIso: data.started_at || new Date().toISOString()
+  };
+}
+
+export async function endLiveStreamWeb(streamId: string): Promise<void> {
+  if (!isSupabaseConfigured || !streamId) return;
+  await supabase
+    .from('live_streams')
+    .update({ is_live: false, ended_at: new Date().toISOString() })
+    .eq('id', streamId);
+}
+
+export async function pushLiveStreamFrameWeb(streamId: string, base64Frame: string): Promise<void> {
+  if (!isSupabaseConfigured || !streamId || !base64Frame) return;
+  await supabase
+    .from('live_streams')
+    .update({
+      latest_frame_base64: base64Frame,
+      last_heartbeat_at: new Date().toISOString()
+    })
+    .eq('id', streamId);
+}
+
+export async function fetchLiveStreamComments(streamId: string): Promise<LiveStreamComment[]> {
+  if (!isSupabaseConfigured || !streamId) return [];
+  const { data } = await supabase
+    .from('live_stream_comments')
+    .select('*')
+    .eq('stream_id', streamId)
+    .order('created_at', { ascending: true })
+    .limit(100);
+
+  return (data || []).map((c: any) => ({
+    id: String(c.id),
+    streamId: String(c.stream_id),
+    authorId: String(c.author_id),
+    authorName: String(c.author_name || 'VYBE Member'),
+    content: String(c.content || ''),
+    createdAtIso: c.created_at || null
+  }));
+}
+
+export async function postLiveStreamComment(params: {
+  streamId: string;
+  authorId: string;
+  authorName: string;
+  content: string;
+}): Promise<void> {
+  const clean = params.content.trim();
+  if (!clean) return;
+  await supabase.from('live_stream_comments').insert({
+    stream_id: params.streamId,
+    author_id: params.authorId,
+    author_name: params.authorName,
+    content: clean
+  });
+}
+
+export async function fetchAudiencePolls(currentUserId: string | null): Promise<AudiencePoll[]> {
+  if (!isSupabaseConfigured) return [];
+  let { data: rows, error } = await supabase
+    .from('audience_pools')
+    .select('*, profiles:creator_id (*), audience_pool_options (*)')
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(30);
+
+  if (error || !rows) {
+    const fb = await supabase
+      .from('audience_pools')
+      .select('*, audience_pool_options (*)')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(30);
+    rows = fb.data || [];
+  }
+
+  const votedByPool = new Map<string, string>();
+  if (currentUserId && currentUserId !== 'guest_viewer' && rows && rows.length > 0) {
+    const { data: votes } = await supabase
+      .from('audience_pool_votes')
+      .select('pool_id, option_id')
+      .eq('voter_id', currentUserId)
+      .in(
+        'pool_id',
+        rows.map((r: any) => r.id)
+      );
+    (votes || []).forEach((v: any) => votedByPool.set(String(v.pool_id), String(v.option_id)));
+  }
+
+  return (rows || []).map((r: any) => ({
+    id: String(r.id),
+    creator: mapProfileRow(r.profiles || { id: r.creator_id }),
+    question: String(r.question || ''),
+    category: String(r.category || 'WhatNext'),
+    options: Array.isArray(r.audience_pool_options)
+      ? [...r.audience_pool_options]
+          .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+          .map((o: any) => ({
+            id: String(o.id),
+            text: String(o.option_text || ''),
+            votesCount: Math.max(0, Number(o.votes_count ?? 0))
+          }))
+      : [],
+    votedOptionId: votedByPool.get(String(r.id)) || null,
+    createdAtIso: r.created_at || null
+  }));
+}
+
+export async function createAudiencePollWeb(params: {
+  creatorId: string;
+  question: string;
+  category: string;
+  options: string[];
+}): Promise<void> {
+  const { data: created, error } = await supabase
+    .from('audience_pools')
+    .insert({
+      creator_id: params.creatorId,
+      question: params.question.trim(),
+      category: params.category.trim() || 'WhatNext',
+      is_active: true
+    })
+    .select('id')
+    .single();
+
+  if (error || !created?.id) throw new Error(error?.message || 'Unable to create poll.');
+  const optRows = params.options
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .map((t, idx) => ({
+      pool_id: created.id,
+      option_text: t,
+      display_order: idx,
+      votes_count: 0
+    }));
+  if (optRows.length > 0) {
+    await supabase.from('audience_pool_options').insert(optRows);
+  }
+}
+
+export async function voteAudiencePollWeb(
+  poolId: string,
+  optionId: string,
+  voterId: string
+): Promise<void> {
+  await supabase.from('audience_pool_votes').upsert({
+    pool_id: poolId,
+    option_id: optionId,
+    voter_id: voterId
+  });
 }

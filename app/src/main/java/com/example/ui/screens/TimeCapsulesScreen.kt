@@ -54,12 +54,13 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
 
   val capsules by viewModel.timeCapsules.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
+  val allUsers by viewModel.allUsers.collectAsState()
 
   var showCreateDialog by remember { mutableStateOf(false) }
   var titleInput by remember { mutableStateOf("") }
   var messageInput by remember { mutableStateOf("") }
-  var recipientType by remember { mutableStateOf("myself") } // "myself" or "friends"
-  var selectedFriendUsername by remember { mutableStateOf("priya_design") }
+  var recipientType by remember { mutableStateOf("myself") } // "myself", "friends", or "invite_link"
+  var selectedFriendUsername by remember { mutableStateOf("") }
   var unlockDateInput by remember { mutableStateOf("Jan 01, 2027") }
   var pickedMediaUri by remember { mutableStateOf<Uri?>(null) }
 
@@ -449,14 +450,30 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
 
           if (recipientType == "friends") {
             item {
-              Text("Select Friend to Tag:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("priya_design", "aarav_beats", "vikram_cricket").forEach { username ->
-                  FilterChip(
-                    selected = selectedFriendUsername == username,
-                    onClick = { selectedFriendUsername = username },
-                    label = { Text("@$username", fontSize = 10.sp) }
-                  )
+              val realFriends = remember(allUsers, currentUser?.id) {
+                allUsers.filter { it.id != currentUser?.id }.map { it.username }.distinct().take(12)
+              }
+              Text("Tag VYBE Friend:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              Spacer(modifier = Modifier.height(4.dp))
+              OutlinedTextField(
+                value = selectedFriendUsername,
+                onValueChange = { selectedFriendUsername = it.removePrefix("@").trim() },
+                placeholder = { Text("Enter @username", fontSize = 12.sp) },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+              )
+              if (realFriends.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                  items(realFriends.size) { index ->
+                    val username = realFriends[index]
+                    FilterChip(
+                      selected = selectedFriendUsername == username,
+                      onClick = { selectedFriendUsername = username },
+                      label = { Text("@$username", fontSize = 10.sp) }
+                    )
+                  }
                 }
               }
             }
@@ -588,7 +605,7 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
                 if (titleInput.isNotBlank() && messageInput.isNotBlank()) {
                   val recipientSummary = when (recipientType) {
                     "myself" -> "To myself"
-                    "friends" -> "To @$selectedFriendUsername"
+                    "friends" -> if (selectedFriendUsername.isNotBlank()) "To @$selectedFriendUsername" else "To myself"
                     else -> "Shareable Link Members"
                   }
                   viewModel.createTimeCapsule(

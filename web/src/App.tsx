@@ -212,38 +212,10 @@ export const App: React.FC = () => {
     hasBusyActivity: Boolean(activeCall || isComposerDirty)
   });
 
-  // 1. Initial auth check & profile hydration
+  // 1. Initial auth check & profile hydration (no demo/sample user)
   const hydrateUserFromSession = useCallback(async () => {
     if (!isSupabaseConfigured) {
-      // Local fallback profile when demoing offline/unconfigured
-      setCurrentUser({
-        id: 'local_demo_user',
-        username: 'vybe_creator',
-        displayName: 'VYBE Demo User',
-        firstName: 'VYBE',
-        lastName: 'Creator',
-        bio: 'Exploring mood-driven connections on VYBE by NR Next.',
-        avatarUrl: '',
-        coverUrl: '',
-        email: 'creator@vybe.social',
-        phone: '+15550192834',
-        dateOfBirth: '2000-01-01',
-        isEmailVerified: true,
-        isPhoneVerified: true,
-        isVerified: true,
-        isVip: true,
-        isVerifiedBusiness: false,
-        isPrivate: false,
-        messagePrivacy: 'EVERYONE',
-        role: 'USER',
-        followersCount: 128,
-        followingCount: 64,
-        postsCount: 12,
-        livePulse: 'VIOLET',
-        createdAtIso: new Date().toISOString(),
-        lastSeenAtIso: new Date().toISOString(),
-        isOnline: true
-      });
+      setCurrentUser(null);
       setAuthChecking(false);
       return;
     }
@@ -390,9 +362,14 @@ export const App: React.FC = () => {
     }
   }, [authChecking, currentUser?.id, refreshFeedAndStories, refreshSidebarAndBadges]);
 
-  // Live Realtime synchronization for newly published posts & stories across all sessions
+  // Live Realtime + periodic synchronization for posts, stories, and rooms across all devices
   useEffect(() => {
     if (!isSupabaseConfigured || authChecking) return;
+    const syncTimer = window.setInterval(() => {
+      void refreshFeedAndStories();
+      void refreshSidebarAndBadges();
+    }, 14_000);
+
     const feedChannel = supabase
       .channel('vybe-global-feed-sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => {
@@ -401,12 +378,16 @@ export const App: React.FC = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'stories' }, () => {
         void refreshFeedAndStories();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, () => {
+        void refreshSidebarAndBadges();
+      })
       .subscribe();
 
     return () => {
+      window.clearInterval(syncTimer);
       void supabase.removeChannel(feedChannel);
     };
-  }, [authChecking, refreshFeedAndStories]);
+  }, [authChecking, refreshFeedAndStories, refreshSidebarAndBadges]);
 
   // 3. WebRTC Call Manager & Presence Heartbeat
   useEffect(() => {
@@ -426,8 +407,9 @@ export const App: React.FC = () => {
     );
     callControllerRef.current = controller;
 
-    // Listen for incoming calls via Supabase Realtime
+    // Listen for incoming calls via Supabase Realtime + fast 2.5s DB poll backup
     let callChannel: ReturnType<typeof supabase.channel> | null = null;
+    let incomingPoll: number | null = null;
     if (isSupabaseConfigured) {
       callChannel = supabase
         .channel(`user-calls:${currentUser.id}`)
@@ -447,10 +429,28 @@ export const App: React.FC = () => {
           }
         )
         .subscribe();
+
+      incomingPoll = window.setInterval(async () => {
+        const cutoff = new Date(Date.now() - 45_000).toISOString();
+        const { data: ringing } = await supabase
+          .from('call_sessions')
+          .select('*')
+          .eq('callee_id', currentUser.id)
+          .eq('status', 'RINGING')
+          .gte('created_at', cutoff)
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if (ringing && ringing[0]) {
+          void controller.receiveIncomingCallRow(ringing[0]);
+        }
+      }, 2500);
     }
 
     return () => {
       window.clearInterval(heartbeatInterval);
+      if (incomingPoll) {
+        window.clearInterval(incomingPoll);
+      }
       if (callChannel) {
         void supabase.removeChannel(callChannel);
       }
