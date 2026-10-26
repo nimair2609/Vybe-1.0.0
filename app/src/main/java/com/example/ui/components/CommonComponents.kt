@@ -98,7 +98,7 @@ fun VybeAvatar(
       }
     }
 
-    if (showPulseDot && user.livePulse != LivePulseStatus.NONE) {
+    if (showPulseDot && user.isOnline) {
       Box(
         modifier = Modifier
           .size(size * 0.32f)

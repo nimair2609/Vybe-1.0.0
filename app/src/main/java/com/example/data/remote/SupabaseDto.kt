@@ -128,7 +128,7 @@ data class SupabaseProfilePatchDto(
 )
 
 data class SupabasePresencePatchDto(
-  @Json(name = "last_seen_at") val lastSeenAt: String,
+  @Json(name = "last_seen_at") val lastSeenAt: String?,
   @Json(name = "live_pulse") val livePulse: String? = null
 )
 
@@ -203,7 +203,7 @@ data class SupabaseCommentInsertDto(
 data class SupabaseReactionDto(
   @Json(name = "post_id") val postId: String,
   @Json(name = "user_id") val userId: String,
-  @Json(name = "reaction_type") val reactionType: String = "PURE_ENERGY",
+  @Json(name = "reaction_type") val reactionType: String = "PULSE",
   @Json(name = "created_at") val createdAt: String? = null
 )
 
@@ -342,6 +342,10 @@ data class SupabasePostDto(
   @Json(name = "is_spiritual") val isSpiritual: Boolean? = false,
   @Json(name = "is_archived") val isArchived: Boolean? = false,
   @Json(name = "likes_count") val likesCount: Int? = 0,
+  @Json(name = "pulse_count") val pulseCount: Int? = 0,
+  @Json(name = "spark_count") val sparkCount: Int? = 0,
+  @Json(name = "wave_count") val waveCount: Int? = 0,
+  @Json(name = "flame_count") val flameCount: Int? = 0,
   @Json(name = "comments_count") val commentsCount: Int? = 0,
   @Json(name = "saves_count") val savesCount: Int? = 0,
   @Json(name = "views_count") val viewsCount: Int? = 0,

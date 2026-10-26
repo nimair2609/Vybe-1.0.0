@@ -5,11 +5,22 @@ enum class MediaType {
 }
 
 enum class VybeReaction(val label: String, val emoji: String) {
-  PURE_ENERGY("Pure Energy", "⚡"),
-  DEEP_VIBE("Deep Vibe", "💜"),
-  UPLIFT("Uplift", "✨"),
-  CALM("Calm", "🌊"),
-  HEAT("Heat", "🔥")
+  PULSE("PULSE", "⚡"),
+  SPARK("SPARK", "✨"),
+  WAVE("WAVE", "💫"),
+  FLAME("FLAME", "🔥");
+
+  companion object {
+    fun fromWire(raw: String?): VybeReaction {
+      return when (raw?.trim()?.uppercase()) {
+        "PULSE", "PURE_ENERGY", "LIKE" -> PULSE
+        "SPARK", "UPLIFT" -> SPARK
+        "WAVE", "DEEP_VIBE", "CALM" -> WAVE
+        "FLAME", "HEAT" -> FLAME
+        else -> PULSE
+      }
+    }
+  }
 }
 
 data class PostComment(
@@ -39,8 +50,8 @@ data class Post(
   val isLiked: Boolean = false,
   val isSaved: Boolean = false,
   val isArchived: Boolean = false,
-  val isUnfiltered: Boolean = false, // "Back to Real. Back to Us." authentic moment
-  val isVybesReel: Boolean = false,   // VYBES short video
+  val isUnfiltered: Boolean = false, // "Back to Real. Back to Us." authentic moment (Raw Zone only)
+  val isVybesReel: Boolean = false,   // VYBES short video (Reels Zone)
   val tags: List<String> = emptyList(),
   val moodZone: MoodType? = null,
   val remixSourceId: String? = null,
@@ -56,7 +67,15 @@ data class Post(
   val isPinned: Boolean = false,
   val userReaction: VybeReaction? = null,
   val reactionsCount: Map<VybeReaction, Int> = emptyMap()
-)
+) {
+  fun reactionCountFor(reaction: VybeReaction): Int = (reactionsCount[reaction] ?: 0).coerceAtLeast(0)
+
+  val totalReactionsCount: Int
+    get() {
+      val mapSum = VybeReaction.values().sumOf { reactionCountFor(it) }
+      return maxOf(likesCount.coerceAtLeast(0), mapSum)
+    }
+}
 
 /**
  * Ensures consistent mood filtering across Feed and Mood Zones:
@@ -69,3 +88,10 @@ fun Post.matchesMoodFilter(filter: MoodType?): Boolean = when (filter) {
   MoodType.GENERAL -> moodZone == null || moodZone == MoodType.GENERAL
   else -> moodZone == filter
 }
+
+/**
+ * Zone Isolation Rule: Posts published in Raw/Unfiltered (`isUnfiltered = true`) stay strictly in the
+ * Raw/Unfiltered zone, and Reels (`isVybesReel = true` / `MediaType.REEL`) stay in VYBES Reels.
+ */
+fun Post.belongsToMainFeed(): Boolean = !isArchived && !isUnfiltered && !isVybesReel && mediaType != MediaType.REEL
+

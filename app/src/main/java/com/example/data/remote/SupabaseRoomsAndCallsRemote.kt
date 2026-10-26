@@ -70,6 +70,31 @@ object SupabaseRoomsAndCallsRemote {
     }
   }
 
+  /**
+   * Explicitly writes `{"last_seen_at":null}` (which Moshi default serialization would skip)
+   * so signed-out or backgrounded users immediately appear offline across all devices.
+   */
+  suspend fun clearPresenceOnLogout(
+    userId: String,
+    authHeader: String?
+  ) = withContext(Dispatchers.IO) {
+    if (!SupabaseConfig.isConfigured() || userId.isBlank() || authHeader.isNullOrBlank()) return@withContext
+    try {
+      val mediaType = with(okhttp3.MediaType.Companion) { "application/json".toMediaTypeOrNull() }
+      val body = with(okhttp3.RequestBody.Companion) { """{"last_seen_at":null}""".toRequestBody(mediaType) }
+      val url = "${SupabaseConfig.supabaseUrl}/rest/v1/profiles?id=eq.$userId"
+      val req = okhttp3.Request.Builder()
+        .url(url)
+        .addHeader("apikey", SupabaseConfig.supabaseAnonKey)
+        .addHeader("Authorization", authHeader)
+        .patch(body)
+        .build()
+      SupabaseNetworkClient.okHttpClient.newCall(req).execute().close()
+    } catch (e: Exception) {
+      Log.d(TAG, "Presence clear skipped: ${e.message}")
+    }
+  }
+
   suspend fun markMessagesRead(
     userId: String,
     messageIds: List<String>,

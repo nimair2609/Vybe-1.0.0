@@ -173,11 +173,12 @@ object TimestampUtils {
 
   /**
    * Checks whether `lastSeenIso` represents an active online session within [thresholdSeconds].
+   * Uses a tight 90-second active window paired with a 35-second foreground heartbeat.
    */
-  fun isRecentlyOnline(lastSeenIso: String?, thresholdSeconds: Long = 180L, nowMillis: Long = System.currentTimeMillis()): Boolean {
+  fun isRecentlyOnline(lastSeenIso: String?, thresholdSeconds: Long = 90L, nowMillis: Long = System.currentTimeMillis()): Boolean {
     val seenMillis = parseIsoMillis(lastSeenIso) ?: return false
     val diffSec = (nowMillis - seenMillis) / 1000L
-    return diffSec in -120L..thresholdSeconds
+    return diffSec in -45L..thresholdSeconds
   }
 
   private fun formatCalendarDate(epochMillis: Long, nowMillis: Long): String {

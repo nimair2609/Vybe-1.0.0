@@ -268,11 +268,20 @@ interface SupabaseRestApi {
     @Query("user_id") userIdFilter: String
   ): Response<List<SupabaseReactionDto>>
 
+  @GET("post_reactions")
+  suspend fun getReactionsForPosts(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("post_id") postIdsInFilter: String,
+    @Query("limit") limit: Int = 2000
+  ): Response<List<SupabaseReactionDto>>
+
   @POST("post_reactions")
   suspend fun upsertReaction(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Header("Prefer") prefer: String = "resolution=merge-duplicates,return=representation",
+    @Query("on_conflict") onConflict: String = "post_id,user_id",
     @Body reaction: SupabaseReactionDto
   ): Response<List<SupabaseReactionDto>>
 

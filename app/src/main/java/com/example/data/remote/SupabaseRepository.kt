@@ -815,9 +815,9 @@ class SupabaseRepository {
     } else {
       LivePulseStatus.NONE
     }
-    // Online presence is based on authoritative recent activity (last 5 minutes),
-    // ensuring stale mood pulses do NOT keep offline users perpetually active.
-    val isSeenRecently = TimestampUtils.isRecentlyOnline(p.lastSeenAt, thresholdSeconds = 300L)
+    // Online presence is based on authoritative recent heartbeat activity (last 90 seconds),
+    // ensuring signed-out or inactive users immediately appear offline.
+    val isSeenRecently = TimestampUtils.isRecentlyOnline(p.lastSeenAt, thresholdSeconds = 90L)
     val onlineNow = isSeenRecently
 
     return User(
@@ -1609,7 +1609,41 @@ class SupabaseRepository {
         return@withContext Result.failure(Exception(err))
       }
 
-      val myReactions: Map<String, VybeReaction> = if (!currentUserId.isNullOrBlank()) {
+      val rawPosts = resp.body().orEmpty()
+      val postIds = rawPosts.map { it.id }.filter { it.isNotBlank() }
+
+      val aggregatedReactions = mutableMapOf<String, MutableMap<VybeReaction, Int>>()
+      val myReactions = mutableMapOf<String, VybeReaction>()
+
+      if (postIds.isNotEmpty()) {
+        try {
+          val inFilter = "in.(${postIds.joinToString(",")})"
+          val allRResp = SupabaseNetworkClient.restApi.getReactionsForPosts(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = authHeader,
+            postIdsInFilter = inFilter
+          )
+          if (allRResp.isSuccessful) {
+            // Deduplicate by (postId, userId) in case legacy DB had duplicate rows prior to migration 0009
+            val seenPairs = HashSet<String>()
+            allRResp.body().orEmpty().forEach { rDto ->
+              val pairKey = "${rDto.postId}:${rDto.userId}"
+              if (seenPairs.add(pairKey)) {
+                val parsed = VybeReaction.fromWire(rDto.reactionType) ?: VybeReaction.PULSE
+                val postMap = aggregatedReactions.getOrPut(rDto.postId) { mutableMapOf() }
+                postMap[parsed] = (postMap[parsed] ?: 0) + 1
+                if (!currentUserId.isNullOrBlank() && rDto.userId == currentUserId) {
+                  myReactions[rDto.postId] = parsed
+                }
+              }
+            }
+          }
+        } catch (_: Exception) {
+          // Fallback to user-only reactions below if batch query fails
+        }
+      }
+
+      if (!currentUserId.isNullOrBlank() && myReactions.isEmpty()) {
         try {
           val rResp = SupabaseNetworkClient.restApi.getMyReactions(
             apiKey = SupabaseConfig.supabaseAnonKey,
@@ -1617,13 +1651,13 @@ class SupabaseRepository {
             userIdFilter = "eq.$currentUserId"
           )
           if (rResp.isSuccessful) {
-            rResp.body().orEmpty().associate { dto ->
-              val reaction = try { VybeReaction.valueOf(dto.reactionType) } catch (_: Exception) { VybeReaction.PURE_ENERGY }
-              dto.postId to reaction
+            rResp.body().orEmpty().forEach { dto ->
+              val reaction = VybeReaction.fromWire(dto.reactionType) ?: VybeReaction.PULSE
+              myReactions[dto.postId] = reaction
             }
-          } else emptyMap()
-        } catch (_: Exception) { emptyMap() }
-      } else emptyMap()
+          }
+        } catch (_: Exception) {}
+      }
 
       val mySavedIds: Set<String> = if (!currentUserId.isNullOrBlank()) {
         try {
@@ -1636,7 +1670,9 @@ class SupabaseRepository {
         } catch (_: Exception) { emptySet() }
       } else emptySet()
 
-      val postsList = resp.body()!!.map { dto -> mapPostDtoToModel(dto, myReactions, mySavedIds, accessToken) }
+      val postsList = rawPosts.map { dto ->
+        mapPostDtoToModel(dto, myReactions, aggregatedReactions[dto.id], mySavedIds, accessToken)
+      }
       Result.success(postsList)
     } catch (e: Exception) {
       Log.e(TAG, "Error fetching posts: ${e.message}", e)
@@ -1647,6 +1683,7 @@ class SupabaseRepository {
   private suspend fun mapPostDtoToModel(
     dto: SupabasePostDto,
     myReactions: Map<String, VybeReaction>,
+    liveReactionBreakdown: Map<VybeReaction, Int>?,
     mySavedIds: Set<String>,
     accessToken: String
   ): Post {
@@ -1695,6 +1732,29 @@ class SupabaseRepository {
     } else null
 
     val myReaction = myReactions[dto.id]
+    val dtoBreakdown = buildMap<VybeReaction, Int> {
+      val p = (dto.pulseCount ?: 0).coerceAtLeast(0)
+      val s = (dto.sparkCount ?: 0).coerceAtLeast(0)
+      val w = (dto.waveCount ?: 0).coerceAtLeast(0)
+      val f = (dto.flameCount ?: 0).coerceAtLeast(0)
+      if (p > 0) put(VybeReaction.PULSE, p)
+      if (s > 0) put(VybeReaction.SPARK, s)
+      if (w > 0) put(VybeReaction.WAVE, w)
+      if (f > 0) put(VybeReaction.FLAME, f)
+    }
+    val rawLikes = (dto.likesCount ?: 0).coerceAtLeast(0)
+    val resolvedReactionsCount: Map<VybeReaction, Int> = when {
+      !liveReactionBreakdown.isNullOrEmpty() -> liveReactionBreakdown
+      dtoBreakdown.isNotEmpty() -> dtoBreakdown
+      rawLikes > 0 -> mapOf((myReaction ?: VybeReaction.PULSE) to rawLikes)
+      myReaction != null -> mapOf(myReaction to 1)
+      else -> emptyMap()
+    }
+    val resolvedLikesCount = if (!liveReactionBreakdown.isNullOrEmpty()) {
+      liveReactionBreakdown.values.sum()
+    } else {
+      maxOf(rawLikes, resolvedReactionsCount.values.sum())
+    }
 
     return Post(
       id = dto.id,
@@ -1704,7 +1764,7 @@ class SupabaseRepository {
       mediaType = mediaType,
       timestamp = TimestampUtils.formatRelative(dto.createdAt, "Recently"),
       createdAtIso = dto.createdAt,
-      likesCount = (dto.likesCount ?: 0).coerceAtLeast(0),
+      likesCount = resolvedLikesCount,
       commentsCount = (dto.commentsCount ?: 0).coerceAtLeast(0),
       savesCount = (dto.savesCount ?: 0).coerceAtLeast(0),
       viewsCount = (dto.viewsCount ?: 0).coerceAtLeast(0),
@@ -1720,7 +1780,8 @@ class SupabaseRepository {
       longitude = dto.longitude,
       mediaAspectRatio = firstRatio,
       storagePaths = storagePaths,
-      userReaction = myReaction
+      userReaction = myReaction,
+      reactionsCount = resolvedReactionsCount
     )
   }
 
@@ -1931,11 +1992,27 @@ class SupabaseRepository {
         )
         if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to remove reaction."))
       } else {
-        val resp = SupabaseNetworkClient.restApi.upsertReaction(
+        var resp = SupabaseNetworkClient.restApi.upsertReaction(
           apiKey = SupabaseConfig.supabaseAnonKey,
           authHeader = authHeader,
+          onConflict = "post_id,user_id",
           reaction = SupabaseReactionDto(postId = postId, userId = userId, reactionType = reaction.name)
         )
+        if (!resp.isSuccessful) {
+          // Safe delete-then-insert fallback in case legacy DB lacked composite unique index or UPDATE policy
+          SupabaseNetworkClient.restApi.deleteReaction(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = authHeader,
+            postIdFilter = "eq.$postId",
+            userIdFilter = "eq.$userId"
+          )
+          resp = SupabaseNetworkClient.restApi.upsertReaction(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = authHeader,
+            onConflict = "post_id,user_id",
+            reaction = SupabaseReactionDto(postId = postId, userId = userId, reactionType = reaction.name)
+          )
+        }
         if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to react to post."))
       }
     } catch (e: Exception) {

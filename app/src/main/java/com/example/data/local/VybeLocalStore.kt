@@ -345,6 +345,12 @@ class VybeLocalStore private constructor(context: Context) {
       put("moodZone", p.moodZone?.name)
       put("locationName", p.locationName)
       if (p.mediaAspectRatio != null) put("mediaAspectRatio", p.mediaAspectRatio.toDouble())
+      if (p.userReaction != null) put("userReaction", p.userReaction.name)
+      if (p.reactionsCount.isNotEmpty()) {
+        val rcObj = JSONObject()
+        p.reactionsCount.forEach { (k, v) -> rcObj.put(k.name, v) }
+        put("reactionsCount", rcObj)
+      }
     }
   }
 
@@ -367,6 +373,21 @@ class VybeLocalStore private constructor(context: Context) {
     val aspect = if (obj.has("mediaAspectRatio")) obj.optDouble("mediaAspectRatio").toFloat() else null
     val loc = obj.optString("locationName", "").takeUnless { it.isBlank() || it.equals("null", true) }
     val createdAtIso = obj.optString("createdAtIso", "").ifBlank { null }
+    val userReactionStr = obj.optString("userReaction", "").takeUnless { it.isBlank() || it.equals("null", true) }
+    val userReaction = userReactionStr?.let { VybeReaction.fromWire(it) }
+    val reactionsMap = mutableMapOf<VybeReaction, Int>()
+    val rcObj = obj.optJSONObject("reactionsCount")
+    if (rcObj != null) {
+      val keys = rcObj.keys()
+      while (keys.hasNext()) {
+        val k = keys.next()
+        val count = rcObj.optInt(k, 0)
+        if (count > 0) {
+          val rx = VybeReaction.fromWire(k)
+          reactionsMap[rx] = (reactionsMap[rx] ?: 0) + count
+        }
+      }
+    }
 
     return Post(
       id = obj.optString("id", "p_${System.currentTimeMillis()}"),
@@ -381,14 +402,16 @@ class VybeLocalStore private constructor(context: Context) {
       savesCount = obj.optInt("savesCount", 0),
       sharesCount = obj.optInt("sharesCount", 0),
       viewsCount = obj.optInt("viewsCount", 0),
-      isLiked = obj.optBoolean("isLiked", false),
+      isLiked = obj.optBoolean("isLiked", false) || userReaction != null,
       isSaved = obj.optBoolean("isSaved", false),
       isArchived = obj.optBoolean("isArchived", false),
       isUnfiltered = obj.optBoolean("isUnfiltered", false),
       isVybesReel = obj.optBoolean("isVybesReel", false),
       moodZone = mood,
       locationName = loc,
-      mediaAspectRatio = aspect
+      mediaAspectRatio = aspect,
+      userReaction = userReaction,
+      reactionsCount = reactionsMap
     )
   }
 
