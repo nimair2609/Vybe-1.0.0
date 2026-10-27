@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.model.MediaType
 import com.example.data.model.MoodType
+import com.example.data.model.belongsToMainFeed
 import com.example.data.model.matchesMoodFilter
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
@@ -62,6 +63,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
   val liveStreams by viewModel.liveStreams.collectAsState()
   val hasMoreFeedPosts by viewModel.hasMoreFeedPosts.collectAsState()
   val isLoadingMorePosts by viewModel.isLoadingMorePosts.collectAsState()
+  val isFeedAudioEnabled by viewModel.isFeedAudioEnabled.collectAsState()
   val coroutineScope = rememberCoroutineScope()
 
   var feedTab by remember { mutableStateOf("For You") }
@@ -73,7 +75,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
   var storyCreatedFeedback by remember { mutableStateOf<String?>(null) }
 
   val filteredPosts = remember(posts, selectedMood, feedTab, followingUserIds, currentUser?.id) {
-    var list = posts.filter { !it.isArchived && it.matchesMoodFilter(selectedMood) }
+    var list = posts.filter { it.belongsToMainFeed() && it.matchesMoodFilter(selectedMood) }
     when (feedTab) {
       "Following" -> list = list.filter { followingUserIds.contains(it.author.id) || it.author.id == currentUser?.id }
       "Discover" -> list = list.sortedByDescending { it.likesCount + it.commentsCount + it.viewsCount }
@@ -151,6 +153,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
   }
 
   LaunchedEffect(Unit) {
+    viewModel.refreshAllData()
     viewModel.feedRefreshTrigger.collect {
       listState.animateScrollToItem(0)
       triggerRefresh()
@@ -283,7 +286,9 @@ fun FeedScreen(viewModel: VybeViewModel) {
             onManageVybeMatchesClick = { showVybeMatchesDialog = true },
             vybeMatchesCount = vybeMatches.size,
             activeLiveRooms = unloadRooms.filter { it.isActive },
-            onJoinLiveRoom = { room -> viewModel.joinUnloadRoom(room) }
+            onJoinLiveRoom = { room -> viewModel.joinUnloadRoom(room) },
+            activeLiveStreams = liveStreams.filter { it.isLive },
+            onJoinLiveStream = { stream -> viewModel.joinLiveBroadcast(stream) }
           )
         }
 
@@ -499,6 +504,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
               PostCard(
                 post = post,
                 onLikeClick = { viewModel.toggleLike(post.id) },
+                onReact = { rx -> viewModel.reactToPost(post.id, rx) },
                 onSaveClick = { viewModel.toggleSave(post.id) },
                 onCommentClick = { viewModel.loadCommentsForPost(post.id) },
                 onAddComment = { text -> viewModel.addComment(post.id, text) },
@@ -525,6 +531,8 @@ fun FeedScreen(viewModel: VybeViewModel) {
                 onPostViewed = { viewModel.recordPostView(it) },
                 currentUserId = currentUser?.id,
                 shouldAutoPlay = (post.id == activeAutoPlayPostId),
+                isAudioEnabled = isFeedAudioEnabled,
+                onToggleAudio = { enabled -> viewModel.setFeedAudioEnabled(enabled) },
                 modifier = Modifier.widthIn(max = 600.dp)
               )
             }

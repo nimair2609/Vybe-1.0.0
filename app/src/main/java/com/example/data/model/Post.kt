@@ -90,8 +90,9 @@ fun Post.matchesMoodFilter(filter: MoodType?): Boolean = when (filter) {
 }
 
 /**
- * Zone Isolation Rule: Posts published in Raw/Unfiltered (`isUnfiltered = true`) stay strictly in the
- * Raw/Unfiltered zone, and Reels (`isVybesReel = true` / `MediaType.REEL`) stay in VYBES Reels.
+ * Main feed shows all active published posts (images, text, video, and reels shared to feed).
+ * Raw moments (isUnfiltered = true) stay isolated to the Unfiltered/Raw zone, and archived posts remain hidden.
  */
-fun Post.belongsToMainFeed(): Boolean = !isArchived && !isUnfiltered && !isVybesReel && mediaType != MediaType.REEL
+fun Post.belongsToMainFeed(): Boolean = !isArchived && !isUnfiltered
+
 

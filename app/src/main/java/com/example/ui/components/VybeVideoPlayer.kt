@@ -68,7 +68,8 @@ fun VybeVideoPlayer(
   onAspectRatioDetected: ((Float) -> Unit)? = null,
   onDurationDetected: ((Int) -> Unit)? = null,
   onVideoCompleted: (() -> Unit)? = null,
-  onTapOverlay: (() -> Unit)? = null
+  onTapOverlay: (() -> Unit)? = null,
+  onMuteToggled: ((Boolean) -> Unit)? = null
 ) {
   val context = LocalContext.current
   val lifecycleOwner = LocalLifecycleOwner.current
@@ -511,6 +512,7 @@ fun VybeVideoPlayer(
             val vol = if (nextMuted) 0f else 1f
             mediaPlayerRef.value?.setVolume(vol, vol)
           } catch (_: Exception) {}
+          onMuteToggled?.invoke(nextMuted)
         },
         modifier = Modifier
           .align(Alignment.BottomEnd)

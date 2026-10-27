@@ -60,5 +60,9 @@ data class NotificationItem(
   val isRead: Boolean = false,
   val actorUser: User? = null,
   val destinationScreen: String? = null,
-  val targetEntityId: String? = null
+  val targetEntityId: String? = null,
+  val contentPreviewUrl: String? = null,
+  val contentSnippet: String? = null,
+  val isReel: Boolean = false
 )
+

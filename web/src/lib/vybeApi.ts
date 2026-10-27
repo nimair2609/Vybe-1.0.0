@@ -41,7 +41,7 @@ export function mapProfileRow(row: any): VybeUser {
     !rawDisplay || rawDisplay.toLowerCase() === 'null'
       ? `${firstName} ${lastName}`.trim() || safeUsername
       : rawDisplay;
-  const lastSeen = row?.last_seen_at || row?.updated_at || null;
+  const lastSeen = row?.last_seen_at || null;
 
   return {
     id,
@@ -438,6 +438,23 @@ export async function publishPostPersisted(params: {
   return String(inserted.id);
 }
 
+export async function reactToPostWeb(
+  postId: string,
+  userId: string,
+  reaction: 'PULSE' | 'SPARK' | 'WAVE' | 'FLAME',
+  currentReaction?: string | null
+): Promise<void> {
+  if (currentReaction === reaction) {
+    await supabase.from('post_reactions').delete().eq('post_id', postId).eq('user_id', userId);
+  } else {
+    await supabase.from('post_reactions').upsert({
+      post_id: postId,
+      user_id: userId,
+      reaction_type: reaction
+    });
+  }
+}
+
 export async function togglePostResonance(postId: string, userId: string, currentlyLiked: boolean): Promise<void> {
   if (currentlyLiked) {
     await supabase.from('post_reactions').delete().eq('post_id', postId).eq('user_id', userId);
@@ -445,7 +462,7 @@ export async function togglePostResonance(postId: string, userId: string, curren
     await supabase.from('post_reactions').upsert({
       post_id: postId,
       user_id: userId,
-      reaction_type: 'PURE_ENERGY'
+      reaction_type: 'PULSE'
     });
   }
 }

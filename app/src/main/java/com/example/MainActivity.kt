@@ -82,6 +82,19 @@ class MainActivity : ComponentActivity() {
         }
       }
 
+      LaunchedEffect(currentScreen) {
+        val isMediaPlaybackScreen = currentScreen == Screen.MAIN ||
+          currentScreen == Screen.REELS_VIEWER ||
+          currentScreen == Screen.STORY_VIEWER ||
+          currentScreen == Screen.LIVE_STUDIO ||
+          currentScreen == Screen.UNLOAD_VIEW
+        volumeControlStream = if (isMediaPlaybackScreen) {
+          android.media.AudioManager.STREAM_MUSIC
+        } else {
+          android.media.AudioManager.USE_DEFAULT_STREAM_TYPE
+        }
+      }
+
       VybeTheme(darkTheme = isDark) {
         Surface(modifier = Modifier.fillMaxSize()) {
           Column(modifier = Modifier.fillMaxSize()) {
@@ -97,15 +110,15 @@ class MainActivity : ComponentActivity() {
                 Screen.CALL_SCREEN -> CallScreen(viewModel)
                 Screen.CREATE_POST -> CreatePostScreen(viewModel)
                 Screen.CREATE_CAPSULE -> TimeCapsulesScreen(viewModel)
-                Screen.TIME_CAPSULES_VIEW -> TimeCapsulesScreen(viewModel)
-                Screen.DOUBLE_TAKE_VIEW -> DoubleTakeScreen(viewModel)
+                Screen.CREATE_CROSSED_PATH -> CrossedPathsScreen(viewModel)
                 Screen.SHOP_DETAIL -> ShopDetailScreen(viewModel)
                 Screen.USER_PROFILE -> UserProfileScreen(viewModel)
                 Screen.CREATOR_STUDIO -> CreatorStudioScreen(viewModel)
                 Screen.ADMIN_CONSOLE -> AdminConsoleScreen(viewModel)
                 Screen.SETTINGS -> SettingsScreen(viewModel)
                 Screen.REELS_VIEWER -> ReelsViewerScreen(viewModel)
-                Screen.CREATE_CROSSED_PATH -> CrossedPathsScreen(viewModel)
+                Screen.TIME_CAPSULES_VIEW -> TimeCapsulesScreen(viewModel)
+                Screen.DOUBLE_TAKE_VIEW -> DoubleTakeScreen(viewModel)
                 Screen.UNLOAD_VIEW -> UnloadScreen(viewModel)
                 Screen.UNFILTERED_VIEW -> UnfilteredScreen(viewModel)
                 Screen.WHAT_NEXT_VIEW -> WhatNextScreen(viewModel)
@@ -113,6 +126,7 @@ class MainActivity : ComponentActivity() {
                 Screen.STORY_VIEWER -> StoryViewerScreen(viewModel)
                 Screen.NOTIFICATIONS -> NotificationCenterScreen(viewModel)
                 Screen.LIVE_STUDIO -> LiveStudioScreen(viewModel)
+                Screen.COMMUNITY_ZONE -> CommunityZoneScreen(viewModel)
               }
 
               // Floating Upload Status Banner positioned cleanly below the top header

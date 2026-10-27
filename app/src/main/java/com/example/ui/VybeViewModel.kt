@@ -44,7 +44,8 @@ enum class Screen {
   SPIRITUAL_MODE,
   STORY_VIEWER,
   NOTIFICATIONS,
-  LIVE_STUDIO
+  LIVE_STUDIO,
+  COMMUNITY_ZONE
 }
 
 class VybeViewModel : ViewModel() {
@@ -55,6 +56,25 @@ class VybeViewModel : ViewModel() {
 
   private val _currentStoryIndex = MutableStateFlow(0)
   val currentStoryIndex: StateFlow<Int> = _currentStoryIndex.asStateFlow()
+
+  private val _activeStorySequence = MutableStateFlow<List<Story>>(emptyList())
+  val activeStorySequence: StateFlow<List<Story>> = _activeStorySequence.asStateFlow()
+
+  private val _activeStoryAuthorId = MutableStateFlow<String?>(null)
+  val activeStoryAuthorId: StateFlow<String?> = _activeStoryAuthorId.asStateFlow()
+
+  private val _isFeedAudioEnabled = MutableStateFlow(false)
+  val isFeedAudioEnabled: StateFlow<Boolean> = _isFeedAudioEnabled.asStateFlow()
+
+  fun setFeedAudioEnabled(enabled: Boolean) {
+    _isFeedAudioEnabled.value = enabled
+  }
+
+  fun toggleFeedAudio(): Boolean {
+    val next = !_isFeedAudioEnabled.value
+    _isFeedAudioEnabled.value = next
+    return next
+  }
 
   private val screenBackStack = mutableListOf<Screen>()
   private var isHandlingRecoveryDeepLink = false
@@ -543,26 +563,48 @@ class VybeViewModel : ViewModel() {
   fun addNotification(item: NotificationItem) = repository.addNotification(item)
   fun deleteNotification(notificationId: String) = repository.deleteNotification(notificationId)
 
-  // --- Stories ---
-  fun openStory(story: Story) {
-    val list = repository.stories.value
-    val idx = list.indexOfFirst { it.id == story.id }
-    _currentStoryIndex.value = if (idx >= 0) idx else 0
-    repository.markStoryViewed(story.id)
+  // --- Stories (Author-Scoped Sequences) ---
+  fun openUserStorySequence(authorId: String, initialStoryId: String? = null) {
+    val nowMillis = System.currentTimeMillis()
+    val allActive = repository.stories.value.filter { s ->
+      val exp = com.example.util.TimestampUtils.parseIsoMillis(s.expiresAtIso)
+      if (exp != null) exp > nowMillis else s.expiresHoursRemaining > 0
+    }
+    val authorStories = allActive
+      .filter { it.author.id == authorId }
+      .sortedBy { com.example.util.TimestampUtils.parseIsoMillis(it.createdAtIso) ?: 0L }
+
+    if (authorStories.isEmpty()) return
+
+    _activeStorySequence.value = authorStories
+    _activeStoryAuthorId.value = authorId
+
+    val targetIdx = if (!initialStoryId.isNullOrBlank()) {
+      authorStories.indexOfFirst { it.id == initialStoryId }.coerceAtLeast(0)
+    } else {
+      val firstUnviewed = authorStories.indexOfFirst { !it.isViewed }
+      if (firstUnviewed >= 0) firstUnviewed else 0
+    }
+
+    _currentStoryIndex.value = targetIdx
+    repository.markStoryViewed(authorStories[targetIdx].id)
     navigateTo(Screen.STORY_VIEWER)
+  }
+
+  fun openStory(story: Story) {
+    openUserStorySequence(story.author.id, story.id)
   }
 
   fun openStoryAtIndex(index: Int) {
     val list = repository.stories.value
     if (index in list.indices) {
-      _currentStoryIndex.value = index
-      repository.markStoryViewed(list[index].id)
-      navigateTo(Screen.STORY_VIEWER)
+      val target = list[index]
+      openUserStorySequence(target.author.id, target.id)
     }
   }
 
   fun nextStory(): Boolean {
-    val list = repository.stories.value
+    val list = _activeStorySequence.value.ifEmpty { repository.stories.value }
     if (_currentStoryIndex.value < list.size - 1) {
       _currentStoryIndex.value += 1
       repository.markStoryViewed(list[_currentStoryIndex.value].id)

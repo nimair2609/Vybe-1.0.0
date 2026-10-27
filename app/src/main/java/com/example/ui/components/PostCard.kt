@@ -32,6 +32,8 @@ import coil.compose.AsyncImage
 import com.example.data.model.MediaType
 import com.example.data.model.Post
 import com.example.data.model.User
+import com.example.data.model.VybeReaction
+import androidx.compose.ui.zIndex
 import com.example.ui.theme.*
 import com.example.util.rememberRelativeTimestamp
 
@@ -44,6 +46,7 @@ fun PostCard(
   onCommentClick: () -> Unit,
   onShareClick: () -> Unit,
   onUserClick: (User) -> Unit,
+  onReact: ((VybeReaction) -> Unit)? = null,
   onRemixClick: (() -> Unit)? = null,
   onAddComment: ((String) -> Unit)? = null,
   onLoadComments: (() -> Unit)? = null,
@@ -52,6 +55,8 @@ fun PostCard(
   onPostViewed: ((String) -> Unit)? = null,
   currentUserId: String? = null,
   shouldAutoPlay: Boolean = false,
+  isAudioEnabled: Boolean = false,
+  onToggleAudio: ((Boolean) -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
   var showCommentDialog by remember { mutableStateOf(false) }
@@ -59,6 +64,7 @@ fun PostCard(
   var showAnalyticsSheet by remember { mutableStateOf(false) }
   var showDeleteConfirm by remember { mutableStateOf(false) }
   var showReportDialog by remember { mutableStateOf(false) }
+  var showReactionSelector by remember { mutableStateOf(false) }
   var selectedReportReason by remember { mutableStateOf("Spam or Misleading") }
   var commentText by remember { mutableStateOf("") }
   var detectedMediaRatio by remember(post.id, post.mediaAspectRatio) { mutableStateOf(post.mediaAspectRatio) }
@@ -317,12 +323,15 @@ fun PostCard(
               videoUrl = mediaUrl,
               autoPlay = shouldAutoPlay,
               isLooping = true,
-              initialMuted = true,
+              initialMuted = !isAudioEnabled,
               isPausedExternal = !shouldAutoPlay || anySheetOpen,
               respectReducedMotion = true,
               fitMode = VideoFitMode.COVER_PROPORTIONAL,
               onAspectRatioDetected = { ratio ->
                 detectedMediaRatio = ratio
+              },
+              onMuteToggled = { muted ->
+                onToggleAudio?.invoke(!muted)
               },
               modifier = Modifier.fillMaxSize()
             )
@@ -381,32 +390,98 @@ fun PostCard(
         verticalAlignment = Alignment.CenterVertically
       ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-          // Unique VYBE Resonance Like Button (Replaces standard heart)
-          Surface(
-            color = if (post.isLiked) VybeViolet.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier
-              .heightIn(min = 40.dp)
-              .clip(RoundedCornerShape(14.dp))
-              .clickable { onLikeClick() }
-          ) {
-            Row(
-              modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
-              verticalAlignment = Alignment.CenterVertically
+          // Unique VYBE 4-Reaction Bar & Button (Posts: Hide total reaction counts)
+          Box {
+            Surface(
+              color = if (post.isLiked) {
+                post.userReaction?.let { reactionColor(it).copy(alpha = 0.20f) } ?: VybeViolet.copy(alpha = 0.16f)
+              } else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+              shape = RoundedCornerShape(14.dp),
+              modifier = Modifier
+                .heightIn(min = 40.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .pointerInput(post.id, post.userReaction, post.isLiked) {
+                  detectTapGestures(
+                    onTap = {
+                      if (onReact != null) {
+                        if (post.userReaction != null) {
+                          onReact(post.userReaction)
+                        } else {
+                          onReact(VybeReaction.PULSE)
+                        }
+                      } else {
+                        onLikeClick()
+                      }
+                    },
+                    onLongPress = {
+                      showReactionSelector = !showReactionSelector
+                    }
+                  )
+                }
             ) {
-              VybeLikeIcon(
-                isLiked = post.isLiked,
-                size = 18.dp,
-                inactiveTint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.testTag("like_button_${post.id}")
-              )
-              Spacer(modifier = Modifier.width(6.dp))
-              Text(
-                text = "${post.likesCount}",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-              )
+              Row(
+                modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                if (post.userReaction != null) {
+                  Text(
+                    text = post.userReaction.emoji,
+                    fontSize = 16.sp,
+                    modifier = Modifier.testTag("like_button_${post.id}")
+                  )
+                  Spacer(modifier = Modifier.width(5.dp))
+                  Text(
+                    text = post.userReaction.label,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = reactionColor(post.userReaction)
+                  )
+                } else {
+                  VybeLikeIcon(
+                    isLiked = false,
+                    size = 18.dp,
+                    inactiveTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("like_button_${post.id}")
+                  )
+                  Spacer(modifier = Modifier.width(5.dp))
+                  Text(
+                    text = "React",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                }
+                Spacer(modifier = Modifier.width(2.dp))
+                Icon(
+                  imageVector = Icons.Default.ArrowDropDown,
+                  contentDescription = "Select reaction",
+                  tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                  modifier = Modifier
+                    .size(16.dp)
+                    .clickable { showReactionSelector = !showReactionSelector }
+                )
+              }
+            }
+
+            if (showReactionSelector) {
+              Box(
+                modifier = Modifier
+                  .offset(y = (-56).dp)
+                  .zIndex(20f)
+              ) {
+                VybeReactionSelector(
+                  selectedReaction = post.userReaction,
+                  onSelectReaction = { rx ->
+                    showReactionSelector = false
+                    if (onReact != null) {
+                      onReact(rx)
+                    } else {
+                      onLikeClick()
+                    }
+                  },
+                  onDismiss = { showReactionSelector = false }
+                )
+              }
             }
           }
 
@@ -569,6 +644,7 @@ fun PostCard(
           .fillMaxWidth()
           .padding(horizontal = 16.dp)
           .navigationBarsPadding()
+          .imePadding()
       ) {
         Row(
           modifier = Modifier

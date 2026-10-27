@@ -63,7 +63,11 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
     viewModel.navigateBack()
   }
 
-  val stories by viewModel.stories.collectAsState()
+  val activeSequence by viewModel.activeStorySequence.collectAsState()
+  val allStories by viewModel.stories.collectAsState()
+  val stories = remember(activeSequence, allStories) {
+    if (activeSequence.isNotEmpty()) activeSequence else allStories
+  }
   val currentIndex by viewModel.currentStoryIndex.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
   val scope = rememberCoroutineScope()
@@ -276,10 +280,19 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
         ) {
           Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-              text = currentStory.author.username,
+              text = currentStory.author.displayName,
               color = Color.White,
               fontWeight = FontWeight.Bold,
               fontSize = 13.sp,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.width(5.dp))
+            Text(
+              text = "@${currentStory.author.username}",
+              color = Color.White.copy(alpha = 0.85f),
+              fontWeight = FontWeight.Medium,
+              fontSize = 12.sp,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis
             )

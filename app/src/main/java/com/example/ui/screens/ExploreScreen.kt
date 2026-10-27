@@ -48,6 +48,10 @@ fun ExploreScreen(viewModel: VybeViewModel) {
   val adminReports by viewModel.adminReports.collectAsState()
   val coroutineScope = rememberCoroutineScope()
 
+  LaunchedEffect(Unit) {
+    viewModel.refreshAllData()
+  }
+
   var roomCodeInput by remember { mutableStateOf("") }
   var roomCodeJoining by remember { mutableStateOf(false) }
   var roomCodeError by remember { mutableStateOf<String?>(null) }
@@ -407,6 +411,7 @@ fun ExploreScreen(viewModel: VybeViewModel) {
               PostCard(
                 post = post,
                 onLikeClick = { viewModel.toggleLike(post.id) },
+                onReact = { rx -> viewModel.reactToPost(post.id, rx) },
                 onSaveClick = { viewModel.toggleSave(post.id) },
                 onCommentClick = { viewModel.loadCommentsForPost(post.id) },
                 onAddComment = { text -> viewModel.addComment(post.id, text) },

@@ -34,15 +34,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.example.data.model.MediaType
+import com.example.data.model.Post
+import com.example.data.model.VybeReaction
 import com.example.data.repository.MessagingEligibility
 import com.example.ui.MainTab
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
+import com.example.ui.components.ReelReactionBreakdownSheet
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VideoFitMode
 import com.example.ui.components.VybeAvatar
 import com.example.ui.components.VybeLikeIcon
+import com.example.ui.components.VybeReactionSelector
 import com.example.ui.components.VybeVideoPlayer
 import com.example.ui.theme.*
 import com.example.util.rememberRelativeTimestamp
@@ -75,6 +80,8 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
   var isMuted by remember { mutableStateOf(true) }
   var showShareInboxSheet by remember { mutableStateOf(false) }
   var showCommentsSheet by remember { mutableStateOf(false) }
+  var showReactionSelectorReelId by remember { mutableStateOf<String?>(null) }
+  var showBreakdownSheetReel by remember { mutableStateOf<Post?>(null) }
   var reelCommentText by remember { mutableStateOf("") }
   var shareSearchQuery by remember { mutableStateOf("") }
   var sharedFeedback by remember { mutableStateOf<String?>(null) }
@@ -333,28 +340,82 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
           horizontalAlignment = Alignment.CenterHorizontally,
           verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-          // Like
+          // Like & 4-Reactions (Reels: Show total reactions and individual reaction breakdowns)
           Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            IconButton(
-              onClick = { viewModel.toggleLike(reelPost.id) },
-              modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.5f))
-                .testTag("reel_like_button")
-            ) {
-              VybeLikeIcon(
-                isLiked = reelPost.isLiked,
-                size = 22.dp,
-                inactiveTint = Color.White
-              )
+            Box {
+              IconButton(
+                onClick = {
+                  if (reelPost.userReaction != null) {
+                    viewModel.reactToPost(reelPost.id, reelPost.userReaction)
+                  } else {
+                    viewModel.reactToPost(reelPost.id, VybeReaction.PULSE)
+                  }
+                },
+                modifier = Modifier
+                  .size(48.dp)
+                  .clip(CircleShape)
+                  .background(Color.Black.copy(alpha = 0.5f))
+                  .pointerInput(reelPost.id, reelPost.userReaction) {
+                    detectTapGestures(
+                      onTap = {
+                        if (reelPost.userReaction != null) {
+                          viewModel.reactToPost(reelPost.id, reelPost.userReaction)
+                        } else {
+                          viewModel.reactToPost(reelPost.id, VybeReaction.PULSE)
+                        }
+                      },
+                      onLongPress = {
+                        showReactionSelectorReelId = if (showReactionSelectorReelId == reelPost.id) null else reelPost.id
+                      }
+                    )
+                  }
+                  .testTag("reel_like_button")
+              ) {
+                if (reelPost.userReaction != null) {
+                  Text(reelPost.userReaction.emoji, fontSize = 22.sp)
+                } else {
+                  VybeLikeIcon(
+                    isLiked = false,
+                    size = 22.dp,
+                    inactiveTint = Color.White
+                  )
+                }
+              }
+
+              if (showReactionSelectorReelId == reelPost.id) {
+                Box(
+                  modifier = Modifier
+                    .offset(x = (-180).dp, y = (-8).dp)
+                    .zIndex(30f)
+                ) {
+                  VybeReactionSelector(
+                    selectedReaction = reelPost.userReaction,
+                    onSelectReaction = { rx ->
+                      showReactionSelectorReelId = null
+                      viewModel.reactToPost(reelPost.id, rx)
+                    },
+                    onDismiss = { showReactionSelectorReelId = null }
+                  )
+                }
+              }
             }
-            Text(
-              text = "${reelPost.likesCount}",
-              color = Color.White,
-              fontWeight = FontWeight.Bold,
-              fontSize = 12.sp
-            )
+
+            // Total reactions count - tappable to see breakdown of all 4 reactions
+            Row(
+              modifier = Modifier
+                .clickable { showBreakdownSheetReel = reelPost }
+                .padding(vertical = 2.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Text(
+                text = "${reelPost.totalReactionsCount}",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp
+              )
+              Spacer(modifier = Modifier.width(2.dp))
+              Text("▼", color = Color.White.copy(alpha = 0.65f), fontSize = 8.sp)
+            }
           }
 
           // Comments
@@ -834,6 +895,19 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
         delay(2500)
         sharedFeedback = null
       }
+    }
+
+    if (showBreakdownSheetReel != null) {
+      val rPost = showBreakdownSheetReel!!
+      ReelReactionBreakdownSheet(
+        totalCount = rPost.totalReactionsCount,
+        breakdown = rPost.reactionsCount,
+        userReaction = rPost.userReaction,
+        onReactionClick = { rx ->
+          viewModel.reactToPost(rPost.id, rx)
+        },
+        onDismiss = { showBreakdownSheetReel = null }
+      )
     }
   }
 }

@@ -839,3 +839,79 @@ data class SupabaseBusinessProfileInsertDto(
   val city: String,
   @Json(name = "full_address") val fullAddress: String
 )
+
+// --- COMMUNITY DTOs ---
+data class SupabaseCommunityDto(
+  val id: String,
+  @Json(name = "creator_id") val creatorId: String,
+  val name: String,
+  val description: String? = null,
+  val category: String? = "General",
+  @Json(name = "avatar_url") val avatarUrl: String? = null,
+  @Json(name = "banner_url") val bannerUrl: String? = null,
+  @Json(name = "is_private") val isPrivate: Boolean = false,
+  @Json(name = "members_count") val membersCount: Int = 1,
+  @Json(name = "created_at") val createdAt: String? = null
+)
+
+data class SupabaseCommunityInsertDto(
+  @Json(name = "creator_id") val creatorId: String,
+  val name: String,
+  val description: String = "",
+  val category: String = "General",
+  @Json(name = "avatar_url") val avatarUrl: String? = null,
+  @Json(name = "banner_url") val bannerUrl: String? = null,
+  @Json(name = "is_private") val isPrivate: Boolean = false
+)
+
+data class SupabaseCommunityMemberDto(
+  @Json(name = "community_id") val communityId: String,
+  @Json(name = "user_id") val userId: String,
+  val role: String? = "MEMBER",
+  val status: String? = "ACCEPTED",
+  @Json(name = "joined_at") val joinedAt: String? = null
+)
+
+data class SupabaseCommunityMemberInsertDto(
+  @Json(name = "community_id") val communityId: String,
+  @Json(name = "user_id") val userId: String,
+  val role: String = "MEMBER",
+  val status: String = "ACCEPTED"
+)
+
+data class SupabaseCommunityPostDto(
+  val id: String,
+  @Json(name = "community_id") val communityId: String,
+  @Json(name = "author_id") val authorId: String,
+  val title: String,
+  val content: String = "",
+  @Json(name = "media_url") val mediaUrl: String? = null,
+  @Json(name = "likes_count") val likesCount: Int = 0,
+  @Json(name = "comments_count") val commentsCount: Int = 0,
+  @Json(name = "created_at") val createdAt: String? = null,
+  val profiles: SupabaseProfileDto? = null
+)
+
+data class SupabaseCommunityPostInsertDto(
+  @Json(name = "community_id") val communityId: String,
+  @Json(name = "author_id") val authorId: String,
+  val title: String,
+  val content: String = "",
+  @Json(name = "media_url") val mediaUrl: String? = null
+)
+
+data class SupabaseCommunityCommentDto(
+  val id: String,
+  @Json(name = "post_id") val postId: String,
+  @Json(name = "author_id") val authorId: String,
+  val content: String,
+  @Json(name = "created_at") val createdAt: String? = null,
+  val profiles: SupabaseProfileDto? = null
+)
+
+data class SupabaseCommunityCommentInsertDto(
+  @Json(name = "post_id") val postId: String,
+  @Json(name = "author_id") val authorId: String,
+  val content: String
+)
+

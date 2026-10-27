@@ -509,7 +509,15 @@ export const FeedAndStoriesPage: React.FC<{
 
               {/* Media */}
               {post.mediaUrls.length > 0 && (
-                <div style={{ marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div
+                  style={{ marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 8, cursor: 'pointer' }}
+                  onDoubleClick={async () => {
+                    if (!requireAuth()) return;
+                    await togglePostResonance(post.id, currentUser.id, post.isLiked);
+                    await onRefreshAll();
+                  }}
+                  title="Double-click to react"
+                >
                   {post.mediaUrls.map((url, idx) =>
                     post.mediaType === 'VIDEO' || post.mediaType === 'REEL' || /\.(mp4|webm|mov)(\?|$)/i.test(url) ? (
                       <ViewportAutoplayVideo key={`${post.id}_${idx}`} id={`${post.id}_${idx}`} src={url} />
@@ -532,7 +540,7 @@ export const FeedAndStoriesPage: React.FC<{
                 </div>
               )}
 
-              {/* Engagement Bar */}
+              {/* Engagement Bar (Posts: Hide total reaction counts) */}
               <div
                 style={{
                   display: 'flex',
@@ -560,10 +568,10 @@ export const FeedAndStoriesPage: React.FC<{
                       cursor: 'pointer',
                       fontWeight: 600
                     }}
-                    aria-label="Resonate with post"
+                    aria-label="React with pulse"
                   >
                     <VybeResonanceIcon active={post.isLiked} size={22} />
-                    <span>{post.likesCount}</span>
+                    <span>{post.isLiked ? '⚡ Pulse' : 'React'}</span>
                   </button>
 
                   <button
@@ -900,7 +908,12 @@ export const FeedAndStoriesPage: React.FC<{
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <VybeAvatar user={activeStory.author} size={36} />
                 <div>
-                  <strong style={{ fontSize: '0.9rem' }}>{activeStory.author.displayName}</strong>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <strong style={{ fontSize: '0.9rem' }}>{activeStory.author.displayName}</strong>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                      @{activeStory.author.username}
+                    </span>
+                  </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                     <RelativeTimeText iso={activeStory.createdAtIso} fallback="Just now" /> • 24h Story
                   </div>

@@ -225,6 +225,21 @@ interface SupabaseRestApi {
     @Body message: SupabaseMessageInsertDto
   ): Response<List<SupabaseMessageDto>>
 
+  @DELETE("messages")
+  suspend fun deleteMessage(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("id") idFilter: String
+  ): Response<Unit>
+
+  @PATCH("messages")
+  suspend fun patchMessageDeleted(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("id") idFilter: String,
+    @Body body: Map<String, @JvmSuppressWildcards Any?>
+  ): Response<Unit>
+
   @GET("message_receipts")
   suspend fun getMessageReceipts(
     @Header("apikey") apiKey: String,
@@ -1024,4 +1039,88 @@ interface SupabaseRestApi {
     @Header("Prefer") prefer: String = "return=representation",
     @Body review: SupabaseBusinessReviewInsertDto
   ): Response<List<SupabaseBusinessReviewDto>>
+
+  // --- COMMUNITIES ---
+  @GET("communities")
+  suspend fun getCommunities(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("order") order: String = "members_count.desc",
+    @Query("limit") limit: Int = 50
+  ): Response<List<SupabaseCommunityDto>>
+
+  @POST("communities")
+  suspend fun insertCommunity(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body community: SupabaseCommunityInsertDto
+  ): Response<List<SupabaseCommunityDto>>
+
+  @GET("community_members")
+  suspend fun getCommunityMembers(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("community_id") communityIdFilter: String? = null,
+    @Query("user_id") userIdFilter: String? = null
+  ): Response<List<SupabaseCommunityMemberDto>>
+
+  @POST("community_members")
+  suspend fun insertCommunityMember(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body member: SupabaseCommunityMemberInsertDto
+  ): Response<List<SupabaseCommunityMemberDto>>
+
+  @DELETE("community_members")
+  suspend fun deleteCommunityMember(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("community_id") communityIdFilter: String,
+    @Query("user_id") userIdFilter: String
+  ): Response<Unit>
+
+  @GET("community_posts")
+  suspend fun getCommunityPosts(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("community_id") communityIdFilter: String,
+    @Query("select") select: String = "*,profiles:author_id(*)",
+    @Query("order") order: String = "created_at.desc",
+    @Query("limit") limit: Int = 50
+  ): Response<List<SupabaseCommunityPostDto>>
+
+  @POST("community_posts")
+  suspend fun insertCommunityPost(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body post: SupabaseCommunityPostInsertDto
+  ): Response<List<SupabaseCommunityPostDto>>
+
+  @DELETE("community_posts")
+  suspend fun deleteCommunityPost(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("id") idFilter: String
+  ): Response<Unit>
+
+  @GET("community_post_comments")
+  suspend fun getCommunityPostComments(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("post_id") postIdFilter: String,
+    @Query("select") select: String = "*,profiles:author_id(*)",
+    @Query("order") order: String = "created_at.asc",
+    @Query("limit") limit: Int = 100
+  ): Response<List<SupabaseCommunityCommentDto>>
+
+  @POST("community_post_comments")
+  suspend fun insertCommunityPostComment(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body comment: SupabaseCommunityCommentInsertDto
+  ): Response<List<SupabaseCommunityCommentDto>>
 }

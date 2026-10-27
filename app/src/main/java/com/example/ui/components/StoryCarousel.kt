@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.example.data.model.LiveStreamSession
 import com.example.data.model.Story
 import com.example.data.model.StoryAudience
 import com.example.data.model.UnloadRoom
@@ -66,6 +67,8 @@ fun StoryCarousel(
   vybeMatchesCount: Int = 0,
   activeLiveRooms: List<UnloadRoom> = emptyList(),
   onJoinLiveRoom: ((UnloadRoom) -> Unit)? = null,
+  activeLiveStreams: List<LiveStreamSession> = emptyList(),
+  onJoinLiveStream: ((LiveStreamSession) -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
   val nowMillis = System.currentTimeMillis()
@@ -80,9 +83,22 @@ fun StoryCarousel(
   val userOwnStory = ownStories.firstOrNull { !it.isViewed } ?: ownStories.firstOrNull()
   val hasUnviewedOwnStory = ownStories.any { !it.isViewed }
 
-  val unviewedPeerStories = activeStories
-    .filter { currentUser == null || it.author.id != currentUser.id }
-    .sortedWith(compareBy<Story> { it.isViewed }.thenByDescending { TimestampUtils.parseIsoMillis(it.createdAtIso) ?: 0L })
+  // Group peer stories by author so each user has exactly ONE bubble in the carousel
+  val peerStoryGroups = remember(activeStories, currentUser?.id) {
+    activeStories
+      .filter { currentUser == null || it.author.id != currentUser.id }
+      .groupBy { it.author.id }
+      .values
+      .map { userStories ->
+        val sorted = userStories.sortedBy { TimestampUtils.parseIsoMillis(it.createdAtIso) ?: 0L }
+        val firstUnviewed = sorted.firstOrNull { !it.isViewed }
+        val representative = firstUnviewed ?: sorted.first()
+        val hasUnviewed = sorted.any { !it.isViewed }
+        val isMatches = sorted.any { it.audience == StoryAudience.VYBE_MATCHES || it.audience == StoryAudience.CLOSE_FRIENDS }
+        Triple(representative, hasUnviewed, isMatches)
+      }
+      .sortedWith(compareByDescending<Triple<Story, Boolean, Boolean>> { it.second }.thenByDescending { TimestampUtils.parseIsoMillis(it.first.createdAtIso) ?: 0L })
+  }
 
   Surface(
     color = MaterialTheme.colorScheme.surface,
@@ -220,7 +236,76 @@ fun StoryCarousel(
           }
         }
 
-        // 2. LIVE Highlight bubble for active live sessions
+        // 2. LIVE Video Streams Highlight bubbles
+        val activeVideoStreams = activeLiveStreams.filter { it.isLive }
+        items(activeVideoStreams, key = { "live_stream_carousel_${it.id}" }) { stream ->
+          Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+              .width(74.dp)
+              .clickable { onJoinLiveStream?.invoke(stream) }
+              .testTag("carousel_live_stream_${stream.id}")
+          ) {
+            Box(
+              modifier = Modifier.size(68.dp),
+              contentAlignment = Alignment.Center
+            ) {
+              Box(
+                modifier = Modifier
+                  .size(68.dp)
+                  .clip(CircleShape)
+                  .background(
+                    Brush.sweepGradient(
+                      listOf(
+                        Color(0xFFEF4444),
+                        VybeMagenta,
+                        Color(0xFFF59E0B),
+                        Color(0xFFEF4444)
+                      )
+                    )
+                  )
+                  .padding(2.5.dp)
+                  .clip(CircleShape)
+                  .background(MaterialTheme.colorScheme.surface)
+                  .padding(2.dp)
+                  .clip(CircleShape),
+                contentAlignment = Alignment.Center
+              ) {
+                AvatarContent(stream.host.avatarUrl, stream.host.displayName, 58.dp)
+              }
+
+              // Glowing Red "LIVE" Badge
+              Surface(
+                color = Color(0xFFEF4444),
+                shape = RoundedCornerShape(4.dp),
+                modifier = Modifier
+                  .align(Alignment.BottomCenter)
+                  .offset(y = 4.dp)
+              ) {
+                Text(
+                  text = "LIVE",
+                  color = Color.White,
+                  fontSize = 9.sp,
+                  fontWeight = FontWeight.ExtraBold,
+                  modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                )
+              }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+              text = stream.host.displayName.ifBlank { stream.title },
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold,
+              color = Color(0xFFEF4444),
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              textAlign = TextAlign.Center
+            )
+          }
+        }
+
+        // 3. LIVE Highlight bubble for active voice rooms
         val firstActiveRoom = activeLiveRooms.firstOrNull { it.isActive }
         if (firstActiveRoom != null) {
           item(key = "live_highlight_room_${firstActiveRoom.id}") {
@@ -354,14 +439,13 @@ fun StoryCarousel(
           }
         }
 
-        // 3. Active Peer Stories (unviewed first, viewed muted ring)
-        items(unviewedPeerStories, key = { it.id }) { story ->
-          val isMatchesStory = story.audience == StoryAudience.VYBE_MATCHES || story.audience == StoryAudience.CLOSE_FRIENDS
+        // 3. Active Peer Stories (one bubble per user, unviewed gradient ring vs viewed muted ring)
+        items(peerStoryGroups, key = { "user_story_${it.first.author.id}" }) { (representativeStory, hasUnviewed, isMatchesStory) ->
           val mutedBrush = androidx.compose.ui.graphics.SolidColor(
             MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
           )
           val ringBrush: androidx.compose.ui.graphics.Brush = when {
-            story.isViewed -> mutedBrush
+            !hasUnviewed -> mutedBrush
             isMatchesStory -> VybeMatchesRingGradient
             else -> VybeStoryRingGradient
           }
@@ -370,8 +454,8 @@ fun StoryCarousel(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
               .width(74.dp)
-              .clickable { onStoryClick(story) }
-              .testTag("story_item_${story.id}")
+              .clickable { onStoryClick(representativeStory) }
+              .testTag("story_user_${representativeStory.author.id}")
           ) {
             Box(
               modifier = Modifier.size(68.dp),
@@ -389,7 +473,7 @@ fun StoryCarousel(
                   .clip(CircleShape),
                 contentAlignment = Alignment.Center
               ) {
-                AvatarContent(story.author.avatarUrl, story.author.displayName, 56.dp)
+                AvatarContent(representativeStory.author.avatarUrl, representativeStory.author.displayName, 56.dp)
               }
 
               if (isMatchesStory) {
@@ -416,7 +500,7 @@ fun StoryCarousel(
 
             Spacer(modifier = Modifier.height(5.dp))
             Text(
-              text = story.author.displayName.split(" ").firstOrNull()?.takeIf { it.isNotBlank() } ?: story.author.username,
+              text = representativeStory.author.displayName.split(" ").firstOrNull()?.takeIf { it.isNotBlank() } ?: representativeStory.author.username,
               style = MaterialTheme.typography.labelSmall,
               color = MaterialTheme.colorScheme.onSurface,
               fontWeight = FontWeight.SemiBold,

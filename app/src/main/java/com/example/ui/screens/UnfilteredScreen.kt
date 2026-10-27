@@ -62,6 +62,10 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
     viewModel.navigateBack()
   }
 
+  LaunchedEffect(Unit) {
+    viewModel.refreshAllData()
+  }
+
   val unfilteredPosts by viewModel.unfilteredPosts.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
 
@@ -283,18 +287,36 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
                   Text("@${post.author.username} • $relativePostTime", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
               }
-              if (post.moodZone != null) {
-                Surface(
-                  shape = RoundedCornerShape(8.dp),
-                  color = post.moodZone.accentColor.copy(alpha = 0.2f)
-                ) {
-                  Text(
-                    text = "${post.moodZone.emoji} ${post.moodZone.title}",
-                    color = post.moodZone.accentColor,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                  )
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                if (post.moodZone != null) {
+                  Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = post.moodZone.accentColor.copy(alpha = 0.2f)
+                  ) {
+                    Text(
+                      text = "${post.moodZone.emoji} ${post.moodZone.title}",
+                      color = post.moodZone.accentColor,
+                      fontSize = 11.sp,
+                      fontWeight = FontWeight.Bold,
+                      modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                  }
+                }
+                if (currentUser?.id == post.author.id) {
+                  Spacer(modifier = Modifier.width(6.dp))
+                  IconButton(
+                    onClick = { viewModel.deletePost(post.id) },
+                    modifier = Modifier
+                      .size(32.dp)
+                      .testTag("delete_unfiltered_post_${post.id}")
+                  ) {
+                    Icon(
+                      Icons.Default.Delete,
+                      contentDescription = "Delete raw post",
+                      tint = VybeDanger,
+                      modifier = Modifier.size(18.dp)
+                    )
+                  }
                 }
               }
             }

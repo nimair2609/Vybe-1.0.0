@@ -268,14 +268,27 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
               item = item,
               onClick = {
                 viewModel.markNotificationAsRead(item.id)
-                when (item.type) {
-                  NotificationType.DIRECT_MESSAGE, NotificationType.GROUP_MESSAGE -> {
+                when {
+                  item.type == NotificationType.DIRECT_MESSAGE || item.type == NotificationType.GROUP_MESSAGE -> {
                     viewModel.selectTab(com.example.ui.MainTab.INBOX)
                   }
-                  else -> {
-                    item.actorUser?.let { actor ->
-                      viewModel.openUserProfile(actor)
+                  item.targetEntityId != null -> {
+                    val matchingPost = viewModel.posts.value.firstOrNull { it.id == item.targetEntityId }
+                    if (matchingPost != null && (matchingPost.isVybesReel || matchingPost.mediaType == com.example.data.model.MediaType.REEL)) {
+                      viewModel.openReelViewer(matchingPost.id)
+                    } else if (matchingPost != null) {
+                      viewModel.selectTab(com.example.ui.MainTab.FEED)
+                    } else if (item.isReel) {
+                      viewModel.openReelViewer(item.targetEntityId)
+                    } else {
+                      viewModel.selectTab(com.example.ui.MainTab.FEED)
                     }
+                  }
+                  item.actorUser != null -> {
+                    viewModel.openUserProfile(item.actorUser)
+                  }
+                  else -> {
+                    viewModel.selectTab(com.example.ui.MainTab.FEED)
                   }
                 }
               },
@@ -353,19 +366,42 @@ fun NotificationCard(
         .padding(12.dp),
       verticalAlignment = Alignment.CenterVertically
     ) {
-      Box(
-        modifier = Modifier
-          .size(40.dp)
-          .clip(CircleShape)
-          .background(iconTint.copy(alpha = 0.15f)),
-        contentAlignment = Alignment.Center
-      ) {
-        Icon(
-          imageVector = icon,
-          contentDescription = null,
-          tint = iconTint,
-          modifier = Modifier.size(20.dp)
-        )
+      if (item.actorUser != null) {
+        Box(
+          modifier = Modifier.size(46.dp),
+          contentAlignment = Alignment.BottomEnd
+        ) {
+          VybeAvatar(user = item.actorUser, size = 42.dp)
+          Box(
+            modifier = Modifier
+              .size(18.dp)
+              .clip(CircleShape)
+              .background(iconTint),
+            contentAlignment = Alignment.Center
+          ) {
+            Icon(
+              imageVector = icon,
+              contentDescription = null,
+              tint = Color.White,
+              modifier = Modifier.size(11.dp)
+            )
+          }
+        }
+      } else {
+        Box(
+          modifier = Modifier
+            .size(42.dp)
+            .clip(CircleShape)
+            .background(iconTint.copy(alpha = 0.15f)),
+          contentAlignment = Alignment.Center
+        ) {
+          Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = iconTint,
+            modifier = Modifier.size(20.dp)
+          )
+        }
       }
 
       Spacer(modifier = Modifier.width(12.dp))
@@ -394,12 +430,35 @@ fun NotificationCard(
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        if (!item.contentSnippet.isNullOrBlank()) {
+          Spacer(modifier = Modifier.height(3.dp))
+          Text(
+            text = "\"${item.contentSnippet}\"",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+            maxLines = 1
+          )
+        }
         Spacer(modifier = Modifier.height(4.dp))
         val relativeTime = rememberRelativeTimestamp(item.createdAtIso, item.timestamp)
         Text(
           text = relativeTime,
           fontSize = 11.sp,
           color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+        )
+      }
+
+      // Content preview thumbnail on right if available
+      if (!item.contentPreviewUrl.isNullOrBlank()) {
+        Spacer(modifier = Modifier.width(8.dp))
+        coil.compose.AsyncImage(
+          model = item.contentPreviewUrl,
+          contentDescription = "Content preview",
+          contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+          modifier = Modifier
+            .size(44.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color.Black.copy(alpha = 0.2f))
         )
       }
 

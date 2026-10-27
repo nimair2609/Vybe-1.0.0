@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -61,6 +63,23 @@ fun UnloadScreen(viewModel: VybeViewModel) {
   var isMuted by remember { mutableStateOf(false) }
   var showSafetySheet by remember { mutableStateOf(false) }
   var showReportSuccess by remember { mutableStateOf(false) }
+  var hasMicPermission by remember { mutableStateOf(false) }
+
+  val micPermissionLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.RequestPermission()
+  ) { granted ->
+    hasMicPermission = granted
+    if (!granted) {
+      viewModel.postBannerMessage("Microphone permission required for voice audio.")
+    }
+  }
+
+  LaunchedEffect(activeRoom?.id, activeRoom?.mode) {
+    val current = activeRoom
+    if (current != null && (current.mode == UnloadRoomMode.VOICE_ONLY || current.mode == UnloadRoomMode.VOICE_AND_TEXT)) {
+      micPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+    }
+  }
 
   // Join by Room ID state
   var joinRoomCodeInput by remember { mutableStateOf("") }
