@@ -125,9 +125,10 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
 
   LaunchedEffect(currentStory.id, currentStory.mediaType, isMuted, isPaused) {
     if (currentStory.mediaType == StoryMediaType.MUSIC && !isMuted && !isPaused) {
-      com.example.util.FeedAudioController.playMusicTrack(
+      com.example.util.FeedAudioController.syncPostMusicTrack(
         postId = "story_music",
-        trackTitle = currentStory.musicTrackTitle ?: "Original Sound"
+        audioTrackTitle = currentStory.musicTrackTitle ?: "Original Sound",
+        shouldPlayAudio = true
       )
     } else {
       com.example.util.FeedAudioController.stopMusicTrack("story_music")

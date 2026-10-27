@@ -47,7 +47,7 @@ import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VideoFitMode
 import com.example.ui.components.VybeAvatar
 import com.example.ui.components.VybeLikeIcon
-import com.example.ui.components.VybePulseDoubleTapOverlay
+import com.example.ui.components.reactionColor
 import com.example.ui.components.VybeReactionOutlineIcon
 import com.example.ui.components.VybeReactionSelector
 import com.example.ui.components.VybeVideoPlayer
@@ -256,8 +256,25 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
         )
 
         // Double-Tap Resonance PULSE Animation Overlay
-        Box(modifier = Modifier.align(Alignment.Center)) {
-          VybePulseDoubleTapOverlay(visible = showDoubleTapResonance)
+        androidx.compose.animation.AnimatedVisibility(
+          visible = showDoubleTapResonance,
+          enter = androidx.compose.animation.scaleIn(initialScale = 0.4f) + androidx.compose.animation.fadeIn(),
+          exit = androidx.compose.animation.scaleOut(targetScale = 1.35f) + androidx.compose.animation.fadeOut(),
+          modifier = Modifier.align(Alignment.Center)
+        ) {
+          Box(
+            modifier = Modifier
+              .size(90.dp)
+              .clip(CircleShape)
+              .background(Color.Black.copy(alpha = 0.55f)),
+            contentAlignment = Alignment.Center
+          ) {
+            VybeLikeIcon(
+              isLiked = true,
+              size = 54.dp,
+              activeTintOverride = VybeMagenta
+            )
+          }
         }
 
         if (!isPlaying && isCurrentPage && !showDoubleTapResonance) {
@@ -372,8 +389,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                   VybeReactionOutlineIcon(
                     reaction = reelPost.userReaction,
                     size = 24.dp,
-                    tint = Color(reelPost.userReaction.colorHex),
-                    strokeWidthDp = 2.1.dp
+                    tint = reactionColor(reelPost.userReaction)
                   )
                 } else {
                   VybeLikeIcon(

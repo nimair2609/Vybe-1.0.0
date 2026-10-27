@@ -51,7 +51,7 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
   val communities by viewModel.communities.collectAsState()
   val activeCommunity by viewModel.activeCommunity.collectAsState()
   val communityPosts by viewModel.communityPosts.collectAsState()
-  val communityMembersMap by viewModel.communityMembers.collectAsState()
+  val communityMembers by viewModel.communityMembers.collectAsState()
 
   var selectedCategory by remember { mutableStateOf("All") }
   var searchQuery by remember { mutableStateOf("") }
@@ -173,7 +173,7 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
       val isCreator = currentUser?.id == comm.creatorId
       val isAdmin = isCreator || comm.myRole == "CREATOR" || comm.myRole == "ADMIN"
       val canPost = comm.isJoined || isCreator
-      val members = communityMembersMap[comm.id].orEmpty()
+      val members = communityMembers
       val pendingRequestsCount = members.count { it.status == "PENDING" }
       val filteredPosts = communityPosts.filter { it.communityId == comm.id }
 
@@ -981,7 +981,7 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
     val comm = communities.firstOrNull { it.id == activeCommunity!!.id } ?: activeCommunity!!
     val isCreator = currentUser?.id == comm.creatorId
     val isAdmin = isCreator || comm.myRole == "CREATOR" || comm.myRole == "ADMIN"
-    val members = communityMembersMap[comm.id].orEmpty()
+    val members = communityMembers
 
     ModalBottomSheet(
       onDismissRequest = { showMembersSheet = false },

@@ -44,6 +44,7 @@ import com.example.data.model.User
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.components.PostCard
+import com.example.ui.components.ProfileQrCodeDialog
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VybeAvatar
 import com.example.ui.theme.*
@@ -79,6 +80,7 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
   var showEditProfileModal by remember { mutableStateOf(false) }
   var showPeerMenu by remember { mutableStateOf(false) }
   var showPeerReportDialog by remember { mutableStateOf(false) }
+  var showQrDialog by remember { mutableStateOf(false) }
   var peerReportCategory by remember { mutableStateOf("Impersonation") }
   var peerReportDetails by remember { mutableStateOf("") }
 
@@ -273,6 +275,12 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
           }
         },
         actions = {
+          IconButton(
+            onClick = { showQrDialog = true },
+            modifier = Modifier.testTag("profile_qr_code_top_button")
+          ) {
+            Icon(Icons.Default.QrCode, contentDescription = "Share Profile QR Code", tint = VybeBrandCyan)
+          }
           if (isMe) {
             IconButton(
               onClick = { viewModel.navigateTo(Screen.SETTINGS) },
@@ -860,23 +868,16 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
                 }
 
                 OutlinedButton(
-                  onClick = {
-                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                      type = "text/plain"
-                      putExtra(Intent.EXTRA_SUBJECT, "VYBE - Follow @${user.username}")
-                      putExtra(Intent.EXTRA_TEXT, "Connect with @${user.username} on VYBE! Public ID: ${user.publicVybeId}")
-                    }
-                    context.startActivity(Intent.createChooser(shareIntent, "Share Profile"))
-                  },
+                  onClick = { showQrDialog = true },
                   shape = RoundedCornerShape(12.dp),
                   modifier = Modifier
                     .weight(1f)
                     .heightIn(min = 48.dp)
                     .testTag("share_peer_profile_button")
                 ) {
-                  Icon(Icons.Default.Share, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(16.dp))
+                  Icon(Icons.Default.QrCode, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(16.dp))
                   Spacer(modifier = Modifier.width(6.dp))
-                  Text("Share", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1)
+                  Text("Share QR", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1)
                 }
               }
             }
@@ -952,23 +953,16 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
                 }
 
                 OutlinedButton(
-                  onClick = {
-                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                      type = "text/plain"
-                      putExtra(Intent.EXTRA_SUBJECT, "Connect on VYBE")
-                      putExtra(Intent.EXTRA_TEXT, "Join me on VYBE! Follow @${user.username} (ID: ${user.publicVybeId})")
-                    }
-                    context.startActivity(Intent.createChooser(shareIntent, "Share VYBE Profile"))
-                  },
+                  onClick = { showQrDialog = true },
                   shape = RoundedCornerShape(12.dp),
                   modifier = Modifier
                     .weight(1f)
                     .heightIn(min = 48.dp)
-                    .testTag("profile_share_vybe_button")
+                    .testTag("profile_share_qr_button")
                 ) {
-                  Icon(Icons.Default.Share, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(16.dp))
+                  Icon(Icons.Default.QrCode, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(16.dp))
                   Spacer(modifier = Modifier.width(6.dp))
-                  Text("Share VYBE", fontWeight = FontWeight.Bold)
+                  Text("Share QR", fontWeight = FontWeight.Bold)
                 }
               }
             }
@@ -1636,6 +1630,13 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
       confirmButton = {
         TextButton(onClick = { showFollowListModal = null }) { Text("Close") }
       }
+    )
+  }
+
+  if (showQrDialog) {
+    ProfileQrCodeDialog(
+      user = user,
+      onDismiss = { showQrDialog = false }
     )
   }
 }

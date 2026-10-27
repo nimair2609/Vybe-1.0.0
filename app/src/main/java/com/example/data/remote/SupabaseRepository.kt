@@ -2787,7 +2787,7 @@ class SupabaseRepository {
 
           val targetPost = dto.targetId?.let { postsById[it] }
           val isReelContent = targetPost?.mediaType?.equals("VIDEO", ignoreCase = true) == true
-          val previewUrl = targetPost?.mediaUrls?.firstOrNull()?.takeIf { it.isNotBlank() }
+          val previewUrl = targetPost?.postMedia?.firstOrNull()?.mediaUrl?.takeIf { it.isNotBlank() }
           val snippet = targetPost?.caption?.trim()?.takeIf { it.isNotEmpty() }
 
           val dest = when (notifType) {

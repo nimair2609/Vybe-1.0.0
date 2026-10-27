@@ -1469,7 +1469,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
   }
 }
 
-private fun convMessagesKey(conv: com.example.data.model.ChatConversation?): String {
+private fun convMessagesKey(conv: com.example.data.model.Conversation?): String {
   if (conv == null) return ""
   return "${conv.id}:${conv.messages.size}:${conv.messages.joinToString(",") { "${it.id}_${it.isDeletedForEveryone}_${it.text.hashCode()}_${it.reactions.size}" }}"
 }

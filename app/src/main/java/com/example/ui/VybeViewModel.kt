@@ -453,8 +453,9 @@ class VybeViewModel : ViewModel() {
   fun openPostFromNotification(postId: String) {
     if (postId.isBlank()) return
     val targetPost = repository.posts.value.firstOrNull { it.id == postId }
-    if (targetPost?.isReel == true) {
-      openReelViewer(postId)
+    if (targetPost?.isVybesReel == true || targetPost?.mediaType == MediaType.REEL) {
+      _targetReelId.value = postId
+      navigateTo(Screen.REELS_VIEWER)
       return
     }
     _targetFeedPostId.value = postId

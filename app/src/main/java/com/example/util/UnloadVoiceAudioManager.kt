@@ -16,7 +16,7 @@ import android.os.Build
 import android.util.Base64
 import android.util.Log
 import androidx.core.content.ContextCompat
-import com.example.data.local.VybeLocalStore
+import com.example.data.session.SessionManager
 import com.example.data.remote.SupabaseConfig
 import com.example.data.remote.SupabaseNetworkClient
 import kotlinx.coroutines.CoroutineScope
@@ -164,7 +164,7 @@ class UnloadVoiceAudioManager private constructor(private val context: Context) 
     localUsername = username
     localIsHost = isHost
     localAccessToken = try {
-      VybeLocalStore(context).loadSessionTokens()?.first.orEmpty()
+      SessionManager.getInstance(context).accessToken.orEmpty()
     } catch (_: Throwable) {
       ""
     }

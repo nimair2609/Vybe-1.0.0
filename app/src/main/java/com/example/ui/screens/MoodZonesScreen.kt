@@ -42,7 +42,6 @@ fun MoodZonesScreen(viewModel: VybeViewModel) {
   val currentUser by viewModel.currentUser.collectAsState()
   val posts by viewModel.posts.collectAsState()
   val selectedMood by viewModel.selectedMoodFilter.collectAsState()
-  val isFeedMusicEnabled by viewModel.isFeedMusicEnabled.collectAsState()
 
   val zonePosts = remember(posts, selectedMood) {
     posts.filter { !it.isArchived && it.matchesMoodFilter(selectedMood) }
@@ -273,8 +272,7 @@ fun MoodZonesScreen(viewModel: VybeViewModel) {
           PostCard(
             post = post,
             onLikeClick = { viewModel.toggleLike(post.id) },
-            onReactClick = { reaction -> viewModel.selectPostReaction(post.id, reaction) },
-            onDoubleTapPulse = { viewModel.doubleTapPostPulse(post.id) },
+            onReact = { reaction -> viewModel.reactToPost(post.id, reaction) },
             onSaveClick = { viewModel.toggleSave(post.id) },
             onCommentClick = { viewModel.loadCommentsForPost(post.id) },
             onAddComment = { text -> viewModel.addComment(post.id, text) },
@@ -296,10 +294,7 @@ fun MoodZonesScreen(viewModel: VybeViewModel) {
               }
             },
             onPostViewed = { viewModel.recordPostView(it) },
-            currentUserId = currentUser?.id,
-            isFeedMusicEnabled = isFeedMusicEnabled,
-            isActiveAudioPost = false,
-            onToggleFeedMusic = { enabled -> viewModel.setFeedMusicEnabled(enabled) }
+            currentUserId = currentUser?.id
           )
         }
       }

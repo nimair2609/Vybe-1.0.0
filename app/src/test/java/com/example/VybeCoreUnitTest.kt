@@ -346,50 +346,56 @@ class VybeCoreUnitTest {
     val peerB = User(id = "story_peer_b", username = "peer_b", displayName = "Peer B")
 
     val viewModel = com.example.ui.VybeViewModel()
-    val futureMillis = System.currentTimeMillis() + 3_600_000L
-    val expiredMillis = System.currentTimeMillis() - 3_600_000L
+    val futureIso = java.time.Instant.now().plusSeconds(3600).toString()
+    val expiredIso = java.time.Instant.now().minusSeconds(3600).toString()
 
-    val myStory = com.example.data.model.StoryItem(
+    val myStory = com.example.data.model.Story(
       id = "story_me_1",
       author = me,
       mediaUrl = "https://example.com/me1.jpg",
       audience = com.example.data.model.StoryAudience.EVERYONE,
-      expiresAtMillis = futureMillis
+      expiresAtIso = futureIso,
+      expiresHoursRemaining = 24
     )
-    val peerAPublicStory = com.example.data.model.StoryItem(
+    val peerAPublicStory = com.example.data.model.Story(
       id = "story_peer_a_pub",
       author = peerA,
       mediaUrl = "https://example.com/a1.jpg",
       audience = com.example.data.model.StoryAudience.EVERYONE,
-      expiresAtMillis = futureMillis
+      expiresAtIso = futureIso,
+      expiresHoursRemaining = 24
     )
-    val peerAOnlyMeStory = com.example.data.model.StoryItem(
+    val peerAOnlyMeStory = com.example.data.model.Story(
       id = "story_peer_a_priv",
       author = peerA,
       mediaUrl = "https://example.com/a2.jpg",
       audience = com.example.data.model.StoryAudience.ONLY_ME,
-      expiresAtMillis = futureMillis
+      expiresAtIso = futureIso,
+      expiresHoursRemaining = 24
     )
-    val peerAFollowersStory = com.example.data.model.StoryItem(
+    val peerAFollowersStory = com.example.data.model.Story(
       id = "story_peer_a_fol",
       author = peerA,
       mediaUrl = "https://example.com/a3.jpg",
       audience = com.example.data.model.StoryAudience.FOLLOWERS,
-      expiresAtMillis = futureMillis
+      expiresAtIso = futureIso,
+      expiresHoursRemaining = 24
     )
-    val peerAExpiredStory = com.example.data.model.StoryItem(
+    val peerAExpiredStory = com.example.data.model.Story(
       id = "story_peer_a_exp",
       author = peerA,
       mediaUrl = "https://example.com/a4.jpg",
       audience = com.example.data.model.StoryAudience.EVERYONE,
-      expiresAtMillis = expiredMillis
+      expiresAtIso = expiredIso,
+      expiresHoursRemaining = 0
     )
-    val peerBPublicStory = com.example.data.model.StoryItem(
+    val peerBPublicStory = com.example.data.model.Story(
       id = "story_peer_b_pub",
       author = peerB,
       mediaUrl = "https://example.com/b1.jpg",
       audience = com.example.data.model.StoryAudience.EVERYONE,
-      expiresAtMillis = futureMillis
+      expiresAtIso = futureIso,
+      expiresHoursRemaining = 24
     )
 
     assertTrue("My own story must be visible to me", viewModel.isStoryVisibleToViewer(myStory))
@@ -403,19 +409,21 @@ class VybeCoreUnitTest {
   @Test
   fun testFeedMusicPersistenceAndPhysicalVolumeUnmute() {
     val viewModel = com.example.ui.VybeViewModel()
-    viewModel.setFeedMusicEnabled(false)
+    viewModel.setFeedAudioEnabled(false)
     viewModel.setReelsAudioEnabled(false)
-    assertFalse(viewModel.isFeedMusicEnabled.value)
+    assertFalse(viewModel.isFeedAudioEnabled.value)
     assertFalse(viewModel.isReelsAudioEnabled.value)
 
-    // Physical volume-up in playback unmutes both Feed Music and Reels audio
+    viewModel.selectTab(com.example.ui.MainTab.FEED)
     viewModel.onPhysicalVolumeUpInPlayback()
-    assertTrue("Physical volume up must unmute Feed music", viewModel.isFeedMusicEnabled.value)
+    assertTrue("Physical volume up must unmute Feed audio", viewModel.isFeedAudioEnabled.value)
+
+    viewModel.openReelViewer()
+    viewModel.onPhysicalVolumeUpInPlayback()
     assertTrue("Physical volume up must unmute Reels audio", viewModel.isReelsAudioEnabled.value)
 
-    // Switching Feed music off keeps it off until explicitly enabled again
-    viewModel.setFeedMusicEnabled(false)
-    assertFalse("Feed music must turn off when user switches it off", viewModel.isFeedMusicEnabled.value)
+    viewModel.setFeedAudioEnabled(false)
+    assertFalse("Feed audio must turn off when user switches it off", viewModel.isFeedAudioEnabled.value)
   }
 
   @Test
@@ -450,7 +458,7 @@ class VybeCoreUnitTest {
 
     viewModel.openPostFromNotification(reelPost.id)
     assertEquals(com.example.ui.Screen.REELS_VIEWER, viewModel.currentScreen.value)
-    assertEquals(reelPost.id, viewModel.selectedReelPostId.value)
+    assertEquals(reelPost.id, viewModel.targetReelId.value)
   }
 
   @Test

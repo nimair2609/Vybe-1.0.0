@@ -776,9 +776,9 @@ class VybeRepository private constructor() {
       } ?: item.actorUser
 
       val targetPost = item.targetEntityId?.let { postsById[it] }
-      val isReel = targetPost?.isReel ?: item.isReel
+      val isReel = (targetPost?.isVybesReel == true || targetPost?.mediaType == MediaType.REEL) || item.isReel
       val previewUrl = item.contentPreviewUrl?.takeIf { it.isNotBlank() }
-        ?: targetPost?.imageUrl?.takeIf { it.isNotBlank() }
+        ?: targetPost?.mediaUrls?.firstOrNull()?.takeIf { it.isNotBlank() }
       val snippet = item.contentSnippet?.takeIf { it.isNotBlank() }
         ?: targetPost?.caption?.trim()?.takeIf { it.isNotEmpty() }
 
@@ -1461,7 +1461,7 @@ class VybeRepository private constructor() {
           val token = SessionManager.get()?.accessToken.orEmpty()
           supabaseRepo.setPostReaction(postId, me.id, appliedReaction, token)
           if (appliedReaction != null && post.author.id != me.id) {
-            val contentKind = if (post.isReel) "Reel" else "post"
+            val contentKind = if (post.isVybesReel || post.mediaType == MediaType.REEL) "Reel" else "post"
             val snippetPart = post.caption.trim().take(48).let { if (it.isNotEmpty()) ": \"$it\"" else "" }
             supabaseRepo.createInteractionNotificationIfNeeded(
               recipientId = post.author.id,
@@ -4928,14 +4928,19 @@ class VybeRepository private constructor() {
         var uploadedUrl: String? = null
         val ctx = appContext
         if (mediaUri != null && ctx != null) {
-          val uploadRes = supabaseRepo.uploadMediaToStorage(
-            context = ctx,
-            uri = mediaUri,
-            bucketName = SupabaseConfig.BUCKET_POST_MEDIA,
-            userId = me.id,
-            accessToken = token
-          )
-          uploadedUrl = uploadRes.getOrNull()?.publicUrl
+          val payload = MediaUtils.readMediaPayload(ctx, mediaUri.toString())
+          if (payload != null) {
+            val fileName = "comm_${UUID.randomUUID()}.${payload.extension}"
+            val uploadRes = supabaseRepo.uploadMediaWithProgress(
+              bucket = "posts",
+              userId = me.id,
+              fileName = fileName,
+              bytes = payload.bytes,
+              mimeType = payload.mimeType,
+              accessToken = token
+            )
+            uploadedUrl = uploadRes.getOrNull()?.url
+          }
         }
         val usersMap = _allUsers.value.associateBy { it.id }
         val created = SupabaseExploreAndLiveRemote.createCommunityPost(
