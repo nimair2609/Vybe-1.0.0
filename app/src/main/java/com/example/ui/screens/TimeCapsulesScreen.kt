@@ -18,8 +18,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -78,7 +79,7 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
             onClick = { viewModel.navigateBack() },
             modifier = Modifier.testTag("capsules_back_button")
           ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
           }
         },
         title = {
@@ -172,13 +173,24 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
                 color = if (isUnlocked) VybeOnlineGreen.copy(alpha = 0.2f) else VybeViolet.copy(alpha = 0.2f),
                 shape = RoundedCornerShape(8.dp)
               ) {
-                Text(
-                  text = if (isUnlocked) "UNLOCKED ✓" else "LOCKED 🔒",
-                  fontSize = 10.sp,
-                  fontWeight = FontWeight.Bold,
-                  color = if (isUnlocked) VybeOnlineGreen else VybeViolet,
-                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                )
+                Row(
+                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                  Icon(
+                    imageVector = if (isUnlocked) Icons.Outlined.LockOpen else Icons.Outlined.Lock,
+                    contentDescription = null,
+                    tint = if (isUnlocked) VybeOnlineGreen else VybeViolet,
+                    modifier = Modifier.size(12.dp)
+                  )
+                  Text(
+                    text = if (isUnlocked) "UNLOCKED" else "LOCKED",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isUnlocked) VybeOnlineGreen else VybeViolet
+                  )
+                }
               }
               Text(
                 text = "Unlocks: ${capsule.unlockDateFormatted}",
@@ -358,11 +370,12 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
       )
     ) {
       Scaffold(
+        contentWindowInsets = WindowInsets(0.dp),
         topBar = {
           TopAppBar(
             navigationIcon = {
               IconButton(onClick = { showCreateDialog = false }) {
-                Icon(Icons.Default.Close, contentDescription = "Close")
+                Icon(Icons.Outlined.Close, contentDescription = "Close")
               }
             },
             title = {
@@ -409,6 +422,8 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
           modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding)
+            .navigationBarsPadding()
+            .imePadding()
             .padding(horizontal = 16.dp),
           verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {

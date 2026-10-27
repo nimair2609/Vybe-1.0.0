@@ -12,7 +12,8 @@ import {
   Plus,
   X,
   Lock,
-  ArrowLeft
+  ArrowLeft,
+  Trash2
 } from 'lucide-react';
 import { VybeAvatar, VerifiedBadge } from '../components/VybeCoreComponents';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
@@ -20,6 +21,7 @@ import {
   fetchConversations,
   getOrCreateDirectConversation,
   sendDirectMessagePersisted,
+  deleteMessageForEveryone,
   uploadMediaToBucket,
   searchUsersAndPosts
 } from '../lib/vybeApi';
@@ -106,8 +108,10 @@ export const InboxAndChatPage: React.FC<{
             content: string;
             media_url?: string;
             media_type?: string;
+            is_deleted_for_everyone?: boolean;
             created_at: string;
           };
+          if (newRow.is_deleted_for_everyone) return;
 
           const newMsg: DirectMessage = {
             id: String(newRow.id),
@@ -132,6 +136,57 @@ export const InboxAndChatPage: React.FC<{
               }
               return c;
             })
+          );
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${activeConvId}`
+        },
+        (payload) => {
+          const updated = payload.new as {
+            id: string;
+            content?: string;
+            is_edited?: boolean;
+            is_deleted_for_everyone?: boolean;
+          };
+          setConversations((prev) =>
+            prev.map((c) => {
+              if (c.id !== activeConvId) return c;
+              if (updated.is_deleted_for_everyone) {
+                return { ...c, messages: c.messages.filter((m) => m.id !== String(updated.id)) };
+              }
+              return {
+                ...c,
+                messages: c.messages.map((m) =>
+                  m.id === String(updated.id)
+                    ? { ...m, text: String(updated.content ?? m.text), isEdited: Boolean(updated.is_edited) }
+                    : m
+                )
+              };
+            })
+          );
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'messages'
+        },
+        (payload) => {
+          const oldId = String((payload.old as { id?: string })?.id || '');
+          if (!oldId) return;
+          setConversations((prev) =>
+            prev.map((c) => ({
+              ...c,
+              messages: c.messages.filter((m) => m.id !== oldId)
+            }))
           );
         }
       )
@@ -623,16 +678,43 @@ export const InboxAndChatPage: React.FC<{
                       )}
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                       <span>{formatMessageTimestamp(msg.createdAtIso)}</span>
                       {isMe && (
-                        msg.status === 'SENDING' ? (
-                          <span>• Sending...</span>
-                        ) : msg.status === 'FAILED' ? (
-                          <span style={{ color: 'var(--vybe-danger)' }}>• Failed</span>
-                        ) : (
-                          <CheckCheck size={14} color="var(--vybe-cyan)" />
-                        )
+                        <>
+                          {msg.status === 'SENDING' ? (
+                            <span>• Sending...</span>
+                          ) : msg.status === 'FAILED' ? (
+                            <span style={{ color: 'var(--vybe-danger)' }}>• Failed</span>
+                          ) : (
+                            <CheckCheck size={14} color="var(--vybe-cyan)" />
+                          )}
+                          <button
+                            type="button"
+                            title="Delete for Everyone"
+                            onClick={async () => {
+                              setConversations((prev) =>
+                                prev.map((c) =>
+                                  c.id === activeConversation.id
+                                    ? { ...c, messages: c.messages.filter((m) => m.id !== msg.id) }
+                                    : c
+                                )
+                              );
+                              await deleteMessageForEveryone(msg.id);
+                            }}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              padding: '2px',
+                              cursor: 'pointer',
+                              color: 'var(--text-muted)',
+                              display: 'inline-flex',
+                              alignItems: 'center'
+                            }}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>

@@ -12,17 +12,21 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.data.model.NotificationItem
 import com.example.data.model.NotificationType
 import com.example.data.model.User
@@ -264,24 +268,43 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
           }
 
           items(filteredNotifications, key = { it.id }) { item ->
+            val resolvedPost = remember(item.targetEntityId, allUsers) {
+              item.targetEntityId?.let { tid ->
+                viewModel.posts.value.firstOrNull { it.id == tid }
+              }
+            }
             NotificationCard(
               item = item,
+              resolvedPostPreviewUrl = item.contentPreviewUrl ?: resolvedPost?.mediaUrls?.firstOrNull(),
+              resolvedContentSnippet = item.contentSnippet ?: resolvedPost?.caption?.takeIf { it.isNotBlank() },
+              resolvedIsReel = item.isReel ||
+                item.destinationScreen == "REELS_VIEWER" ||
+                resolvedPost?.isVybesReel == true ||
+                resolvedPost?.mediaType == com.example.data.model.MediaType.REEL,
+              onActorClick = {
+                item.actorUser?.let { actor ->
+                  viewModel.markNotificationAsRead(item.id)
+                  viewModel.openUserProfile(actor)
+                }
+              },
               onClick = {
                 viewModel.markNotificationAsRead(item.id)
                 when {
                   item.type == NotificationType.DIRECT_MESSAGE || item.type == NotificationType.GROUP_MESSAGE -> {
                     viewModel.selectTab(com.example.ui.MainTab.INBOX)
+                    viewModel.navigateTo(Screen.MAIN)
                   }
-                  item.targetEntityId != null -> {
-                    val matchingPost = viewModel.posts.value.firstOrNull { it.id == item.targetEntityId }
-                    if (matchingPost != null && (matchingPost.isVybesReel || matchingPost.mediaType == com.example.data.model.MediaType.REEL)) {
-                      viewModel.openReelViewer(matchingPost.id)
-                    } else if (matchingPost != null) {
-                      viewModel.selectTab(com.example.ui.MainTab.FEED)
-                    } else if (item.isReel) {
-                      viewModel.openReelViewer(item.targetEntityId)
+                  !item.targetEntityId.isNullOrBlank() -> {
+                    val targetId = item.targetEntityId
+                    val matchingPost = viewModel.posts.value.firstOrNull { it.id == targetId }
+                    val openAsReel = item.isReel ||
+                      item.destinationScreen == "REELS_VIEWER" ||
+                      matchingPost?.isVybesReel == true ||
+                      matchingPost?.mediaType == com.example.data.model.MediaType.REEL
+                    if (openAsReel) {
+                      viewModel.openReelViewer(targetId)
                     } else {
-                      viewModel.selectTab(com.example.ui.MainTab.FEED)
+                      viewModel.openPostFromNotification(targetId)
                     }
                   }
                   item.actorUser != null -> {
@@ -289,6 +312,7 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
                   }
                   else -> {
                     viewModel.selectTab(com.example.ui.MainTab.FEED)
+                    viewModel.navigateTo(Screen.MAIN)
                   }
                 }
               },
@@ -333,22 +357,52 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
 @Composable
 fun NotificationCard(
   item: NotificationItem,
+  resolvedPostPreviewUrl: String? = item.contentPreviewUrl,
+  resolvedContentSnippet: String? = item.contentSnippet,
+  resolvedIsReel: Boolean = item.isReel,
+  onActorClick: (() -> Unit)? = null,
   onClick: () -> Unit,
   onDelete: () -> Unit
 ) {
   val (icon, iconTint) = when (item.type) {
-    NotificationType.LIKE -> Pair(Icons.Default.Favorite, Color(0xFFFF5252))
-    NotificationType.COMMENT_OR_REPLY -> Pair(Icons.Default.Comment, VybeBrandCyan)
-    NotificationType.FOLLOW -> Pair(Icons.Default.PersonAdd, VybeViolet)
-    NotificationType.DIRECT_MESSAGE, NotificationType.GROUP_MESSAGE -> Pair(Icons.Default.ChatBubble, Color(0xFF00E676))
-    NotificationType.ROOM_INVITATION -> Pair(Icons.Default.Hearing, VybeBrandCyan)
-    NotificationType.TIME_CAPSULE_INVITATION, NotificationType.TIME_CAPSULE_UNLOCK -> Pair(Icons.Default.LockClock, Color(0xFFAB47BC))
-    NotificationType.DOUBLE_TAKE_RESPONSE -> Pair(Icons.Default.CameraAlt, VybeMagenta)
-    NotificationType.CROSSED_PATHS_INTERACTION -> Pair(Icons.Default.Place, Color(0xFFFF5252))
-    NotificationType.BUSINESS_VERIFICATION_UPDATE -> Pair(Icons.Default.Verified, VybeBrandCyan)
-    NotificationType.LIVE_STREAM_ALERT -> Pair(Icons.Default.Podcasts, Color(0xFFFF1744))
-    NotificationType.SECURITY_ACCOUNT_UPDATE -> Pair(Icons.Default.Security, Color(0xFF26A69A))
-    NotificationType.SHOP_REVIEW -> Pair(Icons.Default.Storefront, Color(0xFFFFB300))
+    NotificationType.LIKE -> Pair(Icons.Outlined.FavoriteBorder, VybeMagenta)
+    NotificationType.COMMENT_OR_REPLY -> Pair(Icons.Outlined.ChatBubbleOutline, VybeBrandCyan)
+    NotificationType.FOLLOW -> Pair(Icons.Outlined.PersonAdd, VybeViolet)
+    NotificationType.DIRECT_MESSAGE, NotificationType.GROUP_MESSAGE -> Pair(Icons.Outlined.Forum, Color(0xFF00E676))
+    NotificationType.ROOM_INVITATION -> Pair(Icons.Outlined.GraphicEq, VybeBrandCyan)
+    NotificationType.TIME_CAPSULE_INVITATION, NotificationType.TIME_CAPSULE_UNLOCK -> Pair(Icons.Outlined.Schedule, Color(0xFFAB47BC))
+    NotificationType.DOUBLE_TAKE_RESPONSE -> Pair(Icons.Outlined.PhotoCamera, VybeMagenta)
+    NotificationType.CROSSED_PATHS_INTERACTION -> Pair(Icons.Outlined.Place, Color(0xFFFF5252))
+    NotificationType.BUSINESS_VERIFICATION_UPDATE -> Pair(Icons.Outlined.Verified, VybeBrandCyan)
+    NotificationType.LIVE_STREAM_ALERT -> Pair(Icons.Outlined.Sensors, Color(0xFFFF1744))
+    NotificationType.SECURITY_ACCOUNT_UPDATE -> Pair(Icons.Outlined.Shield, Color(0xFF26A69A))
+    NotificationType.SHOP_REVIEW -> Pair(Icons.Outlined.Storefront, Color(0xFFFFB300))
+  }
+
+  val actorHeadline = remember(item.actorUser, item.title) {
+    val actor = item.actorUser
+    if (actor != null && actor.displayName.isNotBlank()) {
+      if (actor.username.isNotBlank() && !actor.username.startsWith("user_")) {
+        "${actor.displayName} (@${actor.username})"
+      } else {
+        actor.displayName
+      }
+    } else {
+      item.title
+    }
+  }
+
+  val actionDescription = remember(item.type, item.message, resolvedIsReel) {
+    if (item.type == NotificationType.LIKE) {
+      val contentKind = if (resolvedIsReel) "Reel" else "post"
+      if (item.message.contains("Reel", ignoreCase = true) || item.message.contains("post", ignoreCase = true)) {
+        item.message
+      } else {
+        "Liked your $contentKind"
+      }
+    } else {
+      item.message
+    }
   }
 
   Surface(
@@ -368,13 +422,20 @@ fun NotificationCard(
     ) {
       if (item.actorUser != null) {
         Box(
-          modifier = Modifier.size(46.dp),
+          modifier = Modifier.size(48.dp),
           contentAlignment = Alignment.BottomEnd
         ) {
-          VybeAvatar(user = item.actorUser, size = 42.dp)
+          VybeAvatar(
+            user = item.actorUser,
+            size = 44.dp,
+            onClick = onActorClick
+          )
           Box(
             modifier = Modifier
-              .size(18.dp)
+              .size(19.dp)
+              .clip(CircleShape)
+              .background(MaterialTheme.colorScheme.surface)
+              .padding(1.5.dp)
               .clip(CircleShape)
               .background(iconTint),
             contentAlignment = Alignment.Center
@@ -390,7 +451,7 @@ fun NotificationCard(
       } else {
         Box(
           modifier = Modifier
-            .size(42.dp)
+            .size(44.dp)
             .clip(CircleShape)
             .background(iconTint.copy(alpha = 0.15f)),
           contentAlignment = Alignment.Center
@@ -409,10 +470,13 @@ fun NotificationCard(
       Column(modifier = Modifier.weight(1f)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
           Text(
-            text = item.title,
+            text = actorHeadline,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = if (!item.isRead) FontWeight.Bold else FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false)
           )
           if (!item.isRead) {
             Spacer(modifier = Modifier.width(6.dp))
@@ -426,48 +490,107 @@ fun NotificationCard(
         }
         Spacer(modifier = Modifier.height(2.dp))
         Text(
-          text = item.message,
+          text = actionDescription,
           style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis
         )
-        if (!item.contentSnippet.isNullOrBlank()) {
+        if (!resolvedContentSnippet.isNullOrBlank()) {
           Spacer(modifier = Modifier.height(3.dp))
           Text(
-            text = "\"${item.contentSnippet}\"",
+            text = "\"$resolvedContentSnippet\"",
             fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-            maxLines = 1
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
           )
         }
         Spacer(modifier = Modifier.height(4.dp))
         val relativeTime = rememberRelativeTimestamp(item.createdAtIso, item.timestamp)
-        Text(
-          text = relativeTime,
-          fontSize = 11.sp,
-          color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Text(
+            text = relativeTime,
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+          )
+          if (!item.targetEntityId.isNullOrBlank()) {
+            Text(
+              text = if (resolvedIsReel) " • Tap to view Reel" else " • Tap to view post",
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Medium,
+              color = VybeBrandCyan
+            )
+          }
+        }
       }
 
-      // Content preview thumbnail on right if available
-      if (!item.contentPreviewUrl.isNullOrBlank()) {
+      // Content preview thumbnail or text-post preview tile on right
+      if (!resolvedPostPreviewUrl.isNullOrBlank()) {
         Spacer(modifier = Modifier.width(8.dp))
-        coil.compose.AsyncImage(
-          model = item.contentPreviewUrl,
-          contentDescription = "Content preview",
-          contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+        Box(
           modifier = Modifier
-            .size(44.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color.Black.copy(alpha = 0.2f))
-        )
+            .size(48.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color.Black.copy(alpha = 0.25f)),
+          contentAlignment = Alignment.Center
+        ) {
+          AsyncImage(
+            model = resolvedPostPreviewUrl,
+            contentDescription = if (resolvedIsReel) "Liked Reel preview" else "Liked post preview",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+          )
+          if (resolvedIsReel) {
+            Box(
+              modifier = Modifier
+                .size(20.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.6f)),
+              contentAlignment = Alignment.Center
+            ) {
+              Icon(
+                imageVector = Icons.Outlined.PlayArrow,
+                contentDescription = "Reel",
+                tint = Color.White,
+                modifier = Modifier.size(13.dp)
+              )
+            }
+          }
+        }
+      } else if (!resolvedContentSnippet.isNullOrBlank() && !item.targetEntityId.isNullOrBlank()) {
+        Spacer(modifier = Modifier.width(8.dp))
+        Surface(
+          shape = RoundedCornerShape(10.dp),
+          color = MaterialTheme.colorScheme.surface,
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+          modifier = Modifier.size(48.dp)
+        ) {
+          Box(
+            modifier = Modifier.padding(4.dp),
+            contentAlignment = Alignment.Center
+          ) {
+            Text(
+              text = resolvedContentSnippet,
+              fontSize = 8.sp,
+              lineHeight = 10.sp,
+              maxLines = 3,
+              overflow = TextOverflow.Ellipsis,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              textAlign = TextAlign.Center
+            )
+          }
+        }
       }
 
       IconButton(
         onClick = onDelete,
-        modifier = Modifier.size(36.dp).testTag("delete_notification_${item.id}")
+        modifier = Modifier
+          .size(48.dp)
+          .testTag("delete_notification_${item.id}")
       ) {
         Icon(
-          imageVector = Icons.Default.Close,
+          imageVector = Icons.Outlined.Close,
           contentDescription = "Delete notification",
           modifier = Modifier.size(16.dp),
           tint = MaterialTheme.colorScheme.onSurfaceVariant

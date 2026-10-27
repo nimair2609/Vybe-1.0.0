@@ -60,21 +60,24 @@ import kotlinx.coroutines.launch
 @Composable
 fun StoryViewerScreen(viewModel: VybeViewModel) {
   BackHandler {
-    viewModel.navigateBack()
+    viewModel.closeStoryViewer()
   }
 
-  val activeSequence by viewModel.activeStorySequence.collectAsState()
-  val allStories by viewModel.stories.collectAsState()
-  val stories = remember(activeSequence, allStories) {
-    if (activeSequence.isNotEmpty()) activeSequence else allStories
-  }
+  val stories by viewModel.activeStorySequence.collectAsState()
   val currentIndex by viewModel.currentStoryIndex.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
   val scope = rememberCoroutineScope()
 
+  DisposableEffect(Unit) {
+    com.example.util.FeedAudioController.stopAll()
+    onDispose {
+      com.example.util.FeedAudioController.stopMusicTrack("story_music")
+    }
+  }
+
   if (stories.isEmpty()) {
     LaunchedEffect(Unit) {
-      viewModel.navigateBack()
+      viewModel.closeStoryViewer()
     }
     return
   }
@@ -115,8 +118,19 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
       )
       val hasNext = viewModel.nextStory()
       if (!hasNext) {
-        viewModel.navigateBack()
+        viewModel.closeStoryViewer()
       }
+    }
+  }
+
+  LaunchedEffect(currentStory.id, currentStory.mediaType, isMuted, isPaused) {
+    if (currentStory.mediaType == StoryMediaType.MUSIC && !isMuted && !isPaused) {
+      com.example.util.FeedAudioController.playMusicTrack(
+        postId = "story_music",
+        trackTitle = currentStory.musicTrackTitle ?: "Original Sound"
+      )
+    } else {
+      com.example.util.FeedAudioController.stopMusicTrack("story_music")
     }
   }
 
@@ -152,7 +166,7 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
               } else {
                 val hasNext = viewModel.nextStory()
                 if (!hasNext) {
-                  viewModel.navigateBack()
+                  viewModel.closeStoryViewer()
                 }
               }
             }
@@ -168,7 +182,7 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
         onVideoCompleted = {
           val hasNext = viewModel.nextStory()
           if (!hasNext) {
-            viewModel.navigateBack()
+            viewModel.closeStoryViewer()
           }
         }
       )
@@ -357,8 +371,6 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
                 onClick = {
                   showMenuDropdown = false
                   viewModel.deleteStory(currentStory.id)
-                  val hasNext = viewModel.nextStory()
-                  if (!hasNext) viewModel.navigateBack()
                 }
               )
             } else {
@@ -388,23 +400,8 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
           }
         }
 
-        if (currentStory.mediaType == StoryMediaType.VIDEO || currentStory.mediaType == StoryMediaType.MUSIC) {
-          IconButton(
-            onClick = { isMuted = !isMuted },
-            modifier = Modifier
-              .size(48.dp)
-              .testTag("story_viewer_mute_button")
-          ) {
-            Icon(
-              imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-              contentDescription = if (isMuted) "Unmute Audio" else "Mute Audio",
-              tint = Color.White
-            )
-          }
-        }
-
         IconButton(
-          onClick = { viewModel.navigateBack() },
+          onClick = { viewModel.closeStoryViewer() },
           modifier = Modifier.size(48.dp).testTag("story_viewer_close_button")
         ) {
           Icon(Icons.Default.Close, contentDescription = "Close Story", tint = Color.White)

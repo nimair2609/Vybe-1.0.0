@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,10 +47,12 @@ fun ExploreScreen(viewModel: VybeViewModel) {
   val allUsers by viewModel.allUsers.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
   val adminReports by viewModel.adminReports.collectAsState()
+  val communities by viewModel.communities.collectAsState()
   val coroutineScope = rememberCoroutineScope()
 
   LaunchedEffect(Unit) {
     viewModel.refreshAllData()
+    viewModel.fetchCommunities()
   }
 
   var roomCodeInput by remember { mutableStateOf("") }
@@ -135,7 +138,18 @@ fun ExploreScreen(viewModel: VybeViewModel) {
     }
   }
 
+  val matchedCommunities = remember(cleanQuery, communities) {
+    if (cleanQuery.isBlank()) emptyList() else {
+      communities.filter { c ->
+        c.name.lowercase().contains(cleanQuery) ||
+          c.description.lowercase().contains(cleanQuery) ||
+          c.category.lowercase().contains(cleanQuery)
+      }
+    }
+  }
+
   Scaffold(
+    contentWindowInsets = WindowInsets(0.dp),
     topBar = {
       Surface(
         color = MaterialTheme.colorScheme.background,
@@ -186,7 +200,7 @@ fun ExploreScreen(viewModel: VybeViewModel) {
           Spacer(modifier = Modifier.height(8.dp))
         }
 
-        if (matchedUsers.isEmpty() && matchedShops.isEmpty() && matchedPosts.isEmpty() && matchedRooms.isEmpty() && matchedLiveStreams.isEmpty()) {
+        if (matchedUsers.isEmpty() && matchedShops.isEmpty() && matchedPosts.isEmpty() && matchedRooms.isEmpty() && matchedLiveStreams.isEmpty() && matchedCommunities.isEmpty()) {
           item {
             Card(
               modifier = Modifier
@@ -286,6 +300,45 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                     Text("${room.roomCode} • ${room.topicTag} • ${room.activeListenersCount} online", fontSize = 11.sp, color = VybeBrandCyan)
                   }
                   Text("Join", color = VybeViolet, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+              }
+            }
+          }
+          if (matchedCommunities.isNotEmpty()) {
+            item {
+              Text(
+                text = "Communities (${matchedCommunities.size})",
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                color = VybeViolet,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+              )
+            }
+            items(matchedCommunities, key = { "search_comm_${it.id}" }) { comm ->
+              Card(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(horizontal = 16.dp, vertical = 5.dp)
+                  .clip(RoundedCornerShape(14.dp))
+                  .clickable {
+                    viewModel.openCommunityZone()
+                    viewModel.openCommunity(comm)
+                  },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.35f))
+              ) {
+                Row(
+                  modifier = Modifier.padding(12.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Icon(Icons.Outlined.Groups, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(28.dp))
+                  Spacer(modifier = Modifier.width(12.dp))
+                  Column(modifier = Modifier.weight(1f)) {
+                    Text(comm.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("${comm.membersCount} members • ${comm.category}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  }
+                  Text("Open", color = VybeViolet, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
               }
             }
@@ -590,6 +643,95 @@ fun ExploreScreen(viewModel: VybeViewModel) {
             )
           }
           Spacer(modifier = Modifier.height(12.dp))
+        }
+
+        // Community Zone (Synchronized via Supabase with RLS permissions)
+        item {
+          Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(18.dp),
+            border = BorderStroke(1.2.dp, VybeViolet.copy(alpha = 0.5f)),
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 16.dp, vertical = 4.dp)
+              .clip(RoundedCornerShape(18.dp))
+              .clickable { viewModel.openCommunityZone() }
+              .testTag("explore_community_zone_card")
+          ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                  Box(
+                    modifier = Modifier
+                      .size(40.dp)
+                      .clip(CircleShape)
+                      .background(VybeViolet.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                  ) {
+                    Icon(Icons.Outlined.Groups, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(22.dp))
+                  }
+                  Spacer(modifier = Modifier.width(10.dp))
+                  Column {
+                    Text(
+                      text = "COMMUNITY ZONE",
+                      fontWeight = FontWeight.ExtraBold,
+                      fontSize = 14.sp
+                    )
+                    Text(
+                      text = "${communities.size} active communities • Create, post & moderate",
+                      fontSize = 11.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                  }
+                }
+                Button(
+                  onClick = { viewModel.openCommunityZone() },
+                  colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                  shape = RoundedCornerShape(12.dp),
+                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                  modifier = Modifier.testTag("explore_open_community_zone_button")
+                ) {
+                  Text("Explore", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+              }
+
+              if (communities.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                  items(communities.take(6), key = { "explore_comm_chip_${it.id}" }) { comm ->
+                    Surface(
+                      color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                      shape = RoundedCornerShape(12.dp),
+                      border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.3f)),
+                      modifier = Modifier
+                        .width(195.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                          viewModel.openCommunityZone()
+                          viewModel.openCommunity(comm)
+                        }
+                    ) {
+                      Column(modifier = Modifier.padding(10.dp)) {
+                        Text(comm.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                          "${comm.membersCount} members • ${comm.category}",
+                          fontSize = 10.sp,
+                          color = VybeBrandCyan,
+                          maxLines = 1
+                        )
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          Spacer(modifier = Modifier.height(8.dp))
         }
 
         // Live Zone Video Broadcasts (Synced across all users via Supabase)

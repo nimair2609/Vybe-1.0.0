@@ -2473,21 +2473,23 @@ class SupabaseRepository {
           limit = 60
         )
         val rawMessages = msgResp.body().orEmpty()
-        val mappedMessages = rawMessages.map { m ->
-          DirectMessage(
-            id = m.id ?: "m_${System.currentTimeMillis()}",
-            senderId = m.senderId,
-            text = if (m.isDeletedForEveryone == true) "Message unsent" else m.content,
-            timestamp = TimestampUtils.formatMessageTime(m.createdAt, "Now"),
-            createdAtIso = m.createdAt,
-            isMe = m.senderId == myUserId,
-            mediaUrl = m.mediaUrl,
-            mediaType = m.mediaType ?: "TEXT",
-            isDeletedForEveryone = m.isDeletedForEveryone ?: false,
-            replyToId = m.replyToMessageId,
-            status = MessageStatus.SENT
-          )
-        }
+        val mappedMessages = rawMessages
+          .filter { m -> m.isDeletedForEveryone != true }
+          .map { m ->
+            DirectMessage(
+              id = m.id ?: "m_${System.currentTimeMillis()}",
+              senderId = m.senderId,
+              text = m.content,
+              timestamp = TimestampUtils.formatMessageTime(m.createdAt, "Now"),
+              createdAtIso = m.createdAt,
+              isMe = m.senderId == myUserId,
+              mediaUrl = m.mediaUrl,
+              mediaType = m.mediaType ?: "TEXT",
+              isDeletedForEveryone = false,
+              replyToId = m.replyToMessageId,
+              status = MessageStatus.SENT
+            )
+          }
         val lastMsg = mappedMessages.lastOrNull()
         val lastIso = lastMsg?.createdAtIso ?: convMeta?.updatedAt ?: convMeta?.createdAt
 
@@ -2625,10 +2627,94 @@ class SupabaseRepository {
         limit = limit
       )
       if (resp.isSuccessful && resp.body() != null) {
-        Result.success(resp.body()!!)
+        Result.success(resp.body()!!.filter { it.isDeletedForEveryone != true })
       } else {
         Result.failure(Exception("Failed to fetch messages"))
       }
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun deleteMessageForEveryone(
+    messageId: String,
+    mediaUrl: String? = null,
+    accessToken: String = ""
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured || messageId.isBlank() || messageId.startsWith("m_")) {
+      return@withContext Result.success(Unit)
+    }
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Authentication required to delete message."))
+    try {
+      // 1. Try SECURITY DEFINER RPC (deletes message row + touches conversation updated_at for realtime sync)
+      var deletedHard = false
+      try {
+        val rpcResp = SupabaseNetworkClient.restApi.deleteMessageForEveryoneRpc(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          request = SupabaseRpcDeleteMessageRequest(messageId = messageId)
+        )
+        if (rpcResp.isSuccessful && rpcResp.body() == true) {
+          deletedHard = true
+        }
+      } catch (_: Exception) {
+        // Fallback to REST DELETE below if RPC migration is not yet applied
+      }
+
+      // 2. Direct REST DELETE (enforced by messages_delete_sender RLS policy)
+      if (!deletedHard) {
+        val delResp = SupabaseNetworkClient.restApi.deleteMessage(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          idFilter = "eq.$messageId"
+        )
+        deletedHard = delResp.isSuccessful
+      }
+
+      // 3. Soft-delete fallback in case older database lacks DELETE policy (still filtered out on sync)
+      SupabaseNetworkClient.restApi.patchMessageDeleted(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        idFilter = "eq.$messageId",
+        body = mapOf(
+          "is_deleted_for_everyone" to true,
+          "content" to "",
+          "media_url" to null
+        )
+      )
+
+      // 4. Clean up attached media in Supabase Storage if present
+      if (!mediaUrl.isNullOrBlank()) {
+        deleteStorageObject(mediaUrl, accessToken)
+      }
+
+      Result.success(Unit)
+    } catch (e: Exception) {
+      Log.w(TAG, "deleteMessageForEveryone warning: ${e.message}")
+      Result.failure(Exception(friendlyNetworkMessage(e, "Failed to delete message for everyone.")))
+    }
+  }
+
+  suspend fun editMessage(
+    messageId: String,
+    newContent: String,
+    accessToken: String = ""
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured || messageId.isBlank() || messageId.startsWith("m_")) {
+      return@withContext Result.success(Unit)
+    }
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Authentication required."))
+    try {
+      val resp = SupabaseNetworkClient.restApi.patchMessageDeleted(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        idFilter = "eq.$messageId",
+        body = mapOf("content" to newContent)
+      )
+      if (resp.isSuccessful) Result.success(Unit)
+      else Result.failure(Exception("Failed to edit message."))
     } catch (e: Exception) {
       Result.failure(e)
     }
@@ -2645,14 +2731,46 @@ class SupabaseRepository {
     if (!isConfigured || recipientId.isBlank()) return@withContext Result.success(emptyList())
     val authHeader = authHeaderFor(accessToken) ?: return@withContext Result.success(emptyList())
     try {
-      val resp = SupabaseNetworkClient.restApi.getNotifications(
+      var resp = SupabaseNetworkClient.restApi.getNotifications(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
-        recipientIdFilter = "eq.$recipientId"
+        recipientIdFilter = "eq.$recipientId",
+        select = "*,actor:actor_id(*)"
       )
+      if (!resp.isSuccessful) {
+        resp = SupabaseNetworkClient.restApi.getNotifications(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          recipientIdFilter = "eq.$recipientId",
+          select = "*"
+        )
+      }
       if (resp.isSuccessful && resp.body() != null) {
+        val rawDtos = resp.body()!!
+        // Batch-fetch target posts/reels so every LIKE/COMMENT notification has preview & type
+        val postTargetIds = rawDtos.mapNotNull { dto ->
+          val t = dto.type.uppercase()
+          if (t in setOf("LIKE", "REACTION", "COMMENT", "COMMENT_OR_REPLY")) dto.targetId?.takeIf { it.isNotBlank() }
+          else null
+        }.distinct()
+
+        val postsById: Map<String, SupabasePostDto> = if (postTargetIds.isNotEmpty()) {
+          try {
+            val postResp = SupabaseNetworkClient.restApi.getPostsByIds(
+              apiKey = SupabaseConfig.supabaseAnonKey,
+              authHeader = authHeader,
+              idsInFilter = "in.(${postTargetIds.joinToString(",")})"
+            )
+            postResp.body().orEmpty().mapNotNull { p -> p.id?.let { it to p } }.toMap()
+          } catch (_: Exception) {
+            emptyMap()
+          }
+        } else {
+          emptyMap()
+        }
+
         val seenKeys = mutableSetOf<String>()
-        val items = resp.body()!!.mapNotNull { dto ->
+        val items = rawDtos.mapNotNull { dto ->
           val id = dto.id ?: return@mapNotNull null
           val dedupKey = if (dto.type == "COMMENT") id else "${dto.type}_${dto.actorId}_${dto.targetId}"
           if (!seenKeys.add(dedupKey)) return@mapNotNull null
@@ -2666,27 +2784,46 @@ class SupabaseRepository {
             "SECURITY_ACCOUNT_UPDATE" -> com.example.data.model.NotificationType.SECURITY_ACCOUNT_UPDATE
             else -> com.example.data.model.NotificationType.LIKE
           }
+
+          val targetPost = dto.targetId?.let { postsById[it] }
+          val isReelContent = targetPost?.mediaType?.equals("VIDEO", ignoreCase = true) == true
+          val previewUrl = targetPost?.mediaUrls?.firstOrNull()?.takeIf { it.isNotBlank() }
+          val snippet = targetPost?.caption?.trim()?.takeIf { it.isNotEmpty() }
+
           val dest = when (notifType) {
             com.example.data.model.NotificationType.FOLLOW -> "USER_PROFILE"
             com.example.data.model.NotificationType.DIRECT_MESSAGE,
             com.example.data.model.NotificationType.GROUP_MESSAGE -> "INBOX"
+            com.example.data.model.NotificationType.LIKE,
+            com.example.data.model.NotificationType.COMMENT_OR_REPLY -> if (isReelContent) "REELS_VIEWER" else "POST_DETAIL"
             else -> "MAIN"
           }
-          val actorStub = dto.actorId?.takeIf { it.isNotBlank() }?.let { aid ->
-            User(id = aid, username = "vyber", displayName = "VYBE Member")
+
+          val actorUser = dto.actor?.let { mapProfileDtoToUser(it) }
+            ?: dto.actorId?.takeIf { it.isNotBlank() }?.let { aid ->
+              User(id = aid, username = "vyber", displayName = "VYBE Member")
+            }
+
+          val resolvedTitle = if (notifType == com.example.data.model.NotificationType.LIKE && actorUser != null && actorUser.username != "vyber") {
+            "@${actorUser.username} liked your ${if (isReelContent) "Reel" else "post"}"
+          } else {
+            dto.title
           }
 
           NotificationItem(
             id = id,
             type = notifType,
-            title = dto.title,
+            title = resolvedTitle,
             message = dto.message,
             timestamp = TimestampUtils.formatRelative(dto.createdAt, "Recently"),
             createdAtIso = dto.createdAt,
             isRead = dto.isRead ?: false,
-            actorUser = actorStub,
+            actorUser = actorUser,
             destinationScreen = dest,
-            targetEntityId = dto.targetId ?: dto.actorId
+            targetEntityId = dto.targetId ?: dto.actorId,
+            contentPreviewUrl = previewUrl,
+            contentSnippet = snippet,
+            isReel = isReelContent
           )
         }
         Result.success(items)

@@ -12,8 +12,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -87,6 +88,7 @@ fun SpiritualModeScreen(viewModel: VybeViewModel) {
   } else null
 
   Scaffold(
+    contentWindowInsets = WindowInsets(0.dp),
     topBar = {
       TopAppBar(
         navigationIcon = {
@@ -94,7 +96,7 @@ fun SpiritualModeScreen(viewModel: VybeViewModel) {
             onClick = { viewModel.navigateBack() },
             modifier = Modifier.testTag("spiritual_back_button")
           ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
           }
         },
         title = {
@@ -121,6 +123,8 @@ fun SpiritualModeScreen(viewModel: VybeViewModel) {
       modifier = Modifier
         .fillMaxSize()
         .padding(paddingValues)
+        .navigationBarsPadding()
+        .imePadding()
         .padding(16.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -143,7 +147,12 @@ fun SpiritualModeScreen(viewModel: VybeViewModel) {
                   modifier = Modifier.size(42.dp)
                 ) {
                   Box(contentAlignment = Alignment.Center) {
-                    Text("🕊️", fontSize = 20.sp)
+                    Icon(
+                      imageVector = Icons.Outlined.SelfImprovement,
+                      contentDescription = null,
+                      tint = if (isSpiritualMode) SereneSage else MaterialTheme.colorScheme.onSurfaceVariant,
+                      modifier = Modifier.size(22.dp)
+                    )
                   }
                 }
                 Spacer(modifier = Modifier.width(12.dp))
@@ -172,7 +181,7 @@ fun SpiritualModeScreen(viewModel: VybeViewModel) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
             Spacer(modifier = Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-              Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+              Icon(Icons.Outlined.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
               Spacer(modifier = Modifier.width(6.dp))
               Text(
                 text = "100% Private. Your spiritual practices, gratitudes, and reflections are strictly private and never publicly shared or broadcasted to other profiles.",
@@ -348,7 +357,7 @@ fun SpiritualModeScreen(viewModel: VybeViewModel) {
         ) {
           Column(modifier = Modifier.padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-              Text("✨", fontSize = 18.sp)
+              Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = SereneSage, modifier = Modifier.size(18.dp))
               Spacer(modifier = Modifier.width(8.dp))
               Text("Daily Gratitude Journal", fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }
@@ -388,7 +397,7 @@ fun SpiritualModeScreen(viewModel: VybeViewModel) {
                 .align(Alignment.End)
                 .testTag("add_gratitude_button")
             ) {
-              Icon(Icons.Default.Favorite, contentDescription = null, modifier = Modifier.size(16.dp))
+              Icon(Icons.Outlined.FavoriteBorder, contentDescription = null, modifier = Modifier.size(16.dp))
               Spacer(modifier = Modifier.width(6.dp))
               Text("Save Gratitude", fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
@@ -409,7 +418,7 @@ fun SpiritualModeScreen(viewModel: VybeViewModel) {
                     modifier = Modifier.padding(12.dp),
                     verticalAlignment = Alignment.Top
                   ) {
-                    Text("🌱", fontSize = 14.sp)
+                    Icon(Icons.Outlined.Spa, contentDescription = null, tint = SereneSage, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
                       Text(g.entry, fontSize = 13.sp, lineHeight = 18.sp)
@@ -432,7 +441,7 @@ fun SpiritualModeScreen(viewModel: VybeViewModel) {
         ) {
           Column(modifier = Modifier.padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-              Text("🎯", fontSize = 18.sp)
+              Icon(Icons.Outlined.TrackChanges, contentDescription = null, tint = SereneLavender, modifier = Modifier.size(18.dp))
               Spacer(modifier = Modifier.width(8.dp))
               Text("Mindful Daily Intentions", fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }

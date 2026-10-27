@@ -234,6 +234,23 @@ class VybeRepository private constructor() {
   private val _shops = MutableStateFlow<List<VybeShop>>(emptyList())
   val shops: StateFlow<List<VybeShop>> = _shops.asStateFlow()
 
+  private val _communities = MutableStateFlow<List<Community>>(emptyList())
+  val communities: StateFlow<List<Community>> = _communities.asStateFlow()
+
+  private val _activeCommunity = MutableStateFlow<Community?>(null)
+  val activeCommunity: StateFlow<Community?> = _activeCommunity.asStateFlow()
+
+  private val _communityPosts = MutableStateFlow<List<CommunityPost>>(emptyList())
+  val communityPosts: StateFlow<List<CommunityPost>> = _communityPosts.asStateFlow()
+
+  private val _communityMembers = MutableStateFlow<List<CommunityMember>>(emptyList())
+  val communityMembers: StateFlow<List<CommunityMember>> = _communityMembers.asStateFlow()
+
+  private val _communityComments = MutableStateFlow<Map<String, List<CommunityComment>>>(emptyMap())
+  val communityComments: StateFlow<Map<String, List<CommunityComment>>> = _communityComments.asStateFlow()
+
+  private val deletedMessageIdsCache: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
+
   private val _liveStreams = MutableStateFlow<List<LiveStreamSession>>(emptyList())
   val liveStreams: StateFlow<List<LiveStreamSession>> = _liveStreams.asStateFlow()
 
@@ -303,6 +320,11 @@ class VybeRepository private constructor() {
     _timeCapsules.value = emptyList()
     _crossedPaths.value = emptyList()
     _shops.value = emptyList()
+    _communities.value = emptyList()
+    _activeCommunity.value = null
+    _communityPosts.value = emptyList()
+    _communityMembers.value = emptyList()
+    _communityComments.value = emptyMap()
 
     _spiritualReflections.value = listOf(
       SpiritualReflection(
@@ -391,10 +413,11 @@ class VybeRepository private constructor() {
           _allUsers.value = listOf(latestUser) + _allUsers.value
         }
 
+        deletedMessageIdsCache.addAll(localStore.loadDeletedMessageIds())
         _posts.value = localStore.loadPosts()
         _unfilteredPosts.value = localStore.loadUnfilteredPosts()
-        _conversations.value = localStore.loadConversations()
-        _notifications.value = localStore.loadNotifications()
+        _conversations.value = dedupeConversationCallLogs(localStore.loadConversations())
+        _notifications.value = enrichNotificationsWithLocalContext(localStore.loadNotifications())
         _followingUserIds.value = localStore.loadFollowing()
         rebuildVybeMatchesList()
         startPresenceAndIncomingCallLoops()
@@ -503,11 +526,7 @@ class VybeRepository private constructor() {
 
         val notifRes = supabaseRepo.fetchNotifications(myId, validToken)
         if (notifRes.isSuccess) {
-          val usersById = _allUsers.value.associateBy { it.id }
-          val enriched = notifRes.getOrThrow().map { item ->
-            val resolvedActor = item.actorUser?.id?.let { usersById[it] } ?: item.actorUser
-            item.copy(actorUser = resolvedActor)
-          }
+          val enriched = enrichNotificationsWithLocalContext(notifRes.getOrThrow())
           _notifications.value = enriched
           VybeLocalStore.get()?.saveNotifications(enriched)
         }
@@ -733,6 +752,63 @@ class VybeRepository private constructor() {
     }
     SupabaseExploreAndLiveRemote.fetchBusinessShops(usersMap, authHeader)?.let {
       _shops.value = it
+    }
+    SupabaseExploreAndLiveRemote.fetchCommunities(myId, authHeader)?.let { remoteComms ->
+      _communities.value = remoteComms
+      val curActive = _activeCommunity.value
+      if (curActive != null) {
+        remoteComms.firstOrNull { it.id == curActive.id }?.let { freshActive ->
+          _activeCommunity.value = freshActive
+          SupabaseExploreAndLiveRemote.fetchCommunityPosts(freshActive.id, myId, usersMap, authHeader)?.let { posts ->
+            _communityPosts.value = posts
+          }
+        }
+      }
+    }
+  }
+
+  fun enrichNotificationsWithLocalContext(items: List<NotificationItem>): List<NotificationItem> {
+    val usersById = _allUsers.value.associateBy { it.id }
+    val postsById = _posts.value.associateBy { it.id }
+    return items.map { item ->
+      val resolvedActor = item.actorUser?.id?.let { aid ->
+        usersById[aid] ?: if (_currentUser.value?.id == aid) _currentUser.value else item.actorUser
+      } ?: item.actorUser
+
+      val targetPost = item.targetEntityId?.let { postsById[it] }
+      val isReel = targetPost?.isReel ?: item.isReel
+      val previewUrl = item.contentPreviewUrl?.takeIf { it.isNotBlank() }
+        ?: targetPost?.imageUrl?.takeIf { it.isNotBlank() }
+      val snippet = item.contentSnippet?.takeIf { it.isNotBlank() }
+        ?: targetPost?.caption?.trim()?.takeIf { it.isNotEmpty() }
+
+      val dest = when (item.type) {
+        NotificationType.LIKE,
+        NotificationType.COMMENT_OR_REPLY -> if (isReel) "REELS_VIEWER" else "POST_DETAIL"
+        NotificationType.FOLLOW -> "USER_PROFILE"
+        NotificationType.DIRECT_MESSAGE,
+        NotificationType.GROUP_MESSAGE -> "INBOX"
+        else -> item.destinationScreen ?: "MAIN"
+      }
+
+      val resolvedTitle = when {
+        item.type == NotificationType.LIKE && resolvedActor != null && resolvedActor.username != "vyber" -> {
+          "@${resolvedActor.username} liked your ${if (isReel) "Reel" else "post"}"
+        }
+        item.type == NotificationType.COMMENT_OR_REPLY && resolvedActor != null && resolvedActor.username != "vyber" -> {
+          "@${resolvedActor.username} commented on your ${if (isReel) "Reel" else "post"}"
+        }
+        else -> item.title
+      }
+
+      item.copy(
+        title = resolvedTitle,
+        actorUser = resolvedActor,
+        destinationScreen = dest,
+        contentPreviewUrl = previewUrl,
+        contentSnippet = snippet,
+        isReel = isReel
+      )
     }
   }
 
@@ -1343,36 +1419,10 @@ class VybeRepository private constructor() {
   }
 
   fun toggleLikePost(postId: String) {
-    val me = _currentUser.value ?: return
-    val current = _posts.value.toMutableList()
-    val index = current.indexOfFirst { it.id == postId }
-    if (index != -1) {
-      val post = current[index]
-      val newIsLiked = !post.isLiked
-      val nextReaction = if (newIsLiked) VybeReaction.PULSE else null
-      val newCount = if (newIsLiked) post.likesCount + 1 else maxOf(0, post.likesCount - 1)
-      current[index] = post.copy(isLiked = newIsLiked, userReaction = nextReaction, likesCount = newCount)
-      _posts.value = current
-      VybeLocalStore.get()?.savePosts(current)
-
-      if (supabaseRepo.isConfigured) {
-        ioScope.launch {
-          val token = SessionManager.get()?.accessToken.orEmpty()
-          supabaseRepo.setPostReaction(postId, me.id, nextReaction, token)
-          if (newIsLiked && post.author.id != me.id) {
-            supabaseRepo.createInteractionNotificationIfNeeded(
-              recipientId = post.author.id,
-              actorId = me.id,
-              type = "LIKE",
-              title = "Post Liked",
-              message = "${me.displayName} liked your post.",
-              targetId = postId,
-              accessToken = token
-            )
-          }
-        }
-      }
-    }
+    val current = _posts.value
+    val post = current.firstOrNull { it.id == postId } ?: return
+    val targetReaction = post.userReaction ?: VybeReaction.PULSE
+    reactToPost(postId, targetReaction)
   }
 
   fun reactToPost(postId: String, reaction: VybeReaction) {
@@ -1411,12 +1461,14 @@ class VybeRepository private constructor() {
           val token = SessionManager.get()?.accessToken.orEmpty()
           supabaseRepo.setPostReaction(postId, me.id, appliedReaction, token)
           if (appliedReaction != null && post.author.id != me.id) {
+            val contentKind = if (post.isReel) "Reel" else "post"
+            val snippetPart = post.caption.trim().take(48).let { if (it.isNotEmpty()) ": \"$it\"" else "" }
             supabaseRepo.createInteractionNotificationIfNeeded(
               recipientId = post.author.id,
               actorId = me.id,
               type = "LIKE",
-              title = "${me.displayName} reacted ${appliedReaction.label}",
-              message = "Reacted to your post.",
+              title = "@${me.username} liked your $contentKind",
+              message = "${me.displayName} reacted ${appliedReaction.label} to your $contentKind$snippetPart",
               targetId = postId,
               accessToken = token
             )
@@ -2424,19 +2476,25 @@ class VybeRepository private constructor() {
         val convIdx = current.indexOfFirst { it.id == conversationId }
         if (convIdx != -1) {
           val conv = current[convIdx]
-          val inFlightMsgs = conv.messages.filter { it.status == MessageStatus.SENDING || it.status == MessageStatus.FAILED }
+          val inFlightMsgs = conv.messages.filter {
+            (it.status == MessageStatus.SENDING || it.status == MessageStatus.FAILED) &&
+              !deletedMessageIdsCache.contains(it.id)
+          }
           val mappedRemote = remoteList.mapNotNull { dto ->
             val dtoId = dto.id ?: return@mapNotNull null
+            if (dto.isDeletedForEveryone == true || deletedMessageIdsCache.contains(dtoId)) {
+              return@mapNotNull null
+            }
             DirectMessage(
               id = dtoId,
               senderId = dto.senderId,
-              text = if (dto.isDeletedForEveryone == true) "Message unsent" else dto.content,
+              text = dto.content,
               timestamp = TimestampUtils.formatMessageTime(dto.createdAt, "Now"),
               createdAtIso = dto.createdAt,
               isMe = dto.senderId == user.id,
               mediaUrl = dto.mediaUrl,
               mediaType = dto.mediaType ?: "TEXT",
-              isDeletedForEveryone = dto.isDeletedForEveryone ?: false,
+              isDeletedForEveryone = false,
               replyToId = dto.replyToMessageId,
               status = MessageStatus.SENT
             )
@@ -2446,7 +2504,7 @@ class VybeRepository private constructor() {
           val lastRemoteIso = mappedRemote.lastOrNull()?.createdAtIso ?: conv.lastMessageCreatedAtIso
           current[convIdx] = conv.copy(
             messages = merged,
-            lastMessage = merged.lastOrNull()?.text ?: conv.lastMessage,
+            lastMessage = merged.lastOrNull()?.text ?: "Conversation started",
             lastMessageCreatedAtIso = lastRemoteIso,
             lastMessageTimestamp = TimestampUtils.formatRelative(lastRemoteIso, conv.lastMessageTimestamp)
           )
@@ -2931,6 +2989,11 @@ class VybeRepository private constructor() {
     _timeCapsules.value = emptyList()
     _crossedPaths.value = emptyList()
     _shops.value = emptyList()
+    _communities.value = emptyList()
+    _activeCommunity.value = null
+    _communityPosts.value = emptyList()
+    _communityMembers.value = emptyList()
+    _communityComments.value = emptyMap()
     _conversations.value = emptyList()
     _notifications.value = emptyList()
     _vybeMatches.value = emptyList()
@@ -3134,28 +3197,79 @@ class VybeRepository private constructor() {
   // --- Remaining Preserved Feature Methods ---
 
   fun editDirectMessage(conversationId: String, messageId: String, newText: String) {
-    _conversations.value = _conversations.value.map { conv ->
+    val cleanText = newText.trim()
+    if (cleanText.isEmpty()) return
+    val updated = _conversations.value.map { conv ->
       if (conv.id == conversationId) {
-        conv.copy(messages = conv.messages.map { m ->
-          if (m.id == messageId && m.isMe) m.copy(text = newText.trim(), isEdited = true) else m
-        })
+        val nextMsgs = conv.messages.map { m ->
+          if (m.id == messageId && m.isMe) m.copy(text = cleanText, isEdited = true) else m
+        }
+        conv.copy(
+          messages = nextMsgs,
+          lastMessage = nextMsgs.lastOrNull()?.text ?: conv.lastMessage
+        )
       } else conv
+    }
+    _conversations.value = updated
+    VybeLocalStore.get()?.saveConversations(updated)
+
+    if (supabaseRepo.isConfigured && !messageId.startsWith("m_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+        supabaseRepo.editMessage(messageId, cleanText, token)
+      }
     }
   }
 
   fun deleteMessageForMe(conversationId: String, messageId: String) {
-    _conversations.value = _conversations.value.map { conv ->
-      if (conv.id == conversationId) conv.copy(messages = conv.messages.filterNot { it.id == messageId }) else conv
+    val updated = _conversations.value.map { conv ->
+      if (conv.id == conversationId) {
+        val remaining = conv.messages.filterNot { it.id == messageId }
+        conv.copy(
+          messages = remaining,
+          lastMessage = remaining.lastOrNull()?.text ?: "Conversation started"
+        )
+      } else conv
     }
+    _conversations.value = updated
+    VybeLocalStore.get()?.saveConversations(updated)
   }
 
   fun deleteMessageForEveryone(conversationId: String, messageId: String) {
-    _conversations.value = _conversations.value.map { conv ->
-      if (conv.id == conversationId) {
-        conv.copy(messages = conv.messages.map { m ->
-          if (m.id == messageId) m.copy(text = "This message was deleted", isDeletedForEveryone = true, mediaUrl = null) else m
-        })
+    if (messageId.isBlank()) return
+    var targetMediaUrl: String? = null
+    deletedMessageIdsCache.add(messageId)
+    VybeLocalStore.get()?.addDeletedMessageId(messageId)
+
+    val updated = _conversations.value.map { conv ->
+      if (conv.id == conversationId || conv.messages.any { it.id == messageId }) {
+        val target = conv.messages.firstOrNull { it.id == messageId }
+        if (target?.mediaUrl != null) {
+          targetMediaUrl = target.mediaUrl
+        }
+        val remaining = conv.messages.filterNot { it.id == messageId }
+        val nextLastIso = remaining.lastOrNull()?.createdAtIso ?: conv.lastMessageCreatedAtIso
+        conv.copy(
+          messages = remaining,
+          lastMessage = remaining.lastOrNull()?.text ?: "Conversation started",
+          lastMessageCreatedAtIso = nextLastIso,
+          lastMessageTimestamp = TimestampUtils.formatRelative(nextLastIso, "Recently")
+        )
       } else conv
+    }
+    _conversations.value = updated
+    VybeLocalStore.get()?.saveConversations(updated)
+
+    if (supabaseRepo.isConfigured && !messageId.startsWith("m_")) {
+      val mediaToClean = targetMediaUrl
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+        supabaseRepo.deleteMessageForEveryone(
+          messageId = messageId,
+          mediaUrl = mediaToClean,
+          accessToken = token
+        )
+      }
     }
   }
 
@@ -3372,14 +3486,19 @@ class VybeRepository private constructor() {
     return conversations.map { conv ->
       val seenCallIds = HashSet<String>()
       val filteredMsgs = conv.messages.filter { msg ->
-        if (msg.mediaType == "CALL_LOG" && !msg.mediaUrl.isNullOrBlank()) {
+        if (msg.isDeletedForEveryone || deletedMessageIdsCache.contains(msg.id)) {
+          false
+        } else if (msg.mediaType == "CALL_LOG" && !msg.mediaUrl.isNullOrBlank()) {
           val callIdParam = msg.mediaUrl.substringAfter("callId=", "").substringBefore("&")
           if (callIdParam.isNotBlank()) {
             seenCallIds.add(callIdParam)
           } else true
         } else true
       }
-      conv.copy(messages = filteredMsgs)
+      conv.copy(
+        messages = filteredMsgs,
+        lastMessage = filteredMsgs.lastOrNull()?.text ?: "Conversation started"
+      )
     }
   }
 
@@ -4617,5 +4736,391 @@ class VybeRepository private constructor() {
 
   fun updateNotificationPreferences(prefs: NotificationPreferences) {
     _notificationPreferences.value = prefs
+  }
+
+  // =========================================================================
+  // COMMUNITY ZONE (SUPABASE-BACKED COMMUNITIES, POSTS, COMMENTS & MEMBERSHIP)
+  // =========================================================================
+
+  fun fetchCommunities() {
+    if (!supabaseRepo.isConfigured) return
+    ioScope.launch {
+      val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+      val authHeader = SupabaseConfig.buildAuthHeader(token)
+      val myId = _currentUser.value?.id.orEmpty()
+      SupabaseExploreAndLiveRemote.fetchCommunities(myId, authHeader)?.let { remote ->
+        _communities.value = remote
+        val cur = _activeCommunity.value
+        if (cur != null) {
+          remote.firstOrNull { it.id == cur.id }?.let { _activeCommunity.value = it }
+        }
+      }
+    }
+  }
+
+  fun openCommunity(community: Community) {
+    _activeCommunity.value = community
+    _communityPosts.value = emptyList()
+    _communityMembers.value = emptyList()
+    if (!supabaseRepo.isConfigured) return
+    ioScope.launch {
+      val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+      val authHeader = SupabaseConfig.buildAuthHeader(token)
+      val myId = _currentUser.value?.id.orEmpty()
+      val usersMap = _allUsers.value.associateBy { it.id }
+      SupabaseExploreAndLiveRemote.fetchCommunityPosts(community.id, myId, usersMap, authHeader)?.let {
+        _communityPosts.value = it
+      }
+      _communityMembers.value = SupabaseExploreAndLiveRemote.fetchCommunityMembers(community.id, usersMap, authHeader)
+    }
+  }
+
+  fun closeActiveCommunity() {
+    _activeCommunity.value = null
+    _communityPosts.value = emptyList()
+    _communityMembers.value = emptyList()
+  }
+
+  fun createCommunity(
+    name: String,
+    description: String,
+    category: String,
+    isPrivate: Boolean
+  ) {
+    val me = _currentUser.value ?: return
+    val cleanName = name.trim()
+    if (cleanName.isBlank()) return
+
+    val optimisticId = "comm_local_${System.currentTimeMillis()}"
+    val optimistic = Community(
+      id = optimisticId,
+      name = cleanName,
+      description = description.trim(),
+      category = category.trim().ifBlank { "General" },
+      creatorId = me.id,
+      isPrivate = isPrivate,
+      membersCount = 1,
+      isJoined = true,
+      membershipStatus = "ACCEPTED",
+      myRole = "ADMIN",
+      createdAtIso = java.time.Instant.now().toString()
+    )
+    _communities.value = listOf(optimistic) + _communities.value
+    _activeCommunity.value = optimistic
+    _communityPosts.value = emptyList()
+    _communityMembers.value = listOf(
+      CommunityMember(
+        communityId = optimisticId,
+        user = me,
+        role = "ADMIN",
+        status = "ACCEPTED",
+        joinedAtIso = optimistic.createdAtIso
+      )
+    )
+
+    if (supabaseRepo.isConfigured) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+        val authHeader = SupabaseConfig.buildAuthHeader(token)
+        val created = SupabaseExploreAndLiveRemote.createCommunity(
+          creatorId = me.id,
+          name = cleanName,
+          description = description,
+          category = category,
+          isPrivate = isPrivate,
+          authHeader = authHeader
+        )
+        if (created != null) {
+          _communities.value = _communities.value.map { if (it.id == optimisticId) created else it }
+          if (_activeCommunity.value?.id == optimisticId) {
+            _activeCommunity.value = created
+          }
+          val usersMap = _allUsers.value.associateBy { it.id }
+          _communityMembers.value = SupabaseExploreAndLiveRemote.fetchCommunityMembers(created.id, usersMap, authHeader)
+        }
+      }
+    }
+  }
+
+  fun toggleJoinCommunity(communityId: String) {
+    val me = _currentUser.value ?: return
+    val target = _communities.value.firstOrNull { it.id == communityId } ?: return
+    if (target.creatorId == me.id) return // Creator remains ADMIN
+
+    val currentlyMemberOrPending = target.isJoined || target.membershipStatus == "PENDING"
+    val nextStatus = when {
+      currentlyMemberOrPending -> "NONE"
+      target.isPrivate -> "PENDING"
+      else -> "ACCEPTED"
+    }
+    val nextJoined = nextStatus == "ACCEPTED"
+    val nextCount = when {
+      target.isJoined && !nextJoined -> (target.membersCount - 1).coerceAtLeast(1)
+      !target.isJoined && nextJoined -> target.membersCount + 1
+      else -> target.membersCount
+    }
+
+    val updatedCommunity = target.copy(
+      isJoined = nextJoined,
+      membershipStatus = nextStatus,
+      membersCount = nextCount
+    )
+    _communities.value = _communities.value.map { if (it.id == communityId) updatedCommunity else it }
+    if (_activeCommunity.value?.id == communityId) {
+      _activeCommunity.value = updatedCommunity
+    }
+
+    if (supabaseRepo.isConfigured && !communityId.startsWith("comm_local_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+        val authHeader = SupabaseConfig.buildAuthHeader(token)
+        if (currentlyMemberOrPending) {
+          SupabaseExploreAndLiveRemote.leaveCommunity(communityId, me.id, authHeader)
+        } else {
+          SupabaseExploreAndLiveRemote.joinCommunity(communityId, me.id, target.isPrivate, authHeader)
+        }
+        val usersMap = _allUsers.value.associateBy { it.id }
+        if (_activeCommunity.value?.id == communityId) {
+          _communityMembers.value = SupabaseExploreAndLiveRemote.fetchCommunityMembers(communityId, usersMap, authHeader)
+        }
+      }
+    }
+  }
+
+  fun createCommunityPost(
+    communityId: String,
+    title: String,
+    content: String,
+    mediaUri: android.net.Uri? = null
+  ) {
+    val me = _currentUser.value ?: return
+    val cleanTitle = title.trim()
+    if (cleanTitle.isBlank()) return
+
+    // Enforce membership permission if community is private
+    val comm = _communities.value.firstOrNull { it.id == communityId } ?: _activeCommunity.value
+    if (comm != null && comm.isPrivate && !comm.isJoined && comm.creatorId != me.id) {
+      return
+    }
+
+    val tempId = "cp_local_${System.currentTimeMillis()}"
+    val nowIso = java.time.Instant.now().toString()
+    val optimistic = CommunityPost(
+      id = tempId,
+      communityId = communityId,
+      author = me,
+      title = cleanTitle,
+      content = content.trim(),
+      mediaUrl = mediaUri?.toString(),
+      likesCount = 0,
+      commentsCount = 0,
+      isLikedByMe = false,
+      isEdited = false,
+      createdAtIso = nowIso,
+      updatedAtIso = nowIso
+    )
+    _communityPosts.value = listOf(optimistic) + _communityPosts.value
+
+    if (supabaseRepo.isConfigured && !communityId.startsWith("comm_local_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+        val authHeader = SupabaseConfig.buildAuthHeader(token)
+        var uploadedUrl: String? = null
+        val ctx = appContext
+        if (mediaUri != null && ctx != null) {
+          val uploadRes = supabaseRepo.uploadMediaToStorage(
+            context = ctx,
+            uri = mediaUri,
+            bucketName = SupabaseConfig.BUCKET_POST_MEDIA,
+            userId = me.id,
+            accessToken = token
+          )
+          uploadedUrl = uploadRes.getOrNull()?.publicUrl
+        }
+        val usersMap = _allUsers.value.associateBy { it.id }
+        val created = SupabaseExploreAndLiveRemote.createCommunityPost(
+          communityId = communityId,
+          authorId = me.id,
+          title = cleanTitle,
+          content = content,
+          mediaUrl = uploadedUrl,
+          usersById = usersMap,
+          authHeader = authHeader
+        )
+        if (created != null) {
+          _communityPosts.value = _communityPosts.value.map { if (it.id == tempId) created else it }
+        }
+      }
+    }
+  }
+
+  fun editCommunityPost(postId: String, newTitle: String, newContent: String) {
+    val me = _currentUser.value ?: return
+    val cleanTitle = newTitle.trim()
+    if (cleanTitle.isBlank()) return
+    val existing = _communityPosts.value.firstOrNull { it.id == postId } ?: return
+    if (existing.author.id != me.id) return // Author-only edit enforced client-side & via Supabase RLS
+
+    val nowIso = java.time.Instant.now().toString()
+    _communityPosts.value = _communityPosts.value.map { post ->
+      if (post.id == postId) {
+        post.copy(
+          title = cleanTitle,
+          content = newContent.trim(),
+          isEdited = true,
+          updatedAtIso = nowIso
+        )
+      } else post
+    }
+
+    if (supabaseRepo.isConfigured && !postId.startsWith("cp_local_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+        val authHeader = SupabaseConfig.buildAuthHeader(token)
+        SupabaseExploreAndLiveRemote.editCommunityPost(postId, cleanTitle, newContent, authHeader)
+      }
+    }
+  }
+
+  fun deleteCommunityPost(postId: String) {
+    val me = _currentUser.value ?: return
+    val existing = _communityPosts.value.firstOrNull { it.id == postId } ?: return
+    val activeComm = _activeCommunity.value ?: _communities.value.firstOrNull { it.id == existing.communityId }
+    val canDelete = existing.author.id == me.id ||
+      activeComm?.creatorId == me.id ||
+      activeComm?.myRole in setOf("ADMIN", "MODERATOR")
+    if (!canDelete) return
+
+    _communityPosts.value = _communityPosts.value.filterNot { it.id == postId }
+
+    if (supabaseRepo.isConfigured && !postId.startsWith("cp_local_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+        val authHeader = SupabaseConfig.buildAuthHeader(token)
+        if (existing.mediaUrl != null) {
+          supabaseRepo.deleteStorageObject(existing.mediaUrl, token)
+        }
+        SupabaseExploreAndLiveRemote.deleteCommunityPost(postId, authHeader)
+      }
+    }
+  }
+
+  fun toggleLikeCommunityPost(postId: String) {
+    val me = _currentUser.value ?: return
+    val existing = _communityPosts.value.firstOrNull { it.id == postId } ?: return
+    val shouldLike = !existing.isLikedByMe
+    val nextCount = if (shouldLike) existing.likesCount + 1 else (existing.likesCount - 1).coerceAtLeast(0)
+    _communityPosts.value = _communityPosts.value.map { post ->
+      if (post.id == postId) post.copy(isLikedByMe = shouldLike, likesCount = nextCount) else post
+    }
+
+    if (supabaseRepo.isConfigured && !postId.startsWith("cp_local_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+        val authHeader = SupabaseConfig.buildAuthHeader(token)
+        SupabaseExploreAndLiveRemote.toggleLikeCommunityPost(postId, me.id, shouldLike, authHeader)
+      }
+    }
+  }
+
+  fun fetchCommunityComments(postId: String) {
+    if (!supabaseRepo.isConfigured || postId.startsWith("cp_local_")) return
+    ioScope.launch {
+      val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+      val authHeader = SupabaseConfig.buildAuthHeader(token)
+      val usersMap = _allUsers.value.associateBy { it.id }
+      val comments = SupabaseExploreAndLiveRemote.fetchCommunityComments(postId, usersMap, authHeader)
+      _communityComments.value = _communityComments.value + (postId to comments)
+    }
+  }
+
+  fun addCommunityComment(postId: String, content: String) {
+    val me = _currentUser.value ?: return
+    val clean = content.trim()
+    if (clean.isBlank()) return
+
+    val optimistic = CommunityComment(
+      id = "cc_local_${System.currentTimeMillis()}",
+      postId = postId,
+      author = me,
+      content = clean,
+      createdAtIso = java.time.Instant.now().toString()
+    )
+    val prev = _communityComments.value[postId].orEmpty()
+    _communityComments.value = _communityComments.value + (postId to (prev + optimistic))
+    _communityPosts.value = _communityPosts.value.map { p ->
+      if (p.id == postId) p.copy(commentsCount = p.commentsCount + 1) else p
+    }
+
+    if (supabaseRepo.isConfigured && !postId.startsWith("cp_local_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+        val authHeader = SupabaseConfig.buildAuthHeader(token)
+        val usersMap = _allUsers.value.associateBy { it.id }
+        val created = SupabaseExploreAndLiveRemote.addCommunityComment(postId, me.id, clean, usersMap, authHeader)
+        if (created != null) {
+          val updatedList = _communityComments.value[postId].orEmpty().map {
+            if (it.id == optimistic.id) created else it
+          }
+          _communityComments.value = _communityComments.value + (postId to updatedList)
+        }
+      }
+    }
+  }
+
+  fun fetchCommunityMembers(communityId: String) {
+    if (!supabaseRepo.isConfigured || communityId.startsWith("comm_local_")) return
+    ioScope.launch {
+      val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+      val authHeader = SupabaseConfig.buildAuthHeader(token)
+      val usersMap = _allUsers.value.associateBy { it.id }
+      _communityMembers.value = SupabaseExploreAndLiveRemote.fetchCommunityMembers(communityId, usersMap, authHeader)
+    }
+  }
+
+  fun updateCommunityMember(communityId: String, targetUserId: String, role: String?, status: String?) {
+    val me = _currentUser.value ?: return
+    val comm = _communities.value.firstOrNull { it.id == communityId } ?: _activeCommunity.value ?: return
+    if (comm.creatorId != me.id && comm.myRole !in setOf("ADMIN", "MODERATOR")) return
+
+    _communityMembers.value = _communityMembers.value.map { m ->
+      if (m.user.id == targetUserId) {
+        m.copy(
+          role = role ?: m.role,
+          status = status ?: m.status
+        )
+      } else m
+    }
+
+    if (supabaseRepo.isConfigured && !communityId.startsWith("comm_local_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+        val authHeader = SupabaseConfig.buildAuthHeader(token)
+        SupabaseExploreAndLiveRemote.updateCommunityMember(communityId, targetUserId, role, status, authHeader)
+        fetchCommunities()
+      }
+    }
+  }
+
+  fun removeCommunityMember(communityId: String, targetUserId: String) {
+    val me = _currentUser.value ?: return
+    val comm = _communities.value.firstOrNull { it.id == communityId } ?: _activeCommunity.value ?: return
+    if (targetUserId == comm.creatorId) return
+    if (comm.creatorId != me.id && comm.myRole !in setOf("ADMIN", "MODERATOR") && me.id != targetUserId) return
+
+    _communityMembers.value = _communityMembers.value.filterNot { it.user.id == targetUserId }
+    val nextCount = (comm.membersCount - 1).coerceAtLeast(1)
+    _communities.value = _communities.value.map { if (it.id == communityId) it.copy(membersCount = nextCount) else it }
+    if (_activeCommunity.value?.id == communityId) {
+      _activeCommunity.value = _activeCommunity.value?.copy(membersCount = nextCount)
+    }
+
+    if (supabaseRepo.isConfigured && !communityId.startsWith("comm_local_")) {
+      ioScope.launch {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+        val authHeader = SupabaseConfig.buildAuthHeader(token)
+        SupabaseExploreAndLiveRemote.removeCommunityMember(communityId, targetUserId, authHeader)
+      }
+    }
   }
 }

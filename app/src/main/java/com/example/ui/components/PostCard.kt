@@ -33,8 +33,11 @@ import com.example.data.model.MediaType
 import com.example.data.model.Post
 import com.example.data.model.User
 import com.example.data.model.VybeReaction
+import androidx.compose.material.icons.automirrored.outlined.VolumeOff
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.ui.zIndex
 import com.example.ui.theme.*
+import com.example.util.FeedAudioController
 import com.example.util.rememberRelativeTimestamp
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,6 +59,8 @@ fun PostCard(
   currentUserId: String? = null,
   shouldAutoPlay: Boolean = false,
   isAudioEnabled: Boolean = false,
+  shouldPlayAudio: Boolean = shouldAutoPlay && isAudioEnabled,
+  isHighlighted: Boolean = false,
   onToggleAudio: ((Boolean) -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
@@ -90,6 +95,36 @@ fun PostCard(
     }
   }
 
+  val firstMediaUrl = post.mediaUrls.firstOrNull().orEmpty()
+  val isVideoPost = post.mediaUrls.isNotEmpty() && (
+    post.mediaType == MediaType.VIDEO ||
+      post.mediaType == MediaType.REEL ||
+      post.isVybesReel ||
+      firstMediaUrl.contains(".mp4", ignoreCase = true) ||
+      firstMediaUrl.contains(".mov", ignoreCase = true) ||
+      firstMediaUrl.contains(".webm", ignoreCase = true)
+    )
+  val anySheetOpen = showCommentDialog || showAnalyticsSheet || showDeleteConfirm || showReportDialog
+
+  // Coordinate non-overlapping music playback for photo/text posts that carry an audio track
+  LaunchedEffect(post.id, post.audioTrackTitle, isVideoPost, shouldPlayAudio, anySheetOpen) {
+    if (!isVideoPost && !post.audioTrackTitle.isNullOrBlank()) {
+      FeedAudioController.syncPostMusicTrack(
+        postId = post.id,
+        audioTrackTitle = post.audioTrackTitle,
+        shouldPlayAudio = shouldPlayAudio && !anySheetOpen
+      )
+    }
+  }
+
+  DisposableEffect(post.id) {
+    onDispose {
+      if (!isVideoPost && !post.audioTrackTitle.isNullOrBlank()) {
+        FeedAudioController.syncPostMusicTrack(post.id, post.audioTrackTitle, shouldPlayAudio = false)
+      }
+    }
+  }
+
   Card(
     modifier = modifier
       .fillMaxWidth()
@@ -97,7 +132,10 @@ fun PostCard(
       .testTag("post_card_${post.id}"),
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     shape = RoundedCornerShape(20.dp),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
+    border = BorderStroke(
+      width = if (isHighlighted) 1.8.dp else 1.dp,
+      color = if (isHighlighted) VybeViolet else MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
+    )
   ) {
     Column(modifier = Modifier.padding(14.dp)) {
       // Header: Author + Verified + Relative Timestamp + Location + Mood Tag + Menu
@@ -164,10 +202,10 @@ fun PostCard(
           }
         }
 
-        // Mood Zone Pill
+        // Mood Zone Pill (Single-colour outline icon)
         if (post.moodZone != null) {
           Surface(
-            color = post.moodZone.accentColor.copy(alpha = 0.16f),
+            color = post.moodZone.accentColor.copy(alpha = 0.14f),
             shape = RoundedCornerShape(12.dp),
             border = BorderStroke(1.dp, post.moodZone.accentColor.copy(alpha = 0.4f))
           ) {
@@ -175,7 +213,11 @@ fun PostCard(
               modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
               verticalAlignment = Alignment.CenterVertically
             ) {
-              Text(text = post.moodZone.emoji, fontSize = 12.sp)
+              VybeMoodOutlineIcon(
+                mood = post.moodZone,
+                size = 13.dp,
+                tint = post.moodZone.accentColor
+              )
               Spacer(modifier = Modifier.width(4.dp))
               Text(
                 text = post.moodZone.title,
@@ -249,28 +291,44 @@ fun PostCard(
         }
       }
 
-      // Audio Track Pill if present
+      // Interactive Feed Music Pill if present (toggles persistent Feed music state)
       if (!post.audioTrackTitle.isNullOrBlank()) {
         Spacer(modifier = Modifier.height(8.dp))
         Surface(
-          color = MaterialTheme.colorScheme.surfaceVariant,
-          shape = RoundedCornerShape(8.dp)
+          color = if (shouldPlayAudio) VybeViolet.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant,
+          shape = RoundedCornerShape(10.dp),
+          border = if (shouldPlayAudio) BorderStroke(1.dp, VybeViolet.copy(alpha = 0.5f)) else null,
+          modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable { onToggleAudio?.invoke(!isAudioEnabled) }
+            .testTag("post_music_toggle_${post.id}")
         ) {
           Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
           ) {
             Icon(
-              imageVector = Icons.Default.MusicNote,
+              imageVector = Icons.Outlined.MusicNote,
               contentDescription = "Audio track",
-              tint = VybeMagenta,
-              modifier = Modifier.size(13.dp)
+              tint = if (shouldPlayAudio) VybeViolet else VybeMagenta,
+              modifier = Modifier.size(14.dp)
             )
-            Spacer(modifier = Modifier.width(4.dp))
+            Spacer(modifier = Modifier.width(5.dp))
             Text(
               text = post.audioTrackTitle,
               fontSize = 11.sp,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
+              fontWeight = if (shouldPlayAudio) FontWeight.SemiBold else FontWeight.Normal,
+              color = if (shouldPlayAudio) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.weight(1f, fill = false)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(
+              imageVector = if (isAudioEnabled) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
+              contentDescription = if (isAudioEnabled) "Mute feed music" else "Enable feed music",
+              tint = if (isAudioEnabled) VybeViolet else MaterialTheme.colorScheme.onSurfaceVariant,
+              modifier = Modifier.size(15.dp)
             )
           }
         }
@@ -312,23 +370,35 @@ fun PostCard(
               detectTapGestures(
                 onDoubleTap = {
                   showDoubleTapResonance = true
-                  onLikeClick()
+                  if (onReact != null) {
+                    onReact(VybeReaction.PULSE)
+                  } else {
+                    onLikeClick()
+                  }
                 }
               )
             }
         ) {
           if (isVideo) {
-            val anySheetOpen = showCommentDialog || showAnalyticsSheet || showDeleteConfirm || showReportDialog
             VybeVideoPlayer(
               videoUrl = mediaUrl,
               autoPlay = shouldAutoPlay,
               isLooping = true,
-              initialMuted = !isAudioEnabled,
+              initialMuted = !shouldPlayAudio,
               isPausedExternal = !shouldAutoPlay || anySheetOpen,
               respectReducedMotion = true,
               fitMode = VideoFitMode.COVER_PROPORTIONAL,
+              feedAudioOwnerId = post.id,
               onAspectRatioDetected = { ratio ->
                 detectedMediaRatio = ratio
+              },
+              onDoubleTapOverlay = {
+                showDoubleTapResonance = true
+                if (onReact != null) {
+                  onReact(VybeReaction.PULSE)
+                } else {
+                  onLikeClick()
+                }
               },
               onMuteToggled = { muted ->
                 onToggleAudio?.invoke(!muted)
@@ -355,6 +425,31 @@ fun PostCard(
                 },
                 modifier = Modifier.fillMaxSize()
               )
+              if (!post.audioTrackTitle.isNullOrBlank() && onToggleAudio != null) {
+                IconButton(
+                  onClick = { onToggleAudio(!isAudioEnabled) },
+                  modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(8.dp)
+                    .size(48.dp)
+                    .testTag("photo_music_mute_toggle_${post.id}")
+                ) {
+                  Box(
+                    modifier = Modifier
+                      .size(34.dp)
+                      .clip(CircleShape)
+                      .background(Color.Black.copy(alpha = 0.55f)),
+                    contentAlignment = Alignment.Center
+                  ) {
+                    Icon(
+                      imageVector = if (isAudioEnabled) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
+                      contentDescription = if (isAudioEnabled) "Mute feed music" else "Enable feed music",
+                      tint = Color.White,
+                      modifier = Modifier.size(18.dp)
+                    )
+                  }
+                }
+              }
             }
           }
 
@@ -424,9 +519,10 @@ fun PostCard(
                 verticalAlignment = Alignment.CenterVertically
               ) {
                 if (post.userReaction != null) {
-                  Text(
-                    text = post.userReaction.emoji,
-                    fontSize = 16.sp,
+                  VybeReactionOutlineIcon(
+                    reaction = post.userReaction,
+                    size = 17.dp,
+                    tint = reactionColor(post.userReaction),
                     modifier = Modifier.testTag("like_button_${post.id}")
                   )
                   Spacer(modifier = Modifier.width(5.dp))
@@ -631,11 +727,14 @@ fun PostCard(
     }
   }
 
-  // VYBE Comments Bottom Sheet
+  // VYBE Comments Bottom Sheet (Keyboard-safe)
   if (showCommentDialog) {
     val displayedCount = maxOf(post.commentsCount, post.comments.size)
+    val commentSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
       onDismissRequest = { showCommentDialog = false },
+      sheetState = commentSheetState,
+      contentWindowInsets = { WindowInsets(0.dp) },
       dragHandle = { BottomSheetDefaults.DragHandle() },
       containerColor = MaterialTheme.colorScheme.surface
     ) {
@@ -666,7 +765,7 @@ fun PostCard(
           modifier = Modifier
             .fillMaxWidth()
             .weight(1f, fill = false)
-            .heightIn(min = 120.dp, max = 360.dp)
+            .heightIn(min = 100.dp, max = 260.dp)
         ) {
           if (post.comments.isEmpty()) {
             Box(
@@ -748,6 +847,7 @@ fun PostCard(
             value = commentText,
             onValueChange = { commentText = it },
             placeholder = { Text("Add a comment for ${post.author.displayName}...") },
+            maxLines = 4,
             shape = RoundedCornerShape(24.dp),
             modifier = Modifier
               .weight(1f)

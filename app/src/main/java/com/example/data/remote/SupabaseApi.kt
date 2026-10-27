@@ -232,6 +232,13 @@ interface SupabaseRestApi {
     @Query("id") idFilter: String
   ): Response<Unit>
 
+  @POST("rpc/delete_message_for_everyone")
+  suspend fun deleteMessageForEveryoneRpc(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Body request: SupabaseRpcDeleteMessageRequest
+  ): Response<Boolean>
+
   @PATCH("messages")
   suspend fun patchMessageDeleted(
     @Header("apikey") apiKey: String,
@@ -337,9 +344,18 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("recipient_id") recipientIdFilter: String,
+    @Query("select") select: String = "*,actor:actor_id(*)",
     @Query("order") order: String = "created_at.desc",
     @Query("limit") limit: Int = 50
   ): Response<List<SupabaseNotificationDto>>
+
+  @GET("posts")
+  suspend fun getPostsByIds(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("id") idsInFilter: String,
+    @Query("select") select: String = "*,profiles:author_id(*)"
+  ): Response<List<SupabasePostDto>>
 
   @POST("notifications")
   suspend fun insertNotification(
@@ -1062,16 +1078,27 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("community_id") communityIdFilter: String? = null,
-    @Query("user_id") userIdFilter: String? = null
+    @Query("user_id") userIdFilter: String? = null,
+    @Query("select") select: String = "*,profiles:user_id(*)"
   ): Response<List<SupabaseCommunityMemberDto>>
 
   @POST("community_members")
   suspend fun insertCommunityMember(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
-    @Header("Prefer") prefer: String = "return=representation",
+    @Header("Prefer") prefer: String = "resolution=merge-duplicates,return=representation",
+    @Query("on_conflict") onConflict: String = "community_id,user_id",
     @Body member: SupabaseCommunityMemberInsertDto
   ): Response<List<SupabaseCommunityMemberDto>>
+
+  @PATCH("community_members")
+  suspend fun patchCommunityMember(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("community_id") communityIdFilter: String,
+    @Query("user_id") userIdFilter: String,
+    @Body patch: SupabaseCommunityMemberPatchDto
+  ): Response<Unit>
 
   @DELETE("community_members")
   suspend fun deleteCommunityMember(
@@ -1099,11 +1126,45 @@ interface SupabaseRestApi {
     @Body post: SupabaseCommunityPostInsertDto
   ): Response<List<SupabaseCommunityPostDto>>
 
+  @PATCH("community_posts")
+  suspend fun patchCommunityPost(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Query("id") idFilter: String,
+    @Body patch: SupabaseCommunityPostPatchDto
+  ): Response<List<SupabaseCommunityPostDto>>
+
   @DELETE("community_posts")
   suspend fun deleteCommunityPost(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("id") idFilter: String
+  ): Response<Unit>
+
+  @GET("community_post_likes")
+  suspend fun getCommunityPostLikes(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("post_id") postIdsInFilter: String,
+    @Query("user_id") userIdFilter: String? = null
+  ): Response<List<SupabaseCommunityPostLikeDto>>
+
+  @POST("community_post_likes")
+  suspend fun insertCommunityPostLike(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "resolution=merge-duplicates",
+    @Query("on_conflict") onConflict: String = "post_id,user_id",
+    @Body like: SupabaseCommunityPostLikeDto
+  ): Response<Unit>
+
+  @DELETE("community_post_likes")
+  suspend fun deleteCommunityPostLike(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("post_id") postIdFilter: String,
+    @Query("user_id") userIdFilter: String
   ): Response<Unit>
 
   @GET("community_post_comments")

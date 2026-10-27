@@ -11,7 +11,17 @@ data class Community(
   val isPrivate: Boolean = false,
   val membersCount: Int = 1,
   val isJoined: Boolean = false,
+  val membershipStatus: String = "NONE", // NONE, ACCEPTED, PENDING
+  val myRole: String = "MEMBER", // ADMIN, MODERATOR, MEMBER
   val createdAtIso: String? = null
+)
+
+data class CommunityMember(
+  val communityId: String,
+  val user: User,
+  val role: String = "MEMBER", // ADMIN, MODERATOR, MEMBER
+  val status: String = "ACCEPTED", // ACCEPTED, PENDING
+  val joinedAtIso: String? = null
 )
 
 data class CommunityPost(
@@ -24,7 +34,9 @@ data class CommunityPost(
   val likesCount: Int = 0,
   val commentsCount: Int = 0,
   val isLikedByMe: Boolean = false,
-  val createdAtIso: String? = null
+  val isEdited: Boolean = false,
+  val createdAtIso: String? = null,
+  val updatedAtIso: String? = null
 )
 
 data class CommunityComment(

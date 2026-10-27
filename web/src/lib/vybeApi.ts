@@ -841,15 +841,15 @@ export async function fetchConversations(currentUserId: string): Promise<Convers
       };
 
     const msgs: DirectMessage[] = (messageRows || [])
-      .filter((m: any) => String(m.conversation_id) === cid)
+      .filter((m: any) => String(m.conversation_id) === cid && !Boolean(m.is_deleted_for_everyone))
       .map((m: any) => ({
         id: String(m.id),
         conversationId: cid,
         senderId: String(m.sender_id),
-        text: m.is_deleted_for_everyone ? 'Message unsent' : String(m.content || ''),
-        mediaUrl: m.is_deleted_for_everyone ? null : m.media_url || null,
+        text: String(m.content || ''),
+        mediaUrl: m.media_url || null,
         mediaType: String(m.media_type || 'TEXT'),
-        isDeletedForEveryone: Boolean(m.is_deleted_for_everyone),
+        isDeletedForEveryone: false,
         isEdited: Boolean(m.is_edited),
         isRead: true,
         reactions: [],
@@ -934,6 +934,23 @@ export async function sendDirectMessagePersisted(params: {
     .eq('id', params.conversationId);
 
   return inserted?.id ? String(inserted.id) : crypto.randomUUID();
+}
+
+export async function deleteMessageForEveryone(messageId: string): Promise<boolean> {
+  if (!isSupabaseConfigured || !messageId) return false;
+  const { data: rpcDeleted, error: rpcErr } = await supabase.rpc('delete_message_for_everyone', {
+    p_message_id: messageId
+  });
+  if (!rpcErr && rpcDeleted) return true;
+
+  const { error: delErr } = await supabase.from('messages').delete().eq('id', messageId);
+  if (!delErr) return true;
+
+  const { error: softErr } = await supabase
+    .from('messages')
+    .update({ is_deleted_for_everyone: true, content: '', media_url: null })
+    .eq('id', messageId);
+  return !softErr;
 }
 
 // ============================================================================

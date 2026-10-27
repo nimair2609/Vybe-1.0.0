@@ -78,7 +78,11 @@ fun StoryCarousel(
       if (expMillis != null) expMillis > nowMillis else s.expiresHoursRemaining > 0
     }
   }
-  val ownStories = activeStories.filter { currentUser != null && it.author.id == currentUser.id }
+  val ownStories = remember(activeStories, currentUser?.id) {
+    activeStories
+      .filter { currentUser != null && it.author.id == currentUser.id }
+      .sortedBy { TimestampUtils.parseIsoMillis(it.createdAtIso) ?: 0L }
+  }
   val userHasStory = ownStories.isNotEmpty()
   val userOwnStory = ownStories.firstOrNull { !it.isViewed } ?: ownStories.firstOrNull()
   val hasUnviewedOwnStory = ownStories.any { !it.isViewed }
@@ -225,13 +229,30 @@ fun StoryCarousel(
 
             Spacer(modifier = Modifier.height(5.dp))
             Text(
-              text = if (userHasStory) "Your Story" else "Add Story",
+              text = if (userHasStory) {
+                if (ownStories.size > 1) "My Story (${ownStories.size})" else "My Story"
+              } else {
+                "My Story"
+              },
               style = MaterialTheme.typography.labelSmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              color = if (userHasStory) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+              fontWeight = if (userHasStory) FontWeight.SemiBold else FontWeight.Normal,
               fontSize = 11.sp,
               maxLines = 1,
               textAlign = TextAlign.Center,
               overflow = TextOverflow.Ellipsis
+            )
+          }
+        }
+
+        // Visual separator between My Story and other users' stories / live items
+        if (peerStoryGroups.isNotEmpty() || activeLiveStreams.any { it.isLive } || activeLiveRooms.any { it.isActive } || onManageVybeMatchesClick != null) {
+          item(key = "my_story_divider") {
+            Box(
+              modifier = Modifier
+                .height(48.dp)
+                .width(1.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
             )
           }
         }

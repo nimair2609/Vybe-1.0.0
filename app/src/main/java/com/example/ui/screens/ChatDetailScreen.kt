@@ -16,10 +16,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Reply
-import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Reply
+import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -102,9 +104,15 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
     }
   }
 
-  LaunchedEffect(conversation?.messages?.size) {
-    if ((conversation?.messages?.size ?: 0) > 0) {
-      listState.animateScrollToItem((conversation?.messages?.size ?: 1) - 1)
+  val visibleMessages = remember(convMessagesKey(conversation)) {
+    conversation?.messages?.filter { !it.isDeletedForEveryone }.orEmpty()
+  }
+  val density = LocalDensity.current
+  val imeBottomPx = WindowInsets.ime.getBottom(density)
+
+  LaunchedEffect(visibleMessages.size, imeBottomPx) {
+    if (visibleMessages.isNotEmpty()) {
+      listState.animateScrollToItem(visibleMessages.size - 1)
     }
   }
 
@@ -162,6 +170,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
   }
 
   Scaffold(
+    contentWindowInsets = WindowInsets(0.dp),
     topBar = {
       TopAppBar(
         navigationIcon = {
@@ -169,7 +178,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
             onClick = { viewModel.navigateBack() },
             modifier = Modifier.testTag("chat_back_button")
           ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
           }
         },
         title = {
@@ -273,7 +282,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
               },
               modifier = Modifier.testTag("chat_voice_call_btn")
             ) {
-              Icon(Icons.Default.Call, contentDescription = "Voice Call", tint = themeAccent)
+              Icon(Icons.Outlined.Call, contentDescription = "Voice Call", tint = MaterialTheme.colorScheme.onSurface)
             }
             IconButton(
               onClick = {
@@ -287,14 +296,14 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
               },
               modifier = Modifier.testTag("chat_video_call_btn")
             ) {
-              Icon(Icons.Default.Videocam, contentDescription = "Video Call", tint = VybeMagenta)
+              Icon(Icons.Outlined.Videocam, contentDescription = "Video Call", tint = MaterialTheme.colorScheme.onSurface)
             }
           }
           IconButton(
             onClick = { showChatMenu = true },
             modifier = Modifier.testTag("chat_options_menu_btn")
           ) {
-            Icon(Icons.Default.MoreVert, contentDescription = "Chat Options")
+            Icon(Icons.Outlined.MoreVert, contentDescription = "Chat Options")
           }
 
           DropdownMenu(
@@ -393,9 +402,9 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
       Column(
         modifier = Modifier
           .fillMaxWidth()
-          .imePadding()
-          .navigationBarsPadding()
           .background(MaterialTheme.colorScheme.surface)
+          .navigationBarsPadding()
+          .imePadding()
       ) {
         if (conv.isBlocked) {
           Surface(
@@ -443,7 +452,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                   verticalAlignment = Alignment.CenterVertically
                 ) {
                   Icon(
-                    Icons.AutoMirrored.Filled.Reply,
+                    Icons.AutoMirrored.Outlined.Reply,
                     contentDescription = null,
                     tint = themeAccent,
                     modifier = Modifier.size(16.dp)
@@ -485,7 +494,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
               onClick = { showAttachmentMenu = true },
               modifier = Modifier.testTag("chat_attachments_button")
             ) {
-              Icon(Icons.Default.AddCircle, contentDescription = "Attachments", tint = themeAccent)
+              Icon(Icons.Outlined.AddCircleOutline, contentDescription = "Attachments", tint = themeAccent)
             }
 
             OutlinedTextField(
@@ -493,6 +502,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
               onValueChange = { messageInput = it },
               placeholder = { Text("Write a message...", fontSize = 14.sp) },
               shape = RoundedCornerShape(24.dp),
+              maxLines = 4,
               modifier = Modifier
                 .weight(1f)
                 .testTag("message_input_field")
@@ -517,13 +527,13 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
               },
               enabled = messageInput.isNotBlank(),
               modifier = Modifier
-                .size(46.dp)
+                .size(48.dp)
                 .clip(CircleShape)
                 .background(if (messageInput.isNotBlank()) themeAccent else MaterialTheme.colorScheme.surfaceVariant)
                 .testTag("send_message_button")
             ) {
               Icon(
-                imageVector = Icons.AutoMirrored.Filled.Send,
+                imageVector = Icons.AutoMirrored.Outlined.Send,
                 contentDescription = "Send",
                 tint = if (messageInput.isNotBlank()) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(18.dp)
@@ -534,7 +544,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
       }
     }
   ) { paddingValues ->
-    if (conv.messages.isEmpty()) {
+    if (visibleMessages.isEmpty()) {
       Box(
         modifier = Modifier
           .fillMaxSize()
@@ -554,10 +564,11 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
         modifier = Modifier
           .fillMaxSize()
           .padding(paddingValues)
-          .padding(horizontal = 16.dp, vertical = 8.dp),
+          .padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
       ) {
-        items(conv.messages, key = { it.id }) { msg ->
+        items(visibleMessages, key = { it.id }) { msg ->
           val isMe = msg.isMe
           if (msg.mediaType == "CALL_LOG" && !msg.isDeletedForEveryone) {
             val rawMeta = msg.mediaUrl.orEmpty()
@@ -967,47 +978,56 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
 
           ListItem(
             headlineContent = { Text("Reply to Message") },
-            leadingContent = { Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = null, tint = themeAccent) },
-            modifier = Modifier.clickable {
-              replyingToMessage = targetMsg
-              selectedMessageForActions = null
-            }
+            leadingContent = { Icon(Icons.AutoMirrored.Outlined.Reply, contentDescription = null, tint = themeAccent) },
+            modifier = Modifier
+              .clickable {
+                replyingToMessage = targetMsg
+                selectedMessageForActions = null
+              }
+              .testTag("reply_message_option")
           )
 
           if (targetMsg.isMe && !targetMsg.isDeletedForEveryone) {
             ListItem(
               headlineContent = { Text("Edit Message") },
-              leadingContent = { Icon(Icons.Default.Edit, contentDescription = null, tint = VybeBrandCyan) },
-              modifier = Modifier.clickable {
-                editTextValue = targetMsg.text
-                messageToEdit = targetMsg
-                selectedMessageForActions = null
-              }
+              leadingContent = { Icon(Icons.Outlined.Edit, contentDescription = null, tint = VybeBrandCyan) },
+              modifier = Modifier
+                .clickable {
+                  editTextValue = targetMsg.text
+                  messageToEdit = targetMsg
+                  selectedMessageForActions = null
+                }
+                .testTag("edit_message_option")
             )
 
             ListItem(
-              headlineContent = { Text("Delete for Everyone") },
-              leadingContent = { Icon(Icons.Default.DeleteForever, contentDescription = null, tint = VybeDanger) },
-              modifier = Modifier.clickable {
-                viewModel.deleteMessageForEveryone(conv.id, targetMsg.id)
-                selectedMessageForActions = null
-              }
+              headlineContent = { Text("Delete for Everyone", color = VybeDanger, fontWeight = FontWeight.SemiBold) },
+              supportingContent = { Text("Permanently removes this message for all participants", fontSize = 11.sp) },
+              leadingContent = { Icon(Icons.Outlined.DeleteForever, contentDescription = null, tint = VybeDanger) },
+              modifier = Modifier
+                .clickable {
+                  viewModel.deleteMessageForEveryone(conv.id, targetMsg.id)
+                  selectedMessageForActions = null
+                }
+                .testTag("delete_for_everyone_option")
             )
           }
 
           ListItem(
             headlineContent = { Text("Delete for Me") },
-            leadingContent = { Icon(Icons.Default.Delete, contentDescription = null) },
-            modifier = Modifier.clickable {
-              viewModel.deleteMessageForMe(conv.id, targetMsg.id)
-              selectedMessageForActions = null
-            }
+            leadingContent = { Icon(Icons.Outlined.DeleteOutline, contentDescription = null) },
+            modifier = Modifier
+              .clickable {
+                viewModel.deleteMessageForMe(conv.id, targetMsg.id)
+                selectedMessageForActions = null
+              }
+              .testTag("delete_for_me_option")
           )
 
           if (!targetMsg.isMe) {
             ListItem(
               headlineContent = { Text("Report Message", color = VybeDanger) },
-              leadingContent = { Icon(Icons.Default.Report, contentDescription = null, tint = VybeDanger) },
+              leadingContent = { Icon(Icons.Outlined.Report, contentDescription = null, tint = VybeDanger) },
               modifier = Modifier.clickable {
                 reportTargetType = "MESSAGE"
                 reportTargetId = targetMsg.id
@@ -1447,4 +1467,9 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
       }
     )
   }
+}
+
+private fun convMessagesKey(conv: com.example.data.model.ChatConversation?): String {
+  if (conv == null) return ""
+  return "${conv.id}:${conv.messages.size}:${conv.messages.joinToString(",") { "${it.id}_${it.isDeletedForEveryone}_${it.text.hashCode()}_${it.reactions.size}" }}"
 }

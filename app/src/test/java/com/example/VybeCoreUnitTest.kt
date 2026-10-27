@@ -314,4 +314,150 @@ class VybeCoreUnitTest {
       repository.formatCallLogSummary(isVideo = false, status = "COMPLETED", durationSeconds = 42)
     )
   }
+
+  @Test
+  fun testDeleteForEveryonePermanentlyRemovesMessage() {
+    repository.loginUser("eligible@vybe.in", "Password123!")
+    val peer = User(
+      id = "peer_del_everyone_1",
+      username = "peer_del",
+      displayName = "Peer Delete"
+    )
+    val conv = repository.getOrCreateConversation(peer)
+    repository.sendDirectMessage(conv.id, "Secret message to delete for everyone")
+
+    val afterSend = repository.conversations.value.first { it.id == conv.id }
+    val sentMsg = afterSend.messages.last { it.text == "Secret message to delete for everyone" }
+
+    repository.deleteMessageForEveryone(conv.id, sentMsg.id)
+
+    val afterDelete = repository.conversations.value.first { it.id == conv.id }
+    assertFalse(
+      "Message deleted for everyone must completely disappear from conversation",
+      afterDelete.messages.any { it.id == sentMsg.id }
+    )
+  }
+
+  @Test
+  fun testStorySequenceAuthorIsolationAndPrivacy() {
+    repository.loginUser("eligible@vybe.in", "Password123!")
+    val me = repository.currentUser.value!!
+    val peerA = User(id = "story_peer_a", username = "peer_a", displayName = "Peer A")
+    val peerB = User(id = "story_peer_b", username = "peer_b", displayName = "Peer B")
+
+    val viewModel = com.example.ui.VybeViewModel()
+    val futureMillis = System.currentTimeMillis() + 3_600_000L
+    val expiredMillis = System.currentTimeMillis() - 3_600_000L
+
+    val myStory = com.example.data.model.StoryItem(
+      id = "story_me_1",
+      author = me,
+      mediaUrl = "https://example.com/me1.jpg",
+      audience = com.example.data.model.StoryAudience.EVERYONE,
+      expiresAtMillis = futureMillis
+    )
+    val peerAPublicStory = com.example.data.model.StoryItem(
+      id = "story_peer_a_pub",
+      author = peerA,
+      mediaUrl = "https://example.com/a1.jpg",
+      audience = com.example.data.model.StoryAudience.EVERYONE,
+      expiresAtMillis = futureMillis
+    )
+    val peerAOnlyMeStory = com.example.data.model.StoryItem(
+      id = "story_peer_a_priv",
+      author = peerA,
+      mediaUrl = "https://example.com/a2.jpg",
+      audience = com.example.data.model.StoryAudience.ONLY_ME,
+      expiresAtMillis = futureMillis
+    )
+    val peerAFollowersStory = com.example.data.model.StoryItem(
+      id = "story_peer_a_fol",
+      author = peerA,
+      mediaUrl = "https://example.com/a3.jpg",
+      audience = com.example.data.model.StoryAudience.FOLLOWERS,
+      expiresAtMillis = futureMillis
+    )
+    val peerAExpiredStory = com.example.data.model.StoryItem(
+      id = "story_peer_a_exp",
+      author = peerA,
+      mediaUrl = "https://example.com/a4.jpg",
+      audience = com.example.data.model.StoryAudience.EVERYONE,
+      expiresAtMillis = expiredMillis
+    )
+    val peerBPublicStory = com.example.data.model.StoryItem(
+      id = "story_peer_b_pub",
+      author = peerB,
+      mediaUrl = "https://example.com/b1.jpg",
+      audience = com.example.data.model.StoryAudience.EVERYONE,
+      expiresAtMillis = futureMillis
+    )
+
+    assertTrue("My own story must be visible to me", viewModel.isStoryVisibleToViewer(myStory))
+    assertTrue("Peer public story must be visible", viewModel.isStoryVisibleToViewer(peerAPublicStory))
+    assertFalse("Peer ONLY_ME story must NOT be visible to other users", viewModel.isStoryVisibleToViewer(peerAOnlyMeStory))
+    assertFalse("Peer FOLLOWERS story must NOT be visible to non-followers", viewModel.isStoryVisibleToViewer(peerAFollowersStory))
+    assertFalse("Expired story must NOT be visible", viewModel.isStoryVisibleToViewer(peerAExpiredStory))
+    assertTrue("Peer B public story must be visible", viewModel.isStoryVisibleToViewer(peerBPublicStory))
+  }
+
+  @Test
+  fun testFeedMusicPersistenceAndPhysicalVolumeUnmute() {
+    val viewModel = com.example.ui.VybeViewModel()
+    viewModel.setFeedMusicEnabled(false)
+    viewModel.setReelsAudioEnabled(false)
+    assertFalse(viewModel.isFeedMusicEnabled.value)
+    assertFalse(viewModel.isReelsAudioEnabled.value)
+
+    // Physical volume-up in playback unmutes both Feed Music and Reels audio
+    viewModel.onPhysicalVolumeUpInPlayback()
+    assertTrue("Physical volume up must unmute Feed music", viewModel.isFeedMusicEnabled.value)
+    assertTrue("Physical volume up must unmute Reels audio", viewModel.isReelsAudioEnabled.value)
+
+    // Switching Feed music off keeps it off until explicitly enabled again
+    viewModel.setFeedMusicEnabled(false)
+    assertFalse("Feed music must turn off when user switches it off", viewModel.isFeedMusicEnabled.value)
+  }
+
+  @Test
+  fun testNotificationTargetRoutingToPostOrReel() {
+    repository.loginUser("eligible@vybe.in", "Password123!")
+    val author = repository.currentUser.value!!
+    val feedPost = com.example.data.model.Post(
+      id = "notif_feed_post_1",
+      author = author,
+      caption = "Feed target post",
+      mediaType = com.example.data.model.MediaType.IMAGE,
+      timestamp = "Just now",
+      clientUploadId = "upload_notif_feed_1"
+    )
+    val reelPost = com.example.data.model.Post(
+      id = "notif_reel_post_1",
+      author = author,
+      caption = "Reel target post",
+      mediaType = com.example.data.model.MediaType.REEL,
+      isVybesReel = true,
+      timestamp = "Just now",
+      clientUploadId = "upload_notif_reel_1"
+    )
+    repository.recordVerifiedPostForState(feedPost)
+    repository.recordVerifiedPostForState(reelPost)
+
+    val viewModel = com.example.ui.VybeViewModel()
+    viewModel.openPostFromNotification(feedPost.id)
+    assertEquals(com.example.ui.Screen.MAIN, viewModel.currentScreen.value)
+    assertEquals(com.example.ui.MainTab.FEED, viewModel.selectedTab.value)
+    assertEquals(feedPost.id, viewModel.targetFeedPostId.value)
+
+    viewModel.openPostFromNotification(reelPost.id)
+    assertEquals(com.example.ui.Screen.REELS_VIEWER, viewModel.currentScreen.value)
+    assertEquals(reelPost.id, viewModel.selectedReelPostId.value)
+  }
+
+  @Test
+  fun testNoSampleCommunitiesSeededByDefault() {
+    assertTrue(
+      "Community Zone must not contain hardcoded mock communities",
+      repository.communities.value.isEmpty()
+    )
+  }
 }

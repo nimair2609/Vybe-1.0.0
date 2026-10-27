@@ -66,6 +66,9 @@ class VybeViewModel : ViewModel() {
   private val _isFeedAudioEnabled = MutableStateFlow(false)
   val isFeedAudioEnabled: StateFlow<Boolean> = _isFeedAudioEnabled.asStateFlow()
 
+  private val _isReelsAudioEnabled = MutableStateFlow(true)
+  val isReelsAudioEnabled: StateFlow<Boolean> = _isReelsAudioEnabled.asStateFlow()
+
   fun setFeedAudioEnabled(enabled: Boolean) {
     _isFeedAudioEnabled.value = enabled
   }
@@ -74,6 +77,36 @@ class VybeViewModel : ViewModel() {
     val next = !_isFeedAudioEnabled.value
     _isFeedAudioEnabled.value = next
     return next
+  }
+
+  fun setReelsAudioEnabled(enabled: Boolean) {
+    _isReelsAudioEnabled.value = enabled
+  }
+
+  fun toggleReelsAudio(): Boolean {
+    val next = !_isReelsAudioEnabled.value
+    _isReelsAudioEnabled.value = next
+    return next
+  }
+
+  /**
+   * Invoked when the user presses physical Volume Up while viewing Feed or Reels.
+   * Ensures muted playback unmutes naturally while Android adjusts STREAM_MUSIC volume.
+   */
+  fun onPhysicalVolumeUpInPlayback() {
+    when {
+      _currentScreen.value == Screen.REELS_VIEWER ||
+        (_currentScreen.value == Screen.MAIN && _selectedTab.value == MainTab.VYBES) -> {
+        if (!_isReelsAudioEnabled.value) {
+          _isReelsAudioEnabled.value = true
+        }
+      }
+      _currentScreen.value == Screen.MAIN && _selectedTab.value == MainTab.FEED -> {
+        if (!_isFeedAudioEnabled.value) {
+          _isFeedAudioEnabled.value = true
+        }
+      }
+    }
   }
 
   private val screenBackStack = mutableListOf<Screen>()
@@ -96,6 +129,9 @@ class VybeViewModel : ViewModel() {
 
   private val _targetReelId = MutableStateFlow<String?>(null)
   val targetReelId: StateFlow<String?> = _targetReelId.asStateFlow()
+
+  private val _targetFeedPostId = MutableStateFlow<String?>(null)
+  val targetFeedPostId: StateFlow<String?> = _targetFeedPostId.asStateFlow()
 
   private val _feedRefreshTrigger = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
   val feedRefreshTrigger = _feedRefreshTrigger
@@ -123,7 +159,8 @@ class VybeViewModel : ViewModel() {
 
   val posts = repository.posts
   val unfilteredPosts = repository.unfilteredPosts
-  val stories = repository.stories
+  private val _visibleStories = MutableStateFlow<List<Story>>(emptyList())
+  val stories: StateFlow<List<Story>> = _visibleStories.asStateFlow()
   val unloadRooms = repository.unloadRooms
   val activeUnloadRoom = repository.activeUnloadRoom
   val crossedPaths = repository.crossedPaths
@@ -131,6 +168,11 @@ class VybeViewModel : ViewModel() {
   val doubleTakePrompts = repository.doubleTakePrompts
   val predictions = repository.predictions
   val shops = repository.shops
+  val communities = repository.communities
+  val activeCommunity = repository.activeCommunity
+  val communityPosts = repository.communityPosts
+  val communityMembers = repository.communityMembers
+  val communityComments = repository.communityComments
   val liveStreams = repository.liveStreams
   val activeLiveStream = repository.activeLiveStream
   val liveStreamComments = repository.liveStreamComments
@@ -213,6 +255,35 @@ class VybeViewModel : ViewModel() {
         val profile = _selectedUserProfile.value
         if (user != null && profile != null && profile.id == user.id) {
           _selectedUserProfile.value = user
+        }
+      }
+    }
+
+    // Keep visible stories & active Story sequence strictly scoped to privacy, expiration & activeStoryAuthorId
+    viewModelScope.launch {
+      kotlinx.coroutines.flow.combine(
+        repository.stories,
+        repository.currentUser,
+        repository.followingUserIds,
+        repository.vybeMatches,
+        repository.blockedUserIds
+      ) { rawStories, _, _, _, _ ->
+        rawStories.filter { isStoryVisibleToViewer(it) }
+      }.collect { visible ->
+        _visibleStories.value = visible
+        val activeAuthor = _activeStoryAuthorId.value
+        if (!activeAuthor.isNullOrBlank()) {
+          val updatedSeq = visible
+            .filter { it.author.id == activeAuthor }
+            .sortedBy { com.example.util.TimestampUtils.parseIsoMillis(it.createdAtIso) ?: 0L }
+          _activeStorySequence.value = updatedSeq
+          if (updatedSeq.isEmpty() && _currentScreen.value == Screen.STORY_VIEWER) {
+            _activeStoryAuthorId.value = null
+            _currentStoryIndex.value = 0
+            navigateBack()
+          } else if (_currentStoryIndex.value >= updatedSeq.size && updatedSeq.isNotEmpty()) {
+            _currentStoryIndex.value = updatedSeq.lastIndex
+          }
         }
       }
     }
@@ -377,6 +448,23 @@ class VybeViewModel : ViewModel() {
 
   fun clearTargetReelId() {
     _targetReelId.value = null
+  }
+
+  fun openPostFromNotification(postId: String) {
+    if (postId.isBlank()) return
+    val targetPost = repository.posts.value.firstOrNull { it.id == postId }
+    if (targetPost?.isReel == true) {
+      openReelViewer(postId)
+      return
+    }
+    _targetFeedPostId.value = postId
+    _selectedTab.value = MainTab.FEED
+    screenBackStack.clear()
+    _currentScreen.value = Screen.MAIN
+  }
+
+  fun clearTargetFeedPostId() {
+    _targetFeedPostId.value = null
   }
 
   fun navigateBack(): Boolean {
@@ -563,21 +651,43 @@ class VybeViewModel : ViewModel() {
   fun addNotification(item: NotificationItem) = repository.addNotification(item)
   fun deleteNotification(notificationId: String) = repository.deleteNotification(notificationId)
 
-  // --- Stories (Author-Scoped Sequences) ---
-  fun openUserStorySequence(authorId: String, initialStoryId: String? = null) {
-    val nowMillis = System.currentTimeMillis()
-    val allActive = repository.stories.value.filter { s ->
-      val exp = com.example.util.TimestampUtils.parseIsoMillis(s.expiresAtIso)
-      if (exp != null) exp > nowMillis else s.expiresHoursRemaining > 0
-    }
-    val authorStories = allActive
-      .filter { it.author.id == authorId }
-      .sortedBy { com.example.util.TimestampUtils.parseIsoMillis(it.createdAtIso) ?: 0L }
+  // --- Stories (Strict Author-Scoped Sequences with Privacy & Expiration) ---
+  fun isStoryVisibleToViewer(s: Story, nowMillis: Long = System.currentTimeMillis()): Boolean {
+    val myId = repository.currentUser.value?.id.orEmpty()
+    val blocked = repository.blockedUserIds.value
+    val following = repository.followingUserIds.value
+    val matchIds = repository.vybeMatches.value.map { it.id }.toSet()
 
+    if (blocked.contains(s.author.id)) return false
+    val exp = com.example.util.TimestampUtils.parseIsoMillis(s.expiresAtIso)
+    val notExpired = if (exp != null) exp > nowMillis else s.expiresHoursRemaining > 0
+    if (!notExpired) return false
+
+    if (myId.isNotBlank() && s.author.id == myId) return true
+    if (s.author.isPrivate && !following.contains(s.author.id)) return false
+
+    return when (s.audience) {
+      StoryAudience.EVERYONE, StoryAudience.PUBLIC -> true
+      StoryAudience.FOLLOWERS -> following.contains(s.author.id)
+      StoryAudience.VYBE_MATCHES, StoryAudience.CLOSE_FRIENDS -> matchIds.contains(s.author.id)
+      StoryAudience.ONLY_ME -> false
+    }
+  }
+
+  fun getVisibleStoriesForAuthor(authorId: String): List<Story> {
+    if (authorId.isBlank()) return emptyList()
+    val nowMillis = System.currentTimeMillis()
+    return repository.stories.value
+      .filter { s -> s.author.id == authorId && isStoryVisibleToViewer(s, nowMillis) }
+      .sortedBy { com.example.util.TimestampUtils.parseIsoMillis(it.createdAtIso) ?: 0L }
+  }
+
+  fun openUserStorySequence(authorId: String, initialStoryId: String? = null) {
+    val authorStories = getVisibleStoriesForAuthor(authorId)
     if (authorStories.isEmpty()) return
 
-    _activeStorySequence.value = authorStories
     _activeStoryAuthorId.value = authorId
+    _activeStorySequence.value = authorStories
 
     val targetIdx = if (!initialStoryId.isNullOrBlank()) {
       authorStories.indexOfFirst { it.id == initialStoryId }.coerceAtLeast(0)
@@ -603,8 +713,16 @@ class VybeViewModel : ViewModel() {
     }
   }
 
+  fun closeStoryViewer() {
+    _activeStoryAuthorId.value = null
+    _activeStorySequence.value = emptyList()
+    _currentStoryIndex.value = 0
+    navigateBack()
+  }
+
   fun nextStory(): Boolean {
-    val list = _activeStorySequence.value.ifEmpty { repository.stories.value }
+    val authorId = _activeStoryAuthorId.value ?: return false
+    val list = getVisibleStoriesForAuthor(authorId).also { _activeStorySequence.value = it }
     if (_currentStoryIndex.value < list.size - 1) {
       _currentStoryIndex.value += 1
       repository.markStoryViewed(list[_currentStoryIndex.value].id)
@@ -614,6 +732,9 @@ class VybeViewModel : ViewModel() {
   }
 
   fun prevStory(): Boolean {
+    val authorId = _activeStoryAuthorId.value ?: return false
+    val list = getVisibleStoriesForAuthor(authorId).also { _activeStorySequence.value = it }
+    if (list.isEmpty()) return false
     if (_currentStoryIndex.value > 0) {
       _currentStoryIndex.value -= 1
       return true
@@ -940,4 +1061,29 @@ class VybeViewModel : ViewModel() {
   fun logoutDevice(sessionId: String) = repository.logoutDevice(sessionId)
   fun updateNotificationPreferences(prefs: NotificationPreferences) = repository.updateNotificationPreferences(prefs)
   fun completeOnboarding() = repository.completeOnboarding()
+
+  // --- Community Zone ---
+  fun openCommunityZone() {
+    repository.fetchCommunities()
+    navigateTo(Screen.COMMUNITY_ZONE)
+  }
+  fun fetchCommunities() = repository.fetchCommunities()
+  fun openCommunity(community: Community) = repository.openCommunity(community)
+  fun closeActiveCommunity() = repository.closeActiveCommunity()
+  fun createCommunity(name: String, description: String, category: String, isPrivate: Boolean) =
+    repository.createCommunity(name, description, category, isPrivate)
+  fun toggleJoinCommunity(communityId: String) = repository.toggleJoinCommunity(communityId)
+  fun createCommunityPost(communityId: String, title: String, content: String, mediaUri: Uri? = null) =
+    repository.createCommunityPost(communityId, title, content, mediaUri)
+  fun editCommunityPost(postId: String, newTitle: String, newContent: String) =
+    repository.editCommunityPost(postId, newTitle, newContent)
+  fun deleteCommunityPost(postId: String) = repository.deleteCommunityPost(postId)
+  fun toggleLikeCommunityPost(postId: String) = repository.toggleLikeCommunityPost(postId)
+  fun fetchCommunityComments(postId: String) = repository.fetchCommunityComments(postId)
+  fun addCommunityComment(postId: String, content: String) = repository.addCommunityComment(postId, content)
+  fun fetchCommunityMembers(communityId: String) = repository.fetchCommunityMembers(communityId)
+  fun updateCommunityMember(communityId: String, targetUserId: String, role: String?, status: String?) =
+    repository.updateCommunityMember(communityId, targetUserId, role, status)
+  fun removeCommunityMember(communityId: String, targetUserId: String) =
+    repository.removeCommunityMember(communityId, targetUserId)
 }

@@ -37,7 +37,7 @@ fun MainScreen(viewModel: VybeViewModel) {
           onClick = { viewModel.selectTab(MainTab.FEED) },
           icon = {
             Icon(
-              imageVector = if (selectedTab == MainTab.FEED) Icons.Default.Home else Icons.Outlined.Home,
+              imageVector = Icons.Outlined.Home,
               contentDescription = "Feed"
             )
           },
@@ -56,7 +56,7 @@ fun MainScreen(viewModel: VybeViewModel) {
           onClick = { viewModel.selectTab(MainTab.VYBES) },
           icon = {
             Icon(
-              imageVector = if (selectedTab == MainTab.VYBES) Icons.Default.PlayCircle else Icons.Outlined.PlayCircleOutline,
+              imageVector = Icons.Outlined.PlayCircleOutline,
               contentDescription = "VYBES Short-Videos"
             )
           },
@@ -75,7 +75,7 @@ fun MainScreen(viewModel: VybeViewModel) {
           onClick = { viewModel.selectTab(MainTab.MOOD_ZONES) },
           icon = {
             Icon(
-              imageVector = if (selectedTab == MainTab.MOOD_ZONES) Icons.Default.Mood else Icons.Outlined.Mood,
+              imageVector = Icons.Outlined.Mood,
               contentDescription = "Mood Zones"
             )
           },
@@ -94,7 +94,7 @@ fun MainScreen(viewModel: VybeViewModel) {
           onClick = { viewModel.selectTab(MainTab.EXPLORE) },
           icon = {
             Icon(
-              imageVector = if (selectedTab == MainTab.EXPLORE) Icons.Default.Explore else Icons.Outlined.Explore,
+              imageVector = Icons.Outlined.Explore,
               contentDescription = "Explore"
             )
           },
@@ -120,7 +120,7 @@ fun MainScreen(viewModel: VybeViewModel) {
               }
             ) {
               Icon(
-                imageVector = if (selectedTab == MainTab.INBOX) Icons.Default.ChatBubble else Icons.Outlined.ChatBubbleOutline,
+                imageVector = Icons.Outlined.ChatBubbleOutline,
                 contentDescription = "Inbox"
               )
             }

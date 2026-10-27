@@ -47,9 +47,12 @@ import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VideoFitMode
 import com.example.ui.components.VybeAvatar
 import com.example.ui.components.VybeLikeIcon
+import com.example.ui.components.VybePulseDoubleTapOverlay
+import com.example.ui.components.VybeReactionOutlineIcon
 import com.example.ui.components.VybeReactionSelector
 import com.example.ui.components.VybeVideoPlayer
 import com.example.ui.theme.*
+import com.example.util.FeedAudioController
 import com.example.util.rememberRelativeTimestamp
 import kotlinx.coroutines.delay
 
@@ -76,8 +79,15 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
     handleBackFromReels()
   }
 
+  val isReelsAudioEnabled by viewModel.isReelsAudioEnabled.collectAsState()
+  val isMuted = !isReelsAudioEnabled
+
+  DisposableEffect(Unit) {
+    FeedAudioController.stopAll()
+    onDispose { }
+  }
+
   var isPlaying by remember { mutableStateOf(true) }
-  var isMuted by remember { mutableStateOf(true) }
   var showShareInboxSheet by remember { mutableStateOf(false) }
   var showCommentsSheet by remember { mutableStateOf(false) }
   var showReactionSelectorReelId by remember { mutableStateOf<String?>(null) }
@@ -224,7 +234,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
               onTap = { isPlaying = !isPlaying },
               onDoubleTap = {
                 showDoubleTapResonance = true
-                viewModel.toggleLike(reelPost.id)
+                viewModel.reactToPost(reelPost.id, VybeReaction.PULSE)
               }
             )
           }
@@ -238,29 +248,16 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
           fitMode = VideoFitMode.FIT_CONTAIN,
           showControls = false,
           onTapOverlay = { isPlaying = !isPlaying },
+          onDoubleTapOverlay = {
+            showDoubleTapResonance = true
+            viewModel.reactToPost(reelPost.id, VybeReaction.PULSE)
+          },
           modifier = Modifier.fillMaxSize()
         )
 
-        // Double-Tap Resonance Like Animation Overlay
-        AnimatedVisibility(
-          visible = showDoubleTapResonance,
-          enter = scaleIn(initialScale = 0.4f) + fadeIn(),
-          exit = scaleOut(targetScale = 1.35f) + fadeOut(),
-          modifier = Modifier.align(Alignment.Center)
-        ) {
-          Box(
-            modifier = Modifier
-              .size(100.dp)
-              .clip(CircleShape)
-              .background(Color.Black.copy(alpha = 0.55f)),
-            contentAlignment = Alignment.Center
-          ) {
-            VybeLikeIcon(
-              isLiked = true,
-              size = 60.dp,
-              activeTintOverride = VybeMagenta
-            )
-          }
+        // Double-Tap Resonance PULSE Animation Overlay
+        Box(modifier = Modifier.align(Alignment.Center)) {
+          VybePulseDoubleTapOverlay(visible = showDoubleTapResonance)
         }
 
         if (!isPlaying && isCurrentPage && !showDoubleTapResonance) {
@@ -372,7 +369,12 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                   .testTag("reel_like_button")
               ) {
                 if (reelPost.userReaction != null) {
-                  Text(reelPost.userReaction.emoji, fontSize = 22.sp)
+                  VybeReactionOutlineIcon(
+                    reaction = reelPost.userReaction,
+                    size = 24.dp,
+                    tint = Color(reelPost.userReaction.colorHex),
+                    strokeWidthDp = 2.1.dp
+                  )
                 } else {
                   VybeLikeIcon(
                     isLiked = false,
@@ -414,7 +416,12 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                 fontSize = 12.sp
               )
               Spacer(modifier = Modifier.width(2.dp))
-              Text("▼", color = Color.White.copy(alpha = 0.65f), fontSize = 8.sp)
+              Icon(
+                imageVector = Icons.Outlined.KeyboardArrowDown,
+                contentDescription = "Breakdown",
+                tint = Color.White.copy(alpha = 0.7f),
+                modifier = Modifier.size(14.dp)
+              )
             }
           }
 
@@ -483,7 +490,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
           // Volume Control (Moved below Share control per specification)
           Column(horizontalAlignment = Alignment.CenterHorizontally) {
             IconButton(
-              onClick = { isMuted = !isMuted },
+              onClick = { viewModel.toggleReelsAudio() },
               modifier = Modifier
                 .size(48.dp)
                 .clip(CircleShape)
@@ -608,6 +615,8 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
             showShareInboxSheet = false
             shareSearchQuery = ""
           },
+          sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+          contentWindowInsets = { WindowInsets(0.dp) },
           containerColor = MaterialTheme.colorScheme.surface
         ) {
           Column(
@@ -615,6 +624,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
               .fillMaxWidth()
               .padding(horizontal = 20.dp, vertical = 8.dp)
               .navigationBarsPadding()
+              .imePadding()
           ) {
             Row(
               modifier = Modifier.fillMaxWidth(),
@@ -793,6 +803,8 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
       if (currentReel != null) {
         ModalBottomSheet(
           onDismissRequest = { showCommentsSheet = false },
+          sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+          contentWindowInsets = { WindowInsets(0.dp) },
           containerColor = MaterialTheme.colorScheme.surface
         ) {
           Column(
@@ -800,6 +812,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
               .fillMaxWidth()
               .padding(horizontal = 20.dp, vertical = 8.dp)
               .navigationBarsPadding()
+              .imePadding()
           ) {
             Text(
               text = "Comments (${maxOf(currentReel.commentsCount, currentReel.comments.size)})",

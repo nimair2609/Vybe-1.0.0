@@ -1,9 +1,11 @@
 package com.example
 
 import android.content.Intent
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -28,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.model.AppThemeMode
 import com.example.data.repository.VybeRepository
+import com.example.ui.MainTab
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.components.IncomingCallBanner
@@ -35,12 +38,14 @@ import com.example.ui.components.OfflineStatusBanner
 import com.example.ui.components.UploadStatusBanner
 import com.example.ui.screens.*
 import com.example.ui.theme.VybeTheme
+import com.example.util.FeedAudioController
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 
 class MainActivity : ComponentActivity() {
 
   private val pendingDeepLinkUri = MutableStateFlow<Uri?>(null)
+  private var activeViewModel: VybeViewModel? = null
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -53,6 +58,7 @@ class MainActivity : ComponentActivity() {
     enableEdgeToEdge()
     setContent {
       val viewModel: VybeViewModel = viewModel()
+      activeViewModel = viewModel
       val incomingUri by pendingDeepLinkUri.collectAsState()
 
       LaunchedEffect(incomingUri) {
@@ -70,6 +76,7 @@ class MainActivity : ComponentActivity() {
       }
 
       val currentScreen by viewModel.currentScreen.collectAsState()
+      val selectedTab by viewModel.selectedTab.collectAsState()
       val isOnline by viewModel.isOnline.collectAsState()
       val uploadStatus by viewModel.uploadStatus.collectAsState()
       val activeCall by viewModel.activeCall.collectAsState()
@@ -82,16 +89,23 @@ class MainActivity : ComponentActivity() {
         }
       }
 
-      LaunchedEffect(currentScreen) {
-        val isMediaPlaybackScreen = currentScreen == Screen.MAIN ||
+      LaunchedEffect(currentScreen, selectedTab) {
+        val isFeedOrReelsMain = currentScreen == Screen.MAIN &&
+          (selectedTab == MainTab.FEED || selectedTab == MainTab.VYBES)
+        val isMediaPlaybackScreen = isFeedOrReelsMain ||
           currentScreen == Screen.REELS_VIEWER ||
           currentScreen == Screen.STORY_VIEWER ||
-          currentScreen == Screen.LIVE_STUDIO ||
-          currentScreen == Screen.UNLOAD_VIEW
-        volumeControlStream = if (isMediaPlaybackScreen) {
-          android.media.AudioManager.STREAM_MUSIC
-        } else {
-          android.media.AudioManager.USE_DEFAULT_STREAM_TYPE
+          currentScreen == Screen.LIVE_STUDIO
+
+        volumeControlStream = when {
+          isMediaPlaybackScreen -> AudioManager.STREAM_MUSIC
+          currentScreen == Screen.CALL_SCREEN || currentScreen == Screen.UNLOAD_VIEW -> AudioManager.STREAM_VOICE_CALL
+          else -> AudioManager.USE_DEFAULT_STREAM_TYPE
+        }
+
+        // Prevent Feed music/video audio from overlapping into other tabs or screens
+        if (currentScreen != Screen.MAIN || selectedTab != MainTab.FEED) {
+          FeedAudioController.stopAllFeedAudio()
         }
       }
 
@@ -186,6 +200,30 @@ class MainActivity : ComponentActivity() {
         }
       }
     }
+  }
+
+  override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+    if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+      val vm = activeViewModel
+      if (vm != null) {
+        val screen = vm.currentScreen.value
+        val tab = vm.selectedTab.value
+        val inFeedOrReels = screen == Screen.REELS_VIEWER ||
+          (screen == Screen.MAIN && (tab == MainTab.FEED || tab == MainTab.VYBES))
+        if (inFeedOrReels) {
+          volumeControlStream = AudioManager.STREAM_MUSIC
+          if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+            vm.onPhysicalVolumeUpInPlayback()
+          }
+        }
+      }
+    }
+    return super.onKeyDown(keyCode, event)
+  }
+
+  override fun onPause() {
+    super.onPause()
+    FeedAudioController.stopAllFeedAudio()
   }
 
   override fun onNewIntent(intent: Intent) {

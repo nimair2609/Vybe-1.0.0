@@ -44,11 +44,16 @@ import com.example.ui.components.StoryCreateDialog
 import com.example.ui.components.VideoFitMode
 import com.example.ui.components.VybeAvatar
 import com.example.ui.components.VybeGradientButton
+import com.example.ui.components.VybeMoodOutlineIcon
 import com.example.ui.components.VybeVideoPlayer
 import com.example.ui.theme.VybeBrandCyan
 import com.example.ui.theme.VybeMagenta
 import com.example.ui.theme.VybeViolet
+import com.example.util.FeedAudioController
 import com.example.util.MediaUtils
+import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Stop
 import kotlinx.coroutines.launch
 
 enum class PublishDestination {
@@ -72,12 +77,21 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
   var detectedMediaRatio by remember { mutableStateOf<Float?>(null) }
   var showPreviewDialog by remember { mutableStateOf(false) }
   var selectedLocationResult by remember { mutableStateOf<SelectedLocationResult?>(null) }
+  var selectedAudioTrack by remember { mutableStateOf<String?>(null) }
+  var previewingAudioTrack by remember { mutableStateOf<String?>(null) }
   var showLocationDialog by remember { mutableStateOf(false) }
   var showStoryComposerDialog by remember { mutableStateOf(false) }
   var localValidationMessage by remember { mutableStateOf<String?>(null) }
   var isSubmitting by remember { mutableStateOf(false) }
 
+  DisposableEffect(Unit) {
+    onDispose {
+      FeedAudioController.stopMusicTrack("composer_preview")
+    }
+  }
+
   BackHandler(enabled = !isSubmitting) {
+    FeedAudioController.stopMusicTrack("composer_preview")
     viewModel.navigateBack()
   }
 
@@ -188,6 +202,8 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
 
     isSubmitting = true
     localValidationMessage = null
+    FeedAudioController.stopMusicTrack("composer_preview")
+    previewingAudioTrack = null
     coroutineScope.launch {
       val result = viewModel.publishPostAwait(
         caption = caption.trim(),
@@ -198,6 +214,7 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
         locationName = selectedLocationResult?.displayName,
         latitude = selectedLocationResult?.latitude,
         longitude = selectedLocationResult?.longitude,
+        audioTrackTitle = selectedAudioTrack,
         preferredAspectRatio = if (selectedMediaUri != null) preferredAspectRatio else null
       )
       isSubmitting = false
@@ -215,6 +232,7 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
   }
 
   Scaffold(
+    contentWindowInsets = WindowInsets(0.dp),
     topBar = {
       TopAppBar(
         navigationIcon = {
@@ -470,7 +488,11 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Text(mood.emoji, fontSize = 14.sp)
+                VybeMoodOutlineIcon(
+                  mood = mood,
+                  size = 15.dp,
+                  tint = if (isSelected) mood.accentColor else MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                   text = mood.title,
@@ -679,6 +701,74 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
                   onClick = { if (!isSubmitting) cropRatio = ratio },
                   label = { Text(label, fontSize = 11.sp, maxLines = 1) },
                   modifier = Modifier.weight(1f)
+                )
+              }
+            }
+          }
+        }
+
+        // Optional Feed Music Track Selector
+        Spacer(modifier = Modifier.height(14.dp))
+        Text(
+          text = "Feed Music (Optional — plays seamlessly in Feed)",
+          style = MaterialTheme.typography.labelLarge,
+          fontWeight = FontWeight.SemiBold
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          items(FeedAudioController.PRESET_TRACKS) { track ->
+            val isSelected = selectedAudioTrack == track
+            val isPreviewing = previewingAudioTrack == track
+            Surface(
+              color = if (isSelected) VybeBrandCyan.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
+              shape = RoundedCornerShape(12.dp),
+              border = if (isSelected) BorderStroke(1.5.dp, VybeBrandCyan) else null,
+              modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(enabled = !isSubmitting) {
+                  if (isSelected) {
+                    selectedAudioTrack = null
+                    previewingAudioTrack = null
+                    FeedAudioController.stopMusicTrack("composer_preview")
+                  } else {
+                    selectedAudioTrack = track
+                  }
+                }
+            ) {
+              Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Icon(
+                  imageVector = Icons.Outlined.MusicNote,
+                  contentDescription = null,
+                  tint = if (isSelected) VybeBrandCyan else MaterialTheme.colorScheme.onSurfaceVariant,
+                  modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                  text = track,
+                  fontSize = 12.sp,
+                  fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                  color = if (isSelected) VybeBrandCyan else MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Icon(
+                  imageVector = if (isPreviewing) Icons.Outlined.Stop else Icons.Outlined.PlayArrow,
+                  contentDescription = if (isPreviewing) "Stop preview" else "Preview track",
+                  tint = if (isPreviewing) VybeMagenta else MaterialTheme.colorScheme.onSurfaceVariant,
+                  modifier = Modifier
+                    .size(18.dp)
+                    .clickable(enabled = !isSubmitting) {
+                      if (isPreviewing) {
+                        previewingAudioTrack = null
+                        FeedAudioController.stopMusicTrack("composer_preview")
+                      } else {
+                        selectedAudioTrack = track
+                        previewingAudioTrack = track
+                        FeedAudioController.playMusicTrack("composer_preview", track)
+                      }
+                    }
                 )
               }
             }

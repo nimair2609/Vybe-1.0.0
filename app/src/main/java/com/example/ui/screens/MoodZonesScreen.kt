@@ -10,9 +10,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,6 +30,7 @@ import com.example.data.model.matchesMoodFilter
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.components.PostCard
+import com.example.ui.components.VybeMoodOutlineIcon
 import com.example.ui.theme.VybeViolet
 import kotlinx.coroutines.launch
 
@@ -41,6 +42,7 @@ fun MoodZonesScreen(viewModel: VybeViewModel) {
   val currentUser by viewModel.currentUser.collectAsState()
   val posts by viewModel.posts.collectAsState()
   val selectedMood by viewModel.selectedMoodFilter.collectAsState()
+  val isFeedMusicEnabled by viewModel.isFeedMusicEnabled.collectAsState()
 
   val zonePosts = remember(posts, selectedMood) {
     posts.filter { !it.isArchived && it.matchesMoodFilter(selectedMood) }
@@ -175,7 +177,11 @@ fun MoodZonesScreen(viewModel: VybeViewModel) {
                 .background(mood.accentColor.copy(alpha = 0.2f)),
               contentAlignment = Alignment.Center
             ) {
-              Text(text = mood.emoji, fontSize = 22.sp)
+              VybeMoodOutlineIcon(
+                mood = mood,
+                tint = mood.accentColor,
+                size = 22.dp
+              )
             }
 
             Spacer(modifier = Modifier.width(12.dp))
@@ -212,7 +218,7 @@ fun MoodZonesScreen(viewModel: VybeViewModel) {
             }
 
             Icon(
-              imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Default.ChevronRight,
+              imageVector = if (isSelected) Icons.Outlined.CheckCircle else Icons.Outlined.ChevronRight,
               contentDescription = null,
               tint = if (isSelected) mood.accentColor else MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -267,6 +273,8 @@ fun MoodZonesScreen(viewModel: VybeViewModel) {
           PostCard(
             post = post,
             onLikeClick = { viewModel.toggleLike(post.id) },
+            onReactClick = { reaction -> viewModel.selectPostReaction(post.id, reaction) },
+            onDoubleTapPulse = { viewModel.doubleTapPostPulse(post.id) },
             onSaveClick = { viewModel.toggleSave(post.id) },
             onCommentClick = { viewModel.loadCommentsForPost(post.id) },
             onAddComment = { text -> viewModel.addComment(post.id, text) },
@@ -288,7 +296,10 @@ fun MoodZonesScreen(viewModel: VybeViewModel) {
               }
             },
             onPostViewed = { viewModel.recordPostView(it) },
-            currentUserId = currentUser?.id
+            currentUserId = currentUser?.id,
+            isFeedMusicEnabled = isFeedMusicEnabled,
+            isActiveAudioPost = false,
+            onToggleFeedMusic = { enabled -> viewModel.setFeedMusicEnabled(enabled) }
           )
         }
       }
@@ -307,7 +318,7 @@ fun MoodZonesScreen(viewModel: VybeViewModel) {
             verticalAlignment = Alignment.Top
           ) {
             Icon(
-              Icons.Default.Shield,
+              Icons.Outlined.Shield,
               contentDescription = null,
               tint = VybeViolet,
               modifier = Modifier.size(20.dp)

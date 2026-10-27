@@ -38,12 +38,16 @@ import com.example.data.model.belongsToMainFeed
 import com.example.data.model.matchesMoodFilter
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
+import androidx.compose.material.icons.automirrored.outlined.VolumeOff
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import com.example.ui.components.PostCard
 import com.example.ui.components.StoryCarousel
 import com.example.ui.components.StoryCreateDialog
 import com.example.ui.components.VybeAvatar
 import com.example.ui.components.VybeMatchesManagerDialog
+import com.example.ui.components.VybeMoodOutlineIcon
 import com.example.ui.theme.*
+import com.example.util.FeedAudioController
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -64,6 +68,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
   val hasMoreFeedPosts by viewModel.hasMoreFeedPosts.collectAsState()
   val isLoadingMorePosts by viewModel.isLoadingMorePosts.collectAsState()
   val isFeedAudioEnabled by viewModel.isFeedAudioEnabled.collectAsState()
+  val targetFeedPostId by viewModel.targetFeedPostId.collectAsState()
   val coroutineScope = rememberCoroutineScope()
 
   var feedTab by remember { mutableStateOf("For You") }
@@ -73,6 +78,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
   var showStoryCreateSheet by remember { mutableStateOf(false) }
   var showVybeMatchesDialog by remember { mutableStateOf(false) }
   var storyCreatedFeedback by remember { mutableStateOf<String?>(null) }
+  var highlightedPostId by remember { mutableStateOf<String?>(null) }
 
   val filteredPosts = remember(posts, selectedMood, feedTab, followingUserIds, currentUser?.id) {
     var list = posts.filter { it.belongsToMainFeed() && it.matchesMoodFilter(selectedMood) }
@@ -97,6 +103,14 @@ fun FeedScreen(viewModel: VybeViewModel) {
     }.map { it.id }.toSet()
   }
 
+  val audioCapablePostIds = remember(filteredPosts, videoPostIds) {
+    val musicPostIds = filteredPosts
+      .filter { !it.audioTrackTitle.isNullOrBlank() }
+      .map { it.id }
+      .toSet()
+    videoPostIds + musicPostIds
+  }
+
   fun triggerRefresh() {
     if (isRefreshing) return
     isRefreshing = true
@@ -108,6 +122,24 @@ fun FeedScreen(viewModel: VybeViewModel) {
   }
 
   val listState = rememberLazyListState()
+
+  // Scroll directly to the target post when opened from Notification Center
+  LaunchedEffect(targetFeedPostId, filteredPosts.size) {
+    val targetId = targetFeedPostId ?: return@LaunchedEffect
+    if (feedTab != "For You") feedTab = "For You"
+    if (selectedMood != null) viewModel.selectMoodFilter(null)
+    val postIdx = filteredPosts.indexOfFirst { it.id == targetId }
+    if (postIdx >= 0) {
+      val headerItemsCount = 3 + if (liveStreams.any { it.isLive }) 1 else 0
+      listState.animateScrollToItem((headerItemsCount + postIdx).coerceAtLeast(0))
+      highlightedPostId = targetId
+      viewModel.clearTargetFeedPostId()
+      delay(3500L)
+      if (highlightedPostId == targetId) {
+        highlightedPostId = null
+      }
+    }
+  }
 
   // Determine the single most-visible video post (>= 55% visible in viewport) so only ONE video autoplays
   val activeAutoPlayPostId by remember(listState, videoPostIds) {
@@ -130,6 +162,37 @@ fun FeedScreen(viewModel: VybeViewModel) {
         }
         .maxByOrNull { it.second }
         ?.first
+    }
+  }
+
+  // Determine the single most-visible audio-capable post (video or music track) so audio stays enabled
+  // across feed items while scrolling without EVER overlapping two items!
+  val activeAudioPostId by remember(listState, audioCapablePostIds) {
+    derivedStateOf {
+      if (audioCapablePostIds.isEmpty()) return@derivedStateOf null
+      val layoutInfo = listState.layoutInfo
+      val viewportStart = layoutInfo.viewportStartOffset
+      val viewportEnd = layoutInfo.viewportEndOffset
+      if (viewportEnd <= viewportStart) return@derivedStateOf null
+
+      layoutInfo.visibleItemsInfo
+        .mapNotNull { itemInfo ->
+          val keyStr = itemInfo.key as? String ?: return@mapNotNull null
+          if (!audioCapablePostIds.contains(keyStr) || itemInfo.size <= 0) return@mapNotNull null
+          val visibleStart = maxOf(itemInfo.offset, viewportStart)
+          val visibleEnd = minOf(itemInfo.offset + itemInfo.size, viewportEnd)
+          val visiblePx = (visibleEnd - visibleStart).coerceAtLeast(0)
+          val fraction = visiblePx.toFloat() / itemInfo.size.toFloat()
+          if (fraction >= 0.50f) keyStr to fraction else null
+        }
+        .maxByOrNull { it.second }
+        ?.first
+    }
+  }
+
+  LaunchedEffect(isFeedAudioEnabled, activeAudioPostId) {
+    if (!isFeedAudioEnabled || activeAudioPostId == null) {
+      FeedAudioController.stopAllFeedAudio()
     }
   }
 
@@ -190,6 +253,20 @@ fun FeedScreen(viewModel: VybeViewModel) {
           }
         },
         actions = {
+          if (audioCapablePostIds.isNotEmpty()) {
+            IconButton(
+              onClick = { viewModel.toggleFeedAudio() },
+              modifier = Modifier
+                .size(48.dp)
+                .testTag("feed_audio_global_toggle")
+            ) {
+              Icon(
+                imageVector = if (isFeedAudioEnabled) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
+                contentDescription = if (isFeedAudioEnabled) "Feed music on (tap to mute)" else "Feed music muted (tap to enable)",
+                tint = if (isFeedAudioEnabled) VybeViolet else MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
+          }
           val unreadNotifsCount = remember(notifications) { notifications.count { !it.isRead } }
           IconButton(
             onClick = { showVybeMatchesDialog = true },
@@ -371,8 +448,12 @@ fun FeedScreen(viewModel: VybeViewModel) {
                   modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
                   verticalAlignment = Alignment.CenterVertically
                 ) {
-                  Text(text = mood.emoji, fontSize = 13.sp)
-                  Spacer(modifier = Modifier.width(5.dp))
+                  VybeMoodOutlineIcon(
+                    mood = mood,
+                    size = 14.dp,
+                    tint = if (isSelected) mood.accentColor else MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                  Spacer(modifier = Modifier.width(6.dp))
                   Text(
                     text = mood.title,
                     fontSize = 12.sp,
@@ -532,6 +613,8 @@ fun FeedScreen(viewModel: VybeViewModel) {
                 currentUserId = currentUser?.id,
                 shouldAutoPlay = (post.id == activeAutoPlayPostId),
                 isAudioEnabled = isFeedAudioEnabled,
+                shouldPlayAudio = (isFeedAudioEnabled && post.id == activeAudioPostId),
+                isHighlighted = (post.id == highlightedPostId),
                 onToggleAudio = { enabled -> viewModel.setFeedAudioEnabled(enabled) },
                 modifier = Modifier.widthIn(max = 600.dp)
               )

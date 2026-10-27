@@ -75,6 +75,7 @@ fun PasswordRecoveryScreen(viewModel: VybeViewModel) {
   }
 
   Scaffold(
+    contentWindowInsets = WindowInsets(0.dp),
     topBar = {
       TopAppBar(
         title = { Text("Reset Password", fontWeight = FontWeight.Bold) },
@@ -93,6 +94,8 @@ fun PasswordRecoveryScreen(viewModel: VybeViewModel) {
       modifier = Modifier
         .fillMaxSize()
         .padding(innerPadding)
+        .navigationBarsPadding()
+        .imePadding()
         .verticalScroll(rememberScrollState())
         .padding(horizontal = 24.dp, vertical = 16.dp),
       horizontalAlignment = Alignment.CenterHorizontally

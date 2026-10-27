@@ -222,7 +222,12 @@ data class SupabaseNotificationDto(
   val message: String,
   @Json(name = "target_id") val targetId: String? = null,
   @Json(name = "is_read") val isRead: Boolean? = false,
-  @Json(name = "created_at") val createdAt: String? = null
+  @Json(name = "created_at") val createdAt: String? = null,
+  val actor: SupabaseProfileDto? = null
+)
+
+data class SupabaseRpcDeleteMessageRequest(
+  @Json(name = "p_message_id") val messageId: String
 )
 
 data class SupabaseNotificationInsertDto(
@@ -869,7 +874,8 @@ data class SupabaseCommunityMemberDto(
   @Json(name = "user_id") val userId: String,
   val role: String? = "MEMBER",
   val status: String? = "ACCEPTED",
-  @Json(name = "joined_at") val joinedAt: String? = null
+  @Json(name = "joined_at") val joinedAt: String? = null,
+  val profiles: SupabaseProfileDto? = null
 )
 
 data class SupabaseCommunityMemberInsertDto(
@@ -877,6 +883,11 @@ data class SupabaseCommunityMemberInsertDto(
   @Json(name = "user_id") val userId: String,
   val role: String = "MEMBER",
   val status: String = "ACCEPTED"
+)
+
+data class SupabaseCommunityMemberPatchDto(
+  val role: String? = null,
+  val status: String? = null
 )
 
 data class SupabaseCommunityPostDto(
@@ -889,6 +900,7 @@ data class SupabaseCommunityPostDto(
   @Json(name = "likes_count") val likesCount: Int = 0,
   @Json(name = "comments_count") val commentsCount: Int = 0,
   @Json(name = "created_at") val createdAt: String? = null,
+  @Json(name = "updated_at") val updatedAt: String? = null,
   val profiles: SupabaseProfileDto? = null
 )
 
@@ -898,6 +910,18 @@ data class SupabaseCommunityPostInsertDto(
   val title: String,
   val content: String = "",
   @Json(name = "media_url") val mediaUrl: String? = null
+)
+
+data class SupabaseCommunityPostPatchDto(
+  val title: String,
+  val content: String,
+  @Json(name = "updated_at") val updatedAt: String
+)
+
+data class SupabaseCommunityPostLikeDto(
+  @Json(name = "post_id") val postId: String,
+  @Json(name = "user_id") val userId: String,
+  @Json(name = "created_at") val createdAt: String? = null
 )
 
 data class SupabaseCommunityCommentDto(
@@ -914,4 +938,5 @@ data class SupabaseCommunityCommentInsertDto(
   @Json(name = "author_id") val authorId: String,
   val content: String
 )
+
 

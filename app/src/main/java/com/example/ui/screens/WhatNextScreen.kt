@@ -9,8 +9,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -61,7 +62,7 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
             onClick = { viewModel.navigateBack() },
             modifier = Modifier.testTag("what_next_back_button")
           ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
           }
         },
         title = {
@@ -85,7 +86,7 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
               .padding(end = 8.dp)
               .testTag("create_poll_button")
           ) {
-            Icon(Icons.Default.AddChart, contentDescription = null, modifier = Modifier.size(16.dp))
+            Icon(Icons.Outlined.AddChart, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(4.dp))
             Text("New Poll", fontSize = 12.sp, fontWeight = FontWeight.Bold)
           }
@@ -113,7 +114,20 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
             modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
           ) {
-            Text("🔮", fontSize = 28.sp)
+            Surface(
+              shape = RoundedCornerShape(12.dp),
+              color = VybeViolet.copy(alpha = 0.2f),
+              modifier = Modifier.size(44.dp)
+            ) {
+              Box(contentAlignment = Alignment.Center) {
+                Icon(
+                  imageVector = Icons.Outlined.Insights,
+                  contentDescription = null,
+                  tint = VybeBrandCyan,
+                  modifier = Modifier.size(24.dp)
+                )
+              }
+            }
             Spacer(modifier = Modifier.width(12.dp))
             Column {
               Text(

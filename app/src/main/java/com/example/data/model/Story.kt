@@ -6,6 +6,7 @@ enum class StoryMediaType {
 
 enum class StoryAudience(val label: String) {
   PUBLIC("Public"),
+  FOLLOWERS("Followers"),
   VYBE_MATCHES("VYBE Matches"),
   EVERYONE("Public"),
   CLOSE_FRIENDS("VYBE Matches"),

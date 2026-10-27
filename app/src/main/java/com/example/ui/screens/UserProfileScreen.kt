@@ -1282,6 +1282,7 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
         modifier = Modifier
           .fillMaxSize()
           .padding(innerPadding)
+          .imePadding()
           .padding(horizontal = 20.dp)
           .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)

@@ -6,10 +6,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -59,7 +62,7 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
             onClick = { viewModel.navigateBack() },
             modifier = Modifier.testTag("double_take_back_button")
           ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
           }
         },
         title = {
@@ -166,13 +169,24 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
                   color = if (prompt.isPublic) VybeBrandCyan.copy(alpha = 0.2f) else VybeViolet.copy(alpha = 0.2f),
                   shape = RoundedCornerShape(6.dp)
                 ) {
-                  Text(
-                    text = if (prompt.isPublic) "PUBLIC PROMPT 🌐" else "PRIVATE TAGGED 👥",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (prompt.isPublic) VybeBrandCyan else VybeViolet,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                  )
+                  Row(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                  ) {
+                    Icon(
+                      imageVector = if (prompt.isPublic) Icons.Outlined.Public else Icons.Outlined.Group,
+                      contentDescription = null,
+                      tint = if (prompt.isPublic) VybeBrandCyan else VybeViolet,
+                      modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                      text = if (prompt.isPublic) "PUBLIC PROMPT" else "PRIVATE TAGGED",
+                      fontSize = 10.sp,
+                      fontWeight = FontWeight.Bold,
+                      color = if (prompt.isPublic) VybeBrandCyan else VybeViolet
+                    )
+                  }
                 }
               }
 
@@ -389,7 +403,10 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
                       if (isRevealed) {
                         Text(prompt.peerAnswer, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = VybeMagenta)
                       } else {
-                        Text("🔒 Sealed until match", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                          Icon(Icons.Outlined.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(13.dp))
+                          Text("Sealed until match", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                       }
                     }
                   }
@@ -406,7 +423,9 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
                 ) {
                   Column(modifier = Modifier.padding(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                      Text("✨ It's a Match!", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = VybeOnlineGreen)
+                      Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = VybeOnlineGreen, modifier = Modifier.size(16.dp))
+                      Spacer(modifier = Modifier.width(6.dp))
+                      Text("It's a Match!", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = VybeOnlineGreen)
                       Spacer(modifier = Modifier.width(6.dp))
                       Text("Both agreed on \"${prompt.myAnswer}\"", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -419,7 +438,7 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
                       shape = RoundedCornerShape(8.dp),
                       modifier = Modifier.fillMaxWidth().testTag("open_chat_double_take_${prompt.id}")
                     ) {
-                      Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
+                      Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null, modifier = Modifier.size(16.dp))
                       Spacer(modifier = Modifier.width(6.dp))
                       Text("Open Conversation with @${prompt.peerUser.username}", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
@@ -453,7 +472,13 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
       onDismissRequest = { showCreateDialog = false },
       title = { Text("Create Double Take", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
       text = {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .imePadding(),
+          verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
           Text("Prompt Type", fontSize = 12.sp, fontWeight = FontWeight.Bold)
           Row(
             modifier = Modifier.fillMaxWidth(),
@@ -522,13 +547,19 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
               shape = RoundedCornerShape(10.dp),
               modifier = Modifier.fillMaxWidth()
             ) {
-              Text(
-                text = "🌐 Public mode: Any VYBE member across devices can answer your prompt and unlock a chat when compatible!",
-                fontSize = 11.sp,
-                color = VybeBrandCyan,
+              Row(
                 modifier = Modifier.padding(10.dp),
-                lineHeight = 15.sp
-              )
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+              ) {
+                Icon(Icons.Outlined.Public, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(16.dp))
+                Text(
+                  text = "Public mode: Any VYBE member across devices can answer your prompt and unlock a chat when compatible!",
+                  fontSize = 11.sp,
+                  color = VybeBrandCyan,
+                  lineHeight = 15.sp
+                )
+              }
             }
           }
         }

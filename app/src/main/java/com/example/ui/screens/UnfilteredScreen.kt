@@ -16,9 +16,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -39,6 +40,7 @@ import com.example.data.model.MoodType
 import com.example.data.model.Post
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VybeAvatar
+import com.example.ui.components.VybeMoodOutlineIcon
 import com.example.ui.theme.*
 import com.example.util.MediaUtils
 import com.example.util.rememberRelativeTimestamp
@@ -140,6 +142,7 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
   }
 
   Scaffold(
+    contentWindowInsets = WindowInsets(0.dp),
     topBar = {
       TopAppBar(
         navigationIcon = {
@@ -147,7 +150,7 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
             onClick = { viewModel.navigateBack() },
             modifier = Modifier.testTag("unfiltered_back_button")
           ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
           }
         },
         title = {
@@ -162,7 +165,7 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
             onClick = { launchCameraSafely() },
             modifier = Modifier.testTag("unfiltered_camera_button")
           ) {
-            Icon(Icons.Default.PhotoCamera, contentDescription = "Take Raw Camera Photo", tint = VybeViolet)
+            Icon(Icons.Outlined.PhotoCamera, contentDescription = "Take Raw Camera Photo", tint = VybeViolet)
           }
           // Gallery button: Opens photo picker
           IconButton(
@@ -171,7 +174,7 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
             },
             modifier = Modifier.testTag("unfiltered_gallery_button")
           ) {
-            Icon(Icons.Default.PhotoLibrary, contentDescription = "Pick Raw Photo from Gallery")
+            Icon(Icons.Outlined.PhotoLibrary, contentDescription = "Pick Raw Photo from Gallery")
           }
           FilledTonalButton(
             onClick = { launchCameraSafely() },
@@ -190,6 +193,8 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
       modifier = Modifier
         .fillMaxSize()
         .padding(paddingValues)
+        .navigationBarsPadding()
+        .imePadding()
         .padding(horizontal = 16.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -293,13 +298,23 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
                     shape = RoundedCornerShape(8.dp),
                     color = post.moodZone.accentColor.copy(alpha = 0.2f)
                   ) {
-                    Text(
-                      text = "${post.moodZone.emoji} ${post.moodZone.title}",
-                      color = post.moodZone.accentColor,
-                      fontSize = 11.sp,
-                      fontWeight = FontWeight.Bold,
-                      modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                    )
+                    Row(
+                      modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                      verticalAlignment = Alignment.CenterVertically,
+                      horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                      VybeMoodOutlineIcon(
+                        mood = post.moodZone,
+                        tint = post.moodZone.accentColor,
+                        size = 13.dp
+                      )
+                      Text(
+                        text = post.moodZone.title,
+                        color = post.moodZone.accentColor,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                      )
+                    }
                   }
                 }
                 if (currentUser?.id == post.author.id) {
@@ -311,7 +326,7 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
                       .testTag("delete_unfiltered_post_${post.id}")
                   ) {
                     Icon(
-                      Icons.Default.Delete,
+                      Icons.Outlined.DeleteOutline,
                       contentDescription = "Delete raw post",
                       tint = VybeDanger,
                       modifier = Modifier.size(18.dp)
@@ -428,7 +443,7 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
                     },
                     enabled = commentText.isNotBlank()
                   ) {
-                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = VybeViolet)
+                    Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = "Send", tint = VybeViolet)
                   }
                 }
               }
@@ -459,6 +474,7 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
       )
     ) {
       Scaffold(
+        contentWindowInsets = WindowInsets(0.dp),
         topBar = {
           TopAppBar(
             navigationIcon = {
@@ -469,7 +485,7 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
                   pickedUri = null
                 }
               ) {
-                Icon(Icons.Default.Close, contentDescription = "Close")
+                Icon(Icons.Outlined.Close, contentDescription = "Close")
               }
             },
             title = {
@@ -515,6 +531,8 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
           modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding)
+            .navigationBarsPadding()
+            .imePadding()
             .padding(horizontal = 16.dp),
           verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -578,7 +596,7 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(12.dp)
               ) {
-                Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(16.dp), tint = VybeViolet)
+                Icon(Icons.Outlined.PhotoCamera, contentDescription = null, modifier = Modifier.size(16.dp), tint = VybeViolet)
                 Spacer(modifier = Modifier.width(6.dp))
                 Text("Retake Camera", fontSize = 12.sp)
               }
@@ -589,7 +607,7 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(12.dp)
               ) {
-                Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
+                Icon(Icons.Outlined.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
                 Text("From Gallery", fontSize = 12.sp)
               }
@@ -607,7 +625,14 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
                 FilterChip(
                   selected = selectedMood == mood,
                   onClick = { selectedMood = mood },
-                  label = { Text("${mood.emoji} ${mood.title}", fontSize = 11.sp) }
+                  leadingIcon = {
+                    VybeMoodOutlineIcon(
+                      mood = mood,
+                      tint = if (selectedMood == mood) mood.accentColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                      size = 14.dp
+                    )
+                  },
+                  label = { Text(mood.title, fontSize = 11.sp) }
                 )
               }
             }
@@ -638,7 +663,7 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
                 modifier = Modifier.padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Icon(Icons.Default.Lock, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(18.dp))
+                Icon(Icons.Outlined.Lock, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                   Text("0% Filter Policy Enforced", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White)

@@ -22,6 +22,7 @@ class VybeLocalStore private constructor(context: Context) {
     private const val KEY_USERS = "saved_users_json"
     private const val KEY_GITHUB_REPO = "saved_github_repo"
     private const val KEY_THEME_MODE = "saved_theme_mode"
+    private const val KEY_DELETED_MESSAGE_IDS = "saved_deleted_message_ids_json"
 
     private val LEGACY_SAMPLE_IDS = setOf(
       "u_me", "u_aarav", "u_priya", "u_vikram",
@@ -51,6 +52,31 @@ class VybeLocalStore private constructor(context: Context) {
       .remove(KEY_POSTS)
       .remove(KEY_UNFILTERED)
       .apply()
+  }
+
+  fun addDeletedMessageId(messageId: String) {
+    if (messageId.isBlank()) return
+    val current = loadDeletedMessageIds().toMutableSet()
+    if (current.add(messageId)) {
+      val arr = JSONArray()
+      current.toList().takeLast(500).forEach { arr.put(it) }
+      prefs.edit().putString(KEY_DELETED_MESSAGE_IDS, arr.toString()).apply()
+    }
+  }
+
+  fun loadDeletedMessageIds(): Set<String> {
+    val raw = prefs.getString(KEY_DELETED_MESSAGE_IDS, null) ?: return emptySet()
+    return try {
+      val arr = JSONArray(raw)
+      buildSet {
+        for (i in 0 until arr.length()) {
+          val id = arr.optString(i)
+          if (id.isNotBlank()) add(id)
+        }
+      }
+    } catch (_: Exception) {
+      emptySet()
+    }
   }
 
   // --- Theme Mode ---

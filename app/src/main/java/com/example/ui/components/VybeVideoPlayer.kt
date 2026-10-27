@@ -10,6 +10,7 @@ import android.view.Surface
 import android.view.TextureView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -26,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -36,6 +38,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.util.FeedAudioController
 
 enum class VideoFitMode {
   /** Scales proportionally inside container without cropping important content (ideal for landscape/portrait in stories & reels). */
@@ -69,7 +72,9 @@ fun VybeVideoPlayer(
   onDurationDetected: ((Int) -> Unit)? = null,
   onVideoCompleted: (() -> Unit)? = null,
   onTapOverlay: (() -> Unit)? = null,
-  onMuteToggled: ((Boolean) -> Unit)? = null
+  onDoubleTapOverlay: (() -> Unit)? = null,
+  onMuteToggled: ((Boolean) -> Unit)? = null,
+  feedAudioOwnerId: String? = null
 ) {
   val context = LocalContext.current
   val lifecycleOwner = LocalLifecycleOwner.current
@@ -112,9 +117,19 @@ fun VybeVideoPlayer(
   LaunchedEffect(initialMuted) {
     isMuted = initialMuted
     try {
+      val mp = mediaPlayerRef.value
       val vol = if (initialMuted) 0f else 1f
-      mediaPlayerRef.value?.setVolume(vol, vol)
+      mp?.setVolume(vol, vol)
+      if (feedAudioOwnerId != null && mp != null) {
+        FeedAudioController.onVideoAudioStateChanged(feedAudioOwnerId, mp, shouldPlayAudio = isPlaying && !initialMuted)
+      }
     } catch (_: Exception) {}
+  }
+
+  LaunchedEffect(isPlaying, isMuted, feedAudioOwnerId) {
+    val ownerId = feedAudioOwnerId ?: return@LaunchedEffect
+    val mp = mediaPlayerRef.value ?: return@LaunchedEffect
+    FeedAudioController.onVideoAudioStateChanged(ownerId, mp, shouldPlayAudio = isPlaying && !isMuted)
   }
 
   fun applyAspectTransform() {
@@ -154,6 +169,9 @@ fun VybeVideoPlayer(
 
   fun releaseCurrentPlayer() {
     mediaPlayerRef.value?.let { old ->
+      if (feedAudioOwnerId != null) {
+        FeedAudioController.onVideoAudioStateChanged(feedAudioOwnerId, old, shouldPlayAudio = false)
+      }
       try {
         if (old.isPlaying) old.stop()
       } catch (_: Exception) {}
@@ -409,7 +427,33 @@ fun VybeVideoPlayer(
       modifier = Modifier
         .fillMaxSize()
         .then(
-          if (onTapOverlay != null) {
+          if (onDoubleTapOverlay != null) {
+            Modifier.pointerInput(videoUrl, showControls, onTapOverlay, onDoubleTapOverlay) {
+              detectTapGestures(
+                onDoubleTap = { onDoubleTapOverlay() },
+                onTap = {
+                  if (onTapOverlay != null) {
+                    onTapOverlay()
+                  } else if (showControls) {
+                    val mp = mediaPlayerRef.value
+                    if (mp != null && isPrepared && playbackError == null) {
+                      try {
+                        if (mp.isPlaying) {
+                          mp.pause()
+                          isPlaying = false
+                          manuallyPausedByUser = true
+                        } else {
+                          manuallyPausedByUser = false
+                          mp.start()
+                          isPlaying = true
+                        }
+                      } catch (_: Exception) {}
+                    }
+                  }
+                }
+              )
+            }
+          } else if (onTapOverlay != null) {
             Modifier.clickable(
               interactionSource = remember { MutableInteractionSource() },
               indication = null

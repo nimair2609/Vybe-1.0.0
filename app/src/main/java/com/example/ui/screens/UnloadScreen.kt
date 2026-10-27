@@ -1,10 +1,14 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,7 +19,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.outlined.VolumeDown
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,17 +30,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
 import com.example.data.model.UnloadRoom
 import com.example.data.model.UnloadRoomMode
 import com.example.ui.VybeViewModel
 import com.example.ui.theme.*
+import com.example.util.UnloadVoiceAudioManager
+import com.example.util.UnloadVoiceParticipant
 import com.example.util.rememberRelativeTimestamp
 import kotlinx.coroutines.launch
 
@@ -48,36 +60,70 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UnloadScreen(viewModel: VybeViewModel) {
+  val context = LocalContext.current
+  val voiceManager = remember(context) { UnloadVoiceAudioManager.get(context) }
+
   BackHandler {
+    voiceManager.stopVoiceSession()
     viewModel.leaveUnloadRoom()
+  }
+
+  DisposableEffect(voiceManager) {
+    onDispose {
+      voiceManager.stopVoiceSession()
+    }
   }
 
   val activeRoom by viewModel.activeUnloadRoom.collectAsState()
   val rooms by viewModel.unloadRooms.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
+  val isMuted by voiceManager.isMicrophoneMuted.collectAsState()
+  val isSpeakerphoneOn by voiceManager.isSpeakerphoneOn.collectAsState()
+  val hasMicPermission by voiceManager.hasMicrophonePermission.collectAsState()
+  val voiceStatusText by voiceManager.voiceStatusText.collectAsState()
+  val iceDiagnosticsText by voiceManager.iceDiagnosticsText.collectAsState()
+  val voiceParticipants by voiceManager.participants.collectAsState()
+  val isLocalSpeaking by voiceManager.isSpeaking.collectAsState()
   val clipboardManager = LocalClipboardManager.current
   val coroutineScope = rememberCoroutineScope()
 
   var messageText by remember { mutableStateOf("") }
   var isAnonymous by remember { mutableStateOf(true) }
-  var isMuted by remember { mutableStateOf(false) }
   var showSafetySheet by remember { mutableStateOf(false) }
   var showReportSuccess by remember { mutableStateOf(false) }
-  var hasMicPermission by remember { mutableStateOf(false) }
 
   val micPermissionLauncher = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.RequestPermission()
   ) { granted ->
-    hasMicPermission = granted
+    voiceManager.onMicrophonePermissionResult(granted)
     if (!granted) {
-      viewModel.postBannerMessage("Microphone permission required for voice audio.")
+      viewModel.postBannerMessage("Listening live. Grant microphone permission anytime to speak.")
     }
   }
 
-  LaunchedEffect(activeRoom?.id, activeRoom?.mode) {
+  LaunchedEffect(activeRoom?.id, activeRoom?.mode, currentUser?.id) {
     val current = activeRoom
-    if (current != null && (current.mode == UnloadRoomMode.VOICE_ONLY || current.mode == UnloadRoomMode.VOICE_AND_TEXT)) {
-      micPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+    val isVoiceRoom = current != null &&
+      (current.mode == UnloadRoomMode.VOICE_ONLY || current.mode == UnloadRoomMode.VOICE_AND_TEXT)
+    if (isVoiceRoom && current != null) {
+      val hostFlag = current.hostId == currentUser?.id || current.hostName == currentUser?.displayName
+      voiceManager.startVoiceSession(
+        roomId = current.id,
+        userId = currentUser?.id.orEmpty(),
+        displayName = currentUser?.displayName ?: "Listener",
+        username = currentUser?.username.orEmpty(),
+        isHost = hostFlag,
+        initialMuted = false
+      )
+      val permGranted = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.RECORD_AUDIO
+      ) == PackageManager.PERMISSION_GRANTED
+      if (!permGranted) {
+        micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+      }
+    } else {
+      voiceManager.stopVoiceSession()
     }
   }
 
@@ -112,12 +158,18 @@ fun UnloadScreen(viewModel: VybeViewModel) {
   )
 
   Scaffold(
+    contentWindowInsets = WindowInsets(0.dp),
     topBar = {
       TopAppBar(
         navigationIcon = {
           IconButton(
-            onClick = { viewModel.leaveUnloadRoom() },
-            modifier = Modifier.testTag("unload_back_button")
+            onClick = {
+              voiceManager.stopVoiceSession()
+              viewModel.leaveUnloadRoom()
+            },
+            modifier = Modifier
+              .size(48.dp)
+              .testTag("unload_back_button")
           ) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Leave Room")
           }
@@ -226,6 +278,8 @@ fun UnloadScreen(viewModel: VybeViewModel) {
         modifier = Modifier
           .fillMaxSize()
           .padding(paddingValues)
+          .navigationBarsPadding()
+          .imePadding()
           .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
       ) {
@@ -233,11 +287,24 @@ fun UnloadScreen(viewModel: VybeViewModel) {
           Card(
             colors = CardDefaults.cardColors(containerColor = VybeVioletDark.copy(alpha = 0.35f)),
             shape = RoundedCornerShape(16.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, VybeViolet.copy(alpha = 0.5f))
+            border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.5f))
           ) {
             Column(modifier = Modifier.padding(16.dp)) {
               Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("🕊️", fontSize = 28.sp)
+                Box(
+                  modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(VybeBrandCyan.copy(alpha = 0.16f)),
+                  contentAlignment = Alignment.Center
+                ) {
+                  Icon(
+                    imageVector = Icons.Outlined.Spa,
+                    contentDescription = null,
+                    tint = VybeBrandCyan,
+                    modifier = Modifier.size(22.dp)
+                  )
+                }
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                   Text("VYBE UNLOAD", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White)
@@ -428,12 +495,21 @@ fun UnloadScreen(viewModel: VybeViewModel) {
               Spacer(modifier = Modifier.height(6.dp))
               Text(room.description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
               Spacer(modifier = Modifier.height(8.dp))
-              Text(
-                text = "💬 \"${room.joinerMessage}\"",
-                fontSize = 11.sp,
-                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                color = VybeBrandCyan
-              )
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                  imageVector = Icons.Outlined.FormatQuote,
+                  contentDescription = null,
+                  tint = VybeBrandCyan,
+                  modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                  text = "\"${room.joinerMessage}\"",
+                  fontSize = 11.sp,
+                  fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                  color = VybeBrandCyan
+                )
+              }
               Spacer(modifier = Modifier.height(10.dp))
               Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -485,7 +561,12 @@ fun UnloadScreen(viewModel: VybeViewModel) {
               verticalAlignment = Alignment.CenterVertically
             ) {
               Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("👑", fontSize = 16.sp)
+                Icon(
+                  imageVector = Icons.Outlined.Shield,
+                  contentDescription = null,
+                  tint = VybeVerifiedGold,
+                  modifier = Modifier.size(16.dp)
+                )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text("You are the Room Host", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White)
               }
@@ -504,7 +585,10 @@ fun UnloadScreen(viewModel: VybeViewModel) {
                   Text("Edit", color = VybeBrandCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
                 TextButton(
-                  onClick = { viewModel.deleteUnloadRoom(room.id) }
+                  onClick = {
+                    voiceManager.stopVoiceSession()
+                    viewModel.deleteUnloadRoom(room.id)
+                  }
                 ) {
                   Text("End Session", color = VybeDanger, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
@@ -513,52 +597,141 @@ fun UnloadScreen(viewModel: VybeViewModel) {
           }
         }
 
-        // Voice status bar (shown for VOICE_ONLY and VOICE_AND_TEXT)
+        // Real-Time Voice Control & Live Participant Roster (shown for VOICE_ONLY and VOICE_AND_TEXT)
         if (room.mode == UnloadRoomMode.VOICE_AND_TEXT || room.mode == UnloadRoomMode.VOICE_ONLY) {
+          val liveParticipantCount = maxOf(room.activeListenersCount, voiceParticipants.size, 1)
           Surface(
             color = ObsidianSurfaceElevated,
             modifier = Modifier.fillMaxWidth()
           ) {
-            Row(
+            Column(
               modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                  modifier = Modifier
-                    .size(10.dp)
-                    .clip(CircleShape)
-                    .background(if (isMuted) VybeDanger else VybeOnlineGreen)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                  text = if (isMuted) "Microphone Muted" else "Voice Connected (Live Audio)",
-                  fontSize = 12.sp,
-                  fontWeight = FontWeight.SemiBold,
-                  color = Color.White
-                )
-              }
-              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                IconButton(
-                  onClick = { isMuted = !isMuted },
-                  modifier = Modifier.size(34.dp)
-                ) {
-                  Icon(
-                    imageVector = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
-                    contentDescription = "Toggle Mute",
-                    tint = if (isMuted) VybeDanger else Color.White
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Column(modifier = Modifier.weight(1f)) {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                      modifier = Modifier
+                        .size(9.dp)
+                        .clip(CircleShape)
+                        .background(
+                          when {
+                            !hasMicPermission -> VybeVerifiedGold
+                            isMuted -> VybeDanger
+                            isLocalSpeaking -> VybeBrandCyan
+                            else -> VybeOnlineGreen
+                          }
+                        )
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                      text = voiceStatusText,
+                      fontSize = 12.sp,
+                      fontWeight = FontWeight.Bold,
+                      color = Color.White,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
+                    )
+                  }
+                  Text(
+                    text = buildString {
+                      append("$liveParticipantCount/${room.capacity} in room")
+                      if (iceDiagnosticsText.isNotBlank()) {
+                        append(" • $iceDiagnosticsText")
+                      }
+                    },
+                    fontSize = 10.sp,
+                    color = VybeBrandCyan.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                   )
                 }
-                Button(
-                  onClick = { viewModel.leaveUnloadRoom() },
-                  colors = ButtonDefaults.buttonColors(containerColor = VybeDanger.copy(alpha = 0.8f)),
-                  contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                  shape = RoundedCornerShape(8.dp)
+
+                Row(
+                  horizontalArrangement = Arrangement.spacedBy(6.dp),
+                  verticalAlignment = Alignment.CenterVertically
                 ) {
-                  Text("Leave", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                  if (!hasMicPermission) {
+                    OutlinedButton(
+                      onClick = { micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+                      border = BorderStroke(1.dp, VybeBrandCyan),
+                      contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                      shape = RoundedCornerShape(10.dp),
+                      modifier = Modifier
+                        .heightIn(min = 38.dp)
+                        .testTag("unload_grant_mic_button")
+                    ) {
+                      Icon(Icons.Outlined.Mic, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(15.dp))
+                      Spacer(modifier = Modifier.width(4.dp))
+                      Text("Allow Mic", fontSize = 11.sp, color = VybeBrandCyan, fontWeight = FontWeight.Bold)
+                    }
+                  } else {
+                    IconButton(
+                      onClick = { voiceManager.toggleMute() },
+                      modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(if (isMuted) VybeDanger.copy(alpha = 0.2f) else VybeOnlineGreen.copy(alpha = 0.16f))
+                        .testTag("unload_mute_toggle_button")
+                    ) {
+                      Icon(
+                        imageVector = if (isMuted) Icons.Outlined.MicOff else Icons.Outlined.Mic,
+                        contentDescription = if (isMuted) "Unmute microphone" else "Mute microphone",
+                        tint = if (isMuted) VybeDanger else VybeOnlineGreen,
+                        modifier = Modifier.size(20.dp)
+                      )
+                    }
+                  }
+
+                  IconButton(
+                    onClick = { voiceManager.toggleSpeakerphone() },
+                    modifier = Modifier
+                      .size(42.dp)
+                      .clip(CircleShape)
+                      .background(Color.White.copy(alpha = 0.08f))
+                      .testTag("unload_speaker_toggle_button")
+                  ) {
+                    Icon(
+                      imageVector = if (isSpeakerphoneOn) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeDown,
+                      contentDescription = if (isSpeakerphoneOn) "Speakerphone active" else "Earpiece active",
+                      tint = if (isSpeakerphoneOn) VybeBrandCyan else Color.White,
+                      modifier = Modifier.size(20.dp)
+                    )
+                  }
+
+                  Button(
+                    onClick = {
+                      voiceManager.stopVoiceSession()
+                      viewModel.leaveUnloadRoom()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = VybeDanger.copy(alpha = 0.85f)),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.heightIn(min = 38.dp)
+                  ) {
+                    Text("Leave", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                  }
+                }
+              }
+
+              if (voiceParticipants.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyRow(
+                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                  modifier = Modifier.fillMaxWidth()
+                ) {
+                  items(voiceParticipants, key = { it.userId }) { p ->
+                    UnloadParticipantChip(
+                      participant = p,
+                      isMe = p.userId == currentUser?.id
+                    )
+                  }
                 }
               }
             }
@@ -566,45 +739,68 @@ fun UnloadScreen(viewModel: VybeViewModel) {
         }
 
         if (room.mode == UnloadRoomMode.VOICE_ONLY) {
-          // Voice Only Mode UI
+          // Voice Only Mode Stage UI
           Column(
             modifier = Modifier
               .weight(1f)
               .fillMaxWidth()
+              .navigationBarsPadding()
               .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
           ) {
             Box(
               modifier = Modifier
-                .size(140.dp)
+                .size(144.dp)
                 .clip(CircleShape)
-                .background(VybeViolet.copy(alpha = 0.2f)),
+                .border(
+                  width = if (isLocalSpeaking && !isMuted) 2.5.dp else 1.dp,
+                  color = if (isLocalSpeaking && !isMuted) VybeBrandCyan else VybeViolet.copy(alpha = 0.45f),
+                  shape = CircleShape
+                )
+                .background(VybeViolet.copy(alpha = 0.18f)),
               contentAlignment = Alignment.Center
             ) {
               Box(
                 modifier = Modifier
-                  .size(90.dp)
+                  .size(92.dp)
                   .clip(CircleShape)
-                  .background(VybeViolet.copy(alpha = 0.4f)),
+                  .background(if (isMuted) VybeDanger.copy(alpha = 0.28f) else VybeViolet.copy(alpha = 0.4f))
+                  .clickable {
+                    if (!hasMicPermission) {
+                      micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    } else {
+                      voiceManager.toggleMute()
+                    }
+                  },
                 contentAlignment = Alignment.Center
               ) {
                 Icon(
-                  Icons.Default.RecordVoiceOver,
-                  contentDescription = null,
+                  imageVector = when {
+                    !hasMicPermission -> Icons.Outlined.MicNone
+                    isMuted -> Icons.Outlined.MicOff
+                    else -> Icons.Outlined.RecordVoiceOver
+                  },
+                  contentDescription = "Microphone control",
                   tint = Color.White,
-                  modifier = Modifier.size(40.dp)
+                  modifier = Modifier.size(38.dp)
                 )
               }
             }
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(18.dp))
             Text(
-              text = "Voice Only Listening Room",
+              text = room.title,
               fontWeight = FontWeight.Bold,
-              fontSize = 16.sp
+              fontSize = 17.sp
             )
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
-              text = "No text messages. Keep listening and speaking with presence.",
+              text = when {
+                !hasMicPermission -> "Tap the center microphone to grant permission and speak."
+                isMuted -> "You are muted. Tap the microphone whenever you want to speak."
+                isLocalSpeaking -> "Transmitting live voice to room participants..."
+                else -> "Live voice active. Speak freely or listen in calm presence."
+              },
               fontSize = 12.sp,
               color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -614,7 +810,7 @@ fun UnloadScreen(viewModel: VybeViewModel) {
               shape = RoundedCornerShape(12.dp)
             ) {
               Text(
-                text = "${room.activeListenersCount} listeners connected • Host: ${room.hostName}",
+                text = "${maxOf(room.activeListenersCount, voiceParticipants.size, 1)} connected • Host: ${room.hostName} • ${if (isSpeakerphoneOn) "Speaker" else "Earpiece"}",
                 fontSize = 11.sp,
                 color = VybeBrandCyan,
                 fontWeight = FontWeight.SemiBold,
@@ -623,7 +819,7 @@ fun UnloadScreen(viewModel: VybeViewModel) {
             }
           }
         } else {
-          // Live ephemeral messages
+          // Live ephemeral messages (TEXT_ONLY & VOICE_AND_TEXT)
           LazyColumn(
             modifier = Modifier
               .weight(1f)
@@ -662,13 +858,19 @@ fun UnloadScreen(viewModel: VybeViewModel) {
             }
           }
 
-          // Message input bar
+          // Keyboard-safe message input bar
           Surface(
             tonalElevation = 8.dp,
             color = MaterialTheme.colorScheme.surface,
             modifier = Modifier.fillMaxWidth()
           ) {
-            Column(modifier = Modifier.padding(10.dp)) {
+            Column(
+              modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(10.dp)
+            ) {
               Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -681,7 +883,16 @@ fun UnloadScreen(viewModel: VybeViewModel) {
                   )
                   Text("Post anonymously", fontSize = 12.sp)
                 }
-                Text("🔒 Ephemeral", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Icon(
+                    imageVector = Icons.Outlined.Lock,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(13.dp)
+                  )
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text("Ephemeral", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
               }
 
               Row(
@@ -696,7 +907,7 @@ fun UnloadScreen(viewModel: VybeViewModel) {
                     .weight(1f)
                     .testTag("unload_message_input"),
                   shape = RoundedCornerShape(12.dp),
-                  singleLine = true
+                  maxLines = 4
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 IconButton(
@@ -707,7 +918,9 @@ fun UnloadScreen(viewModel: VybeViewModel) {
                     }
                   },
                   enabled = messageText.isNotBlank(),
-                  modifier = Modifier.testTag("unload_send_button")
+                  modifier = Modifier
+                    .size(48.dp)
+                    .testTag("unload_send_button")
                 ) {
                   Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = VybeViolet)
                 }
@@ -796,6 +1009,7 @@ fun UnloadScreen(viewModel: VybeViewModel) {
       properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = true)
     ) {
       Scaffold(
+        contentWindowInsets = WindowInsets(0.dp),
         topBar = {
           TopAppBar(
             navigationIcon = {
@@ -847,6 +1061,8 @@ fun UnloadScreen(viewModel: VybeViewModel) {
           modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding)
+            .navigationBarsPadding()
+            .imePadding()
             .padding(horizontal = 16.dp),
           verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -856,7 +1072,7 @@ fun UnloadScreen(viewModel: VybeViewModel) {
             Card(
               colors = CardDefaults.cardColors(containerColor = VybeVioletDark.copy(alpha = 0.45f)),
               shape = RoundedCornerShape(20.dp),
-              border = androidx.compose.foundation.BorderStroke(1.dp, VybeViolet.copy(alpha = 0.5f))
+              border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.5f))
             ) {
               Row(
                 modifier = Modifier.padding(16.dp),
@@ -869,7 +1085,12 @@ fun UnloadScreen(viewModel: VybeViewModel) {
                     .background(VybeViolet.copy(alpha = 0.35f)),
                   contentAlignment = Alignment.Center
                 ) {
-                  Text("🕊️", fontSize = 24.sp)
+                  Icon(
+                    imageVector = Icons.Outlined.Spa,
+                    contentDescription = null,
+                    tint = VybeBrandCyan,
+                    modifier = Modifier.size(22.dp)
+                  )
                 }
                 Spacer(modifier = Modifier.width(14.dp))
                 Column {
@@ -926,19 +1147,25 @@ fun UnloadScreen(viewModel: VybeViewModel) {
               horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
               items(topicOptions) { topic ->
-                val emoji = when (topic) {
-                  "Work Burnout" -> "💼"
-                  "Silent Company" -> "🕊️"
-                  "Late Night Overthinking" -> "🌙"
-                  "Post-Breakup Healing" -> "💔"
-                  "General Calm & Presence" -> "🌿"
-                  "Creative Loneliness" -> "🎨"
-                  else -> "💬"
+                val topicIcon = when (topic) {
+                  "Work Burnout" -> Icons.Outlined.WorkOutline
+                  "Silent Company" -> Icons.Outlined.Spa
+                  "Late Night Overthinking" -> Icons.Outlined.NightsStay
+                  "Post-Breakup Healing" -> Icons.Outlined.HeartBroken
+                  "General Calm & Presence" -> Icons.Outlined.Eco
+                  "Creative Loneliness" -> Icons.Outlined.Palette
+                  else -> Icons.Outlined.ChatBubbleOutline
                 }
                 FilterChip(
                   selected = formTopic == topic,
                   onClick = { formTopic = topic },
-                  leadingIcon = { Text(emoji, fontSize = 12.sp) },
+                  leadingIcon = {
+                    Icon(
+                      imageVector = topicIcon,
+                      contentDescription = null,
+                      modifier = Modifier.size(15.dp)
+                    )
+                  },
                   label = { Text(topic, fontSize = 12.sp) },
                   shape = RoundedCornerShape(12.dp)
                 )
@@ -1150,6 +1377,7 @@ fun UnloadScreen(viewModel: VybeViewModel) {
       properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = true)
     ) {
       Scaffold(
+        contentWindowInsets = WindowInsets(0.dp),
         topBar = {
           TopAppBar(
             navigationIcon = {
@@ -1191,6 +1419,8 @@ fun UnloadScreen(viewModel: VybeViewModel) {
           modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding)
+            .navigationBarsPadding()
+            .imePadding()
             .padding(horizontal = 16.dp),
           verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -1311,6 +1541,7 @@ fun UnloadScreen(viewModel: VybeViewModel) {
 
           Button(
             onClick = {
+              voiceManager.stopVoiceSession()
               viewModel.leaveUnloadRoom()
               showSafetySheet = false
             },
@@ -1346,5 +1577,76 @@ fun UnloadScreen(viewModel: VybeViewModel) {
         }
       }
     )
+  }
+}
+
+@Composable
+private fun UnloadParticipantChip(
+  participant: UnloadVoiceParticipant,
+  isMe: Boolean
+) {
+  val borderColor = when {
+    participant.isSpeaking && !participant.isMuted -> VybeBrandCyan
+    participant.isHost -> VybeViolet.copy(alpha = 0.7f)
+    else -> Color.White.copy(alpha = 0.16f)
+  }
+
+  Surface(
+    color = if (participant.isSpeaking && !participant.isMuted) {
+      VybeBrandCyan.copy(alpha = 0.15f)
+    } else {
+      Color.White.copy(alpha = 0.06f)
+    },
+    shape = RoundedCornerShape(16.dp),
+    border = BorderStroke(if (participant.isSpeaking && !participant.isMuted) 1.5.dp else 1.dp, borderColor)
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      Box(
+        modifier = Modifier
+          .size(22.dp)
+          .clip(CircleShape)
+          .background(if (participant.isHost) VybeViolet else VybeBrandCyan.copy(alpha = 0.25f)),
+        contentAlignment = Alignment.Center
+      ) {
+        Text(
+          text = participant.displayName.take(1).uppercase(),
+          fontSize = 10.sp,
+          fontWeight = FontWeight.Bold,
+          color = Color.White
+        )
+      }
+      Spacer(modifier = Modifier.width(6.dp))
+      Text(
+        text = buildString {
+          append(participant.displayName)
+          if (isMe) append(" (You)")
+          else if (participant.isHost) append(" • Host")
+        },
+        fontSize = 11.sp,
+        fontWeight = if (participant.isSpeaking) FontWeight.Bold else FontWeight.Medium,
+        color = Color.White,
+        maxLines = 1
+      )
+      Spacer(modifier = Modifier.width(6.dp))
+      Icon(
+        imageVector = when {
+          !participant.hasMicPermission -> Icons.Outlined.Headset
+          participant.isMuted -> Icons.Outlined.MicOff
+          participant.isSpeaking -> Icons.Outlined.GraphicEq
+          else -> Icons.Outlined.Mic
+        },
+        contentDescription = null,
+        tint = when {
+          !participant.hasMicPermission -> Color.White.copy(alpha = 0.6f)
+          participant.isMuted -> VybeDanger
+          participant.isSpeaking -> VybeBrandCyan
+          else -> VybeOnlineGreen
+        },
+        modifier = Modifier.size(14.dp)
+      )
+    }
   }
 }

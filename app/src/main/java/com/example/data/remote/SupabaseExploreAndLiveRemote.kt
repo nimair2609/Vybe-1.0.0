@@ -866,5 +866,486 @@ object SupabaseExploreAndLiveRemote {
       )
     } catch (_: Exception) {}
   }
+
+  // =========================================================================
+  // 7. COMMUNITY ZONE (`communities`, `community_members`, `community_posts`, `community_post_comments`)
+  // =========================================================================
+
+  suspend fun fetchCommunities(
+    currentUserId: String,
+    authHeader: String?
+  ): List<Community>? = withContext(Dispatchers.IO) {
+    try {
+      val resp = SupabaseNetworkClient.restApi.getCommunities(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader
+      )
+      if (!resp.isSuccessful || resp.body() == null) return@withContext null
+      val dtos = resp.body()!!
+
+      val myMembershipsByComm: Map<String, SupabaseCommunityMemberDto> =
+        if (currentUserId.isNotBlank() && !authHeader.isNullOrBlank()) {
+          try {
+            val memResp = SupabaseNetworkClient.restApi.getCommunityMembers(
+              apiKey = SupabaseConfig.supabaseAnonKey,
+              authHeader = authHeader,
+              userIdFilter = "eq.$currentUserId",
+              select = "*"
+            )
+            memResp.body().orEmpty().associateBy { it.communityId }
+          } catch (_: Exception) {
+            emptyMap()
+          }
+        } else {
+          emptyMap()
+        }
+
+      dtos.map { dto ->
+        val mem = myMembershipsByComm[dto.id]
+        val isCreator = currentUserId.isNotBlank() && dto.creatorId == currentUserId
+        val status = when {
+          isCreator -> "ACCEPTED"
+          mem != null -> mem.status ?: "ACCEPTED"
+          else -> "NONE"
+        }
+        val role = when {
+          isCreator -> "ADMIN"
+          mem != null -> mem.role ?: "MEMBER"
+          else -> "MEMBER"
+        }
+        Community(
+          id = dto.id,
+          name = dto.name,
+          description = dto.description.orEmpty(),
+          category = dto.category ?: "General",
+          avatarUrl = dto.avatarUrl,
+          bannerUrl = dto.bannerUrl,
+          creatorId = dto.creatorId,
+          isPrivate = dto.isPrivate,
+          membersCount = dto.membersCount.coerceAtLeast(1),
+          isJoined = status == "ACCEPTED",
+          membershipStatus = status,
+          myRole = role,
+          createdAtIso = dto.createdAt
+        )
+      }
+    } catch (e: Exception) {
+      Log.w(TAG, "fetchCommunities warning: ${e.message}")
+      null
+    }
+  }
+
+  suspend fun createCommunity(
+    creatorId: String,
+    name: String,
+    description: String,
+    category: String,
+    isPrivate: Boolean,
+    avatarUrl: String? = null,
+    bannerUrl: String? = null,
+    authHeader: String?
+  ): Community? = withContext(Dispatchers.IO) {
+    if (authHeader.isNullOrBlank() || creatorId.isBlank() || name.isBlank()) return@withContext null
+    try {
+      val resp = SupabaseNetworkClient.restApi.insertCommunity(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        community = SupabaseCommunityInsertDto(
+          creatorId = creatorId,
+          name = name.trim(),
+          description = description.trim(),
+          category = category.trim().ifBlank { "General" },
+          avatarUrl = avatarUrl,
+          bannerUrl = bannerUrl,
+          isPrivate = isPrivate
+        )
+      )
+      val dto = resp.body()?.firstOrNull() ?: return@withContext null
+      // Ensure creator is registered as ADMIN member even if trigger wasn't installed yet
+      try {
+        SupabaseNetworkClient.restApi.insertCommunityMember(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          member = SupabaseCommunityMemberInsertDto(
+            communityId = dto.id,
+            userId = creatorId,
+            role = "ADMIN",
+            status = "ACCEPTED"
+          )
+        )
+      } catch (_: Exception) {}
+
+      Community(
+        id = dto.id,
+        name = dto.name,
+        description = dto.description.orEmpty(),
+        category = dto.category ?: "General",
+        avatarUrl = dto.avatarUrl,
+        bannerUrl = dto.bannerUrl,
+        creatorId = dto.creatorId,
+        isPrivate = dto.isPrivate,
+        membersCount = dto.membersCount.coerceAtLeast(1),
+        isJoined = true,
+        membershipStatus = "ACCEPTED",
+        myRole = "ADMIN",
+        createdAtIso = dto.createdAt
+      )
+    } catch (e: Exception) {
+      Log.w(TAG, "createCommunity warning: ${e.message}")
+      null
+    }
+  }
+
+  suspend fun joinCommunity(
+    communityId: String,
+    userId: String,
+    isPrivate: Boolean,
+    authHeader: String?
+  ): String? = withContext(Dispatchers.IO) {
+    if (authHeader.isNullOrBlank() || communityId.isBlank() || userId.isBlank()) return@withContext null
+    try {
+      val desiredStatus = if (isPrivate) "PENDING" else "ACCEPTED"
+      val resp = SupabaseNetworkClient.restApi.insertCommunityMember(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        member = SupabaseCommunityMemberInsertDto(
+          communityId = communityId,
+          userId = userId,
+          role = "MEMBER",
+          status = desiredStatus
+        )
+      )
+      if (resp.isSuccessful) resp.body()?.firstOrNull()?.status ?: desiredStatus else null
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  suspend fun leaveCommunity(
+    communityId: String,
+    userId: String,
+    authHeader: String?
+  ): Boolean = withContext(Dispatchers.IO) {
+    if (authHeader.isNullOrBlank() || communityId.isBlank() || userId.isBlank()) return@withContext false
+    try {
+      val resp = SupabaseNetworkClient.restApi.deleteCommunityMember(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        communityIdFilter = "eq.$communityId",
+        userIdFilter = "eq.$userId"
+      )
+      resp.isSuccessful
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  suspend fun fetchCommunityMembers(
+    communityId: String,
+    usersById: Map<String, User>,
+    authHeader: String?
+  ): List<CommunityMember> = withContext(Dispatchers.IO) {
+    if (communityId.isBlank()) return@withContext emptyList()
+    try {
+      var resp = SupabaseNetworkClient.restApi.getCommunityMembers(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        communityIdFilter = "eq.$communityId",
+        select = "*,profiles:user_id(*)"
+      )
+      if (!resp.isSuccessful) {
+        resp = SupabaseNetworkClient.restApi.getCommunityMembers(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          communityIdFilter = "eq.$communityId",
+          select = "*"
+        )
+      }
+      resp.body().orEmpty().map { dto ->
+        CommunityMember(
+          communityId = dto.communityId,
+          user = mapProfileOrFallback(dto.profiles, dto.userId, usersById),
+          role = dto.role ?: "MEMBER",
+          status = dto.status ?: "ACCEPTED",
+          joinedAtIso = dto.joinedAt
+        )
+      }
+    } catch (_: Exception) {
+      emptyList()
+    }
+  }
+
+  suspend fun updateCommunityMember(
+    communityId: String,
+    targetUserId: String,
+    role: String?,
+    status: String?,
+    authHeader: String?
+  ): Boolean = withContext(Dispatchers.IO) {
+    if (authHeader.isNullOrBlank() || communityId.isBlank() || targetUserId.isBlank()) return@withContext false
+    try {
+      val resp = SupabaseNetworkClient.restApi.patchCommunityMember(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        communityIdFilter = "eq.$communityId",
+        userIdFilter = "eq.$targetUserId",
+        patch = SupabaseCommunityMemberPatchDto(role = role, status = status)
+      )
+      resp.isSuccessful
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  suspend fun removeCommunityMember(
+    communityId: String,
+    targetUserId: String,
+    authHeader: String?
+  ): Boolean = withContext(Dispatchers.IO) {
+    leaveCommunity(communityId, targetUserId, authHeader)
+  }
+
+  suspend fun fetchCommunityPosts(
+    communityId: String,
+    currentUserId: String,
+    usersById: Map<String, User>,
+    authHeader: String?
+  ): List<CommunityPost>? = withContext(Dispatchers.IO) {
+    if (communityId.isBlank()) return@withContext emptyList()
+    try {
+      var resp = SupabaseNetworkClient.restApi.getCommunityPosts(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        communityIdFilter = "eq.$communityId"
+      )
+      if (!resp.isSuccessful) {
+        resp = SupabaseNetworkClient.restApi.getCommunityPosts(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          communityIdFilter = "eq.$communityId",
+          select = "*"
+        )
+      }
+      if (!resp.isSuccessful || resp.body() == null) return@withContext null
+      val dtos = resp.body()!!
+      val postIds = dtos.map { it.id }
+
+      val likedPostIds: Set<String> = if (postIds.isNotEmpty() && currentUserId.isNotBlank()) {
+        try {
+          val likesResp = SupabaseNetworkClient.restApi.getCommunityPostLikes(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = authHeader,
+            postIdsInFilter = "in.(${postIds.joinToString(",")})",
+            userIdFilter = "eq.$currentUserId"
+          )
+          likesResp.body().orEmpty().map { it.postId }.toSet()
+        } catch (_: Exception) {
+          emptySet()
+        }
+      } else {
+        emptySet()
+      }
+
+      dtos.map { dto ->
+        val edited = !dto.updatedAt.isNullOrBlank() && dto.updatedAt != dto.createdAt
+        CommunityPost(
+          id = dto.id,
+          communityId = dto.communityId,
+          author = mapProfileOrFallback(dto.profiles, dto.authorId, usersById),
+          title = dto.title,
+          content = dto.content,
+          mediaUrl = dto.mediaUrl,
+          likesCount = dto.likesCount.coerceAtLeast(0),
+          commentsCount = dto.commentsCount.coerceAtLeast(0),
+          isLikedByMe = likedPostIds.contains(dto.id),
+          isEdited = edited,
+          createdAtIso = dto.createdAt,
+          updatedAtIso = dto.updatedAt
+        )
+      }
+    } catch (e: Exception) {
+      Log.w(TAG, "fetchCommunityPosts warning: ${e.message}")
+      null
+    }
+  }
+
+  suspend fun createCommunityPost(
+    communityId: String,
+    authorId: String,
+    title: String,
+    content: String,
+    mediaUrl: String?,
+    usersById: Map<String, User>,
+    authHeader: String?
+  ): CommunityPost? = withContext(Dispatchers.IO) {
+    if (authHeader.isNullOrBlank() || communityId.isBlank() || authorId.isBlank() || title.isBlank()) return@withContext null
+    try {
+      val resp = SupabaseNetworkClient.restApi.insertCommunityPost(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        post = SupabaseCommunityPostInsertDto(
+          communityId = communityId,
+          authorId = authorId,
+          title = title.trim(),
+          content = content.trim(),
+          mediaUrl = mediaUrl
+        )
+      )
+      val dto = resp.body()?.firstOrNull() ?: return@withContext null
+      CommunityPost(
+        id = dto.id,
+        communityId = dto.communityId,
+        author = mapProfileOrFallback(dto.profiles, dto.authorId, usersById),
+        title = dto.title,
+        content = dto.content,
+        mediaUrl = dto.mediaUrl,
+        likesCount = dto.likesCount,
+        commentsCount = dto.commentsCount,
+        isLikedByMe = false,
+        isEdited = false,
+        createdAtIso = dto.createdAt,
+        updatedAtIso = dto.updatedAt
+      )
+    } catch (e: Exception) {
+      Log.w(TAG, "createCommunityPost warning: ${e.message}")
+      null
+    }
+  }
+
+  suspend fun editCommunityPost(
+    postId: String,
+    title: String,
+    content: String,
+    authHeader: String?
+  ): Boolean = withContext(Dispatchers.IO) {
+    if (authHeader.isNullOrBlank() || postId.isBlank() || postId.startsWith("cp_local_")) return@withContext false
+    try {
+      val nowIso = java.time.Instant.now().toString()
+      val resp = SupabaseNetworkClient.restApi.patchCommunityPost(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        idFilter = "eq.$postId",
+        patch = SupabaseCommunityPostPatchDto(
+          title = title.trim(),
+          content = content.trim(),
+          updatedAt = nowIso
+        )
+      )
+      resp.isSuccessful
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  suspend fun deleteCommunityPost(
+    postId: String,
+    authHeader: String?
+  ): Boolean = withContext(Dispatchers.IO) {
+    if (authHeader.isNullOrBlank() || postId.isBlank() || postId.startsWith("cp_local_")) return@withContext false
+    try {
+      val resp = SupabaseNetworkClient.restApi.deleteCommunityPost(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        idFilter = "eq.$postId"
+      )
+      resp.isSuccessful
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  suspend fun toggleLikeCommunityPost(
+    postId: String,
+    userId: String,
+    shouldLike: Boolean,
+    authHeader: String?
+  ): Boolean = withContext(Dispatchers.IO) {
+    if (authHeader.isNullOrBlank() || postId.isBlank() || userId.isBlank()) return@withContext false
+    try {
+      val resp = if (shouldLike) {
+        SupabaseNetworkClient.restApi.insertCommunityPostLike(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          like = SupabaseCommunityPostLikeDto(postId = postId, userId = userId)
+        )
+      } else {
+        SupabaseNetworkClient.restApi.deleteCommunityPostLike(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          postIdFilter = "eq.$postId",
+          userIdFilter = "eq.$userId"
+        )
+      }
+      resp.isSuccessful
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  suspend fun fetchCommunityComments(
+    postId: String,
+    usersById: Map<String, User>,
+    authHeader: String?
+  ): List<CommunityComment> = withContext(Dispatchers.IO) {
+    if (postId.isBlank()) return@withContext emptyList()
+    try {
+      var resp = SupabaseNetworkClient.restApi.getCommunityPostComments(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        postIdFilter = "eq.$postId"
+      )
+      if (!resp.isSuccessful) {
+        resp = SupabaseNetworkClient.restApi.getCommunityPostComments(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          postIdFilter = "eq.$postId",
+          select = "*"
+        )
+      }
+      resp.body().orEmpty().map { dto ->
+        CommunityComment(
+          id = dto.id,
+          postId = dto.postId,
+          author = mapProfileOrFallback(dto.profiles, dto.authorId, usersById),
+          content = dto.content,
+          createdAtIso = dto.createdAt
+        )
+      }
+    } catch (_: Exception) {
+      emptyList()
+    }
+  }
+
+  suspend fun addCommunityComment(
+    postId: String,
+    authorId: String,
+    content: String,
+    usersById: Map<String, User>,
+    authHeader: String?
+  ): CommunityComment? = withContext(Dispatchers.IO) {
+    if (authHeader.isNullOrBlank() || postId.isBlank() || authorId.isBlank() || content.isBlank()) return@withContext null
+    try {
+      val resp = SupabaseNetworkClient.restApi.insertCommunityPostComment(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        comment = SupabaseCommunityCommentInsertDto(
+          postId = postId,
+          authorId = authorId,
+          content = content.trim()
+        )
+      )
+      val dto = resp.body()?.firstOrNull() ?: return@withContext null
+      CommunityComment(
+        id = dto.id,
+        postId = dto.postId,
+        author = mapProfileOrFallback(dto.profiles, dto.authorId, usersById),
+        content = dto.content,
+        createdAtIso = dto.createdAt
+      )
+    } catch (_: Exception) {
+      null
+    }
+  }
 }
+
 
