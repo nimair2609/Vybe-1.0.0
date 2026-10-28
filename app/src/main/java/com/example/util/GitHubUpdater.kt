@@ -43,6 +43,7 @@ object GitHubUpdater {
   }
 
   private val client = OkHttpClient.Builder()
+    .dns(com.example.data.remote.SupabaseNetworkClient.resilientDns)
     .connectTimeout(12, TimeUnit.SECONDS)
     .readTimeout(12, TimeUnit.SECONDS)
     .build()
@@ -189,7 +190,7 @@ object GitHubUpdater {
       }
       context.startActivity(intent)
     } catch (e: Exception) {
-      e.printStackTrace()
+      android.util.Log.w("GitHubUpdater", "Unable to open download URL: ${e.message}")
     }
   }
 }

@@ -388,6 +388,7 @@ class VybeRepository private constructor() {
       }
     }
     monitor.setOnReconnectListener {
+      com.example.data.remote.SupabaseNetworkClient.clearDnsCooldown()
       ioScope.launch {
         if (_isLoggedIn.value) {
           syncAllFromSupabase()
@@ -447,11 +448,13 @@ class VybeRepository private constructor() {
    * conversations, and notifications from Supabase so every device shows identical real data.
    */
   suspend fun syncAllFromSupabase() {
-    if (!supabaseRepo.isConfigured) return
+    if (!supabaseRepo.isConfigured || !_isOnline.value) return
+    if (com.example.data.remote.SupabaseNetworkClient.isSupabaseHostCurrentlyUnreachable()) return
     _isSyncingFeed.value = true
     try {
       val sm = SessionManager.get()
       val validToken = supabaseRepo.resolveValidAccessToken(sm?.accessToken).orEmpty()
+      if (com.example.data.remote.SupabaseNetworkClient.isSupabaseHostCurrentlyUnreachable()) return
       val me = _currentUser.value
 
       // 1. Refresh my own profile first if logged in
@@ -462,12 +465,14 @@ class VybeRepository private constructor() {
           sm?.updateCurrentUser(freshMe)
           VybeLocalStore.get()?.saveUser(freshMe)
         }
+        if (com.example.data.remote.SupabaseNetworkClient.isSupabaseHostCurrentlyUnreachable()) return
       }
 
       // 2. Sync social graph (follows, pending follow requests, blocks, restrictions) before mapping users
       val myId = _currentUser.value?.id.orEmpty()
       if (myId.isNotBlank() && validToken.isNotBlank()) {
         val outgoing = supabaseRepo.fetchMyOutgoingFollows(myId, validToken)
+        if (com.example.data.remote.SupabaseNetworkClient.isSupabaseHostCurrentlyUnreachable()) return
         val acceptedFollowing = outgoing.filter { (it.status ?: "ACCEPTED") == "ACCEPTED" }.map { it.followedId }.toSet()
         val pendingOutgoing = outgoing.filter { it.status == "PENDING" }.map { it.followedId }.toSet()
         _followingUserIds.value = acceptedFollowing
@@ -488,6 +493,7 @@ class VybeRepository private constructor() {
 
       // 3. Sync registered community profiles (passing valid JWT so PostgREST never 401s!)
       val remoteProfiles = supabaseRepo.fetchAllProfiles(validToken)
+      if (com.example.data.remote.SupabaseNetworkClient.isSupabaseHostCurrentlyUnreachable()) return
       if (remoteProfiles.isNotEmpty()) {
         val decorated = remoteProfiles.map { u -> decorateUserRelationshipFlags(u) }
         _allUsers.value = decorated
@@ -513,6 +519,7 @@ class VybeRepository private constructor() {
 
       // 5. Sync Shared Feed Posts (available immediately to new & returning users)
       syncFeedFromSupabase(validToken)
+      if (com.example.data.remote.SupabaseNetworkClient.isSupabaseHostCurrentlyUnreachable()) return
 
       // 6. Sync Stories & Viewed State (public stories visible even to newly created users)
       syncStoriesFromSupabase(myId, validToken)

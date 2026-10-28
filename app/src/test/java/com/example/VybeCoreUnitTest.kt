@@ -468,4 +468,20 @@ class VybeCoreUnitTest {
       repository.communities.value.isEmpty()
     )
   }
+
+  @Test
+  fun testResilientDnsAndSupabaseHostExtraction() {
+    val host = com.example.data.remote.SupabaseConfig.supabaseHost
+    assertTrue("Extracted Supabase host must be non-blank and have no scheme", host.isNotBlank() && !host.contains("://"))
+
+    val literalResolved = com.example.data.remote.SupabaseNetworkClient.resilientDns.lookup("1.1.1.1")
+    assertEquals(1, literalResolved.size)
+    assertEquals("1.1.1.1", literalResolved.first().hostAddress)
+
+    com.example.data.remote.SupabaseNetworkClient.clearDnsCooldown()
+    assertFalse(
+      "Clearing DNS cooldown must reset host unreachable flag",
+      com.example.data.remote.SupabaseNetworkClient.isSupabaseHostCurrentlyUnreachable()
+    )
+  }
 }

@@ -70,7 +70,7 @@ class VybeNotificationActionReceiver : BroadcastReceiver() {
               VybeRepository.get().markNotificationAsRead(notificationRecordId)
             }
           } catch (e: Exception) {
-            Log.e(TAG, "Inline reply failed", e)
+            Log.w(TAG, "Inline reply warning: ${e.message}")
           } finally {
             pendingResult.finish()
           }

@@ -494,12 +494,14 @@ class VybeViewModel : ViewModel() {
 
   // --- Cloud Refresh & Pagination ---
   fun refreshAllData() {
+    com.example.data.remote.SupabaseNetworkClient.clearDnsCooldown()
     viewModelScope.launch {
       repository.syncAllFromSupabase()
     }
   }
 
   fun triggerFeedRefresh() {
+    com.example.data.remote.SupabaseNetworkClient.clearDnsCooldown()
     _feedRefreshTrigger.tryEmit(Unit)
     refreshAllData()
   }

@@ -59,6 +59,12 @@ class MainActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    coil.Coil.setImageLoader(
+      coil.ImageLoader.Builder(applicationContext)
+        .okHttpClient(com.example.data.remote.SupabaseNetworkClient.okHttpClient)
+        .crossfade(true)
+        .build()
+    )
     VybeRepository.getInstance().initSession(applicationContext)
     VybeNotificationHelper.initNotificationChannels(this)
 

@@ -87,6 +87,9 @@ object VybeRealtimePushManager {
 
   private var heartbeatJob: Job? = null
   private var reconnectJob: Job? = null
+  private val reconnectAttempts = AtomicInteger(0)
+  @Volatile
+  private var lastDisconnectWarnAtMs: Long = 0L
 
   fun userChannelName(userId: String): String = "vybe_user_push:$userId"
 
@@ -122,6 +125,7 @@ object VybeRealtimePushManager {
     }
 
     stopInternal(keepSessionFlag = true)
+    reconnectAttempts.set(0)
     isActiveSession.set(true)
     connectWebSocket()
   }
@@ -185,6 +189,7 @@ object VybeRealtimePushManager {
           return
         }
         _isRealtimeConnected.value = true
+        reconnectAttempts.set(0)
         Log.d(TAG, "Realtime push WebSocket connected for user=$uid")
         val cleanJwt = currentAccessToken
           ?.removePrefix("Bearer ")
@@ -212,7 +217,11 @@ object VybeRealtimePushManager {
       }
 
       override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
-        Log.w(TAG, "Realtime push WebSocket disconnected: ${t.message}")
+        val now = System.currentTimeMillis()
+        if (now - lastDisconnectWarnAtMs >= 30_000L) {
+          lastDisconnectWarnAtMs = now
+          Log.w(TAG, "Realtime push WebSocket disconnected: ${t.message}")
+        }
         if (webSocket === ws) {
           webSocket = null
           _isRealtimeConnected.value = false
@@ -349,8 +358,11 @@ object VybeRealtimePushManager {
   private fun scheduleReconnect() {
     if (!isActiveSession.get()) return
     if (reconnectJob?.isActive == true) return
+    val attempt = reconnectAttempts.incrementAndGet().coerceAtMost(5)
+    val baseDelayMs = if (SupabaseNetworkClient.isSupabaseHostCurrentlyUnreachable()) 15_000L else 3_000L
+    val backoffMs = (baseDelayMs * (1L shl (attempt - 1))).coerceAtMost(45_000L)
     reconnectJob = scope.launch {
-      delay(2_500L)
+      delay(backoffMs)
       if (isActiveSession.get() && webSocket == null) {
         connectWebSocket()
       }

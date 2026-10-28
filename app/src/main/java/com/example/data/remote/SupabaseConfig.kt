@@ -25,6 +25,14 @@ object SupabaseConfig {
       LIVE_SUPABASE_URL
     }
 
+  val supabaseHost: String
+    get() = supabaseUrl
+      .removePrefix("https://")
+      .removePrefix("http://")
+      .substringBefore("/")
+      .substringBefore(":")
+      .trim()
+
   val supabaseAnonKey: String
     get() = try {
       val key = BuildConfig.SUPABASE_ANON_KEY.trim()

@@ -72,6 +72,24 @@ class SupabaseRepository {
     get() = SupabaseConfig.isConfigured()
 
   private val signedUrlCache = ConcurrentHashMap<String, Pair<String, Long>>()
+  private val lastNetworkWarnAt = ConcurrentHashMap<String, Long>()
+
+  private fun logRepoFailure(operation: String, e: Exception) {
+    if (e is kotlinx.coroutines.CancellationException) throw e
+    val isTransientNetwork = e is java.io.IOException ||
+      e.cause is java.io.IOException ||
+      e.message?.contains("Unable to resolve host", ignoreCase = true) == true ||
+      e.message?.contains("offline", ignoreCase = true) == true ||
+      e.message?.contains("timeout", ignoreCase = true) == true
+    val now = System.currentTimeMillis()
+    val prev = lastNetworkWarnAt[operation] ?: 0L
+    if (!isTransientNetwork || now - prev >= 30_000L) {
+      lastNetworkWarnAt[operation] = now
+      try {
+        Log.w(TAG, "$operation notice: ${e.message}")
+      } catch (_: Throwable) {}
+    }
+  }
 
   fun normalizePhoneE164(raw: String): String {
     val trimmed = raw.trim()
@@ -162,6 +180,7 @@ class SupabaseRepository {
     }
 
     try {
+      SupabaseNetworkClient.clearDnsCooldown()
       val cleanUsername = username.trim().lowercase().removePrefix("@").replace(" ", "_")
       val cleanFirst = firstName.trim()
       val cleanLast = lastName.trim()
@@ -254,7 +273,7 @@ class SupabaseRepository {
         Result.failure(Exception(parseErrorMessage(errorBody, "Sign up failed (${response.code()})")))
       }
     } catch (e: Exception) {
-      Log.e(TAG, "Sign up exception: ${e.message}", e)
+      logRepoFailure("Sign up", e)
       Result.failure(Exception(friendlyNetworkMessage(e, "Unable to complete sign up.")))
     }
   }
@@ -268,6 +287,7 @@ class SupabaseRepository {
     }
 
     try {
+      SupabaseNetworkClient.clearDnsCooldown()
       val response = SupabaseNetworkClient.authApi.signIn(
         apiKey = SupabaseConfig.supabaseAnonKey,
         request = SupabaseSignInRequest(email = email.trim(), password = password)
@@ -315,7 +335,7 @@ class SupabaseRepository {
         Result.failure(Exception(parseErrorMessage(errorBody, "Invalid email or password.")))
       }
     } catch (e: Exception) {
-      Log.e(TAG, "Sign in exception: ${e.message}", e)
+      logRepoFailure("Sign in", e)
       Result.failure(Exception(friendlyNetworkMessage(e, "Unable to sign in. Check your internet connection.")))
     }
   }
@@ -328,6 +348,7 @@ class SupabaseRepository {
       return@withContext Result.failure(IllegalStateException("Supabase backend is not configured."))
     }
     try {
+      SupabaseNetworkClient.clearDnsCooldown()
       val normalized = normalizePhoneE164(phone).ifBlank { phone.trim() }
       val response = SupabaseNetworkClient.authApi.signInWithPhone(
         apiKey = SupabaseConfig.supabaseAnonKey,
@@ -1443,7 +1464,7 @@ class SupabaseRepository {
       val resolvedUrl = resolveAccessibleMediaUrl(cleanBucket, objectPath, validJwt)
       Result.success(UploadedStorageMedia(url = resolvedUrl, storagePath = "$cleanBucket/$objectPath"))
     } catch (e: Exception) {
-      Log.e(TAG, "Storage upload failed: ${e.message}", e)
+      logRepoFailure("Storage upload", e)
       Result.failure(Exception(friendlyNetworkMessage(e, "Upload interrupted. Check your internet connection and retry.")))
     }
   }
@@ -1676,7 +1697,7 @@ class SupabaseRepository {
       }
       Result.success(postsList)
     } catch (e: Exception) {
-      Log.e(TAG, "Error fetching posts: ${e.message}", e)
+      logRepoFailure("Fetch posts", e)
       Result.failure(Exception(friendlyNetworkMessage(e, "Unable to refresh feed.")))
     }
   }
@@ -1920,7 +1941,7 @@ class SupabaseRepository {
         Result.failure(Exception(err))
       }
     } catch (e: Exception) {
-      Log.e(TAG, "Failed creating post: ${e.message}", e)
+      logRepoFailure("Create post", e)
       Result.failure(Exception(friendlyNetworkMessage(e, "Unable to publish post. Check your connection and retry.")))
     }
   }
@@ -3241,8 +3262,14 @@ class SupabaseRepository {
 
   private fun friendlyNetworkMessage(e: Exception, fallback: String): String {
     val msg = e.message.orEmpty()
+    val hostStatus = SupabaseNetworkClient.hostResolutionStatus.value
     return when {
-      e is java.net.UnknownHostException || msg.contains("Unable to resolve host", true) ->
+      hostStatus == HostResolutionStatus.HOST_NO_ADDRESS ->
+        "Cannot reach Supabase server (${SupabaseConfig.supabaseHost}). Verify the Supabase project is active (not paused) or update SUPABASE_URL in Secrets."
+      e is java.net.UnknownHostException ||
+        e is java.net.ConnectException ||
+        msg.contains("Unable to resolve host", true) ||
+        msg.contains("offline", true) ->
         "No internet connection. Please reconnect and try again."
       e is java.net.SocketTimeoutException || msg.contains("timeout", true) ->
         "The server took too long to respond. Please retry."

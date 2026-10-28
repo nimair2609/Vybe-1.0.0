@@ -447,7 +447,7 @@ object VybeNotificationHelper {
           )
         }
       } catch (e: Exception) {
-        Log.e(TAG, "Failed to display rich push notification", e)
+        Log.w(TAG, "Rich push notification display warning: ${e.message}")
       }
     }
   }

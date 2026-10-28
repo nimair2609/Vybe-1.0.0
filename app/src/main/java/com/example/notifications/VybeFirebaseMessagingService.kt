@@ -63,7 +63,7 @@ class VybeFirebaseMessagingService : FirebaseMessagingService() {
         VybeRepository.get().syncDeviceFcmToken(userId, token)
       }
     } catch (e: Exception) {
-      Log.e(TAG, "Error handling FCM token refresh", e)
+      Log.w(TAG, "FCM token refresh warning: ${e.message}")
     }
   }
 
@@ -170,7 +170,7 @@ class VybeFirebaseMessagingService : FirebaseMessagingService() {
         dedupeKey = dedupeKey
       )
     } catch (e: Exception) {
-      Log.e(TAG, "Error processing incoming FCM message", e)
+      Log.w(TAG, "Incoming FCM message warning: ${e.message}")
     }
   }
 }
