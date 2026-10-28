@@ -9,6 +9,9 @@ import com.example.data.remote.SupabaseExploreAndLiveRemote
 import com.example.data.remote.SupabaseRepository
 import com.example.data.remote.SupabaseRoomsAndCallsRemote
 import com.example.data.session.SessionManager
+import com.example.notifications.VybeFirebaseMessagingService
+import com.example.notifications.VybeNotificationHelper
+import com.example.notifications.VybeRealtimePushManager
 import com.example.util.MediaUtils
 import com.example.util.NetworkMonitor
 import com.example.util.TimestampUtils
@@ -366,6 +369,7 @@ class VybeRepository private constructor() {
     val localStore = VybeLocalStore.getInstance(context)
     _themeMode.value = localStore.getThemeMode()
     _timeManagementStats.value = localStore.getWeeklyUsageStats()
+    _notificationPreferences.value = loadSavedNotificationPreferences(context)
 
     // Real session active screen-time tracking
     ioScope.launch {
@@ -422,6 +426,11 @@ class VybeRepository private constructor() {
         _notifications.value = enrichNotificationsWithLocalContext(localStore.loadNotifications())
         _followingUserIds.value = localStore.loadFollowing()
         rebuildVybeMatchesList()
+        VybeRealtimePushManager.start(context, latestUser.id, session.accessToken)
+        VybeFirebaseMessagingService.subscribeStandardTopics(latestUser.id)
+        session.fcmToken?.takeIf { it.isNotBlank() }?.let { token ->
+          syncDeviceFcmToken(latestUser.id, token, session.accessToken)
+        }
         startPresenceAndIncomingCallLoops()
       }
     }
@@ -532,6 +541,11 @@ class VybeRepository private constructor() {
           _notifications.value = enriched
           VybeLocalStore.get()?.saveNotifications(enriched)
         }
+        reconcileAndDispatchSystemNotifications(
+          myId = myId,
+          notifications = _notifications.value,
+          conversations = _conversations.value
+        )
       }
     } catch (e: Exception) {
       Log.w(TAG, "syncAllFromSupabase warning: ${e.message}")
@@ -2366,6 +2380,66 @@ class VybeRepository private constructor() {
               updatedList[convIdx] = c.copy(messages = reconciled)
               _conversations.value = updatedList
               VybeLocalStore.get()?.saveConversations(updatedList)
+
+              // Dispatch push & in-app notification to conversation recipient(s)
+              if (!mediaType.equals("CALL_LOG", ignoreCase = true)) {
+                val recipientIds = (c.groupMembers.map { it.id } + listOf(c.peerUser.id))
+                  .map { it.trim() }
+                  .filter { it.isNotBlank() && it != user.id && !_blockedUserIds.value.contains(it) }
+                  .distinct()
+
+                val msgPreview = when (mediaType.uppercase()) {
+                  "IMAGE" -> if (cleanText.isNotBlank()) "📷 $cleanText" else "📷 Sent a photo"
+                  "VIDEO" -> if (cleanText.isNotBlank()) "🎬 $cleanText" else "🎬 Sent a video"
+                  "AUDIO", "VOICE" -> "🎤 Sent a voice message"
+                  else -> cleanText.ifBlank { "Sent an attachment" }.take(120)
+                }
+                val pushTitle = if (c.isGroup && !c.groupName.isNullOrBlank()) {
+                  "${user.displayName} in ${c.groupName}"
+                } else {
+                  user.displayName.ifBlank { "@${user.username}" }
+                }
+                val notifKind = if (c.isGroup) "GROUP_MESSAGE" else "DIRECT_MESSAGE"
+                val msgEventKey = serverMsg.id?.takeIf { it.isNotBlank() }?.let { "msg_$it" }
+
+                recipientIds.forEach { recipientId ->
+                  // Record message key in instant push so polling and realtime never duplicate
+                  if (!msgEventKey.isNullOrBlank()) {
+                    VybeRealtimePushManager.sendInstantUserPush(
+                      recipientId = recipientId,
+                      actorId = user.id,
+                      type = notifKind,
+                      title = pushTitle,
+                      body = msgPreview,
+                      targetId = resolvedConvId,
+                      conversationId = resolvedConvId,
+                      eventKey = msgEventKey,
+                      accessToken = token
+                    )
+                    supabaseRepo.triggerBackendPush(
+                      recipientId = recipientId,
+                      actorId = user.id,
+                      type = notifKind,
+                      title = pushTitle,
+                      body = msgPreview,
+                      targetId = resolvedConvId,
+                      conversationId = resolvedConvId,
+                      eventKey = msgEventKey
+                    )
+                  } else {
+                    supabaseRepo.createInteractionNotificationIfNeeded(
+                      recipientId = recipientId,
+                      actorId = user.id,
+                      type = notifKind,
+                      title = pushTitle,
+                      message = msgPreview,
+                      targetId = resolvedConvId,
+                      conversationId = resolvedConvId,
+                      accessToken = token
+                    )
+                  }
+                }
+              }
             } else {
               markMessageFailed(resolvedConvId, clientId)
             }
@@ -2765,9 +2839,27 @@ class VybeRepository private constructor() {
     )
     VybeLocalStore.get()?.saveUser(onlineUser)
 
+    appContext?.let { ctx ->
+      VybeRealtimePushManager.start(ctx, onlineUser.id, accessToken)
+    }
+    VybeFirebaseMessagingService.subscribeStandardTopics(onlineUser.id)
+
     val cachedFcm = SessionManager.get()?.fcmToken
     if (!cachedFcm.isNullOrBlank()) {
       syncDeviceFcmToken(onlineUser.id, cachedFcm, accessToken)
+    } else {
+      try {
+        com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+          .addOnCompleteListener { task ->
+            if (task.isSuccessful) {
+              val fetchedToken = task.result
+              if (!fetchedToken.isNullOrBlank()) {
+                SessionManager.get()?.saveFcmToken(fetchedToken)
+                syncDeviceFcmToken(onlineUser.id, fetchedToken, accessToken)
+              }
+            }
+          }
+      } catch (_: Exception) {}
     }
 
     startPresenceAndIncomingCallLoops()
@@ -2979,6 +3071,8 @@ class VybeRepository private constructor() {
     val token = SessionManager.get()?.accessToken.orEmpty()
     val currentUserId = _currentUser.value?.id ?: SessionManager.get()?.userId
     val currentFcm = SessionManager.get()?.fcmToken
+    VybeRealtimePushManager.stop()
+    VybeFirebaseMessagingService.unsubscribeUserTopic(currentUserId)
     if (!currentUserId.isNullOrBlank() && !currentFcm.isNullOrBlank()) {
       ioScope.launch {
         supabaseRepo.unregisterDeviceToken(currentUserId, currentFcm, token)
@@ -3051,6 +3145,11 @@ class VybeRepository private constructor() {
         val enriched = enrichNotificationsWithLocalContext(notifRes.getOrThrow())
         _notifications.value = enriched
         VybeLocalStore.get()?.saveNotifications(enriched)
+        reconcileAndDispatchSystemNotifications(
+          myId = myId,
+          notifications = enriched,
+          conversations = _conversations.value
+        )
       }
     }
   }
@@ -3443,6 +3542,7 @@ class VybeRepository private constructor() {
           val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
           val authHeader = SupabaseConfig.buildAuthHeader(token)
           if (me != null && me.id.isNotBlank() && !authHeader.isNullOrBlank()) {
+            VybeRealtimePushManager.updateAccessToken(token)
             if (tick % 5 == 0) {
               SupabaseRoomsAndCallsRemote.updatePresence(me.id, me.livePulse, authHeader)
             }
@@ -3463,6 +3563,23 @@ class VybeRepository private constructor() {
                     isVideo = incoming.isVideo,
                     state = CallState.INCOMING
                   )
+                  appContext?.let { ctx ->
+                    if (isPushAllowedByPreferences("INCOMING_CALL")) {
+                      val callKind = if (incoming.isVideo) "Video" else "Voice"
+                      VybeNotificationHelper.showNotification(
+                        context = ctx,
+                        title = "Incoming $callKind Call",
+                        body = "${caller.displayName} (@${caller.username}) is calling you on VYBE",
+                        data = mapOf(
+                          "type" to "INCOMING_CALL",
+                          "destination" to "CALL_SCREEN",
+                          "target_id" to incomingId
+                        ),
+                        channelId = VybeNotificationHelper.CHANNEL_ID_CALLS,
+                        dedupeKey = "call_$incomingId"
+                      )
+                    }
+                  }
                   attachCallEngineIfReady(incomingId, isVideo = incoming.isVideo, token = token)
                   startCallStateWatcher(incomingId)
                 }
@@ -3473,12 +3590,8 @@ class VybeRepository private constructor() {
             if (openRoom != null && !openRoom.id.startsWith("ul_") && !openRoom.id.startsWith("room_")) {
               refreshActiveRoomMessages(openRoom.id, token)
             }
-            // Periodic cross-device sync (~13.5s) for Feed, Stories, Live Zone, Explore Zone & Chat/Call History
-            if (tick > 0 && tick % 3 == 0 && !isUploadInFlight) {
-              syncFeedFromSupabase(token)
-              syncStoriesFromSupabase(me.id, token)
-              syncRoomsFromSupabase(token)
-              syncExploreAndLiveFromSupabase(token)
+            // Fast notification & message sync (~9s) so phone notifications arrive promptly even on polling fallback
+            if (tick > 0 && tick % 2 == 0 && !isUploadInFlight) {
               val convRes = supabaseRepo.fetchConversationsForUser(
                 myUserId = me.id,
                 blockedIds = _blockedUserIds.value,
@@ -3490,6 +3603,24 @@ class VybeRepository private constructor() {
                 _conversations.value = remoteConvs
                 VybeLocalStore.get()?.saveConversations(remoteConvs)
               }
+              val notifRes = supabaseRepo.fetchNotifications(me.id, token.orEmpty())
+              if (notifRes.isSuccess) {
+                val enriched = enrichNotificationsWithLocalContext(notifRes.getOrThrow())
+                _notifications.value = enriched
+                VybeLocalStore.get()?.saveNotifications(enriched)
+              }
+              reconcileAndDispatchSystemNotifications(
+                myId = me.id,
+                notifications = _notifications.value,
+                conversations = _conversations.value
+              )
+            }
+            // Periodic cross-device sync (~13.5s) for Feed, Stories, Live Zone & Explore Zone
+            if (tick > 0 && tick % 3 == 0 && !isUploadInFlight) {
+              syncFeedFromSupabase(token)
+              syncStoriesFromSupabase(me.id, token)
+              syncRoomsFromSupabase(token)
+              syncExploreAndLiveFromSupabase(token)
             }
           }
         } catch (_: Exception) {}
@@ -3834,6 +3965,29 @@ class VybeRepository private constructor() {
           )
           attachCallEngineIfReady(serverId, isVideo = isVideo, token = token)
           startCallStateWatcher(serverId)
+
+          val meUser = _currentUser.value
+          val callerLabel = meUser?.displayName?.ifBlank { "@${meUser.username}" } ?: "VYBE Member"
+          val callKind = if (isVideo) "Video" else "Voice"
+          VybeRealtimePushManager.sendInstantUserPush(
+            recipientId = peerUser.id,
+            actorId = callerId,
+            type = "INCOMING_CALL",
+            title = "Incoming $callKind Call",
+            body = "$callerLabel is calling you on VYBE",
+            targetId = serverId,
+            eventKey = "call_$serverId",
+            accessToken = token
+          )
+          supabaseRepo.triggerBackendPush(
+            recipientId = peerUser.id,
+            actorId = callerId,
+            type = "INCOMING_CALL",
+            title = "Incoming $callKind Call",
+            body = "$callerLabel is calling you on VYBE",
+            targetId = serverId,
+            eventKey = "call_$serverId"
+          )
         }
       }
     }
@@ -4775,6 +4929,160 @@ class VybeRepository private constructor() {
 
   fun updateNotificationPreferences(prefs: NotificationPreferences) {
     _notificationPreferences.value = prefs
+    appContext?.getSharedPreferences("vybe_notif_prefs_store", Context.MODE_PRIVATE)?.edit()?.apply {
+      putBoolean("push_dm", prefs.pushDirectMessages)
+      putBoolean("push_react", prefs.pushPostReactions)
+      putBoolean("push_comments", prefs.pushComments)
+      putBoolean("push_capsule", prefs.pushTimeCapsuleUnlocks)
+      putBoolean("push_crossed", prefs.pushCrossedPathsRequests)
+      apply()
+    }
+  }
+
+  private fun loadSavedNotificationPreferences(context: Context): NotificationPreferences {
+    val sp = context.applicationContext.getSharedPreferences("vybe_notif_prefs_store", Context.MODE_PRIVATE)
+    return NotificationPreferences(
+      pushDirectMessages = sp.getBoolean("push_dm", true),
+      pushPostReactions = sp.getBoolean("push_react", true),
+      pushComments = sp.getBoolean("push_comments", true),
+      pushTimeCapsuleUnlocks = sp.getBoolean("push_capsule", true),
+      pushCrossedPathsRequests = sp.getBoolean("push_crossed", true)
+    )
+  }
+
+  fun isPushAllowedByPreferences(rawType: String): Boolean {
+    val prefs = _notificationPreferences.value
+    return when (rawType.uppercase()) {
+      "DIRECT_MESSAGE", "GROUP_MESSAGE", "MESSAGE", "CHAT", "INCOMING_CALL", "CALL" -> prefs.pushDirectMessages
+      "LIKE", "REACTION" -> prefs.pushPostReactions
+      "COMMENT", "COMMENT_OR_REPLY" -> prefs.pushComments && prefs.pushPostReactions
+      "TIME_CAPSULE_UNLOCK", "TIME_CAPSULE_INVITATION" -> prefs.pushTimeCapsuleUnlocks
+      "CROSSED_PATHS", "CROSSED_PATHS_INTERACTION" -> prefs.pushCrossedPathsRequests
+      else -> true
+    }
+  }
+
+  private fun reconcileAndDispatchSystemNotifications(
+    myId: String,
+    notifications: List<NotificationItem>,
+    conversations: List<Conversation>
+  ) {
+    val ctx = appContext ?: return
+    if (myId.isBlank()) return
+
+    val nowMs = System.currentTimeMillis()
+    val freshWindowMs = 90_000L
+
+    // Seed baseline keys on very first login sync (excluding brand-new unread alerts from the last 90s)
+    val baselineKeys = mutableListOf<String>()
+    notifications.forEach { n ->
+      val createdMs = TimestampUtils.parseIsoMillis(n.createdAtIso)
+      val isBrandNewUnread = !n.isRead && createdMs != null && (nowMs - createdMs) in 0..freshWindowMs
+      if (!isBrandNewUnread) {
+        baselineKeys.add("notif_${n.id}")
+      }
+    }
+    conversations.forEach { conv ->
+      conv.messages.forEach { m ->
+        if (m.id.isNotBlank()) {
+          baselineKeys.add("msg_${m.id}")
+        }
+      }
+    }
+
+    val justSeeded = VybeNotificationHelper.ensureBaselineSeeded(ctx, myId, baselineKeys)
+
+    // 1. Dispatch system tray alerts for any new unread NotificationItems
+    notifications.asReversed().forEach { item ->
+      if (!item.isRead && item.actorUser?.id != myId && isPushAllowedByPreferences(item.type.name)) {
+        val dataMap = mutableMapOf(
+          "type" to item.type.name,
+          "destination" to (item.destinationScreen ?: "NOTIFICATIONS"),
+          "notification_id" to item.id,
+          "event_key" to "notif_${item.id}"
+        )
+        item.targetEntityId?.takeIf { it.isNotBlank() }?.let { tid ->
+          dataMap["target_id"] = tid
+          if (item.type == NotificationType.DIRECT_MESSAGE || item.type == NotificationType.GROUP_MESSAGE) {
+            dataMap["conversation_id"] = tid
+          }
+        }
+        val channelId = if (item.type == NotificationType.SECURITY_ACCOUNT_UPDATE) {
+          VybeNotificationHelper.CHANNEL_ID_BROADCAST
+        } else {
+          VybeNotificationHelper.CHANNEL_ID_PRIMARY
+        }
+        VybeNotificationHelper.showNotification(
+          context = ctx,
+          title = item.title,
+          body = item.message,
+          data = dataMap,
+          channelId = channelId,
+          dedupeKey = "notif_${item.id}"
+        )
+      }
+    }
+
+    // 2. Dispatch system tray alerts for any newly arrived incoming Direct/Group Messages
+    if (!justSeeded && isPushAllowedByPreferences("DIRECT_MESSAGE")) {
+      conversations.forEach { conv ->
+        val latestIncoming = conv.messages.lastOrNull { m ->
+          m.id.isNotBlank() &&
+            !m.id.startsWith("c_") &&
+            m.senderId != myId &&
+            !m.isDeletedForEveryone &&
+            !m.mediaType.equals("CALL_LOG", ignoreCase = true)
+        }
+        if (latestIncoming != null && !_blockedUserIds.value.contains(latestIncoming.senderId)) {
+          val senderName = if (conv.isGroup && !conv.groupName.isNullOrBlank()) {
+            val senderUser = conv.groupMembers.firstOrNull { it.id == latestIncoming.senderId }
+            if (senderUser != null) "${senderUser.displayName} in ${conv.groupName}" else conv.groupName
+          } else {
+            conv.peerUser.displayName.ifBlank { "@${conv.peerUser.username}" }
+          }
+          val msgBody = when (latestIncoming.mediaType?.uppercase()) {
+            "IMAGE" -> if (latestIncoming.text.isNotBlank() && !latestIncoming.text.startsWith("http")) "📷 ${latestIncoming.text}" else "📷 Sent a photo"
+            "VIDEO" -> if (latestIncoming.text.isNotBlank() && !latestIncoming.text.startsWith("http")) "🎬 ${latestIncoming.text}" else "🎬 Sent a video"
+            "AUDIO", "VOICE" -> "🎤 Sent a voice message"
+            else -> latestIncoming.text.ifBlank { "New message" }
+          }
+          VybeNotificationHelper.showNotification(
+            context = ctx,
+            title = senderName,
+            body = msgBody,
+            data = mapOf(
+              "type" to if (conv.isGroup) "GROUP_MESSAGE" else "DIRECT_MESSAGE",
+              "destination" to "CHAT_DETAIL",
+              "conversation_id" to conv.id,
+              "target_id" to conv.id,
+              "message_id" to latestIncoming.id,
+              "event_key" to "msg_${latestIncoming.id}"
+            ),
+            channelId = VybeNotificationHelper.CHANNEL_ID_PRIMARY,
+            dedupeKey = "msg_${latestIncoming.id}"
+          )
+        }
+      }
+    }
+  }
+
+  fun sendTestPhoneNotification(): Boolean {
+    val ctx = appContext ?: return false
+    if (!VybeNotificationHelper.arePhoneNotificationsEnabled(ctx)) {
+      return false
+    }
+    VybeNotificationHelper.showNotification(
+      context = ctx,
+      title = "VYBE Push Active ⚡",
+      body = "Phone notifications are working! You'll receive instant alerts for DMs, reactions, calls, and announcements.",
+      data = mapOf(
+        "type" to "TEST_ALERT",
+        "destination" to "NOTIFICATIONS"
+      ),
+      channelId = VybeNotificationHelper.CHANNEL_ID_PRIMARY,
+      dedupeKey = "test_push_${System.currentTimeMillis()}"
+    )
+    return true
   }
 
   // =========================================================================

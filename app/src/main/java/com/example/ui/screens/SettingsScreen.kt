@@ -836,10 +836,49 @@ fun SettingsScreen(viewModel: VybeViewModel) {
 
       // SUBPAGE: NOTIFICATIONS
       SettingsSubpage.NOTIFICATIONS -> {
-        var pDm by remember { mutableStateOf(notifPrefs.pushDirectMessages) }
-        var pReact by remember { mutableStateOf(notifPrefs.pushPostReactions) }
-        var pCapsule by remember { mutableStateOf(notifPrefs.pushTimeCapsuleUnlocks) }
-        var pCrossed by remember { mutableStateOf(notifPrefs.pushCrossedPathsRequests) }
+        var pDm by remember(notifPrefs) { mutableStateOf(notifPrefs.pushDirectMessages) }
+        var pReact by remember(notifPrefs) { mutableStateOf(notifPrefs.pushPostReactions) }
+        var pCapsule by remember(notifPrefs) { mutableStateOf(notifPrefs.pushTimeCapsuleUnlocks) }
+        var pCrossed by remember(notifPrefs) { mutableStateOf(notifPrefs.pushCrossedPathsRequests) }
+        val localCtx = androidx.compose.ui.platform.LocalContext.current
+        val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+        var osNotifEnabled by remember {
+          mutableStateOf(com.example.notifications.VybeNotificationHelper.arePhoneNotificationsEnabled(localCtx))
+        }
+        val settingsPermLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+          androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+        ) { granted ->
+          osNotifEnabled = com.example.notifications.VybeNotificationHelper.arePhoneNotificationsEnabled(localCtx)
+          if (!granted) {
+            com.example.notifications.VybeNotificationHelper.openSystemNotificationSettings(localCtx)
+          }
+        }
+        DisposableEffect(lifecycleOwner) {
+          val obs = androidx.lifecycle.LifecycleEventObserver { _, ev ->
+            if (ev == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+              osNotifEnabled = com.example.notifications.VybeNotificationHelper.arePhoneNotificationsEnabled(localCtx)
+            }
+          }
+          lifecycleOwner.lifecycle.addObserver(obs)
+          onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+        }
+
+        fun persistPrefs(
+          dm: Boolean = pDm,
+          react: Boolean = pReact,
+          capsule: Boolean = pCapsule,
+          crossed: Boolean = pCrossed
+        ) {
+          viewModel.updateNotificationPreferences(
+            notifPrefs.copy(
+              pushDirectMessages = dm,
+              pushPostReactions = react,
+              pushComments = react,
+              pushTimeCapsuleUnlocks = capsule,
+              pushCrossedPathsRequests = crossed
+            )
+          )
+        }
 
         LazyColumn(
           modifier = Modifier
@@ -848,6 +887,66 @@ fun SettingsScreen(viewModel: VybeViewModel) {
             .padding(16.dp),
           verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+          item {
+            Card(
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+              shape = RoundedCornerShape(16.dp)
+            ) {
+              Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Column(modifier = Modifier.weight(1f)) {
+                    Text("Phone System Notifications", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(
+                      text = if (osNotifEnabled) "Active — Heads-up banners, sound & lockscreen enabled" else "Blocked — Enable in Android settings to receive phone alerts",
+                      fontSize = 12.sp,
+                      color = if (osNotifEnabled) VybeOnlineGreen else VybeDanger
+                    )
+                  }
+                }
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                  OutlinedButton(
+                    onClick = {
+                      if (
+                        android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                        androidx.core.content.ContextCompat.checkSelfPermission(
+                          localCtx,
+                          android.Manifest.permission.POST_NOTIFICATIONS
+                        ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                      ) {
+                        settingsPermLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                      } else {
+                        com.example.notifications.VybeNotificationHelper.openSystemNotificationSettings(localCtx)
+                      }
+                    },
+                    modifier = Modifier.weight(1f).testTag("open_system_notif_settings_button")
+                  ) {
+                    Text(if (osNotifEnabled) "Phone Settings" else "Enable Alerts", fontSize = 12.sp)
+                  }
+                  Button(
+                    onClick = {
+                      val ok = viewModel.sendTestPhoneNotification()
+                      if (ok) {
+                        viewModel.postBannerMessage("Test notification sent to your phone's notification shade!")
+                      } else {
+                        com.example.notifications.VybeNotificationHelper.openSystemNotificationSettings(localCtx)
+                      }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                    modifier = Modifier.weight(1f).testTag("send_test_phone_notif_button")
+                  ) {
+                    Text("Test Alert", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                  }
+                }
+              }
+            }
+          }
           item {
             Text("Configure in-app and push notification alerts:", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
           }
@@ -863,7 +962,13 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                   verticalAlignment = Alignment.CenterVertically
                 ) {
                   Text("Direct Messages & Calls", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                  Switch(checked = pDm, onCheckedChange = { pDm = it })
+                  Switch(
+                    checked = pDm,
+                    onCheckedChange = {
+                      pDm = it
+                      persistPrefs(dm = it)
+                    }
+                  )
                 }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
                 Row(
@@ -872,7 +977,13 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                   verticalAlignment = Alignment.CenterVertically
                 ) {
                   Text("Likes, Reactions & Comments", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                  Switch(checked = pReact, onCheckedChange = { pReact = it })
+                  Switch(
+                    checked = pReact,
+                    onCheckedChange = {
+                      pReact = it
+                      persistPrefs(react = it)
+                    }
+                  )
                 }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
                 Row(
@@ -881,7 +992,13 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                   verticalAlignment = Alignment.CenterVertically
                 ) {
                   Text("Time Capsule Unlock Alerts", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                  Switch(checked = pCapsule, onCheckedChange = { pCapsule = it })
+                  Switch(
+                    checked = pCapsule,
+                    onCheckedChange = {
+                      pCapsule = it
+                      persistPrefs(capsule = it)
+                    }
+                  )
                 }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
                 Row(
@@ -890,7 +1007,13 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                   verticalAlignment = Alignment.CenterVertically
                 ) {
                   Text("Crossed Paths Handshakes", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                  Switch(checked = pCrossed, onCheckedChange = { pCrossed = it })
+                  Switch(
+                    checked = pCrossed,
+                    onCheckedChange = {
+                      pCrossed = it
+                      persistPrefs(crossed = it)
+                    }
+                  )
                 }
               }
             }

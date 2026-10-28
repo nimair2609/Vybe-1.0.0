@@ -84,6 +84,8 @@ secrets {
   ignoreList.add("SMS_GATEWAY_API_KEY")
   ignoreList.add("VYBE_API_BASE_URL")
   ignoreList.add("VYBE_WEBRTC_SIGNALING_URL")
+  ignoreList.add("FIREBASE_SERVICE_ACCOUNT")
+  ignoreList.add("FCM_SERVER_KEY")
 }
 
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }

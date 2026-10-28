@@ -17,6 +17,7 @@ import com.example.data.model.User
 import com.example.data.model.UserRole
 import com.example.data.model.VybeReaction
 import com.example.data.session.SessionManager
+import com.example.notifications.VybeRealtimePushManager
 import com.example.util.TimestampUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -2772,17 +2773,25 @@ class SupabaseRepository {
         val seenKeys = mutableSetOf<String>()
         val items = rawDtos.mapNotNull { dto ->
           val id = dto.id ?: return@mapNotNull null
-          val dedupKey = if (dto.type == "COMMENT") id else "${dto.type}_${dto.actorId}_${dto.targetId}"
+          val upperType = dto.type.uppercase()
+          val dedupKey = when (upperType) {
+            "LIKE", "REACTION", "FOLLOW", "FOLLOW_REQUEST" -> "${upperType}_${dto.actorId}_${dto.targetId}"
+            else -> id
+          }
           if (!seenKeys.add(dedupKey)) return@mapNotNull null
 
-          val notifType = when (dto.type.uppercase()) {
+          val notifType = when (upperType) {
             "LIKE", "REACTION" -> com.example.data.model.NotificationType.LIKE
             "COMMENT", "COMMENT_OR_REPLY" -> com.example.data.model.NotificationType.COMMENT_OR_REPLY
             "FOLLOW", "FOLLOW_REQUEST", "FOLLOW_ACCEPTED" -> com.example.data.model.NotificationType.FOLLOW
             "DIRECT_MESSAGE", "MESSAGE" -> com.example.data.model.NotificationType.DIRECT_MESSAGE
             "GROUP_MESSAGE" -> com.example.data.model.NotificationType.GROUP_MESSAGE
-            "SECURITY_ACCOUNT_UPDATE" -> com.example.data.model.NotificationType.SECURITY_ACCOUNT_UPDATE
-            else -> com.example.data.model.NotificationType.LIKE
+            "LIVE_STREAM", "LIVE_STREAM_ALERT" -> com.example.data.model.NotificationType.LIVE_STREAM_ALERT
+            "BUSINESS_VERIFIED", "BUSINESS_VERIFICATION_UPDATE" -> com.example.data.model.NotificationType.BUSINESS_VERIFICATION_UPDATE
+            "TIME_CAPSULE_UNLOCK" -> com.example.data.model.NotificationType.TIME_CAPSULE_UNLOCK
+            "CROSSED_PATHS", "CROSSED_PATHS_INTERACTION" -> com.example.data.model.NotificationType.CROSSED_PATHS_INTERACTION
+            "SECURITY_ACCOUNT_UPDATE", "ANNOUNCEMENT", "BROADCAST" -> com.example.data.model.NotificationType.SECURITY_ACCOUNT_UPDATE
+            else -> com.example.data.model.NotificationType.SECURITY_ACCOUNT_UPDATE
           }
 
           val targetPost = dto.targetId?.let { postsById[it] }
@@ -2793,10 +2802,11 @@ class SupabaseRepository {
           val dest = when (notifType) {
             com.example.data.model.NotificationType.FOLLOW -> "USER_PROFILE"
             com.example.data.model.NotificationType.DIRECT_MESSAGE,
-            com.example.data.model.NotificationType.GROUP_MESSAGE -> "INBOX"
+            com.example.data.model.NotificationType.GROUP_MESSAGE -> if (!dto.targetId.isNullOrBlank()) "CHAT_DETAIL" else "INBOX"
             com.example.data.model.NotificationType.LIKE,
             com.example.data.model.NotificationType.COMMENT_OR_REPLY -> if (isReelContent) "REELS_VIEWER" else "POST_DETAIL"
-            else -> "MAIN"
+            com.example.data.model.NotificationType.LIVE_STREAM_ALERT -> "LIVE_STUDIO"
+            else -> "NOTIFICATIONS"
           }
 
           val actorUser = dto.actor?.let { mapProfileDtoToUser(it) }
@@ -2842,27 +2852,106 @@ class SupabaseRepository {
     title: String,
     message: String,
     targetId: String? = null,
+    conversationId: String? = null,
     accessToken: String = ""
   ) = withContext(Dispatchers.IO) {
     if (!isConfigured || recipientId.isBlank() || actorId.isBlank() || recipientId == actorId) return@withContext
-    val authHeader = authHeaderFor(accessToken) ?: return@withContext
-    try {
-      SupabaseNetworkClient.restApi.insertNotification(
-        apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = authHeader,
-        notification = SupabaseNotificationInsertDto(
-          recipientId = recipientId,
-          actorId = actorId,
-          type = type,
-          title = title,
-          message = message,
-          targetId = targetId,
-          isRead = false
+    val validJwt = resolveValidAccessToken(accessToken)
+    val authHeader = SupabaseConfig.buildAuthHeader(validJwt)
+    var insertedId: String? = null
+
+    if (authHeader != null) {
+      try {
+        val resp = SupabaseNetworkClient.restApi.insertNotification(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          notification = SupabaseNotificationInsertDto(
+            recipientId = recipientId,
+            actorId = actorId,
+            type = type,
+            title = title,
+            message = message,
+            targetId = targetId ?: conversationId,
+            isRead = false
+          )
         )
-      )
-    } catch (_: Exception) {
-      // Safe no-op when DB trigger already created it or RLS restricts duplicate insert
+        insertedId = resp.body()?.firstOrNull()?.id
+      } catch (_: Exception) {
+        // Safe no-op when DB trigger already created it or RLS restricts duplicate insert
+      }
     }
+
+    val eventKey = if (!insertedId.isNullOrBlank()) {
+      "notif_$insertedId"
+    } else {
+      "evt_${type}_${actorId}_${targetId ?: conversationId ?: ""}_${message.hashCode()}"
+    }
+
+    // 1. Instant <100ms Realtime WebSocket push to recipient's phone
+    VybeRealtimePushManager.sendInstantUserPush(
+      recipientId = recipientId,
+      actorId = actorId,
+      type = type,
+      title = title,
+      body = message,
+      targetId = targetId,
+      conversationId = conversationId,
+      eventKey = eventKey,
+      accessToken = validJwt
+    )
+
+    // 2. Backend FCM HTTP v1 push dispatch (wakes killed/sleeping devices)
+    triggerBackendPush(
+      recipientId = recipientId,
+      actorId = actorId,
+      type = type,
+      title = title,
+      body = message,
+      targetId = targetId,
+      conversationId = conversationId,
+      notificationId = insertedId,
+      eventKey = eventKey
+    )
+  }
+
+  fun triggerBackendPush(
+    recipientId: String,
+    actorId: String,
+    type: String,
+    title: String,
+    body: String,
+    targetId: String? = null,
+    conversationId: String? = null,
+    notificationId: String? = null,
+    eventKey: String? = null
+  ) {
+    val apiBase = SupabaseConfig.vybeApiBaseUrl.trim().removeSuffix("/")
+    if (apiBase.isBlank() || recipientId.isBlank() || recipientId == actorId) return
+    try {
+      val dataJson = JSONObject().apply {
+        put("type", type)
+        put("actor_id", actorId)
+        put("recipient_id", recipientId)
+        if (!targetId.isNullOrBlank()) put("target_id", targetId)
+        if (!conversationId.isNullOrBlank()) put("conversation_id", conversationId)
+        if (!notificationId.isNullOrBlank()) put("notification_id", notificationId)
+        if (!eventKey.isNullOrBlank()) put("event_key", eventKey)
+      }
+      val payloadJson = JSONObject().apply {
+        put("recipientId", recipientId)
+        put("title", title)
+        put("body", body)
+        put("data", dataJson)
+      }.toString()
+
+      val req = Request.Builder()
+        .url("$apiBase/api/v1/push/send")
+        .addHeader("Content-Type", "application/json")
+        .post(payloadJson.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull()))
+        .build()
+
+      SupabaseNetworkClient.okHttpClient.newCall(req).execute().close()
+    } catch (_: Exception) {}
   }
 
   suspend fun markAllNotificationsRead(recipientId: String, accessToken: String = ""): Result<Unit> = withContext(Dispatchers.IO) {
@@ -2945,6 +3034,25 @@ class SupabaseRepository {
         authHeader = authHeader,
         body = dto
       )
+      // Also mirror token registration to VYBE backend gateway so FCM dispatch & Admin Push Stats stay live
+      try {
+        val apiBase = SupabaseConfig.vybeApiBaseUrl.trim().removeSuffix("/")
+        if (apiBase.isNotBlank()) {
+          val regJson = JSONObject().apply {
+            put("userId", userId)
+            put("fcmToken", fcmToken)
+            put("deviceModel", model)
+            put("platform", "android")
+          }.toString()
+          val backendReq = Request.Builder()
+            .url("$apiBase/api/v1/push/register-token")
+            .addHeader("Content-Type", "application/json")
+            .post(regJson.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull()))
+            .build()
+          SupabaseNetworkClient.okHttpClient.newCall(backendReq).execute().close()
+        }
+      } catch (_: Exception) {}
+
       if (resp.isSuccessful) {
         Log.d(TAG, "FCM device token registered successfully with Supabase")
         Result.success(Unit)

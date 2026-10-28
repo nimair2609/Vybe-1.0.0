@@ -362,17 +362,30 @@ class VybeViewModel : ViewModel() {
   }
 
   /**
-   * Routes user to destination screen when tapping an FCM push notification.
+   * Routes user to destination screen when tapping a push or system tray notification.
    */
   fun handleNotificationPayload(extras: Bundle?) {
     if (extras == null) return
     val destination = extras.getString("destination")
     val targetId = extras.getString("target_id")
     val conversationId = extras.getString("conversation_id")
+    val notifId = extras.getString("notification_id")
     val type = extras.getString("type")
+
+    if (!notifId.isNullOrBlank()) {
+      markNotificationAsRead(notifId)
+    }
 
     viewModelScope.launch {
       when {
+        // Incoming Voice / Video Call
+        destination == "CALL_SCREEN" || type.equals("INCOMING_CALL", ignoreCase = true) -> {
+          if (repository.activeCall.value != null) {
+            openIncomingCallScreen()
+          } else {
+            selectTab(MainTab.INBOX)
+          }
+        }
         // Direct / Group Chat
         !conversationId.isNullOrBlank() || destination == "CHAT_DETAIL" -> {
           val resolvedId = conversationId ?: targetId
@@ -383,7 +396,21 @@ class VybeViewModel : ViewModel() {
             } else {
               selectTab(MainTab.INBOX)
             }
+          } else {
+            selectTab(MainTab.INBOX)
           }
+        }
+        // Reels Viewer
+        destination == "REELS_VIEWER" && !targetId.isNullOrBlank() -> {
+          openReelViewer(targetId)
+        }
+        // Feed Post Detail
+        destination == "POST_DETAIL" && !targetId.isNullOrBlank() -> {
+          openPostFromNotification(targetId)
+        }
+        // Live Stream Studio
+        destination == "LIVE_STUDIO" -> {
+          navigateTo(Screen.LIVE_STUDIO)
         }
         // In-app Notifications Screen
         destination == "NOTIFICATIONS" -> {
@@ -395,11 +422,14 @@ class VybeViewModel : ViewModel() {
           if (targetUser != null) {
             openUserProfile(targetUser)
           } else {
-            selectTab(MainTab.EXPLORE)
+            navigateTo(Screen.NOTIFICATIONS)
           }
         }
         destination == "INBOX" -> {
           selectTab(MainTab.INBOX)
+        }
+        destination == "MAIN" -> {
+          selectTab(MainTab.FEED)
         }
         type != null -> {
           navigateTo(Screen.NOTIFICATIONS)
@@ -1109,6 +1139,7 @@ class VybeViewModel : ViewModel() {
   fun updateTimeManagement(breakMinutes: Int, isEnabled: Boolean) = repository.updateTimeManagement(breakMinutes, isEnabled)
   fun logoutDevice(sessionId: String) = repository.logoutDevice(sessionId)
   fun updateNotificationPreferences(prefs: NotificationPreferences) = repository.updateNotificationPreferences(prefs)
+  fun sendTestPhoneNotification(): Boolean = repository.sendTestPhoneNotification()
   fun completeOnboarding() = repository.completeOnboarding()
 
   // --- Community Zone ---

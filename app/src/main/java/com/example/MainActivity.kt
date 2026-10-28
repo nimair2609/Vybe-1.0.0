@@ -10,6 +10,7 @@ import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import com.example.notifications.VybeFirebaseMessagingService
 import com.example.notifications.VybeNotificationHelper
 import com.example.data.session.SessionManager
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -67,6 +68,8 @@ class MainActivity : ComponentActivity() {
     }
 
     try {
+      val initialSession = SessionManager.getInstance(applicationContext)
+      VybeFirebaseMessagingService.subscribeStandardTopics(initialSession.userId)
       com.google.firebase.messaging.FirebaseMessaging.getInstance().token
         .addOnCompleteListener { task ->
           if (task.isSuccessful) {
@@ -80,6 +83,8 @@ class MainActivity : ComponentActivity() {
                 VybeRepository.get().syncDeviceFcmToken(userId, token)
               }
             }
+          } else {
+            Log.w("MainActivity", "FCM token fetch warning: ${task.exception?.message}")
           }
         }
     } catch (e: Exception) {
@@ -92,16 +97,25 @@ class MainActivity : ComponentActivity() {
       activeViewModel = viewModel
       val incomingUri by pendingDeepLinkUri.collectAsState()
       val incomingNotification by pendingNotificationPayload.collectAsState()
+      val currentScreenForPerm by viewModel.currentScreen.collectAsState()
+      val selectedConversation by viewModel.selectedConversation.collectAsState()
 
-      // Prompt for Android 13+ runtime notification permission
+      LaunchedEffect(currentScreenForPerm, selectedConversation?.id) {
+        VybeNotificationHelper.activeOpenConversationId =
+          if (currentScreenForPerm == Screen.CHAT_DETAIL) selectedConversation?.id else null
+      }
+
+      // Prompt for Android 13+ runtime notification permission once splash completes
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
           androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
         ) { isGranted ->
           Log.d("MainActivity", "POST_NOTIFICATIONS granted: $isGranted")
         }
-        LaunchedEffect(Unit) {
-          if (androidx.core.content.ContextCompat.checkSelfPermission(
+        LaunchedEffect(currentScreenForPerm != Screen.SPLASH) {
+          if (
+            currentScreenForPerm != Screen.SPLASH &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
               this@MainActivity,
               android.Manifest.permission.POST_NOTIFICATIONS
             ) != android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -277,8 +291,14 @@ class MainActivity : ComponentActivity() {
     return super.onKeyDown(keyCode, event)
   }
 
+  override fun onResume() {
+    super.onResume()
+    VybeNotificationHelper.isAppInForeground = true
+  }
+
   override fun onPause() {
     super.onPause()
+    VybeNotificationHelper.isAppInForeground = false
     FeedAudioController.stopAllFeedAudio()
   }
 

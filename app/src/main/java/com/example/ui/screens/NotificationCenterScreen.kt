@@ -1,6 +1,11 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,10 +31,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.AsyncImage
 import com.example.data.model.NotificationItem
 import com.example.data.model.NotificationType
 import com.example.data.model.User
+import com.example.notifications.VybeNotificationHelper
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VybeAvatar
@@ -47,9 +58,33 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
   val incomingFollowRequestUserIds by viewModel.incomingFollowRequestUserIds.collectAsState()
   val allUsers by viewModel.allUsers.collectAsState()
 
+  val context = LocalContext.current
+  val lifecycleOwner = LocalLifecycleOwner.current
   var filterUnreadOnly by remember { mutableStateOf(false) }
   var notificationToDelete by remember { mutableStateOf<NotificationItem?>(null) }
+  var phoneNotificationsEnabled by remember {
+    mutableStateOf(VybeNotificationHelper.arePhoneNotificationsEnabled(context))
+  }
   val snackbarHostState = remember { SnackbarHostState() }
+
+  val notifPermissionLauncher = rememberLauncherForActivityResult(
+    ActivityResultContracts.RequestPermission()
+  ) { granted ->
+    phoneNotificationsEnabled = VybeNotificationHelper.arePhoneNotificationsEnabled(context)
+    if (!granted) {
+      VybeNotificationHelper.openSystemNotificationSettings(context)
+    }
+  }
+
+  DisposableEffect(lifecycleOwner) {
+    val observer = LifecycleEventObserver { _, event ->
+      if (event == Lifecycle.Event.ON_RESUME) {
+        phoneNotificationsEnabled = VybeNotificationHelper.arePhoneNotificationsEnabled(context)
+      }
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+  }
 
   LaunchedEffect(Unit) {
     viewModel.refreshAllData()
@@ -129,6 +164,64 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
         .fillMaxSize()
         .padding(paddingValues)
     ) {
+      if (!phoneNotificationsEnabled) {
+        Card(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .testTag("enable_phone_notifications_banner"),
+          shape = RoundedCornerShape(14.dp),
+          colors = CardDefaults.cardColors(containerColor = VybeViolet.copy(alpha = 0.14f)),
+          border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.45f))
+        ) {
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+          ) {
+            Icon(
+              Icons.Outlined.NotificationsActive,
+              contentDescription = "Enable phone notifications",
+              tint = VybeViolet,
+              modifier = Modifier.size(24.dp)
+            )
+            Column(modifier = Modifier.weight(1f)) {
+              Text(
+                text = "Phone Notifications Are Off",
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurface
+              )
+              Text(
+                text = "Turn on system alerts to receive messages, reactions, and calls on your phone.",
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
+            Button(
+              onClick = {
+                if (
+                  Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                  ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                ) {
+                  notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                  VybeNotificationHelper.openSystemNotificationSettings(context)
+                }
+              },
+              colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+              contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+              modifier = Modifier.testTag("enable_phone_notifications_button")
+            ) {
+              Text("Enable", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            }
+          }
+        }
+      }
+
       Row(
         modifier = Modifier
           .fillMaxWidth()
