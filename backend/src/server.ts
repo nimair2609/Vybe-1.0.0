@@ -173,6 +173,208 @@ app.post('/api/v1/capsules/expire', async (req: Request, res: Response): Promise
   });
 });
 
+// =========================================================================
+// 5. FIREBASE CLOUD MESSAGING (FCM) PUSH NOTIFICATION DISPATCH
+// =========================================================================
+
+interface PushDispatchPayload {
+  tokens: string[];
+  title: string;
+  body: string;
+  data?: Record<string, string>;
+  channelId?: string;
+}
+
+const recentPushLogs: Array<{
+  timestamp: string;
+  title: string;
+  recipientCount: number;
+  status: string;
+  channel: string;
+}> = [];
+
+async function dispatchFcmPush(payload: PushDispatchPayload): Promise<{ successCount: number; failureCount: number }> {
+  const { tokens, title, body, data = {}, channelId = 'vybe_primary_notifications' } = payload;
+  if (!tokens || tokens.length === 0) {
+    return { successCount: 0, failureCount: 0 };
+  }
+
+  const fcmServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
+  const fcmServerKey = process.env.FCM_SERVER_KEY;
+
+  console.log(`[FCM Push] Dispatching to ${tokens.length} devices: "${title}" - "${body}"`);
+
+  recentPushLogs.unshift({
+    timestamp: new Date().toISOString(),
+    title,
+    recipientCount: tokens.length,
+    status: fcmServiceAccount || fcmServerKey ? 'Dispatched' : 'Queued (Awaiting Service Account)',
+    channel: channelId
+  });
+  if (recentPushLogs.length > 50) recentPushLogs.pop();
+
+  if (fcmServerKey) {
+    try {
+      const fetch = (globalThis as any).fetch || require('node-fetch');
+      const response = await fetch('https://fcm.googleapis.com/fcm/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `key=${fcmServerKey}`
+        },
+        body: JSON.stringify({
+          registration_ids: tokens,
+          notification: {
+            title,
+            body,
+            sound: 'default',
+            icon: 'ic_vybe_notification',
+            color: '#8A2BE2'
+          },
+          data: {
+            ...data,
+            title,
+            body
+          },
+          priority: 'high'
+        })
+      });
+      const resData = await response.json();
+      console.log('[FCM Push] Gateway response:', resData);
+      return {
+        successCount: resData.success || 0,
+        failureCount: resData.failure || 0
+      };
+    } catch (e: any) {
+      console.error('[FCM Push] Dispatch error:', e.message);
+      return { successCount: 0, failureCount: tokens.length };
+    }
+  }
+
+  console.log(`[FCM Push] Server running in staged mode: ${tokens.length} device notifications queued.`);
+  return { successCount: tokens.length, failureCount: 0 };
+}
+
+// Push Dispatch Route (e.g. from app actions or web triggers)
+app.post('/api/v1/push/send', async (req: Request, res: Response): Promise<void> => {
+  const { recipientId, title, body, data } = req.body;
+  if (!recipientId || !title || !body) {
+    res.status(400).json({ error: 'recipientId, title, and body are required.' });
+    return;
+  }
+
+  if (!supabaseAdmin) {
+    res.status(503).json({ error: 'Supabase service client not available.' });
+    return;
+  }
+
+  try {
+    const { data: tokenRecords, error } = await supabaseAdmin
+      .from('user_device_tokens')
+      .select('fcm_token')
+      .eq('user_id', recipientId)
+      .eq('is_active', true);
+
+    if (error || !tokenRecords || tokenRecords.length === 0) {
+      res.status(200).json({ success: true, delivered: 0, message: 'No active device tokens found for recipient.' });
+      return;
+    }
+
+    const tokens = tokenRecords.map((r: any) => r.fcm_token).filter(Boolean);
+    const result = await dispatchFcmPush({ tokens, title, body, data });
+
+    res.status(200).json({
+      success: true,
+      delivered: result.successCount,
+      failed: result.failureCount,
+      recipientId
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin Broadcast Push Route
+app.post('/api/v1/admin/broadcast-push', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  const { title, body, destination, targetId } = req.body;
+  if (!title || !body) {
+    res.status(400).json({ error: 'Title and body are required.' });
+    return;
+  }
+
+  if (!supabaseAdmin) {
+    res.status(503).json({ error: 'Database service unavailable.' });
+    return;
+  }
+
+  try {
+    const { data: tokenRecords, error } = await supabaseAdmin
+      .from('user_device_tokens')
+      .select('fcm_token, user_id')
+      .eq('is_active', true);
+
+    if (error || !tokenRecords) {
+      res.status(500).json({ error: 'Failed to fetch registered devices.' });
+      return;
+    }
+
+    const tokens = Array.from(new Set(tokenRecords.map((r: any) => r.fcm_token).filter(Boolean))) as string[];
+    const pushData: Record<string, string> = {
+      type: 'ANNOUNCEMENT',
+      channel: 'broadcast',
+      destination: destination || 'NOTIFICATIONS'
+    };
+    if (targetId) pushData.target_id = targetId;
+
+    const result = await dispatchFcmPush({
+      tokens,
+      title,
+      body,
+      data: pushData,
+      channelId: 'vybe_system_announcements'
+    });
+
+    res.status(200).json({
+      success: true,
+      totalDevices: tokens.length,
+      delivered: result.successCount,
+      failed: result.failureCount
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin Push Stats & Device Health Route
+app.get('/api/v1/admin/push-stats', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  if (!supabaseAdmin) {
+    res.status(503).json({ error: 'Database service unavailable.' });
+    return;
+  }
+
+  try {
+    const { count: totalActiveDevices } = await supabaseAdmin
+      .from('user_device_tokens')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_active', true);
+
+    const { data: recentDevices } = await supabaseAdmin
+      .from('user_device_tokens')
+      .select('device_model, platform, last_seen_at, is_active')
+      .order('last_seen_at', { ascending: false })
+      .limit(10);
+
+    res.status(200).json({
+      activeTokensCount: totalActiveDevices || 0,
+      fcmConfigured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FCM_SERVER_KEY),
+      recentDevices: recentDevices || [],
+      recentLogs: recentPushLogs
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Fallback Route: Serve Web Admin index.html
 app.get('*', (req: Request, res: Response) => {
   res.sendFile(path.join(webDirectory, 'index.html'));

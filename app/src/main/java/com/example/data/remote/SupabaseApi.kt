@@ -388,6 +388,32 @@ interface SupabaseRestApi {
     @Body body: Map<String, Boolean>
   ): Response<Unit>
 
+  // --- FCM DEVICE TOKENS ---
+  @POST("user_device_tokens")
+  suspend fun upsertDeviceToken(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "resolution=merge-duplicates,return=representation",
+    @Body body: SupabaseDeviceTokenDto
+  ): Response<List<SupabaseDeviceTokenDto>>
+
+  @DELETE("user_device_tokens")
+  suspend fun deleteDeviceToken(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("user_id") userIdFilter: String,
+    @Query("fcm_token") tokenFilter: String
+  ): Response<Unit>
+
+  @PATCH("user_device_tokens")
+  suspend fun deactivateDeviceToken(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("user_id") userIdFilter: String,
+    @Query("fcm_token") tokenFilter: String,
+    @Body body: Map<String, Boolean>
+  ): Response<Unit>
+
   // --- FOLLOWS ---
   @GET("follows")
   suspend fun getFollowsByFollower(

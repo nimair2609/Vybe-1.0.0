@@ -765,6 +765,12 @@
           <i data-lucide="user-check" size="18"></i>
           <span>Roles & Permissions</span>
         </a>
+
+        <div class="nav-label">Messaging & Push</div>
+        <a class="nav-item" data-tab="push">
+          <i data-lucide="bell-ring" size="18"></i>
+          <span>Push Notifications (FCM)</span>
+        </a>
       </nav>
 
       <div class="sidebar-footer">
@@ -1122,6 +1128,70 @@
           </div>
         </section>
 
+        <!-- 9. PUSH NOTIFICATIONS (FCM) TAB -->
+        <section id="tab-push" class="tab-panel" style="display: none;">
+          <div class="stats-grid" style="margin-bottom: 24px;">
+            <div class="stat-card">
+              <div class="stat-label">Active Registered FCM Devices</div>
+              <div class="stat-value" id="fcm-active-devices-count">0</div>
+              <div class="stat-sub">Android devices registered in Supabase</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">FCM Gateway Status</div>
+              <div class="stat-value" id="fcm-gateway-status" style="font-size: 18px; color: var(--accent-green);">Ready (Staged / Live)</div>
+              <div class="stat-sub">HTTP v1 Dispatcher</div>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+            <div class="card">
+              <div class="card-title">
+                <span>Compose Broadcast Push</span>
+              </div>
+              <div class="form-group" style="margin-top: 16px;">
+                <label>Notification Title</label>
+                <input type="text" id="push-title" class="form-control" placeholder="e.g. VYBE Special Update 🚀" />
+              </div>
+              <div class="form-group">
+                <label>Notification Body Message</label>
+                <textarea id="push-body" class="form-control" rows="3" placeholder="Enter push notification content..."></textarea>
+              </div>
+              <div class="form-group">
+                <label>Tap Destination</label>
+                <select id="push-destination" class="form-control">
+                  <option value="NOTIFICATIONS">Notification Center (Screen.NOTIFICATIONS)</option>
+                  <option value="INBOX">Direct Messages Inbox</option>
+                  <option value="MAIN">Home Feed</option>
+                </select>
+              </div>
+              <button class="btn btn-primary" id="btn-send-broadcast-push" style="width: 100%;">
+                <i data-lucide="send" size="14"></i> Dispatch Broadcast to Devices
+              </button>
+            </div>
+
+            <div class="card">
+              <div class="card-title">
+                <span>Recent Push Dispatch Activity</span>
+              </div>
+              <div class="table-container" style="max-height: 280px; overflow-y: auto;">
+                <table id="table-push-logs">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Title</th>
+                      <th>Devices</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbody-push-logs">
+                    <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No pushes dispatched yet.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
       </main>
     </div>
   </div>
@@ -1204,6 +1274,7 @@
       if (tabId === 'rooms') loadRooms();
       if (tabId === 'security') loadAuditLogs();
       if (tabId === 'roles') loadAdminRoles();
+      if (tabId === 'push') loadPushStats();
     }
 
     // 3. Auth Management
@@ -1719,6 +1790,94 @@
         });
       }
     }
+
+    // --- PUSH NOTIFICATIONS (FCM) CONTROLLER ---
+    async function loadPushStats() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token || '';
+
+        // Fetch stats from backend API
+        const resp = await fetch('/api/v1/admin/push-stats', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (resp.ok) {
+          const stats = await resp.json();
+          document.getElementById('fcm-active-devices-count').textContent = stats.activeTokensCount || 0;
+          const statusEl = document.getElementById('fcm-gateway-status');
+          if (stats.fcmConfigured) {
+            statusEl.textContent = 'Active (Live FCM Dispatch)';
+            statusEl.style.color = 'var(--accent-green)';
+          } else {
+            statusEl.textContent = 'Ready (Staged Queue Mode)';
+            statusEl.style.color = 'var(--accent-gold)';
+          }
+
+          const tbody = document.getElementById('tbody-push-logs');
+          if (stats.recentLogs && stats.recentLogs.length > 0) {
+            tbody.innerHTML = stats.recentLogs.map(l => `
+              <tr>
+                <td>${new Date(l.timestamp).toLocaleTimeString()}</td>
+                <td><strong>${escapeHtml(l.title)}</strong></td>
+                <td>${l.recipientCount}</td>
+                <td><span class="badge ${l.status.includes('Dispatched') ? 'badge-approved' : 'badge-gold'}">${l.status}</span></td>
+              </tr>
+            `).join('');
+          } else {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No pushes dispatched yet.</td></tr>';
+          }
+        }
+      } catch (e) {
+        console.warn('loadPushStats error:', e);
+      }
+    }
+
+    async function sendBroadcastPush() {
+      const title = document.getElementById('push-title').value.trim();
+      const body = document.getElementById('push-body').value.trim();
+      const destination = document.getElementById('push-destination').value;
+
+      if (!title || !body) {
+        showToast('Please enter both a title and message.');
+        return;
+      }
+
+      const btn = document.getElementById('btn-send-broadcast-push');
+      btn.disabled = true;
+      btn.textContent = 'Dispatching Push...';
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token || '';
+
+        const resp = await fetch('/api/v1/admin/broadcast-push', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ title, body, destination })
+        });
+
+        const data = await resp.json();
+        if (resp.ok) {
+          showToast(`Broadcast queued to ${data.totalDevices || 0} devices!`);
+          document.getElementById('push-title').value = '';
+          document.getElementById('push-body').value = '';
+          loadPushStats();
+        } else {
+          showToast(data.error || 'Failed to dispatch broadcast.');
+        }
+      } catch (e) {
+        showToast('Network error while dispatching push.');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="send" size="14"></i> Dispatch Broadcast to Devices';
+        lucide.createIcons();
+      }
+    }
+
+    document.getElementById('btn-send-broadcast-push')?.addEventListener('click', sendBroadcastPush);
 
     // Navigation Tab Listeners
     document.querySelectorAll('.nav-item').forEach(item => {

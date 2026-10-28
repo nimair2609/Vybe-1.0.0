@@ -1,6 +1,7 @@
 package com.example.ui
 
 import android.net.Uri
+import android.os.Bundle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.model.*
@@ -355,6 +356,53 @@ class VybeViewModel : ViewModel() {
         _uiBannerMessage.value = "Email confirmed! You can now sign in."
         if (!repository.isLoggedIn.value) {
           _currentScreen.value = Screen.AUTH
+        }
+      }
+    }
+  }
+
+  /**
+   * Routes user to destination screen when tapping an FCM push notification.
+   */
+  fun handleNotificationPayload(extras: Bundle?) {
+    if (extras == null) return
+    val destination = extras.getString("destination")
+    val targetId = extras.getString("target_id")
+    val conversationId = extras.getString("conversation_id")
+    val type = extras.getString("type")
+
+    viewModelScope.launch {
+      when {
+        // Direct / Group Chat
+        !conversationId.isNullOrBlank() || destination == "CHAT_DETAIL" -> {
+          val resolvedId = conversationId ?: targetId
+          if (!resolvedId.isNullOrBlank()) {
+            val conv = repository.conversations.value.firstOrNull { it.id == resolvedId }
+            if (conv != null) {
+              openConversation(conv)
+            } else {
+              selectTab(MainTab.INBOX)
+            }
+          }
+        }
+        // In-app Notifications Screen
+        destination == "NOTIFICATIONS" -> {
+          navigateTo(Screen.NOTIFICATIONS)
+        }
+        // User Profile
+        destination == "USER_PROFILE" && !targetId.isNullOrBlank() -> {
+          val targetUser = repository.allUsers.value.firstOrNull { it.id == targetId }
+          if (targetUser != null) {
+            openUserProfile(targetUser)
+          } else {
+            selectTab(MainTab.EXPLORE)
+          }
+        }
+        destination == "INBOX" -> {
+          selectTab(MainTab.INBOX)
+        }
+        type != null -> {
+          navigateTo(Screen.NOTIFICATIONS)
         }
       }
     }

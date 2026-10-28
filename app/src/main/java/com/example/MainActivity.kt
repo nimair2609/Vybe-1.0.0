@@ -3,12 +3,15 @@ package com.example
 import android.content.Intent
 import android.media.AudioManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import com.example.notifications.VybeNotificationHelper
+import com.example.data.session.SessionManager
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,14 +48,42 @@ import kotlinx.coroutines.flow.MutableStateFlow
 class MainActivity : ComponentActivity() {
 
   private val pendingDeepLinkUri = MutableStateFlow<Uri?>(null)
+  private val pendingNotificationPayload = MutableStateFlow<Bundle?>(null)
   private var activeViewModel: VybeViewModel? = null
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     VybeRepository.getInstance().initSession(applicationContext)
+    VybeNotificationHelper.initNotificationChannels(this)
+
     intent?.data?.let { uri ->
       Log.i("MainActivity", "Initial deep link URI: $uri")
       pendingDeepLinkUri.value = uri
+    }
+    intent?.extras?.let { extras ->
+      if (extras.containsKey("destination") || extras.containsKey("target_id") || extras.containsKey("conversation_id")) {
+        pendingNotificationPayload.value = extras
+      }
+    }
+
+    try {
+      com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+        .addOnCompleteListener { task ->
+          if (task.isSuccessful) {
+            val token = task.result
+            if (!token.isNullOrBlank()) {
+              Log.d("MainActivity", "Firebase Messaging Token obtained: ${token.take(12)}...")
+              val session = SessionManager.getInstance(applicationContext)
+              session.saveFcmToken(token)
+              val userId = session.userId
+              if (session.isLoggedIn && !userId.isNullOrBlank()) {
+                VybeRepository.get().syncDeviceFcmToken(userId, token)
+              }
+            }
+          }
+        }
+    } catch (e: Exception) {
+      Log.w("MainActivity", "FirebaseMessaging initialization notice: ${e.message}")
     }
 
     enableEdgeToEdge()
@@ -60,11 +91,36 @@ class MainActivity : ComponentActivity() {
       val viewModel: VybeViewModel = viewModel()
       activeViewModel = viewModel
       val incomingUri by pendingDeepLinkUri.collectAsState()
+      val incomingNotification by pendingNotificationPayload.collectAsState()
+
+      // Prompt for Android 13+ runtime notification permission
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+          androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+        ) { isGranted ->
+          Log.d("MainActivity", "POST_NOTIFICATIONS granted: $isGranted")
+        }
+        LaunchedEffect(Unit) {
+          if (androidx.core.content.ContextCompat.checkSelfPermission(
+              this@MainActivity,
+              android.Manifest.permission.POST_NOTIFICATIONS
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+          ) {
+            permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+          }
+        }
+      }
 
       LaunchedEffect(incomingUri) {
         val uri = incomingUri ?: return@LaunchedEffect
         viewModel.handleIncomingAuthUri(uri)
         pendingDeepLinkUri.value = null
+      }
+
+      LaunchedEffect(incomingNotification) {
+        val extras = incomingNotification ?: return@LaunchedEffect
+        viewModel.handleNotificationPayload(extras)
+        pendingNotificationPayload.value = null
       }
 
       val themeMode by viewModel.themeMode.collectAsState()
@@ -232,6 +288,11 @@ class MainActivity : ComponentActivity() {
     intent.data?.let { uri ->
       Log.i("MainActivity", "NewIntent deep link URI: $uri")
       pendingDeepLinkUri.value = uri
+    }
+    intent.extras?.let { extras ->
+      if (extras.containsKey("destination") || extras.containsKey("target_id") || extras.containsKey("conversation_id")) {
+        pendingNotificationPayload.value = extras
+      }
     }
   }
 }

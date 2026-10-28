@@ -2914,6 +2914,77 @@ class SupabaseRepository {
   }
 
   // =========================================================================
+  // 8B. FIREBASE CLOUD MESSAGING (FCM) DEVICE TOKEN REGISTRATION
+  // =========================================================================
+
+  suspend fun registerDeviceToken(
+    userId: String,
+    fcmToken: String,
+    deviceModel: String? = null,
+    accessToken: String = ""
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured || userId.isBlank() || fcmToken.isBlank()) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken) ?: return@withContext Result.success(Unit)
+    try {
+      val nowIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+        timeZone = TimeZone.getTimeZone("UTC")
+      }.format(Date())
+      val model = deviceModel ?: "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+      val dto = SupabaseDeviceTokenDto(
+        userId = userId,
+        fcmToken = fcmToken,
+        deviceModel = model,
+        platform = "android",
+        appVersion = "1.0.0",
+        isActive = true,
+        lastSeenAt = nowIso,
+        updatedAt = nowIso
+      )
+      val resp = SupabaseNetworkClient.restApi.upsertDeviceToken(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        body = dto
+      )
+      if (resp.isSuccessful) {
+        Log.d(TAG, "FCM device token registered successfully with Supabase")
+        Result.success(Unit)
+      } else {
+        Log.w(TAG, "Failed to register FCM device token: ${resp.code()} ${resp.errorBody()?.string()}")
+        Result.failure(Exception("Failed to register device token (${resp.code()})"))
+      }
+    } catch (e: Exception) {
+      Log.w(TAG, "Error registering FCM token: ${e.message}")
+      Result.failure(e)
+    }
+  }
+
+  suspend fun unregisterDeviceToken(
+    userId: String,
+    fcmToken: String,
+    accessToken: String = ""
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured || userId.isBlank() || fcmToken.isBlank()) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken) ?: return@withContext Result.success(Unit)
+    try {
+      val resp = SupabaseNetworkClient.restApi.deactivateDeviceToken(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        userIdFilter = "eq.$userId",
+        tokenFilter = "eq.$fcmToken",
+        body = mapOf("is_active" to false)
+      )
+      if (resp.isSuccessful) {
+        Log.d(TAG, "FCM device token deactivated on logout")
+        Result.success(Unit)
+      } else {
+        Result.failure(Exception("Failed to deactivate token (${resp.code()})"))
+      }
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  // =========================================================================
   // 9. HELPERS (TIMESTAMPS, AGE & ERROR PARSING)
   // =========================================================================
 

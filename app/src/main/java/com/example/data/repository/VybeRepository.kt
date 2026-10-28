@@ -89,6 +89,8 @@ class VybeRepository private constructor() {
         INSTANCE ?: VybeRepository().also { INSTANCE = it }
       }
     }
+
+    fun get(): VybeRepository = getInstance()
   }
 
   private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -2763,6 +2765,11 @@ class VybeRepository private constructor() {
     )
     VybeLocalStore.get()?.saveUser(onlineUser)
 
+    val cachedFcm = SessionManager.get()?.fcmToken
+    if (!cachedFcm.isNullOrBlank()) {
+      syncDeviceFcmToken(onlineUser.id, cachedFcm, accessToken)
+    }
+
     startPresenceAndIncomingCallLoops()
     syncAllFromSupabase()
   }
@@ -2970,6 +2977,13 @@ class VybeRepository private constructor() {
     _activeLiveStream.value = null
     _liveStreamComments.value = emptyList()
     val token = SessionManager.get()?.accessToken.orEmpty()
+    val currentUserId = _currentUser.value?.id ?: SessionManager.get()?.userId
+    val currentFcm = SessionManager.get()?.fcmToken
+    if (!currentUserId.isNullOrBlank() && !currentFcm.isNullOrBlank()) {
+      ioScope.launch {
+        supabaseRepo.unregisterDeviceToken(currentUserId, currentFcm, token)
+      }
+    }
     ioScope.launch {
       supabaseRepo.signOut(token)
     }
@@ -3014,6 +3028,31 @@ class VybeRepository private constructor() {
 
   fun deactivateAccount() {
     logout()
+  }
+
+  fun syncDeviceFcmToken(userId: String, token: String, accessToken: String? = null) {
+    if (userId.isBlank() || token.isBlank()) return
+    ioScope.launch {
+      val validToken = accessToken ?: supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+      supabaseRepo.registerDeviceToken(
+        userId = userId,
+        fcmToken = token,
+        accessToken = validToken
+      )
+    }
+  }
+
+  fun refreshNotifications() {
+    val myId = _currentUser.value?.id ?: SessionManager.get()?.userId ?: return
+    ioScope.launch {
+      val validToken = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+      val notifRes = supabaseRepo.fetchNotifications(myId, validToken)
+      if (notifRes.isSuccess) {
+        val enriched = enrichNotificationsWithLocalContext(notifRes.getOrThrow())
+        _notifications.value = enriched
+        VybeLocalStore.get()?.saveNotifications(enriched)
+      }
+    }
   }
 
   fun completeOnboarding() {

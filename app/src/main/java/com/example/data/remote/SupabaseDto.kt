@@ -939,4 +939,18 @@ data class SupabaseCommunityCommentInsertDto(
   val content: String
 )
 
+data class SupabaseDeviceTokenDto(
+  val id: String? = null,
+  @Json(name = "user_id") val userId: String,
+  @Json(name = "fcm_token") val fcmToken: String,
+  @Json(name = "device_model") val deviceModel: String? = null,
+  val platform: String = "android",
+  @Json(name = "app_version") val appVersion: String? = null,
+  @Json(name = "is_active") val isActive: Boolean = true,
+  @Json(name = "last_seen_at") val lastSeenAt: String? = null,
+  @Json(name = "created_at") val createdAt: String? = null,
+  @Json(name = "updated_at") val updatedAt: String? = null
+)
+
+
 
