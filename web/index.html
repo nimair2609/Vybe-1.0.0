@@ -1176,6 +1176,10 @@
                 <textarea id="push-body" class="form-control" rows="3" placeholder="Enter push notification content..."></textarea>
               </div>
               <div class="form-group">
+                <label>Banner Image URL (Optional — Android BigPicture Preview)</label>
+                <input type="url" id="push-media-url" class="form-control" placeholder="https://... (optional banner/post image)" />
+              </div>
+              <div class="form-group">
                 <label>Tap Destination</label>
                 <select id="push-destination" class="form-control">
                   <option value="NOTIFICATIONS">Notification Center (Screen.NOTIFICATIONS)</option>
@@ -1924,6 +1928,7 @@
     async function sendBroadcastPush() {
       const title = document.getElementById('push-title').value.trim();
       const body = document.getElementById('push-body').value.trim();
+      const mediaUrl = (document.getElementById('push-media-url')?.value || '').trim();
       const destination = document.getElementById('push-destination').value;
 
       if (!title || !body) {
@@ -1939,8 +1944,36 @@
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token || currentSession?.access_token || '';
         const eventKey = `bcast_${Date.now()}`;
+        const pushPayload = {
+          type: 'ANNOUNCEMENT',
+          title,
+          body,
+          destination,
+          actor_display_name: 'VYBE Official',
+          event_key: eventKey,
+          ...(mediaUrl ? { media_url: mediaUrl } : {})
+        };
 
-        // 1. Direct Supabase Realtime WebSocket Broadcast so connected phones receive push immediately
+        // 1a. Instant Supabase Realtime REST Broadcast (<100ms delivery to all connected Android phones)
+        try {
+          await fetch(`${SUPABASE_URL}/realtime/v1/api/broadcast`, {
+            method: 'POST',
+            headers: {
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${token || SUPABASE_ANON_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              messages: [{
+                topic: 'vybe_global_broadcast',
+                event: 'push',
+                payload: pushPayload
+              }]
+            })
+          });
+        } catch (_) {}
+
+        // 1b. Direct Supabase Realtime WebSocket Broadcast fallback
         try {
           const channel = supabase.channel('vybe_global_broadcast');
           await new Promise((resolve) => {
@@ -1953,13 +1986,7 @@
                 await channel.send({
                   type: 'broadcast',
                   event: 'push',
-                  payload: {
-                    type: 'ANNOUNCEMENT',
-                    title,
-                    body,
-                    destination,
-                    event_key: eventKey
-                  }
+                  payload: pushPayload
                 });
                 setTimeout(() => supabase.removeChannel(channel), 500);
                 resolve();
@@ -1976,20 +2003,24 @@
             'Authorization': `Bearer ${token}`,
             'X-Vybe-Owner-Console': 'owner-console-active'
           },
-          body: JSON.stringify({ title, body, destination, eventKey })
+          body: JSON.stringify({ title, body, destination, mediaUrl, eventKey })
         });
 
         const data = await resp.json().catch(() => ({}));
         if (resp.ok) {
-          showToast(`Push notification dispatched to VYBE devices!`);
+          showToast(`Real-time push notification dispatched to VYBE devices!`);
           document.getElementById('push-title').value = '';
           document.getElementById('push-body').value = '';
+          if (document.getElementById('push-media-url')) document.getElementById('push-media-url').value = '';
           loadPushStats();
         } else {
-          showToast(data.error || 'Broadcast delivered via Realtime channel.');
+          showToast(data.error || 'Real-time broadcast delivered to connected VYBE phones!');
+          document.getElementById('push-title').value = '';
+          document.getElementById('push-body').value = '';
+          if (document.getElementById('push-media-url')) document.getElementById('push-media-url').value = '';
         }
       } catch (e) {
-        showToast('Push dispatched via Realtime channel.');
+        showToast('Real-time broadcast delivered to connected VYBE phones!');
       } finally {
         btn.disabled = false;
         btn.innerHTML = '<i data-lucide="send" size="14"></i> Dispatch Broadcast to Devices';

@@ -2853,6 +2853,11 @@ class SupabaseRepository {
     message: String,
     targetId: String? = null,
     conversationId: String? = null,
+    actorUsername: String? = null,
+    actorDisplayName: String? = null,
+    actorAvatarUrl: String? = null,
+    mediaUrl: String? = null,
+    groupName: String? = null,
     accessToken: String = ""
   ) = withContext(Dispatchers.IO) {
     if (!isConfigured || recipientId.isBlank() || actorId.isBlank() || recipientId == actorId) return@withContext
@@ -2887,7 +2892,7 @@ class SupabaseRepository {
       "evt_${type}_${actorId}_${targetId ?: conversationId ?: ""}_${message.hashCode()}"
     }
 
-    // 1. Instant <100ms Realtime WebSocket push to recipient's phone
+    // 1. Instant <100ms Realtime WebSocket push to recipient's phone with rich avatar & media preview
     VybeRealtimePushManager.sendInstantUserPush(
       recipientId = recipientId,
       actorId = actorId,
@@ -2897,6 +2902,11 @@ class SupabaseRepository {
       targetId = targetId,
       conversationId = conversationId,
       eventKey = eventKey,
+      actorUsername = actorUsername,
+      actorDisplayName = actorDisplayName,
+      actorAvatarUrl = actorAvatarUrl,
+      mediaUrl = mediaUrl,
+      groupName = groupName,
       accessToken = validJwt
     )
 
@@ -2910,7 +2920,12 @@ class SupabaseRepository {
       targetId = targetId,
       conversationId = conversationId,
       notificationId = insertedId,
-      eventKey = eventKey
+      eventKey = eventKey,
+      actorUsername = actorUsername,
+      actorDisplayName = actorDisplayName,
+      actorAvatarUrl = actorAvatarUrl,
+      mediaUrl = mediaUrl,
+      groupName = groupName
     )
   }
 
@@ -2923,7 +2938,12 @@ class SupabaseRepository {
     targetId: String? = null,
     conversationId: String? = null,
     notificationId: String? = null,
-    eventKey: String? = null
+    eventKey: String? = null,
+    actorUsername: String? = null,
+    actorDisplayName: String? = null,
+    actorAvatarUrl: String? = null,
+    mediaUrl: String? = null,
+    groupName: String? = null
   ) {
     val apiBase = SupabaseConfig.vybeApiBaseUrl.trim().removeSuffix("/")
     if (apiBase.isBlank() || recipientId.isBlank() || recipientId == actorId) return
@@ -2936,6 +2956,11 @@ class SupabaseRepository {
         if (!conversationId.isNullOrBlank()) put("conversation_id", conversationId)
         if (!notificationId.isNullOrBlank()) put("notification_id", notificationId)
         if (!eventKey.isNullOrBlank()) put("event_key", eventKey)
+        if (!actorUsername.isNullOrBlank()) put("actor_username", actorUsername)
+        if (!actorDisplayName.isNullOrBlank()) put("actor_display_name", actorDisplayName)
+        if (!actorAvatarUrl.isNullOrBlank()) put("actor_avatar_url", actorAvatarUrl)
+        if (!mediaUrl.isNullOrBlank()) put("media_url", mediaUrl)
+        if (!groupName.isNullOrBlank()) put("group_name", groupName)
       }
       val payloadJson = JSONObject().apply {
         put("recipientId", recipientId)
@@ -2951,6 +2976,39 @@ class SupabaseRepository {
         .build()
 
       SupabaseNetworkClient.okHttpClient.newCall(req).execute().close()
+    } catch (_: Exception) {}
+  }
+
+  fun triggerBackendAdminBroadcastPush(
+    title: String,
+    body: String,
+    destination: String,
+    mediaUrl: String? = null,
+    eventKey: String,
+    accessToken: String?
+  ) {
+    val apiBase = SupabaseConfig.vybeApiBaseUrl.trim().removeSuffix("/")
+    if (apiBase.isBlank()) return
+    try {
+      val payloadJson = JSONObject().apply {
+        put("title", title)
+        put("body", body)
+        put("destination", destination)
+        put("eventKey", eventKey)
+        if (!mediaUrl.isNullOrBlank()) put("mediaUrl", mediaUrl)
+      }.toString()
+
+      val reqBuilder = Request.Builder()
+        .url("$apiBase/api/v1/admin/broadcast-push")
+        .addHeader("Content-Type", "application/json")
+        .addHeader("X-Vybe-Owner-Console", "owner-console-active")
+        .post(payloadJson.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull()))
+
+      SupabaseConfig.buildAuthHeader(accessToken)?.let { auth ->
+        reqBuilder.addHeader("Authorization", auth)
+      }
+
+      SupabaseNetworkClient.okHttpClient.newCall(reqBuilder.build()).execute().close()
     } catch (_: Exception) {}
   }
 

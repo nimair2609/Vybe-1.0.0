@@ -129,11 +129,43 @@ class VybeFirebaseMessagingService : FirebaseMessagingService() {
         ?: data["message_id"]?.let { "msg_$it" }
         ?: remoteMessage.messageId?.let { "fcm_$it" }
 
+      val enrichedData = data.toMutableMap()
+      if (!actorId.isNullOrBlank()) {
+        val cachedActor = try {
+          VybeRepository.get().allUsers.value.firstOrNull { it.id == actorId }
+        } catch (_: Exception) { null }
+        if (cachedActor != null) {
+          if (enrichedData["actor_username"].isNullOrBlank()) enrichedData["actor_username"] = cachedActor.username
+          if (enrichedData["actor_display_name"].isNullOrBlank()) enrichedData["actor_display_name"] = cachedActor.displayName
+          if (enrichedData["actor_avatar_url"].isNullOrBlank() && cachedActor.avatarUrl.isNotBlank()) {
+            enrichedData["actor_avatar_url"] = cachedActor.avatarUrl
+          }
+        }
+      }
+
+      VybeRealtimePushManager.emitInAppBannerIfEligible(
+        RealtimeInAppBannerEvent(
+          eventKey = dedupeKey ?: "fcm_${System.currentTimeMillis()}",
+          type = channelType.ifBlank { "ACTIVITY" },
+          title = title,
+          body = body,
+          destination = enrichedData["destination"] ?: "NOTIFICATIONS",
+          targetId = enrichedData["target_id"],
+          conversationId = enrichedData["conversation_id"],
+          notificationId = enrichedData["notification_id"],
+          actorId = actorId,
+          actorUsername = enrichedData["actor_username"],
+          actorDisplayName = enrichedData["actor_display_name"],
+          actorAvatarUrl = enrichedData["actor_avatar_url"],
+          mediaUrl = enrichedData["media_url"]
+        )
+      )
+
       VybeNotificationHelper.showNotification(
         context = applicationContext,
         title = title,
         body = body,
-        data = data,
+        data = enrichedData,
         channelId = channelId,
         dedupeKey = dedupeKey
       )

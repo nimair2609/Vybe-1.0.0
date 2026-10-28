@@ -28,17 +28,22 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.model.AppThemeMode
 import com.example.data.repository.VybeRepository
+import com.example.notifications.RealtimeInAppBannerEvent
 import com.example.ui.MainTab
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.components.IncomingCallBanner
 import com.example.ui.components.OfflineStatusBanner
+import com.example.ui.components.RealtimeNotificationBanner
 import com.example.ui.components.UploadStatusBanner
 import com.example.ui.screens.*
 import com.example.ui.theme.VybeTheme
@@ -101,8 +106,11 @@ class MainActivity : ComponentActivity() {
       val selectedConversation by viewModel.selectedConversation.collectAsState()
 
       LaunchedEffect(currentScreenForPerm, selectedConversation?.id) {
-        VybeNotificationHelper.activeOpenConversationId =
-          if (currentScreenForPerm == Screen.CHAT_DETAIL) selectedConversation?.id else null
+        val openConvId = if (currentScreenForPerm == Screen.CHAT_DETAIL) selectedConversation?.id else null
+        VybeNotificationHelper.activeOpenConversationId = openConvId
+        if (!openConvId.isNullOrBlank()) {
+          VybeNotificationHelper.clearConversationNotifications(this@MainActivity, openConvId)
+        }
       }
 
       // Prompt for Android 13+ runtime notification permission once splash completes
@@ -151,6 +159,20 @@ class MainActivity : ComponentActivity() {
       val uploadStatus by viewModel.uploadStatus.collectAsState()
       val activeCall by viewModel.activeCall.collectAsState()
       val bannerMsg by viewModel.uiBannerMessage.collectAsState()
+      var activeRealtimeBanner by remember { mutableStateOf<RealtimeInAppBannerEvent?>(null) }
+
+      LaunchedEffect(Unit) {
+        viewModel.inAppRealtimeBannerEvents.collect { incomingEvent ->
+          activeRealtimeBanner = incomingEvent
+        }
+      }
+
+      LaunchedEffect(activeRealtimeBanner?.eventKey) {
+        if (activeRealtimeBanner != null) {
+          delay(4500)
+          activeRealtimeBanner = null
+        }
+      }
 
       LaunchedEffect(bannerMsg) {
         if (!bannerMsg.isNullOrBlank()) {
@@ -233,6 +255,24 @@ class MainActivity : ComponentActivity() {
                   onAccept = { viewModel.acceptCall() },
                   onDecline = { viewModel.declineCall() },
                   onOpenCallScreen = { viewModel.openIncomingCallScreen() },
+                  modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 8.dp)
+                )
+              }
+
+              // Instagram-Style Real-Time Notification Pill Banner (DMs, Likes, Comments, Follows, Broadcasts)
+              if (
+                activeCall == null &&
+                currentScreen != Screen.SPLASH &&
+                currentScreen != Screen.AUTH &&
+                currentScreen != Screen.PASSWORD_RECOVERY
+              ) {
+                RealtimeNotificationBanner(
+                  event = activeRealtimeBanner,
+                  onOpen = { evt -> viewModel.openRealtimeBannerEvent(evt) },
+                  onDismiss = { activeRealtimeBanner = null },
                   modifier = Modifier
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()

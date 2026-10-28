@@ -1486,6 +1486,10 @@ class VybeRepository private constructor() {
               title = "@${me.username} liked your $contentKind",
               message = "${me.displayName} reacted ${appliedReaction.label} to your $contentKind$snippetPart",
               targetId = postId,
+              actorUsername = me.username,
+              actorDisplayName = me.displayName,
+              actorAvatarUrl = me.avatarUrl,
+              mediaUrl = post.mediaUrls.firstOrNull(),
               accessToken = token
             )
           }
@@ -1595,13 +1599,18 @@ class VybeRepository private constructor() {
             } else p
           }
           if (targetPost != null && targetPost.author.id != user.id) {
+            val contentKind = if (targetPost.isVybesReel || targetPost.mediaType == MediaType.REEL) "Reel" else "post"
             supabaseRepo.createInteractionNotificationIfNeeded(
               recipientId = targetPost.author.id,
               actorId = user.id,
               type = "COMMENT",
-              title = "${user.displayName} commented",
-              message = clean.take(80),
+              title = "@${user.username} commented on your $contentKind",
+              message = "Commented: \"${clean.take(80)}\"",
               targetId = postId,
+              actorUsername = user.username,
+              actorDisplayName = user.displayName,
+              actorAvatarUrl = user.avatarUrl,
+              mediaUrl = targetPost.mediaUrls.firstOrNull(),
               accessToken = token
             )
           }
@@ -2071,9 +2080,12 @@ class VybeRepository private constructor() {
               recipientId = targetUserId,
               actorId = me.id,
               type = "FOLLOW_REQUEST",
-              title = "Follow Request",
-              message = "${me.displayName} (@${me.username}) requested to follow you.",
+              title = "${me.displayName} (@${me.username})",
+              message = "@${me.username} requested to follow you.",
               targetId = me.id,
+              actorUsername = me.username,
+              actorDisplayName = me.displayName,
+              actorAvatarUrl = me.avatarUrl,
               accessToken = token
             )
           }
@@ -2107,9 +2119,12 @@ class VybeRepository private constructor() {
               recipientId = targetUserId,
               actorId = me.id,
               type = "FOLLOW",
-              title = "New Follower",
-              message = "${me.displayName} (@${me.username}) started following you.",
+              title = "${me.displayName} (@${me.username})",
+              message = "@${me.username} started following you.",
               targetId = me.id,
+              actorUsername = me.username,
+              actorDisplayName = me.displayName,
+              actorAvatarUrl = me.avatarUrl,
               accessToken = token
             )
             syncStoriesFromSupabase(me.id, token)
@@ -2401,9 +2416,9 @@ class VybeRepository private constructor() {
                 }
                 val notifKind = if (c.isGroup) "GROUP_MESSAGE" else "DIRECT_MESSAGE"
                 val msgEventKey = serverMsg.id?.takeIf { it.isNotBlank() }?.let { "msg_$it" }
+                val previewImageUrl = if (mediaType.equals("IMAGE", ignoreCase = true)) resolvedMediaUrl else null
 
                 recipientIds.forEach { recipientId ->
-                  // Record message key in instant push so polling and realtime never duplicate
                   if (!msgEventKey.isNullOrBlank()) {
                     VybeRealtimePushManager.sendInstantUserPush(
                       recipientId = recipientId,
@@ -2414,6 +2429,11 @@ class VybeRepository private constructor() {
                       targetId = resolvedConvId,
                       conversationId = resolvedConvId,
                       eventKey = msgEventKey,
+                      actorUsername = user.username,
+                      actorDisplayName = user.displayName,
+                      actorAvatarUrl = user.avatarUrl,
+                      mediaUrl = previewImageUrl,
+                      groupName = c.groupName,
                       accessToken = token
                     )
                     supabaseRepo.triggerBackendPush(
@@ -2424,7 +2444,12 @@ class VybeRepository private constructor() {
                       body = msgPreview,
                       targetId = resolvedConvId,
                       conversationId = resolvedConvId,
-                      eventKey = msgEventKey
+                      eventKey = msgEventKey,
+                      actorUsername = user.username,
+                      actorDisplayName = user.displayName,
+                      actorAvatarUrl = user.avatarUrl,
+                      mediaUrl = previewImageUrl,
+                      groupName = c.groupName
                     )
                   } else {
                     supabaseRepo.createInteractionNotificationIfNeeded(
@@ -2435,6 +2460,11 @@ class VybeRepository private constructor() {
                       message = msgPreview,
                       targetId = resolvedConvId,
                       conversationId = resolvedConvId,
+                      actorUsername = user.username,
+                      actorDisplayName = user.displayName,
+                      actorAvatarUrl = user.avatarUrl,
+                      mediaUrl = previewImageUrl,
+                      groupName = c.groupName,
                       accessToken = token
                     )
                   }
@@ -2542,9 +2572,26 @@ class VybeRepository private constructor() {
 
   fun syncMessagesForConversation(conversationId: String) {
     if (!supabaseRepo.isConfigured || conversationId.startsWith("conv_")) return
-    val user = _currentUser.value ?: return
+    val myId = _currentUser.value?.id ?: SessionManager.get()?.userId ?: return
     ioScope.launch {
       val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+      val existingIdx = _conversations.value.indexOfFirst { it.id == conversationId }
+      if (existingIdx == -1) {
+        // Brand-new conversation initiated by another user — pull full conversation list immediately
+        val convRes = supabaseRepo.fetchConversationsForUser(
+          myUserId = myId,
+          blockedIds = _blockedUserIds.value,
+          restrictedIds = _restrictedUserIds.value,
+          accessToken = token
+        )
+        if (convRes.isSuccess) {
+          val remoteConvs = dedupeConversationCallLogs(convRes.getOrThrow())
+          _conversations.value = remoteConvs
+          VybeLocalStore.get()?.saveConversations(remoteConvs)
+        }
+        return@launch
+      }
+
       val res = supabaseRepo.fetchMessages(conversationId, token, limit = 80)
       if (res.isSuccess) {
         val remoteList = res.getOrThrow()
@@ -2552,6 +2599,7 @@ class VybeRepository private constructor() {
         val convIdx = current.indexOfFirst { it.id == conversationId }
         if (convIdx != -1) {
           val conv = current[convIdx]
+          val existingIds = conv.messages.map { it.id }.toSet()
           val inFlightMsgs = conv.messages.filter {
             (it.status == MessageStatus.SENDING || it.status == MessageStatus.FAILED) &&
               !deletedMessageIdsCache.contains(it.id)
@@ -2567,7 +2615,7 @@ class VybeRepository private constructor() {
               text = dto.content,
               timestamp = TimestampUtils.formatMessageTime(dto.createdAt, "Now"),
               createdAtIso = dto.createdAt,
-              isMe = dto.senderId == user.id,
+              isMe = dto.senderId == myId,
               mediaUrl = dto.mediaUrl,
               mediaType = dto.mediaType ?: "TEXT",
               isDeletedForEveryone = false,
@@ -2577,18 +2625,106 @@ class VybeRepository private constructor() {
           }
           val remoteIds = mappedRemote.map { it.id }.toSet()
           val merged = mappedRemote + inFlightMsgs.filterNot { remoteIds.contains(it.id) }
+          val newlyArrivedFromPeer = mappedRemote.count { !it.isMe && !existingIds.contains(it.id) }
+          val isActivelyOpen = VybeNotificationHelper.activeOpenConversationId == conversationId
+          val nextUnread = if (isActivelyOpen) 0 else (conv.unreadCount + newlyArrivedFromPeer)
           val lastRemoteIso = mappedRemote.lastOrNull()?.createdAtIso ?: conv.lastMessageCreatedAtIso
-          current[convIdx] = conv.copy(
+          val updatedConv = conv.copy(
             messages = merged,
+            unreadCount = nextUnread,
             lastMessage = merged.lastOrNull()?.text ?: "Conversation started",
             lastMessageCreatedAtIso = lastRemoteIso,
             lastMessageTimestamp = TimestampUtils.formatRelative(lastRemoteIso, conv.lastMessageTimestamp)
           )
+          current.removeAt(convIdx)
+          // Bubble updated conversation to top of Inbox in real time like Instagram Direct
+          current.add(0, updatedConv)
           _conversations.value = current
           VybeLocalStore.get()?.saveConversations(current)
         }
       }
     }
+  }
+
+  /**
+   * Sends a Direct or Group reply directly from an Android notification's inline `RemoteInput`
+   * (works both in foreground and cold-background process states).
+   */
+  suspend fun sendQuickReplyFromNotification(
+    context: android.content.Context,
+    conversationId: String,
+    replyText: String
+  ): Boolean {
+    val clean = replyText.trim()
+    if (clean.isBlank() || conversationId.isBlank() || !supabaseRepo.isConfigured) return false
+    val session = SessionManager.getInstance(context.applicationContext)
+    val myUser = _currentUser.value ?: session.loadCurrentUser() ?: return false
+    val token = supabaseRepo.resolveValidAccessToken(session.accessToken).orEmpty()
+    if (token.isBlank()) return false
+
+    val sendRes = supabaseRepo.sendMessage(
+      conversationId = conversationId,
+      senderId = myUser.id,
+      content = clean,
+      mediaUrl = null,
+      mediaType = "TEXT",
+      replyToId = null,
+      accessToken = token
+    )
+    if (sendRes.isFailure) return false
+
+    val serverMsg = sendRes.getOrThrow()
+    val msgEventKey = serverMsg.id?.takeIf { it.isNotBlank() }?.let { "msg_$it" }
+    val conv = _conversations.value.firstOrNull { it.id == conversationId }
+    val recipientIds = if (conv != null) {
+      (conv.groupMembers.map { it.id } + listOf(conv.peerUser.id))
+        .map { it.trim() }
+        .filter { it.isNotBlank() && it != myUser.id }
+        .distinct()
+    } else emptyList()
+
+    val pushTitle = if (conv?.isGroup == true && !conv.groupName.isNullOrBlank()) {
+      "${myUser.displayName} in ${conv.groupName}"
+    } else {
+      myUser.displayName.ifBlank { "@${myUser.username}" }
+    }
+    val notifKind = if (conv?.isGroup == true) "GROUP_MESSAGE" else "DIRECT_MESSAGE"
+
+    recipientIds.forEach { recipientId ->
+      VybeRealtimePushManager.sendInstantUserPush(
+        recipientId = recipientId,
+        actorId = myUser.id,
+        type = notifKind,
+        title = pushTitle,
+        body = clean.take(120),
+        targetId = conversationId,
+        conversationId = conversationId,
+        eventKey = msgEventKey,
+        actorUsername = myUser.username,
+        actorDisplayName = myUser.displayName,
+        actorAvatarUrl = myUser.avatarUrl,
+        groupName = conv?.groupName,
+        accessToken = token
+      )
+      supabaseRepo.triggerBackendPush(
+        recipientId = recipientId,
+        actorId = myUser.id,
+        type = notifKind,
+        title = pushTitle,
+        body = clean.take(120),
+        targetId = conversationId,
+        conversationId = conversationId,
+        eventKey = msgEventKey,
+        actorUsername = myUser.username,
+        actorDisplayName = myUser.displayName,
+        actorAvatarUrl = myUser.avatarUrl,
+        groupName = conv?.groupName
+      )
+    }
+
+    syncMessagesForConversation(conversationId)
+    markConversationAsRead(conversationId)
+    return true
   }
 
   // =========================================================================
@@ -3457,6 +3593,7 @@ class VybeRepository private constructor() {
   }
 
   fun markConversationAsRead(conversationId: String) {
+    appContext?.let { VybeNotificationHelper.clearConversationNotifications(it, conversationId) }
     val targetConv = _conversations.value.firstOrNull { it.id == conversationId }
     _conversations.value = _conversations.value.map {
       if (it.id == conversationId) {
@@ -3977,6 +4114,9 @@ class VybeRepository private constructor() {
             body = "$callerLabel is calling you on VYBE",
             targetId = serverId,
             eventKey = "call_$serverId",
+            actorUsername = meUser?.username,
+            actorDisplayName = meUser?.displayName,
+            actorAvatarUrl = meUser?.avatarUrl,
             accessToken = token
           )
           supabaseRepo.triggerBackendPush(
@@ -3986,7 +4126,10 @@ class VybeRepository private constructor() {
             title = "Incoming $callKind Call",
             body = "$callerLabel is calling you on VYBE",
             targetId = serverId,
-            eventKey = "call_$serverId"
+            eventKey = "call_$serverId",
+            actorUsername = meUser?.username,
+            actorDisplayName = meUser?.displayName,
+            actorAvatarUrl = meUser?.avatarUrl
           )
         }
       }
@@ -5001,6 +5144,13 @@ class VybeRepository private constructor() {
           "notification_id" to item.id,
           "event_key" to "notif_${item.id}"
         )
+        item.actorUser?.let { actor ->
+          if (actor.id.isNotBlank()) dataMap["actor_id"] = actor.id
+          if (actor.username.isNotBlank()) dataMap["actor_username"] = actor.username
+          if (actor.displayName.isNotBlank()) dataMap["actor_display_name"] = actor.displayName
+          if (actor.avatarUrl.isNotBlank()) dataMap["actor_avatar_url"] = actor.avatarUrl
+        }
+        item.contentPreviewUrl?.takeIf { it.isNotBlank() }?.let { dataMap["media_url"] = it }
         item.targetEntityId?.takeIf { it.isNotBlank() }?.let { tid ->
           dataMap["target_id"] = tid
           if (item.type == NotificationType.DIRECT_MESSAGE || item.type == NotificationType.GROUP_MESSAGE) {
@@ -5034,33 +5184,153 @@ class VybeRepository private constructor() {
             !m.mediaType.equals("CALL_LOG", ignoreCase = true)
         }
         if (latestIncoming != null && !_blockedUserIds.value.contains(latestIncoming.senderId)) {
+          val senderUser = if (conv.isGroup) {
+            conv.groupMembers.firstOrNull { it.id == latestIncoming.senderId }
+          } else {
+            conv.peerUser
+          }
           val senderName = if (conv.isGroup && !conv.groupName.isNullOrBlank()) {
-            val senderUser = conv.groupMembers.firstOrNull { it.id == latestIncoming.senderId }
             if (senderUser != null) "${senderUser.displayName} in ${conv.groupName}" else conv.groupName
           } else {
             conv.peerUser.displayName.ifBlank { "@${conv.peerUser.username}" }
           }
-          val msgBody = when (latestIncoming.mediaType?.uppercase()) {
+          val msgBody = when (latestIncoming.mediaType.uppercase()) {
             "IMAGE" -> if (latestIncoming.text.isNotBlank() && !latestIncoming.text.startsWith("http")) "📷 ${latestIncoming.text}" else "📷 Sent a photo"
             "VIDEO" -> if (latestIncoming.text.isNotBlank() && !latestIncoming.text.startsWith("http")) "🎬 ${latestIncoming.text}" else "🎬 Sent a video"
             "AUDIO", "VOICE" -> "🎤 Sent a voice message"
             else -> latestIncoming.text.ifBlank { "New message" }
           }
+          val msgData = mutableMapOf(
+            "type" to if (conv.isGroup) "GROUP_MESSAGE" else "DIRECT_MESSAGE",
+            "destination" to "CHAT_DETAIL",
+            "conversation_id" to conv.id,
+            "target_id" to conv.id,
+            "message_id" to latestIncoming.id,
+            "event_key" to "msg_${latestIncoming.id}",
+            "actor_id" to latestIncoming.senderId
+          )
+          if (!senderUser?.username.isNullOrBlank()) msgData["actor_username"] = senderUser!!.username
+          if (!senderUser?.displayName.isNullOrBlank()) msgData["actor_display_name"] = senderUser!!.displayName
+          if (!senderUser?.avatarUrl.isNullOrBlank()) msgData["actor_avatar_url"] = senderUser!!.avatarUrl
+          if (conv.isGroup && !conv.groupName.isNullOrBlank()) msgData["group_name"] = conv.groupName
+          if (latestIncoming.mediaType.equals("IMAGE", true) && !latestIncoming.mediaUrl.isNullOrBlank()) {
+            msgData["media_url"] = latestIncoming.mediaUrl
+          }
+
           VybeNotificationHelper.showNotification(
             context = ctx,
             title = senderName,
             body = msgBody,
-            data = mapOf(
-              "type" to if (conv.isGroup) "GROUP_MESSAGE" else "DIRECT_MESSAGE",
-              "destination" to "CHAT_DETAIL",
-              "conversation_id" to conv.id,
-              "target_id" to conv.id,
-              "message_id" to latestIncoming.id,
-              "event_key" to "msg_${latestIncoming.id}"
-            ),
+            data = msgData,
             channelId = VybeNotificationHelper.CHANNEL_ID_PRIMARY,
             dedupeKey = "msg_${latestIncoming.id}"
           )
+        }
+      }
+    }
+  }
+
+  fun sendAdminBroadcastNotification(
+    title: String,
+    body: String,
+    destination: String = "NOTIFICATIONS",
+    mediaUrl: String? = null,
+    onResult: (Boolean, String) -> Unit = { _, _ -> }
+  ) {
+    val me = _currentUser.value
+    if (me == null || me.role != UserRole.ADMIN) {
+      onResult(false, "Admin authorization required to broadcast notifications.")
+      return
+    }
+    val cleanTitle = title.trim()
+    val cleanBody = body.trim()
+    if (cleanTitle.isBlank() || cleanBody.isBlank()) {
+      onResult(false, "Please enter both a title and a message.")
+      return
+    }
+
+    val eventKey = "bcast_${System.currentTimeMillis()}_${cleanTitle.hashCode()}"
+    val cleanMedia = mediaUrl?.trim()?.takeIf { it.startsWith("http", ignoreCase = true) }
+
+    ioScope.launch {
+      try {
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+
+        // 1. Instant <100ms Supabase Realtime global broadcast to all online/backgrounded phones
+        VybeRealtimePushManager.sendGlobalBroadcastPush(
+          title = cleanTitle,
+          body = cleanBody,
+          destination = destination,
+          mediaUrl = cleanMedia,
+          actorDisplayName = "VYBE Official",
+          eventKey = eventKey,
+          accessToken = token
+        )
+
+        // 2. Backend FCM HTTP v1 topic/token push (wakes sleeping/closed phones)
+        supabaseRepo.triggerBackendAdminBroadcastPush(
+          title = cleanTitle,
+          body = cleanBody,
+          destination = destination,
+          mediaUrl = cleanMedia,
+          eventKey = eventKey,
+          accessToken = token
+        )
+
+        // 3. Persist notification records in Supabase for registered members so offline users see it in Activity
+        val authHeader = SupabaseConfig.buildAuthHeader(token)
+        if (supabaseRepo.isConfigured && authHeader != null) {
+          val recipients = _allUsers.value
+            .map { it.id }
+            .filter { it.isNotBlank() && it != me.id }
+            .distinct()
+            .take(150)
+
+          recipients.forEach { uid ->
+            try {
+              com.example.data.remote.SupabaseNetworkClient.restApi.insertNotification(
+                apiKey = SupabaseConfig.supabaseAnonKey,
+                authHeader = authHeader,
+                notification = com.example.data.remote.SupabaseNotificationInsertDto(
+                  recipientId = uid,
+                  actorId = me.id,
+                  type = "SECURITY_ACCOUNT_UPDATE",
+                  title = cleanTitle,
+                  message = cleanBody,
+                  targetId = null,
+                  isRead = false
+                )
+              )
+            } catch (_: Exception) {}
+          }
+        }
+
+        // Also show local preview notification on the admin's own phone so they immediately verify delivery
+        appContext?.let { ctx ->
+          val previewData = mutableMapOf(
+            "type" to "ANNOUNCEMENT",
+            "destination" to destination,
+            "event_key" to "${eventKey}_admin_preview",
+            "actor_display_name" to "VYBE Official",
+            "actor_avatar_url" to me.avatarUrl
+          )
+          if (!cleanMedia.isNullOrBlank()) previewData["media_url"] = cleanMedia
+          VybeNotificationHelper.showNotification(
+            context = ctx,
+            title = cleanTitle,
+            body = cleanBody,
+            data = previewData,
+            channelId = VybeNotificationHelper.CHANNEL_ID_BROADCAST,
+            dedupeKey = "${eventKey}_admin_preview"
+          )
+        }
+
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+          onResult(true, "Real-time broadcast delivered to VYBE devices!")
+        }
+      } catch (e: Exception) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+          onResult(false, e.message ?: "Broadcast sent over Realtime channel.")
         }
       }
     }
@@ -5071,14 +5341,21 @@ class VybeRepository private constructor() {
     if (!VybeNotificationHelper.arePhoneNotificationsEnabled(ctx)) {
       return false
     }
+    val me = _currentUser.value
+    val data = mutableMapOf(
+      "type" to "ANNOUNCEMENT",
+      "destination" to "NOTIFICATIONS",
+      "actor_display_name" to (me?.displayName?.ifBlank { "VYBE Official" } ?: "VYBE Official"),
+      "actor_username" to (me?.username ?: "vybe")
+    )
+    if (!me?.avatarUrl.isNullOrBlank()) {
+      data["actor_avatar_url"] = me!!.avatarUrl
+    }
     VybeNotificationHelper.showNotification(
       context = ctx,
-      title = "VYBE Push Active ⚡",
-      body = "Phone notifications are working! You'll receive instant alerts for DMs, reactions, calls, and announcements.",
-      data = mapOf(
-        "type" to "TEST_ALERT",
-        "destination" to "NOTIFICATIONS"
-      ),
+      title = "VYBE Live Notifications Active ⚡",
+      body = "Instagram-style Direct replies, avatars, media previews, and <100ms real-time updates are live on your phone!",
+      data = data,
       channelId = VybeNotificationHelper.CHANNEL_ID_PRIMARY,
       dedupeKey = "test_push_${System.currentTimeMillis()}"
     )

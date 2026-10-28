@@ -1,32 +1,49 @@
 package com.example.ui.screens
 
+import android.content.Intent
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Campaign
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import com.example.data.model.BusinessVerificationStatus
 import com.example.data.model.ReportStatus
+import com.example.data.model.UserRole
 import com.example.ui.VybeViewModel
+import com.example.ui.theme.VybeBrandCyan
 import com.example.ui.theme.VybeDanger
+import com.example.ui.theme.VybeMagenta
 import com.example.ui.theme.VybeOnlineGreen
 import com.example.ui.theme.VybeVerifiedGold
 import com.example.ui.theme.VybeViolet
+import kotlinx.coroutines.launch
 
 enum class AdminTab(val title: String) {
   MODERATION("Moderation"),
+  BROADCAST("Broadcast Push"),
   VERIFICATIONS("Badges & Shops"),
   COMPLIANCE("Security & Audit")
 }
@@ -40,11 +57,23 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
 
   val reports by viewModel.adminReports.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
+  val isRealtimeConnected by viewModel.isRealtimeConnected.collectAsState()
+  val context = LocalContext.current
+  val snackbarHostState = remember { SnackbarHostState() }
+  val scope = rememberCoroutineScope()
+
   var isVerifyingRole by remember { mutableStateOf(currentUser == null) }
   var selectedTab by remember { mutableStateOf(AdminTab.MODERATION) }
 
+  // Broadcast Push composer state
+  var pushTitle by remember { mutableStateOf("") }
+  var pushBody by remember { mutableStateOf("") }
+  var pushMediaUrl by remember { mutableStateOf("") }
+  var pushDestination by remember { mutableStateOf("NOTIFICATIONS") }
+  var isDispatchingPush by remember { mutableStateOf(false) }
+
   LaunchedEffect(currentUser?.id) {
-    if (currentUser == null || currentUser?.role != com.example.data.model.UserRole.ADMIN) {
+    if (currentUser == null || currentUser?.role != UserRole.ADMIN) {
       isVerifyingRole = true
       viewModel.refreshCurrentUserRole {
         isVerifyingRole = false
@@ -72,7 +101,7 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
     return
   }
 
-  if (currentUser?.role != com.example.data.model.UserRole.ADMIN) {
+  if (currentUser?.role != UserRole.ADMIN) {
     Box(
       modifier = Modifier.fillMaxSize(),
       contentAlignment = Alignment.Center
@@ -82,7 +111,11 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
         Spacer(modifier = Modifier.height(16.dp))
         Text("Admin Access Restricted", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(8.dp))
-        Text("This portal is reserved for authorized platform administrators and trust & safety moderators.", textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+          "This portal is reserved for authorized platform administrators and trust & safety moderators.",
+          textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+          color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Spacer(modifier = Modifier.height(16.dp))
         Button(onClick = { viewModel.navigateBack() }) {
           Text("Go Back")
@@ -93,6 +126,7 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
   }
 
   Scaffold(
+    snackbarHost = { SnackbarHost(snackbarHostState) },
     topBar = {
       Column {
         TopAppBar(
@@ -130,9 +164,9 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
           )
         )
 
-        // Admin Sub-Navigation Tabs
-        TabRow(
+        ScrollableTabRow(
           selectedTabIndex = selectedTab.ordinal,
+          edgePadding = 12.dp,
           containerColor = MaterialTheme.colorScheme.surface,
           contentColor = MaterialTheme.colorScheme.primary
         ) {
@@ -213,7 +247,7 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                   .testTag("report_card_${report.id}"),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(16.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
               ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                   Row(
@@ -313,6 +347,233 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
           }
         }
 
+        AdminTab.BROADCAST -> {
+          item {
+            Card(
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+              shape = RoundedCornerShape(18.dp),
+              border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.35f))
+            ) {
+              Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+              ) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.Campaign, contentDescription = null, tint = VybeMagenta)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Instagram-Style Real-Time Broadcast", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                  }
+                  Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (isRealtimeConnected) VybeOnlineGreen.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant
+                  ) {
+                    Text(
+                      text = if (isRealtimeConnected) "● REALTIME LIVE" else "● READY",
+                      fontSize = 10.sp,
+                      fontWeight = FontWeight.Bold,
+                      color = if (isRealtimeConnected) VybeOnlineGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                      modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                  }
+                }
+
+                Text(
+                  text = "Send an official VYBE notification with avatar branding, optional BigPicture banner preview, and instant (<100ms) real-time delivery to every connected phone.",
+                  fontSize = 12.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  lineHeight = 16.sp
+                )
+
+                OutlinedTextField(
+                  value = pushTitle,
+                  onValueChange = { pushTitle = it },
+                  label = { Text("Notification Headline") },
+                  placeholder = { Text("e.g. VYBE Creator Drop Live 🔥") },
+                  singleLine = true,
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("admin_push_title_input")
+                )
+
+                OutlinedTextField(
+                  value = pushBody,
+                  onValueChange = { pushBody = it },
+                  label = { Text("Message Body") },
+                  placeholder = { Text("Write a crisp, professional update for VYBE members...") },
+                  minLines = 3,
+                  maxLines = 5,
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("admin_push_body_input")
+                )
+
+                OutlinedTextField(
+                  value = pushMediaUrl,
+                  onValueChange = { pushMediaUrl = it },
+                  label = { Text("Banner / Post Image URL (Optional)") },
+                  placeholder = { Text("https://... (expands as Android BigPicture preview)") },
+                  singleLine = true,
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("admin_push_media_input")
+                )
+
+                Text("Tap Destination", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                  listOf(
+                    "NOTIFICATIONS" to "Activity",
+                    "MAIN" to "Home Feed",
+                    "INBOX" to "Direct Inbox",
+                    "LIVE_STUDIO" to "Live Studio"
+                  ).forEach { (destKey, label) ->
+                    FilterChip(
+                      selected = pushDestination == destKey,
+                      onClick = { pushDestination = destKey },
+                      label = { Text(label, fontSize = 11.sp) },
+                      colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = VybeViolet.copy(alpha = 0.2f),
+                        selectedLabelColor = VybeViolet
+                      )
+                    )
+                  }
+                }
+
+                // Live Phone Notification Shade Preview Card
+                Text("Live Android Notification Preview", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = VybeBrandCyan)
+                Surface(
+                  shape = RoundedCornerShape(16.dp),
+                  color = Color(0xFF14141D),
+                  border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.4f)),
+                  modifier = Modifier.fillMaxWidth()
+                ) {
+                  Column(modifier = Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                      Box(
+                        modifier = Modifier
+                          .size(38.dp)
+                          .clip(CircleShape)
+                          .background(Brush.linearGradient(listOf(VybeViolet, VybeMagenta))),
+                        contentAlignment = Alignment.Center
+                      ) {
+                        Text("V", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                      }
+                      Spacer(modifier = Modifier.width(10.dp))
+                      Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                          Text(
+                            text = pushTitle.ifBlank { "VYBE Official" },
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                          )
+                          Spacer(modifier = Modifier.width(6.dp))
+                          Text("• Official Update • now", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp)
+                        }
+                        Text(
+                          text = pushBody.ifBlank { "Your real-time message preview will appear here..." },
+                          color = Color.White.copy(alpha = 0.85f),
+                          fontSize = 12.sp,
+                          maxLines = 3,
+                          overflow = TextOverflow.Ellipsis
+                        )
+                      }
+                    }
+                    if (pushMediaUrl.startsWith("http", ignoreCase = true)) {
+                      Spacer(modifier = Modifier.height(10.dp))
+                      AsyncImage(
+                        model = pushMediaUrl,
+                        contentDescription = "Broadcast preview image",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                          .fillMaxWidth()
+                          .height(130.dp)
+                          .clip(RoundedCornerShape(10.dp))
+                      )
+                    }
+                  }
+                }
+
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                  Button(
+                    onClick = {
+                      isDispatchingPush = true
+                      viewModel.sendAdminBroadcastNotification(
+                        title = pushTitle,
+                        body = pushBody,
+                        destination = pushDestination,
+                        mediaUrl = pushMediaUrl.takeIf { it.isNotBlank() }
+                      ) { ok, msg ->
+                        isDispatchingPush = false
+                        if (ok) {
+                          pushTitle = ""
+                          pushBody = ""
+                          pushMediaUrl = ""
+                        }
+                        scope.launch {
+                          snackbarHostState.showSnackbar(msg)
+                        }
+                      }
+                    },
+                    enabled = !isDispatchingPush && pushTitle.isNotBlank() && pushBody.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                      .weight(1f)
+                      .heightIn(min = 48.dp)
+                      .testTag("admin_send_broadcast_button")
+                  ) {
+                    Text(
+                      text = if (isDispatchingPush) "Dispatching..." else "Send Live Push",
+                      fontWeight = FontWeight.Bold,
+                      color = Color.White
+                    )
+                  }
+
+                  OutlinedButton(
+                    onClick = {
+                      val shareMsg = buildString {
+                        append("⚡ ${pushTitle.ifBlank { "VYBE Official Update" }}\n\n")
+                        append(pushBody.ifBlank { "Check out what's new on VYBE!" })
+                        if (pushMediaUrl.isNotBlank()) {
+                          append("\n\n$pushMediaUrl")
+                        }
+                      }
+                      val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_SUBJECT, pushTitle.ifBlank { "VYBE Update" })
+                        putExtra(Intent.EXTRA_TEXT, shareMsg)
+                      }
+                      context.startActivity(Intent.createChooser(intent, "Share Official Update"))
+                    },
+                    enabled = pushTitle.isNotBlank() || pushBody.isNotBlank(),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                      .heightIn(min = 48.dp)
+                      .testTag("admin_share_broadcast_button")
+                  ) {
+                    Icon(Icons.Outlined.Share, contentDescription = "Share externally", modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Share")
+                  }
+                }
+              }
+            }
+          }
+        }
+
         AdminTab.VERIFICATIONS -> {
           item {
             val businessApplications by viewModel.businessApplications.collectAsState()
@@ -343,7 +604,7 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                       .testTag("business_app_card_${app.id}"),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     shape = RoundedCornerShape(16.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, VybeVerifiedGold.copy(alpha = 0.4f))
+                    border = BorderStroke(1.dp, VybeVerifiedGold.copy(alpha = 0.4f))
                   ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                       Row(
@@ -354,8 +615,8 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                         Text(app.businessName, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         Surface(
                           color = when (app.status) {
-                            com.example.data.model.BusinessVerificationStatus.APPROVED -> VybeOnlineGreen.copy(alpha = 0.2f)
-                            com.example.data.model.BusinessVerificationStatus.PENDING -> VybeVerifiedGold.copy(alpha = 0.2f)
+                            BusinessVerificationStatus.APPROVED -> VybeOnlineGreen.copy(alpha = 0.2f)
+                            BusinessVerificationStatus.PENDING -> VybeVerifiedGold.copy(alpha = 0.2f)
                             else -> VybeDanger.copy(alpha = 0.2f)
                           },
                           shape = RoundedCornerShape(6.dp)
@@ -365,8 +626,8 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             color = when (app.status) {
-                              com.example.data.model.BusinessVerificationStatus.APPROVED -> VybeOnlineGreen
-                              com.example.data.model.BusinessVerificationStatus.PENDING -> VybeVerifiedGold
+                              BusinessVerificationStatus.APPROVED -> VybeOnlineGreen
+                              BusinessVerificationStatus.PENDING -> VybeVerifiedGold
                               else -> VybeDanger
                             },
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -378,7 +639,7 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                       Text("${app.category} • Reg/GST: ${app.registrationNumberOrGst}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                       Text("Address: ${app.address} • Contact: ${app.contactEmail}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-                      if (app.status == com.example.data.model.BusinessVerificationStatus.PENDING) {
+                      if (app.status == BusinessVerificationStatus.PENDING) {
                         Spacer(modifier = Modifier.height(10.dp))
                         Row(
                           modifier = Modifier.fillMaxWidth(),
@@ -388,7 +649,7 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                             onClick = {
                               viewModel.reviewBusinessApplication(
                                 app.id,
-                                com.example.data.model.BusinessVerificationStatus.REJECTED,
+                                BusinessVerificationStatus.REJECTED,
                                 "Missing trade license documentation."
                               )
                             },
@@ -401,7 +662,7 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                             onClick = {
                               viewModel.reviewBusinessApplication(
                                 app.id,
-                                com.example.data.model.BusinessVerificationStatus.APPROVED,
+                                BusinessVerificationStatus.APPROVED,
                                 "Verified against commercial registry."
                               )
                             },
@@ -426,7 +687,7 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
             Card(
               colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
               shape = RoundedCornerShape(16.dp),
-              border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
             ) {
               Column(modifier = Modifier.padding(16.dp)) {
                 Text("VYBE Platform Compliance Status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -448,8 +709,8 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                  Text("Monetization Services:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                  Text("Not Configured (3.0 Scope)", fontSize = 12.sp, color = VybeVerifiedGold, fontWeight = FontWeight.Bold)
+                  Text("Real-Time Push Engine:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  Text("FCM + Phoenix WS (<100ms)", fontSize = 12.sp, color = VybeOnlineGreen, fontWeight = FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

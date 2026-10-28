@@ -390,14 +390,21 @@ class VybeViewModel : ViewModel() {
         !conversationId.isNullOrBlank() || destination == "CHAT_DETAIL" -> {
           val resolvedId = conversationId ?: targetId
           if (!resolvedId.isNullOrBlank()) {
-            val conv = repository.conversations.value.firstOrNull { it.id == resolvedId }
+            var conv = repository.conversations.value.firstOrNull { it.id == resolvedId }
+            if (conv == null) {
+              repository.syncMessagesForConversation(resolvedId)
+              kotlinx.coroutines.delay(550)
+              conv = repository.conversations.value.firstOrNull { it.id == resolvedId }
+            }
             if (conv != null) {
               openConversation(conv)
             } else {
               selectTab(MainTab.INBOX)
+              navigateTo(Screen.MAIN)
             }
           } else {
             selectTab(MainTab.INBOX)
+            navigateTo(Screen.MAIN)
           }
         }
         // Reels Viewer
@@ -1140,6 +1147,30 @@ class VybeViewModel : ViewModel() {
   fun logoutDevice(sessionId: String) = repository.logoutDevice(sessionId)
   fun updateNotificationPreferences(prefs: NotificationPreferences) = repository.updateNotificationPreferences(prefs)
   fun sendTestPhoneNotification(): Boolean = repository.sendTestPhoneNotification()
+  val isRealtimeConnected = com.example.notifications.VybeRealtimePushManager.isRealtimeConnected
+  val inAppRealtimeBannerEvents = com.example.notifications.VybeRealtimePushManager.inAppBannerEvents
+
+  fun sendAdminBroadcastNotification(
+    title: String,
+    body: String,
+    destination: String = "NOTIFICATIONS",
+    mediaUrl: String? = null,
+    onResult: (Boolean, String) -> Unit = { _, _ -> }
+  ) {
+    repository.sendAdminBroadcastNotification(title, body, destination, mediaUrl, onResult)
+  }
+
+  fun openRealtimeBannerEvent(event: com.example.notifications.RealtimeInAppBannerEvent) {
+    val bundle = Bundle().apply {
+      putString("destination", event.destination)
+      putString("type", event.type)
+      event.targetId?.let { putString("target_id", it) }
+      event.conversationId?.let { putString("conversation_id", it) }
+      event.notificationId?.let { putString("notification_id", it) }
+    }
+    handleNotificationPayload(bundle)
+  }
+
   fun completeOnboarding() = repository.completeOnboarding()
 
   // --- Community Zone ---

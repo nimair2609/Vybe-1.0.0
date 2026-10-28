@@ -6,6 +6,7 @@ import com.example.data.remote.SupabaseConfig
 import com.example.data.remote.SupabaseNetworkClient
 import com.example.data.repository.VybeRepository
 import com.example.data.session.SessionManager
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
@@ -13,6 +14,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaType
@@ -24,17 +31,30 @@ import okhttp3.WebSocketListener
 import org.json.JSONArray
 import org.json.JSONObject
 
+data class RealtimeInAppBannerEvent(
+  val eventKey: String,
+  val type: String,
+  val title: String,
+  val body: String,
+  val destination: String,
+  val targetId: String? = null,
+  val conversationId: String? = null,
+  val notificationId: String? = null,
+  val actorId: String? = null,
+  val actorUsername: String? = null,
+  val actorDisplayName: String? = null,
+  val actorAvatarUrl: String? = null,
+  val mediaUrl: String? = null,
+  val timestampMs: Long = System.currentTimeMillis()
+)
+
 /**
- * Real-Time Push & Event Listener over Supabase Phoenix WebSocket.
+ * Real-Time Push & Live Event Engine over Supabase Phoenix WebSocket.
  *
- * Delivers instant (<100ms) Android system tray notifications on the user's phone for:
- * 1. Direct & Group messages, reactions (PULSE/SPARK/WAVE/FLAME), comments, follows, and calls
- *    via `realtime:vybe_user_push:<userId>` and `postgres_changes` on `public.notifications`.
- * 2. Official platform announcements dispatched from the Web Admin Console via
- *    `realtime:vybe_global_broadcast`.
- *
- * Works alongside Firebase Cloud Messaging (`VybeFirebaseMessagingService`) and shares
- * `VybeNotificationHelper`'s deduplication ledger so alerts never duplicate.
+ * Delivers instant (<100ms) updates across both:
+ * - Android System Notification Shade (Instagram-grade `MessagingStyle` + `BigPictureStyle`)
+ * - Live In-App UI (`inAppBannerEvents` top floating pill, live Inbox &ChatDetail messages,
+ *   and instant NotificationCenter synchronization).
  */
 object VybeRealtimePushManager {
 
@@ -44,6 +64,14 @@ object VybeRealtimePushManager {
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   private val isActiveSession = AtomicBoolean(false)
   private val refSeq = AtomicInteger(100)
+
+  private val _isRealtimeConnected = MutableStateFlow(false)
+  val isRealtimeConnected: StateFlow<Boolean> = _isRealtimeConnected.asStateFlow()
+
+  private val _inAppBannerEvents = MutableSharedFlow<RealtimeInAppBannerEvent>(extraBufferCapacity = 16)
+  val inAppBannerEvents: SharedFlow<RealtimeInAppBannerEvent> = _inAppBannerEvents.asSharedFlow()
+
+  private val emittedInAppKeys = ConcurrentHashMap.newKeySet<String>()
 
   @Volatile
   private var appContext: Context? = null
@@ -61,6 +89,23 @@ object VybeRealtimePushManager {
   private var reconnectJob: Job? = null
 
   fun userChannelName(userId: String): String = "vybe_user_push:$userId"
+
+  fun emitInAppBannerIfEligible(event: RealtimeInAppBannerEvent) {
+    if (!VybeNotificationHelper.isAppInForeground) return
+    val isChat = event.type.contains("MESSAGE", ignoreCase = true) || event.type.contains("CHAT", ignoreCase = true)
+    if (isChat && !event.conversationId.isNullOrBlank() && event.conversationId == VybeNotificationHelper.activeOpenConversationId) {
+      return
+    }
+    if (event.eventKey.isNotBlank() && !emittedInAppKeys.add(event.eventKey)) {
+      return
+    }
+    if (emittedInAppKeys.size > 400) {
+      val snapshot = emittedInAppKeys.toList().takeLast(200)
+      emittedInAppKeys.clear()
+      emittedInAppKeys.addAll(snapshot)
+    }
+    _inAppBannerEvents.tryEmit(event)
+  }
 
   fun start(context: Context, userId: String, accessToken: String?) {
     if (!SupabaseConfig.isConfigured() || userId.isBlank()) return
@@ -102,6 +147,7 @@ object VybeRealtimePushManager {
     isActiveSession.set(false)
     currentUserId = null
     currentAccessToken = null
+    _isRealtimeConnected.value = false
     stopInternal(keepSessionFlag = false)
   }
 
@@ -109,6 +155,7 @@ object VybeRealtimePushManager {
     if (!keepSessionFlag) {
       isActiveSession.set(false)
     }
+    _isRealtimeConnected.value = false
     reconnectJob?.cancel()
     reconnectJob = null
     heartbeatJob?.cancel()
@@ -129,6 +176,7 @@ object VybeRealtimePushManager {
     val userTopic = "realtime:${userChannelName(uid)}"
     val broadcastTopic = "realtime:$GLOBAL_BROADCAST_CHANNEL"
     val dbNotifTopic = "realtime:vybe_db_notif:$uid"
+    val dbMsgTopic = "realtime:vybe_db_messages:$uid"
 
     webSocket = SupabaseNetworkClient.okHttpClient.newWebSocket(req, object : WebSocketListener() {
       override fun onOpen(ws: WebSocket, response: Response) {
@@ -136,20 +184,24 @@ object VybeRealtimePushManager {
           ws.close(1000, "Inactive")
           return
         }
+        _isRealtimeConnected.value = true
         Log.d(TAG, "Realtime push WebSocket connected for user=$uid")
         val cleanJwt = currentAccessToken
           ?.removePrefix("Bearer ")
           ?.trim()
           ?.takeIf { SupabaseConfig.isJwtAccessToken(it) }
 
-        // 1. Join personal instant push broadcast topic
+        // 1. Personal instant push broadcast topic (<100ms rich payloads)
         ws.send(buildBroadcastJoinFrame(userTopic, cleanJwt))
 
-        // 2. Join global admin announcement broadcast topic
+        // 2. Global admin announcement broadcast topic
         ws.send(buildBroadcastJoinFrame(broadcastTopic, cleanJwt))
 
-        // 3. Join Postgres INSERT changes for public.notifications scoped to recipient_id
+        // 3. Postgres INSERT & UPDATE changes on public.notifications scoped to recipient_id
         ws.send(buildPostgresNotificationsJoinFrame(dbNotifTopic, uid, cleanJwt))
+
+        // 4. Postgres INSERT & UPDATE changes on public.messages (RLS-scoped to user's conversations)
+        ws.send(buildPostgresMessagesJoinFrame(dbMsgTopic, cleanJwt))
 
         startHeartbeat(ws)
       }
@@ -163,6 +215,7 @@ object VybeRealtimePushManager {
         Log.w(TAG, "Realtime push WebSocket disconnected: ${t.message}")
         if (webSocket === ws) {
           webSocket = null
+          _isRealtimeConnected.value = false
         }
         scheduleReconnect()
       }
@@ -170,6 +223,7 @@ object VybeRealtimePushManager {
       override fun onClosed(ws: WebSocket, code: Int, reason: String) {
         if (webSocket === ws) {
           webSocket = null
+          _isRealtimeConnected.value = false
         }
         if (isActiveSession.get() && code != 1000) {
           scheduleReconnect()
@@ -202,14 +256,48 @@ object VybeRealtimePushManager {
       put("payload", JSONObject().apply {
         put("config", JSONObject().apply {
           put("broadcast", JSONObject().put("self", false).put("ack", false))
-          put("postgres_changes", JSONArray().put(
-            JSONObject().apply {
+          put("postgres_changes", JSONArray()
+            .put(JSONObject().apply {
               put("event", "INSERT")
               put("schema", "public")
               put("table", "notifications")
               put("filter", "recipient_id=eq.$uid")
-            }
-          ))
+            })
+            .put(JSONObject().apply {
+              put("event", "UPDATE")
+              put("schema", "public")
+              put("table", "notifications")
+              put("filter", "recipient_id=eq.$uid")
+            })
+          )
+        })
+        if (!cleanJwt.isNullOrBlank()) {
+          put("access_token", cleanJwt)
+        }
+      })
+    }.toString()
+  }
+
+  private fun buildPostgresMessagesJoinFrame(topic: String, cleanJwt: String?): String {
+    return JSONObject().apply {
+      put("topic", topic)
+      put("event", "phx_join")
+      put("ref", refSeq.incrementAndGet().toString())
+      put("payload", JSONObject().apply {
+        put("config", JSONObject().apply {
+          put("broadcast", JSONObject().put("self", false).put("ack", false))
+          put("postgres_changes", JSONArray()
+            .put(JSONObject().apply {
+              put("event", "INSERT")
+              put("schema", "public")
+              put("table", "messages")
+            })
+            .put(JSONObject().apply {
+              put("event", "UPDATE")
+              put("schema", "public")
+              put("table", "messages")
+            })
+          )
         })
         if (!cleanJwt.isNullOrBlank()) {
           put("access_token", cleanJwt)
@@ -227,7 +315,8 @@ object VybeRealtimePushManager {
     listOf(
       "realtime:${userChannelName(uid)}",
       "realtime:$GLOBAL_BROADCAST_CHANNEL",
-      "realtime:vybe_db_notif:$uid"
+      "realtime:vybe_db_notif:$uid",
+      "realtime:vybe_db_messages:$uid"
     ).forEach { topic ->
       try {
         val frame = JSONObject()
@@ -244,7 +333,7 @@ object VybeRealtimePushManager {
     heartbeatJob?.cancel()
     heartbeatJob = scope.launch {
       while (isActive && isActiveSession.get() && webSocket === ws) {
-        delay(25_000L)
+        delay(22_000L)
         try {
           val hb = JSONObject()
             .put("topic", "phoenix")
@@ -261,7 +350,7 @@ object VybeRealtimePushManager {
     if (!isActiveSession.get()) return
     if (reconnectJob?.isActive == true) return
     reconnectJob = scope.launch {
-      delay(4_000L)
+      delay(2_500L)
       if (isActiveSession.get() && webSocket == null) {
         connectWebSocket()
       }
@@ -296,8 +385,24 @@ object VybeRealtimePushManager {
         val destination = inner.optString("destination").ifBlank { defaultDestinationForType(type) }
         val targetId = inner.optString("target_id")
         val conversationId = inner.optString("conversation_id")
+        val notifId = inner.optString("notification_id")
+        val groupName = inner.optString("group_name")
+
+        // Enrich actor metadata from payload or local user directory
+        val cachedActor = if (actorId.isNotBlank()) {
+          VybeRepository.get().allUsers.value.firstOrNull { it.id == actorId }
+        } else null
+        val actorUsername = inner.optString("actor_username").ifBlank { cachedActor?.username.orEmpty() }
+        val actorDisplayName = inner.optString("actor_display_name").ifBlank { cachedActor?.displayName.orEmpty() }
+        val actorAvatarUrl = inner.optString("actor_avatar_url").ifBlank { cachedActor?.avatarUrl.orEmpty() }
+        val mediaUrl = inner.optString("media_url").ifBlank {
+          if (targetId.isNotBlank()) {
+            VybeRepository.get().posts.value.firstOrNull { it.id == targetId }?.mediaUrls?.firstOrNull().orEmpty()
+          } else ""
+        }
+
         val eventKey = inner.optString("event_key").ifBlank {
-          val rawId = inner.optString("notification_id").ifBlank { inner.optString("message_id") }
+          val rawId = notifId.ifBlank { inner.optString("message_id") }
           if (rawId.isNotBlank()) "rt_$rawId" else "rt_${type}_${actorId}_${title.hashCode()}_${body.hashCode()}"
         }
 
@@ -310,7 +415,13 @@ object VybeRealtimePushManager {
         )
         if (targetId.isNotBlank()) dataMap["target_id"] = targetId
         if (conversationId.isNotBlank()) dataMap["conversation_id"] = conversationId
+        if (notifId.isNotBlank()) dataMap["notification_id"] = notifId
         if (actorId.isNotBlank()) dataMap["actor_id"] = actorId
+        if (actorUsername.isNotBlank()) dataMap["actor_username"] = actorUsername
+        if (actorDisplayName.isNotBlank()) dataMap["actor_display_name"] = actorDisplayName
+        if (actorAvatarUrl.isNotBlank()) dataMap["actor_avatar_url"] = actorAvatarUrl
+        if (mediaUrl.isNotBlank()) dataMap["media_url"] = mediaUrl
+        if (groupName.isNotBlank()) dataMap["group_name"] = groupName
 
         val channelId = when {
           type.contains("CALL", ignoreCase = true) -> VybeNotificationHelper.CHANNEL_ID_CALLS
@@ -319,6 +430,24 @@ object VybeRealtimePushManager {
             topic.contains(GLOBAL_BROADCAST_CHANNEL) -> VybeNotificationHelper.CHANNEL_ID_BROADCAST
           else -> VybeNotificationHelper.CHANNEL_ID_PRIMARY
         }
+
+        emitInAppBannerIfEligible(
+          RealtimeInAppBannerEvent(
+            eventKey = eventKey,
+            type = type,
+            title = title,
+            body = body,
+            destination = destination,
+            targetId = targetId.ifBlank { null },
+            conversationId = conversationId.ifBlank { null },
+            notificationId = notifId.ifBlank { null },
+            actorId = actorId.ifBlank { null },
+            actorUsername = actorUsername.ifBlank { null },
+            actorDisplayName = actorDisplayName.ifBlank { null },
+            actorAvatarUrl = actorAvatarUrl.ifBlank { null },
+            mediaUrl = mediaUrl.ifBlank { null }
+          )
+        )
 
         VybeNotificationHelper.showNotification(
           context = ctx,
@@ -329,7 +458,7 @@ object VybeRealtimePushManager {
           dedupeKey = eventKey
         )
 
-        // Sync in-app state immediately
+        // Sync in-app state immediately in real time
         if (conversationId.isNotBlank()) {
           VybeRepository.get().syncMessagesForConversation(conversationId)
         }
@@ -337,7 +466,19 @@ object VybeRealtimePushManager {
       } else if (event == "postgres_changes") {
         val outerPayload = root.optJSONObject("payload") ?: return
         val dataObj = outerPayload.optJSONObject("data") ?: outerPayload
+        val table = dataObj.optString("table").ifBlank { outerPayload.optString("table") }
+        val changeType = dataObj.optString("type").ifBlank { outerPayload.optString("type") }
         val record = dataObj.optJSONObject("record") ?: outerPayload.optJSONObject("record") ?: return
+
+        if (table == "messages") {
+          handleRealtimeMessageRecord(ctx, myUid, changeType, record)
+          return
+        }
+
+        if (changeType.equals("UPDATE", ignoreCase = true)) {
+          VybeRepository.get().refreshNotifications()
+          return
+        }
 
         val recipientId = record.optString("recipient_id")
         val actorId = record.optString("actor_id")
@@ -352,26 +493,59 @@ object VybeRealtimePushManager {
 
         if (!VybeRepository.get().isPushAllowedByPreferences(type)) return
 
+        val cachedActor = if (actorId.isNotBlank()) {
+          VybeRepository.get().allUsers.value.firstOrNull { it.id == actorId }
+        } else null
+        val mediaUrl = if (targetId.isNotBlank()) {
+          VybeRepository.get().posts.value.firstOrNull { it.id == targetId }?.mediaUrls?.firstOrNull().orEmpty()
+        } else ""
+
         val destination = defaultDestinationForType(type)
         val dedupeKey = if (notifId.isNotBlank()) "notif_$notifId" else "pg_${type}_${actorId}_${targetId}_${message.hashCode()}"
+        val convId = if (type.contains("MESSAGE", ignoreCase = true)) targetId else ""
         val dataMap = mutableMapOf(
           "type" to type,
           "destination" to destination,
           "event_key" to dedupeKey
         )
         if (notifId.isNotBlank()) dataMap["notification_id"] = notifId
+        if (actorId.isNotBlank()) dataMap["actor_id"] = actorId
+        if (!cachedActor?.username.isNullOrBlank()) dataMap["actor_username"] = cachedActor!!.username
+        if (!cachedActor?.displayName.isNullOrBlank()) dataMap["actor_display_name"] = cachedActor!!.displayName
+        if (!cachedActor?.avatarUrl.isNullOrBlank()) dataMap["actor_avatar_url"] = cachedActor!!.avatarUrl
+        if (mediaUrl.isNotBlank()) dataMap["media_url"] = mediaUrl
         if (targetId.isNotBlank()) {
           dataMap["target_id"] = targetId
-          if (type.contains("MESSAGE", ignoreCase = true)) {
-            dataMap["conversation_id"] = targetId
-          }
+          if (convId.isNotBlank()) dataMap["conversation_id"] = convId
         }
 
-        val channelId = if (type.equals("ANNOUNCEMENT", true) || type.equals("BROADCAST", true)) {
+        val channelId = if (
+          type.equals("ANNOUNCEMENT", true) ||
+          type.equals("BROADCAST", true) ||
+          type.equals("SECURITY_ACCOUNT_UPDATE", true)
+        ) {
           VybeNotificationHelper.CHANNEL_ID_BROADCAST
         } else {
           VybeNotificationHelper.CHANNEL_ID_PRIMARY
         }
+
+        emitInAppBannerIfEligible(
+          RealtimeInAppBannerEvent(
+            eventKey = dedupeKey,
+            type = type,
+            title = title,
+            body = message,
+            destination = destination,
+            targetId = targetId.ifBlank { null },
+            conversationId = convId.ifBlank { null },
+            notificationId = notifId.ifBlank { null },
+            actorId = actorId.ifBlank { null },
+            actorUsername = cachedActor?.username,
+            actorDisplayName = cachedActor?.displayName,
+            actorAvatarUrl = cachedActor?.avatarUrl,
+            mediaUrl = mediaUrl.ifBlank { null }
+          )
+        )
 
         VybeNotificationHelper.showNotification(
           context = ctx,
@@ -388,6 +562,96 @@ object VybeRealtimePushManager {
     }
   }
 
+  private fun handleRealtimeMessageRecord(
+    ctx: Context,
+    myUid: String,
+    changeType: String,
+    record: JSONObject
+  ) {
+    val convId = record.optString("conversation_id")
+    if (convId.isBlank()) return
+    val msgId = record.optString("id")
+    val senderId = record.optString("sender_id")
+    val isDeleted = record.optBoolean("is_deleted_for_everyone", false)
+    val mediaType = record.optString("media_type", "TEXT")
+
+    // Always sync messages immediately (handles incoming messages, edits, and Delete for Everyone in <100ms!)
+    VybeRepository.get().syncMessagesForConversation(convId)
+
+    if (changeType.equals("UPDATE", ignoreCase = true) || isDeleted || senderId.isBlank() || senderId == myUid) {
+      return
+    }
+    if (mediaType.equals("CALL_LOG", ignoreCase = true)) return
+    if (!VybeRepository.get().isPushAllowedByPreferences("DIRECT_MESSAGE")) return
+
+    val repo = VybeRepository.get()
+    val conv = repo.conversations.value.firstOrNull { it.id == convId }
+    // Only dispatch alert if conversation belongs to current user (or RLS delivered it to us)
+    val senderUser = conv?.groupMembers?.firstOrNull { it.id == senderId }
+      ?: conv?.peerUser?.takeIf { it.id == senderId }
+      ?: repo.allUsers.value.firstOrNull { it.id == senderId }
+
+    val rawContent = record.optString("content")
+    val mediaUrl = record.optString("media_url")
+    val msgPreview = when (mediaType.uppercase()) {
+      "IMAGE" -> if (rawContent.isNotBlank() && !rawContent.startsWith("http")) "📷 $rawContent" else "📷 Sent a photo"
+      "VIDEO" -> if (rawContent.isNotBlank() && !rawContent.startsWith("http")) "🎬 $rawContent" else "🎬 Sent a video"
+      "AUDIO", "VOICE" -> "🎤 Sent a voice message"
+      else -> rawContent.ifBlank { "New message" }.take(140)
+    }
+
+    val isGroup = conv?.isGroup == true
+    val title = when {
+      isGroup && !conv?.groupName.isNullOrBlank() ->
+        if (senderUser != null) "${senderUser.displayName} in ${conv!!.groupName}" else conv!!.groupName!!
+      senderUser != null -> senderUser.displayName.ifBlank { "@${senderUser.username}" }
+      else -> "New Message"
+    }
+    val type = if (isGroup) "GROUP_MESSAGE" else "DIRECT_MESSAGE"
+    val eventKey = if (msgId.isNotBlank()) "msg_$msgId" else "msg_${convId}_${senderId}_${msgPreview.hashCode()}"
+
+    val dataMap = mutableMapOf(
+      "type" to type,
+      "destination" to "CHAT_DETAIL",
+      "conversation_id" to convId,
+      "target_id" to convId,
+      "event_key" to eventKey
+    )
+    if (msgId.isNotBlank()) dataMap["message_id"] = msgId
+    if (senderId.isNotBlank()) dataMap["actor_id"] = senderId
+    if (!senderUser?.username.isNullOrBlank()) dataMap["actor_username"] = senderUser!!.username
+    if (!senderUser?.displayName.isNullOrBlank()) dataMap["actor_display_name"] = senderUser!!.displayName
+    if (!senderUser?.avatarUrl.isNullOrBlank()) dataMap["actor_avatar_url"] = senderUser!!.avatarUrl
+    if (mediaUrl.isNotBlank()) dataMap["media_url"] = mediaUrl
+    if (isGroup && !conv?.groupName.isNullOrBlank()) dataMap["group_name"] = conv!!.groupName!!
+
+    emitInAppBannerIfEligible(
+      RealtimeInAppBannerEvent(
+        eventKey = eventKey,
+        type = type,
+        title = title,
+        body = msgPreview,
+        destination = "CHAT_DETAIL",
+        targetId = convId,
+        conversationId = convId,
+        actorId = senderId,
+        actorUsername = senderUser?.username,
+        actorDisplayName = senderUser?.displayName,
+        actorAvatarUrl = senderUser?.avatarUrl,
+        mediaUrl = mediaUrl.ifBlank { null }
+      )
+    )
+
+    VybeNotificationHelper.showNotification(
+      context = ctx,
+      title = title,
+      body = msgPreview,
+      data = dataMap,
+      channelId = VybeNotificationHelper.CHANNEL_ID_PRIMARY,
+      dedupeKey = eventKey
+    )
+  }
+
   private fun defaultDestinationForType(type: String): String {
     return when (type.uppercase()) {
       "DIRECT_MESSAGE", "MESSAGE", "CHAT" -> "CHAT_DETAIL"
@@ -400,8 +664,8 @@ object VybeRealtimePushManager {
   }
 
   /**
-   * Dispatches an instant (<100ms) Realtime push to a specific recipient's phone via Supabase
-   * Realtime HTTP Broadcast API, with automatic WebSocket fallback.
+   * Dispatches an instant (<100ms) Realtime push with full Instagram-style profile/media metadata
+   * to a specific recipient's phone via Supabase Realtime HTTP Broadcast API + WebSocket fallback.
    */
   fun sendInstantUserPush(
     recipientId: String,
@@ -412,6 +676,11 @@ object VybeRealtimePushManager {
     targetId: String? = null,
     conversationId: String? = null,
     eventKey: String? = null,
+    actorUsername: String? = null,
+    actorDisplayName: String? = null,
+    actorAvatarUrl: String? = null,
+    mediaUrl: String? = null,
+    groupName: String? = null,
     accessToken: String? = null
   ) {
     if (!SupabaseConfig.isConfigured() || recipientId.isBlank() || recipientId == actorId) return
@@ -425,6 +694,11 @@ object VybeRealtimePushManager {
       if (!targetId.isNullOrBlank()) put("target_id", targetId)
       if (!conversationId.isNullOrBlank()) put("conversation_id", conversationId)
       if (!eventKey.isNullOrBlank()) put("event_key", eventKey)
+      if (!actorUsername.isNullOrBlank()) put("actor_username", actorUsername)
+      if (!actorDisplayName.isNullOrBlank()) put("actor_display_name", actorDisplayName)
+      if (!actorAvatarUrl.isNullOrBlank()) put("actor_avatar_url", actorAvatarUrl)
+      if (!mediaUrl.isNullOrBlank()) put("media_url", mediaUrl)
+      if (!groupName.isNullOrBlank()) put("group_name", groupName)
     }
     publishRealtimeBroadcast(
       channelName = userChannelName(recipientId),
@@ -438,16 +712,23 @@ object VybeRealtimePushManager {
     body: String,
     destination: String = "NOTIFICATIONS",
     targetId: String? = null,
+    mediaUrl: String? = null,
+    actorDisplayName: String? = "VYBE Official",
+    eventKey: String? = null,
     accessToken: String? = null
   ) {
     if (!SupabaseConfig.isConfigured() || title.isBlank() || body.isBlank()) return
+    val resolvedKey = eventKey?.takeIf { it.isNotBlank() }
+      ?: "bcast_${System.currentTimeMillis()}_${title.hashCode()}"
     val payload = JSONObject().apply {
       put("type", "ANNOUNCEMENT")
       put("title", title)
       put("body", body)
       put("destination", destination)
-      put("event_key", "bcast_${System.currentTimeMillis()}_${title.hashCode()}")
+      put("event_key", resolvedKey)
       if (!targetId.isNullOrBlank()) put("target_id", targetId)
+      if (!mediaUrl.isNullOrBlank()) put("media_url", mediaUrl)
+      if (!actorDisplayName.isNullOrBlank()) put("actor_display_name", actorDisplayName)
     }
     publishRealtimeBroadcast(
       channelName = GLOBAL_BROADCAST_CHANNEL,
