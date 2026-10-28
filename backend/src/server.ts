@@ -4,6 +4,8 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
+import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
@@ -193,14 +195,72 @@ const recentPushLogs: Array<{
   channel: string;
 }> = [];
 
+function getFirebaseServiceAccount(): any | null {
+  try {
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    }
+    const localSaPath = path.resolve(__dirname, '../firebase-service-account.json');
+    if (fs.existsSync(localSaPath)) {
+      return JSON.parse(fs.readFileSync(localSaPath, 'utf8'));
+    }
+  } catch (err: any) {
+    console.warn('[FCM] Notice loading service account:', err.message);
+  }
+  return null;
+}
+
+let cachedAccessToken: { token: string; expiresAt: number } | null = null;
+
+async function getGoogleAccessToken(sa: any): Promise<string | null> {
+  if (!sa || !sa.client_email || !sa.private_key) return null;
+  if (cachedAccessToken && Date.now() < cachedAccessToken.expiresAt - 60000) {
+    return cachedAccessToken.token;
+  }
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
+    const claimSet = Buffer.from(JSON.stringify({
+      iss: sa.client_email,
+      scope: 'https://www.googleapis.com/auth/firebase.messaging',
+      aud: 'https://oauth2.googleapis.com/token',
+      exp: now + 3600,
+      iat: now
+    })).toString('base64url');
+
+    const sign = crypto.createSign('RSA-SHA256');
+    sign.update(`${header}.${claimSet}`);
+    const signature = sign.sign(sa.private_key, 'base64url');
+    const jwt = `${header}.${claimSet}.${signature}`;
+
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`
+    });
+    const data = await res.json();
+    if (data.access_token) {
+      cachedAccessToken = {
+        token: data.access_token,
+        expiresAt: Date.now() + (data.expires_in * 1000)
+      };
+      return data.access_token;
+    }
+  } catch (err: any) {
+    console.error('[FCM] Failed to generate OAuth2 access token:', err.message);
+  }
+  return null;
+}
+
 async function dispatchFcmPush(payload: PushDispatchPayload): Promise<{ successCount: number; failureCount: number }> {
   const { tokens, title, body, data = {}, channelId = 'vybe_primary_notifications' } = payload;
   if (!tokens || tokens.length === 0) {
     return { successCount: 0, failureCount: 0 };
   }
 
-  const fcmServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
+  const sa = getFirebaseServiceAccount();
   const fcmServerKey = process.env.FCM_SERVER_KEY;
+  const isConfigured = Boolean(sa || fcmServerKey);
 
   console.log(`[FCM Push] Dispatching to ${tokens.length} devices: "${title}" - "${body}"`);
 
@@ -208,11 +268,70 @@ async function dispatchFcmPush(payload: PushDispatchPayload): Promise<{ successC
     timestamp: new Date().toISOString(),
     title,
     recipientCount: tokens.length,
-    status: fcmServiceAccount || fcmServerKey ? 'Dispatched' : 'Queued (Awaiting Service Account)',
+    status: isConfigured ? 'Dispatched (FCM v1 Live)' : 'Queued (Awaiting Service Account)',
     channel: channelId
   });
   if (recentPushLogs.length > 50) recentPushLogs.pop();
 
+  // 1. Preferred Modern FCM HTTP v1 using Service Account
+  if (sa) {
+    try {
+      const accessToken = await getGoogleAccessToken(sa);
+      if (accessToken) {
+        const projectId = sa.project_id || 'vybe-1c966';
+        let success = 0;
+        let fail = 0;
+
+        for (const token of tokens) {
+          try {
+            const resp = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`
+              },
+              body: JSON.stringify({
+                message: {
+                  token,
+                  notification: { title, body },
+                  data: {
+                    ...data,
+                    title,
+                    body
+                  },
+                  android: {
+                    priority: 'high',
+                    notification: {
+                      icon: 'ic_vybe_notification',
+                      color: '#8A2BE2',
+                      channel_id: channelId
+                    }
+                  }
+                }
+              })
+            });
+            if (resp.ok) {
+              success++;
+            } else {
+              const errBody = await resp.text();
+              console.warn(`[FCM v1] Device push warning: ${resp.status} - ${errBody}`);
+              if (errBody.includes('UNREGISTERED') || errBody.includes('INVALID_ARGUMENT')) {
+                supabaseAdmin?.from('user_device_tokens').update({ is_active: false }).eq('fcm_token', token);
+              }
+              fail++;
+            }
+          } catch {
+            fail++;
+          }
+        }
+        return { successCount: success, failureCount: fail };
+      }
+    } catch (e: any) {
+      console.error('[FCM v1] Dispatch error:', e.message);
+    }
+  }
+
+  // 2. Legacy fallback if FCM_SERVER_KEY is explicitly used
   if (fcmServerKey) {
     try {
       const fetch = (globalThis as any).fetch || require('node-fetch');
@@ -240,13 +359,12 @@ async function dispatchFcmPush(payload: PushDispatchPayload): Promise<{ successC
         })
       });
       const resData = await response.json();
-      console.log('[FCM Push] Gateway response:', resData);
       return {
         successCount: resData.success || 0,
         failureCount: resData.failure || 0
       };
     } catch (e: any) {
-      console.error('[FCM Push] Dispatch error:', e.message);
+      console.error('[FCM Legacy] Dispatch error:', e.message);
       return { successCount: 0, failureCount: tokens.length };
     }
   }

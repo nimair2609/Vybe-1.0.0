@@ -1,23 +1,65 @@
-*.iml
-.gradle
-.kotlin
+# Built application files
+*.apk
+*.aar
+*.aab
+.build-outputs/
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+build/
+**/build/
+app/build/
+
+# Gradle files
+.gradle/
+build/
+
+# Local configuration file (sdk path, etc)
+local.properties
 /local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
+
+# Android Studio / IntelliJ
+*.iml
+.idea/
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+.kotlin/
+
+# OS specific
 .DS_Store
-/build
+Thumbs.db
 /captures
 .externalNativeBuild
 .cxx
-local.properties
+
+# Environment & Secrets (CRITICAL for GitHub Push)
 .env
-debug.keystore
-web/node_modules
-web/dist
+.env.local
 web/.env
 web/.env.local
+backend/.env
+*service-account*.json
+firebase-service-account.json
+backend/firebase-service-account.json
+debug.keystore
 
+# Node & Web
+node_modules/
+**/node_modules/
+web/node_modules/
+backend/node_modules/
+web/dist/
+backend/dist/
+dist/

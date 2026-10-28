@@ -687,7 +687,7 @@
       <form id="admin-login-form">
         <div class="form-group">
           <label for="admin-email">Administrator Email</label>
-          <input type="email" id="admin-email" class="form-control" placeholder="renukadas083@gmail.com" required />
+          <input type="email" id="admin-email" class="form-control" placeholder="roulnimai95@gmail.com" required />
         </div>
 
         <div class="form-group">
@@ -1305,7 +1305,7 @@
           .eq('id', uid)
           .maybeSingle();
 
-        const isOwner = email === 'renukadas083@gmail.com' || email === 'nrnexthq@gmail.com' || adminRecord?.role === 'OWNER_ADMIN';
+        const isOwner = email === 'roulnimai95@gmail.com' || email === 'renukadas083@gmail.com' || email === 'nrnexthq@gmail.com' || adminRecord?.role === 'OWNER_ADMIN';
         const isAdmin = isOwner || profile?.role === 'ADMIN' || adminRecord?.role === 'MODERATOR' || profile?.role === 'MODERATOR';
 
         if (!isAdmin) {
