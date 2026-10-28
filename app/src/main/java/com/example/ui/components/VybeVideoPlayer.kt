@@ -74,7 +74,8 @@ fun VybeVideoPlayer(
   onTapOverlay: (() -> Unit)? = null,
   onDoubleTapOverlay: (() -> Unit)? = null,
   onMuteToggled: ((Boolean) -> Unit)? = null,
-  feedAudioOwnerId: String? = null
+  feedAudioOwnerId: String? = null,
+  audioVolume: Float = 1f
 ) {
   val context = LocalContext.current
   val lifecycleOwner = LocalLifecycleOwner.current
@@ -103,6 +104,7 @@ fun VybeVideoPlayer(
   val latestAutoPlay by rememberUpdatedState(autoPlay)
   val latestPausedExternal by rememberUpdatedState(isPausedExternal)
   val latestMuted by rememberUpdatedState(isMuted)
+  val latestAudioVolume by rememberUpdatedState(audioVolume.coerceIn(0f, 1f))
 
   var videoWidth by remember(videoUrl) { mutableIntStateOf(0) }
   var videoHeight by remember(videoUrl) { mutableIntStateOf(0) }
@@ -114,22 +116,29 @@ fun VybeVideoPlayer(
   val activeSurfaceRef = remember { mutableStateOf<Surface?>(null) }
   val boundUrlRef = remember { mutableStateOf<String?>(null) }
 
-  LaunchedEffect(initialMuted) {
+  LaunchedEffect(initialMuted, audioVolume) {
     isMuted = initialMuted
     try {
       val mp = mediaPlayerRef.value
-      val vol = if (initialMuted) 0f else 1f
+      val vol = if (initialMuted) 0f else audioVolume.coerceIn(0f, 1f)
       mp?.setVolume(vol, vol)
       if (feedAudioOwnerId != null && mp != null) {
-        FeedAudioController.onVideoAudioStateChanged(feedAudioOwnerId, mp, shouldPlayAudio = isPlaying && !initialMuted)
+        FeedAudioController.onVideoAudioStateChanged(feedAudioOwnerId, mp, shouldPlayAudio = isPlaying && !initialMuted && vol > 0f)
+        if (!initialMuted && vol < 1f) {
+          mp.setVolume(vol, vol)
+        }
       }
     } catch (_: Exception) {}
   }
 
-  LaunchedEffect(isPlaying, isMuted, feedAudioOwnerId) {
+  LaunchedEffect(isPlaying, isMuted, audioVolume, feedAudioOwnerId) {
     val ownerId = feedAudioOwnerId ?: return@LaunchedEffect
     val mp = mediaPlayerRef.value ?: return@LaunchedEffect
-    FeedAudioController.onVideoAudioStateChanged(ownerId, mp, shouldPlayAudio = isPlaying && !isMuted)
+    val vol = if (isMuted) 0f else audioVolume.coerceIn(0f, 1f)
+    FeedAudioController.onVideoAudioStateChanged(ownerId, mp, shouldPlayAudio = isPlaying && !isMuted && vol > 0f)
+    if (isPlaying && !isMuted && vol < 1f) {
+      try { mp.setVolume(vol, vol) } catch (_: Exception) {}
+    }
   }
 
   fun applyAspectTransform() {
@@ -215,7 +224,7 @@ fun VybeVideoPlayer(
       )
       mp.setSurface(surface)
       mp.isLooping = isLooping
-      val vol = if (latestMuted) 0f else 1f
+      val vol = if (latestMuted) 0f else latestAudioVolume
       mp.setVolume(vol, vol)
 
       mp.setOnVideoSizeChangedListener { _, w, h ->
@@ -252,7 +261,7 @@ fun VybeVideoPlayer(
         if (dur > 0) {
           onDurationDetected?.invoke(dur)
         }
-        val currentVol = if (latestMuted) 0f else 1f
+        val currentVol = if (latestMuted) 0f else latestAudioVolume
         player.setVolume(currentVol, currentVol)
 
         val isLifecycleResumed = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
@@ -553,7 +562,7 @@ fun VybeVideoPlayer(
           val nextMuted = !isMuted
           isMuted = nextMuted
           try {
-            val vol = if (nextMuted) 0f else 1f
+            val vol = if (nextMuted) 0f else latestAudioVolume
             mediaPlayerRef.value?.setVolume(vol, vol)
           } catch (_: Exception) {}
           onMuteToggled?.invoke(nextMuted)

@@ -31,11 +31,11 @@ import com.example.data.model.AppThemeMode
 import com.example.data.model.UserRole
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
+import com.example.ui.components.GitHubUpdateSectionCard
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VybeAvatar
 import com.example.ui.components.VybeMatchesManagerDialog
 import com.example.ui.theme.*
-import com.example.util.GitHubReleaseInfo
 import com.example.util.GitHubUpdater
 import kotlinx.coroutines.launch
 
@@ -99,12 +99,8 @@ fun SettingsScreen(viewModel: VybeViewModel) {
     editUserId = currentUser?.username.orEmpty()
   }
 
-  // Designated single Check for Updates state
   val coroutineScope = rememberCoroutineScope()
   val context = LocalContext.current
-  var githubRepoInput by remember { mutableStateOf(GitHubUpdater.DEFAULT_GITHUB_REPO) }
-  var isCheckingUpdate by remember { mutableStateOf(false) }
-  var updateResult by remember { mutableStateOf<Result<GitHubReleaseInfo>?>(null) }
 
   Scaffold(
     topBar = {
@@ -1237,208 +1233,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
           verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
           item {
-            Card(
-              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-              shape = RoundedCornerShape(18.dp),
-              border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.4f)),
-              modifier = Modifier
-                .fillMaxWidth()
-                .testTag("github_updater_card")
-            ) {
-              Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                  Icon(Icons.Default.SystemUpdate, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(26.dp))
-                  Spacer(modifier = Modifier.width(10.dp))
-                  Column {
-                    Text("VYBE Software Update", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Text(
-                      "Installed version: v${GitHubUpdater.INSTALLED_VERSION}",
-                      fontSize = 12.sp,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                  }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                OutlinedTextField(
-                  value = githubRepoInput,
-                  onValueChange = { githubRepoInput = it },
-                  label = { Text("GitHub Release Repository (owner/repo)") },
-                  placeholder = { Text(GitHubUpdater.DEFAULT_GITHUB_REPO) },
-                  singleLine = true,
-                  shape = RoundedCornerShape(12.dp),
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("github_repo_input")
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                if (!isOnline) {
-                  Surface(
-                    color = VybeDanger.copy(alpha = 0.14f),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier
-                      .fillMaxWidth()
-                      .padding(bottom = 10.dp)
-                  ) {
-                    Text(
-                      text = "You are currently offline. Reconnect to the internet to check GitHub Releases.",
-                      color = VybeDanger,
-                      fontSize = 12.sp,
-                      modifier = Modifier.padding(10.dp)
-                    )
-                  }
-                }
-
-                Button(
-                  onClick = {
-                    isCheckingUpdate = true
-                    updateResult = null
-                    coroutineScope.launch {
-                      val res = GitHubUpdater.checkForUpdates(githubRepoInput)
-                      updateResult = res
-                      isCheckingUpdate = false
-                    }
-                  },
-                  enabled = !isCheckingUpdate && githubRepoInput.isNotBlank(),
-                  colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-                  shape = RoundedCornerShape(12.dp),
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .testTag("check_github_updates_button")
-                ) {
-                  if (isCheckingUpdate) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Checking GitHub Releases...", fontSize = 13.sp, color = Color.White)
-                  } else {
-                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.White)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Check for Updates", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                  }
-                }
-
-                updateResult?.let { res ->
-                  Spacer(modifier = Modifier.height(14.dp))
-                  res.onSuccess { release ->
-                    val highlightColor = if (release.isNewerThanInstalled) VybeOnlineGreen else VybeBrandCyan
-                    Surface(
-                      color = highlightColor.copy(alpha = 0.14f),
-                      shape = RoundedCornerShape(12.dp),
-                      border = BorderStroke(1.dp, highlightColor.copy(alpha = 0.4f)),
-                      modifier = Modifier.fillMaxWidth()
-                    ) {
-                      Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                          Icon(Icons.Default.CheckCircle, contentDescription = null, tint = highlightColor, modifier = Modifier.size(18.dp))
-                          Spacer(modifier = Modifier.width(8.dp))
-                          Text(
-                            text = if (release.isNewerThanInstalled) {
-                              "Update Available: ${release.tagName}"
-                            } else {
-                              "Up to Date (${release.tagName})"
-                            },
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            color = highlightColor
-                          )
-                        }
-                        if (release.name.isNotBlank() && release.name != release.tagName) {
-                          Text(release.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp))
-                        }
-                        if (release.apkFileName != null) {
-                          val sizeFormatted = GitHubUpdater.formatFileSize(release.apkFileSize)
-                          val details = if (sizeFormatted.isNotBlank()) "${release.apkFileName} • $sizeFormatted" else release.apkFileName
-                          Text(
-                            text = "Asset: $details",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 2.dp)
-                          )
-                        }
-                        if (release.assetStatusMessage != null) {
-                          Surface(
-                            color = VybeDanger.copy(alpha = 0.12f),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                              .fillMaxWidth()
-                              .padding(top = 6.dp)
-                          ) {
-                            Text(
-                              text = release.assetStatusMessage,
-                              color = VybeDanger,
-                              fontSize = 11.sp,
-                              modifier = Modifier.padding(8.dp)
-                            )
-                          }
-                        }
-                        if (release.body.isNotBlank()) {
-                          Text(
-                            text = release.body.take(240) + if (release.body.length > 240) "..." else "",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 4.dp)
-                          )
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Button(
-                          onClick = {
-                            val targetUrl = release.downloadUrl ?: release.htmlUrl
-                            GitHubUpdater.openDownloadUrl(context, targetUrl)
-                          },
-                          colors = ButtonDefaults.buttonColors(containerColor = highlightColor),
-                          shape = RoundedCornerShape(10.dp),
-                          modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("download_update_button")
-                        ) {
-                          Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
-                          Spacer(modifier = Modifier.width(6.dp))
-                          Text(
-                            text = if (release.hasValidApkAsset && release.isNewerThanInstalled) {
-                              "Download & Install APK"
-                            } else if (release.hasValidApkAsset) {
-                              "Re-download APK (${release.tagName})"
-                            } else {
-                              "View Release on GitHub"
-                            },
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            color = Color.White
-                          )
-                        }
-                      }
-                    }
-                  }.onFailure { err ->
-                    Surface(
-                      color = VybeDanger.copy(alpha = 0.14f),
-                      shape = RoundedCornerShape(12.dp),
-                      border = BorderStroke(1.dp, VybeDanger.copy(alpha = 0.4f)),
-                      modifier = Modifier.fillMaxWidth()
-                    ) {
-                      Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                          Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = VybeDanger, modifier = Modifier.size(18.dp))
-                          Spacer(modifier = Modifier.width(6.dp))
-                          Text("Update Check Status", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = VybeDanger)
-                        }
-                        Text(
-                          text = err.message ?: "Could not verify release status.",
-                          fontSize = 12.sp,
-                          color = MaterialTheme.colorScheme.onSurface,
-                          modifier = Modifier.padding(top = 6.dp)
-                        )
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            GitHubUpdateSectionCard(isOnline = isOnline)
           }
         }
       }

@@ -370,6 +370,10 @@ class VybeLocalStore private constructor(context: Context) {
       put("isVybesReel", p.isVybesReel)
       put("moodZone", p.moodZone?.name)
       put("locationName", p.locationName)
+      if (!p.audioTrackTitle.isNullOrBlank()) put("audioTrackTitle", p.audioTrackTitle)
+      if (p.musicAttachment != null) {
+        put("musicAttachmentJson", MusicMetadataCodec.toJson(p.musicAttachment))
+      }
       if (p.mediaAspectRatio != null) put("mediaAspectRatio", p.mediaAspectRatio.toDouble())
       if (p.userReaction != null) put("userReaction", p.userReaction.name)
       if (p.reactionsCount.isNotEmpty()) {
@@ -415,6 +419,11 @@ class VybeLocalStore private constructor(context: Context) {
       }
     }
 
+    val audioTrackTitle = obj.optString("audioTrackTitle", "").takeUnless { it.isBlank() || it.equals("null", true) }
+    val musicAttachment = MusicMetadataCodec.fromJson(
+      obj.optString("musicAttachmentJson", "").takeUnless { it.isBlank() || it.equals("null", true) }
+    )
+
     return Post(
       id = obj.optString("id", "p_${System.currentTimeMillis()}"),
       author = author,
@@ -434,6 +443,8 @@ class VybeLocalStore private constructor(context: Context) {
       isUnfiltered = obj.optBoolean("isUnfiltered", false),
       isVybesReel = obj.optBoolean("isVybesReel", false),
       moodZone = mood,
+      audioTrackTitle = audioTrackTitle ?: musicAttachment?.displayLabel,
+      musicAttachment = musicAttachment,
       locationName = loc,
       mediaAspectRatio = aspect,
       userReaction = userReaction,

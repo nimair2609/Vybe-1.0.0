@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.vybe.nzqpvx"
     minSdk = 24
     targetSdk = 36
-    versionCode = 4
-    versionName = "1.2.1"
+    versionCode = 5
+    versionName = "1.2.2"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = "GOOGLE_MAPS_API_KEY_DEFAULT_VALUE"
@@ -86,6 +86,12 @@ secrets {
   ignoreList.add("VYBE_WEBRTC_SIGNALING_URL")
   ignoreList.add("FIREBASE_SERVICE_ACCOUNT")
   ignoreList.add("FCM_SERVER_KEY")
+  ignoreList.add("MUSIC_PROVIDER")
+  ignoreList.add("MUSIC_PROVIDER_API_KEY")
+  ignoreList.add("MUSIC_PROVIDER_BASE_URL")
+  ignoreList.add("JAMENDO_CLIENT_ID")
+  ignoreList.add("MUSIC_LICENSE_APPROVED")
+  ignoreList.add("MUSIC_COMMERCIAL_SYNC_VERIFIED")
 }
 
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }

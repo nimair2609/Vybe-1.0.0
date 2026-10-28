@@ -7,6 +7,7 @@ import com.example.data.model.LivePulseStatus
 import com.example.data.model.MediaType
 import com.example.data.model.MessageStatus
 import com.example.data.model.MoodType
+import com.example.data.model.MusicMetadataCodec
 import com.example.data.model.NotificationItem
 import com.example.data.model.Post
 import com.example.data.model.PostComment
@@ -1778,6 +1779,19 @@ class SupabaseRepository {
       maxOf(rawLikes, resolvedReactionsCount.values.sum())
     }
 
+    val (resolvedAudioTitle, resolvedMusicAttachment) = MusicMetadataCodec.resolveFromColumns(
+      rawMusicTitle = dto.musicTitle,
+      musicTrackId = dto.musicTrackId,
+      musicProvider = dto.musicProvider,
+      musicArtist = dto.musicArtist,
+      musicArtworkUrl = dto.musicArtworkUrl,
+      musicStreamUrl = dto.musicStreamUrl,
+      musicStartMs = dto.musicStartMs,
+      musicDurationMs = dto.musicDurationMs,
+      musicVolume = dto.musicVolume,
+      originalAudioVolume = dto.originalAudioVolume
+    )
+
     return Post(
       id = dto.id,
       author = authorUser,
@@ -1796,7 +1810,8 @@ class SupabaseRepository {
       isUnfiltered = dto.isUnfiltered ?: false,
       isVybesReel = (dto.isVybesReel ?: false) || mediaType == MediaType.REEL,
       moodZone = moodZone,
-      audioTrackTitle = dto.musicTitle,
+      audioTrackTitle = resolvedAudioTitle,
+      musicAttachment = resolvedMusicAttachment,
       locationName = dto.locationName,
       latitude = dto.latitude,
       longitude = dto.longitude,
@@ -1834,6 +1849,12 @@ class SupabaseRepository {
         } catch (_: Exception) {}
       }
 
+      val cleanAttachment = post.musicAttachment?.sanitized()
+      val legacyCompatibleMusicTitle = MusicMetadataCodec.encodeLegacyMusicTitleColumn(
+        displayTitle = post.audioTrackTitle ?: cleanAttachment?.displayLabel,
+        attachment = cleanAttachment
+      )
+
       val insertDto = SupabasePostInsertDto(
         authorId = post.author.id,
         caption = post.caption,
@@ -1842,18 +1863,58 @@ class SupabaseRepository {
         locationName = post.locationName,
         latitude = post.latitude,
         longitude = post.longitude,
-        musicTitle = post.audioTrackTitle,
+        musicTitle = legacyCompatibleMusicTitle,
         clientUploadId = post.clientUploadId,
         isUnfiltered = post.isUnfiltered,
         isVybesReel = post.isVybesReel,
         viewsCount = 0
       )
 
-      var postResp = SupabaseNetworkClient.restApi.insertPost(
-        apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = authHeader,
-        post = insertDto
-      )
+      var postResp = if (cleanAttachment != null) {
+        val extDto = SupabasePostExtendedMusicInsertDto(
+          authorId = post.author.id,
+          caption = post.caption,
+          mediaType = post.mediaType.name,
+          moodZone = post.moodZone?.name,
+          locationName = post.locationName,
+          latitude = post.latitude,
+          longitude = post.longitude,
+          musicTitle = legacyCompatibleMusicTitle,
+          musicTrackId = cleanAttachment.trackId,
+          musicProvider = cleanAttachment.provider,
+          musicArtist = cleanAttachment.artist,
+          musicArtworkUrl = cleanAttachment.artworkUrl,
+          musicStreamUrl = cleanAttachment.streamUrl,
+          musicStartMs = cleanAttachment.startTimeMs.toInt(),
+          musicDurationMs = cleanAttachment.clipDurationMs.toInt(),
+          musicVolume = cleanAttachment.musicVolume.toDouble(),
+          originalAudioVolume = cleanAttachment.originalAudioVolume.toDouble(),
+          clientUploadId = post.clientUploadId,
+          isUnfiltered = post.isUnfiltered,
+          isVybesReel = post.isVybesReel,
+          viewsCount = 0
+        )
+        val extResp = SupabaseNetworkClient.restApi.insertPostWithMusic(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          post = extDto
+        )
+        if (!extResp.isSuccessful && extResp.code() == 400) {
+          SupabaseNetworkClient.restApi.insertPost(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = authHeader,
+            post = insertDto
+          )
+        } else {
+          extResp
+        }
+      } else {
+        SupabaseNetworkClient.restApi.insertPost(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          post = insertDto
+        )
+      }
 
       // Fallback 1: If DB's mood_type_enum hasn't run migration 0005 yet (e.g. GENERAL/MOTIVATIONAL), retry with moodZone = null
       if (!postResp.isSuccessful && postResp.code() == 400 && insertDto.moodZone != null) {
@@ -2151,6 +2212,37 @@ class SupabaseRepository {
     }
   }
 
+  suspend fun fetchReelsByMusicTrack(
+    trackId: String,
+    currentUserId: String? = null,
+    accessToken: String = ""
+  ): Result<List<Post>> = withContext(Dispatchers.IO) {
+    if (!isConfigured || trackId.isBlank()) return@withContext Result.success(emptyList())
+    val authHeader = authHeaderFor(accessToken)
+    try {
+      val resp = SupabaseNetworkClient.restApi.getPostsByMusicTrackId(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        musicTrackIdFilter = "eq.${trackId.trim()}"
+      )
+      if (resp.isSuccessful && resp.body() != null) {
+        val mapped = resp.body()!!.map { dto ->
+          mapPostDtoToModel(dto, emptyMap(), null, emptySet(), accessToken)
+        }
+        return@withContext Result.success(mapped)
+      }
+      // Fallback when remote DB uses legacy `music_title` envelope without `music_track_id` column
+      val fallbackFeed = fetchPosts(currentUserId = currentUserId, accessToken = accessToken, limit = 80)
+      val matching = fallbackFeed.getOrDefault(emptyList()).filter { post ->
+        !post.isArchived && post.musicAttachment?.trackId == trackId.trim()
+      }
+      Result.success(matching)
+    } catch (e: Exception) {
+      logRepoFailure("Fetch reels by track", e)
+      Result.failure(e)
+    }
+  }
+
   // =========================================================================
   // 6. STORIES, PERSISTENT STORY VIEWS & VYBE MATCHES
   // =========================================================================
@@ -2237,6 +2329,19 @@ class SupabaseRepository {
           StoryAudience.EVERYONE
         }
 
+        val (resolvedStoryMusicTitle, resolvedStoryAttachment) = MusicMetadataCodec.resolveFromColumns(
+          rawMusicTitle = dto.musicTitle,
+          musicTrackId = dto.musicTrackId,
+          musicProvider = dto.musicProvider,
+          musicArtist = dto.musicArtist,
+          musicArtworkUrl = dto.musicArtworkUrl,
+          musicStreamUrl = dto.musicStreamUrl,
+          musicStartMs = dto.musicStartMs,
+          musicDurationMs = dto.musicDurationMs,
+          musicVolume = dto.musicVolume,
+          originalAudioVolume = dto.originalAudioVolume
+        )
+
         Story(
           id = id,
           author = author,
@@ -2244,7 +2349,8 @@ class SupabaseRepository {
           caption = dto.caption ?: "",
           mediaType = mediaType,
           audience = audience,
-          musicTrackTitle = dto.musicTitle,
+          musicTrackTitle = resolvedStoryMusicTitle,
+          musicAttachment = resolvedStoryAttachment,
           timestamp = TimestampUtils.formatRelative(dto.createdAt, "Recently"),
           expiresHoursRemaining = remainingHours,
           isViewed = viewedStoryIds.contains(id),
@@ -2280,13 +2386,19 @@ class SupabaseRepository {
         else -> "EVERYONE"
       }
 
+      val cleanAttachment = story.musicAttachment?.sanitized()
+      val legacyCompatibleMusicTitle = MusicMetadataCodec.encodeLegacyMusicTitleColumn(
+        displayTitle = story.musicTrackTitle ?: cleanAttachment?.displayLabel,
+        attachment = cleanAttachment
+      )
+
       val dto = SupabaseStoryInsertDto(
         authorId = story.author.id,
         mediaUrl = story.mediaUrl.ifBlank { "text://story" },
         mediaType = story.mediaType.name,
         caption = story.caption,
         audience = audienceStr,
-        musicTitle = story.musicTrackTitle,
+        musicTitle = legacyCompatibleMusicTitle,
         locationName = story.location,
         textBgKey = story.textBackgroundColor,
         storagePath = story.storagePath,
@@ -2294,11 +2406,50 @@ class SupabaseRepository {
         expiresAt = expiresIso
       )
 
-      var resp = SupabaseNetworkClient.restApi.insertStory(
-        apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = authHeader,
-        story = dto
-      )
+      var resp = if (cleanAttachment != null) {
+        val extDto = SupabaseStoryExtendedMusicInsertDto(
+          authorId = story.author.id,
+          mediaUrl = story.mediaUrl.ifBlank { "text://story" },
+          mediaType = story.mediaType.name,
+          caption = story.caption,
+          audience = audienceStr,
+          musicTitle = legacyCompatibleMusicTitle,
+          musicTrackId = cleanAttachment.trackId,
+          musicProvider = cleanAttachment.provider,
+          musicArtist = cleanAttachment.artist,
+          musicArtworkUrl = cleanAttachment.artworkUrl,
+          musicStreamUrl = cleanAttachment.streamUrl,
+          musicStartMs = cleanAttachment.startTimeMs.toInt(),
+          musicDurationMs = cleanAttachment.clipDurationMs.toInt(),
+          musicVolume = cleanAttachment.musicVolume.toDouble(),
+          originalAudioVolume = cleanAttachment.originalAudioVolume.toDouble(),
+          locationName = story.location,
+          textBgKey = story.textBackgroundColor,
+          storagePath = story.storagePath,
+          clientUploadId = story.clientUploadId,
+          expiresAt = expiresIso
+        )
+        val extResp = SupabaseNetworkClient.restApi.insertStoryWithMusic(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          story = extDto
+        )
+        if (!extResp.isSuccessful && extResp.code() == 400) {
+          SupabaseNetworkClient.restApi.insertStory(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = authHeader,
+            story = dto
+          )
+        } else {
+          extResp
+        }
+      } else {
+        SupabaseNetworkClient.restApi.insertStory(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          story = dto
+        )
+      }
       if (!resp.isSuccessful && resp.code() == 400) {
         resp = SupabaseNetworkClient.restApi.insertStoryLegacy(
           apiKey = SupabaseConfig.supabaseAnonKey,

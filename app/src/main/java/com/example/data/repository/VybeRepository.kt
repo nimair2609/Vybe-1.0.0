@@ -16,6 +16,7 @@ import com.example.util.MediaUtils
 import com.example.util.NetworkMonitor
 import com.example.util.TimestampUtils
 import com.example.util.VybeCallEngine
+import com.example.util.music.StoryReelMediaComposer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -64,7 +65,8 @@ private sealed class PendingUploadOperation {
     val latitude: Double?,
     val longitude: Double?,
     val audioTrackTitle: String?,
-    val preferredAspectRatio: Float?
+    val preferredAspectRatio: Float?,
+    val musicAttachment: MusicAttachment? = null
   ) : PendingUploadOperation()
 
   data class StoryUpload(
@@ -75,7 +77,8 @@ private sealed class PendingUploadOperation {
     val audience: StoryAudience,
     val musicTrackTitle: String?,
     val location: String?,
-    val textBackgroundColor: String?
+    val textBackgroundColor: String?,
+    val musicAttachment: MusicAttachment? = null
   ) : PendingUploadOperation()
 }
 
@@ -883,11 +886,13 @@ class VybeRepository private constructor() {
     latitude: Double? = null,
     longitude: Double? = null,
     audioTrackTitle: String? = null,
-    preferredAspectRatio: Float? = null
+    preferredAspectRatio: Float? = null,
+    musicAttachment: MusicAttachment? = null
   ): Result<Post> {
     if (isUploadInFlight) {
       return Result.failure(IllegalStateException("An upload is already in progress."))
     }
+    val sanitizedMusic = musicAttachment?.sanitized()
     val job = PendingUploadOperation.PostUpload(
       clientUploadId = UUID.randomUUID().toString(),
       caption = caption.trim(),
@@ -899,8 +904,9 @@ class VybeRepository private constructor() {
       locationName = locationName?.takeIf { it.isNotBlank() },
       latitude = latitude,
       longitude = longitude,
-      audioTrackTitle = audioTrackTitle?.takeIf { it.isNotBlank() },
-      preferredAspectRatio = preferredAspectRatio
+      audioTrackTitle = audioTrackTitle?.takeIf { it.isNotBlank() } ?: sanitizedMusic?.displayLabel,
+      preferredAspectRatio = preferredAspectRatio,
+      musicAttachment = sanitizedMusic
     )
     return executePostUpload(job)
   }
@@ -915,9 +921,11 @@ class VybeRepository private constructor() {
     latitude: Double? = null,
     longitude: Double? = null,
     audioTrackTitle: String? = null,
-    preferredAspectRatio: Float? = null
+    preferredAspectRatio: Float? = null,
+    musicAttachment: MusicAttachment? = null
   ) {
     if (isUploadInFlight) return
+    val sanitizedMusic = musicAttachment?.sanitized()
     val job = PendingUploadOperation.PostUpload(
       clientUploadId = UUID.randomUUID().toString(),
       caption = caption.trim(),
@@ -929,8 +937,9 @@ class VybeRepository private constructor() {
       locationName = locationName?.takeIf { it.isNotBlank() },
       latitude = latitude,
       longitude = longitude,
-      audioTrackTitle = audioTrackTitle?.takeIf { it.isNotBlank() },
-      preferredAspectRatio = preferredAspectRatio
+      audioTrackTitle = audioTrackTitle?.takeIf { it.isNotBlank() } ?: sanitizedMusic?.displayLabel,
+      preferredAspectRatio = preferredAspectRatio,
+      musicAttachment = sanitizedMusic
     )
     ioScope.launch {
       executePostUpload(job)
@@ -954,12 +963,14 @@ class VybeRepository private constructor() {
     }
 
     isUploadInFlight = true
+    var renderedMixedUriToCleanup: String? = null
     return try {
       val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
       var finalMediaUrls: List<String> = emptyList()
       var finalStoragePaths: List<String> = emptyList()
       var detectedAspectRatio: Float? = op.preferredAspectRatio
       var resolvedMediaType = op.mediaType
+      var effectiveAttachment = op.musicAttachment?.sanitized()
 
       val rawUri = op.localOrRemoteMediaUri
       if (!rawUri.isNullOrBlank()) {
@@ -972,16 +983,33 @@ class VybeRepository private constructor() {
           }
         } else if (ctx != null) {
           _uploadStatus.value = UploadStatus.Uploading("Reading media file...", 5)
-          val payload = MediaUtils.readMediaPayload(ctx, rawUri)
+          val initialPayload = MediaUtils.readMediaPayload(ctx, rawUri)
             ?: throw IllegalStateException("Could not read selected media file. Please re-select the photo or video.")
 
-          if (detectedAspectRatio == null && payload.aspectRatio != null) {
-            detectedAspectRatio = payload.aspectRatio
+          if (detectedAspectRatio == null && initialPayload.aspectRatio != null) {
+            detectedAspectRatio = initialPayload.aspectRatio
           }
           resolvedMediaType = when {
             op.isVybes -> MediaType.REEL
-            payload.isVideo -> MediaType.VIDEO
+            initialPayload.isVideo -> MediaType.VIDEO
             else -> MediaType.IMAGE
+          }
+
+          var effectiveLocalUri = rawUri
+          var payload = initialPayload
+          if (initialPayload.isVideo && effectiveAttachment != null && !effectiveAttachment.streamUrl.isNullOrBlank()) {
+            _uploadStatus.value = UploadStatus.Processing("Mixing music & original audio into video...")
+            val mixRes = StoryReelMediaComposer.mixMusicIntoVideo(ctx, rawUri, effectiveAttachment)
+            if (mixRes.isSuccess) {
+              val mixedUri = mixRes.getOrThrow()
+              val mixedPayload = MediaUtils.readMediaPayload(ctx, mixedUri)
+              if (mixedPayload != null && mixedPayload.bytes.isNotEmpty()) {
+                payload = mixedPayload
+                effectiveLocalUri = mixedUri
+                renderedMixedUriToCleanup = mixedUri
+                effectiveAttachment = effectiveAttachment.copy(isRenderedWithMixedAudio = true)
+              }
+            }
           }
 
           if (supabaseRepo.isConfigured) {
@@ -1008,7 +1036,8 @@ class VybeRepository private constructor() {
             finalMediaUrls = listOf(uploaded.url)
             finalStoragePaths = listOf(uploaded.storagePath)
           } else {
-            finalMediaUrls = listOf(rawUri)
+            finalMediaUrls = listOf(effectiveLocalUri)
+            renderedMixedUriToCleanup = null // Keep local mixed file when running in local-only mode
           }
         } else {
           finalMediaUrls = listOf(rawUri)
@@ -1038,7 +1067,8 @@ class VybeRepository private constructor() {
         isUnfiltered = op.isUnfiltered,
         isVybesReel = op.isVybes || resolvedMediaType == MediaType.REEL,
         moodZone = op.mood,
-        audioTrackTitle = op.audioTrackTitle,
+        audioTrackTitle = op.audioTrackTitle ?: effectiveAttachment?.displayLabel,
+        musicAttachment = effectiveAttachment,
         locationName = op.locationName,
         latitude = op.latitude,
         longitude = op.longitude,
@@ -1105,6 +1135,9 @@ class VybeRepository private constructor() {
       )
       Result.failure(e)
     } finally {
+      if (ctx != null && !renderedMixedUriToCleanup.isNullOrBlank()) {
+        MediaUtils.cleanupStagedFileIfOwned(ctx, renderedMixedUriToCleanup)
+      }
       isUploadInFlight = false
     }
   }
@@ -1123,7 +1156,8 @@ class VybeRepository private constructor() {
     audience: StoryAudience = StoryAudience.EVERYONE,
     musicTrackTitle: String? = null,
     location: String? = null,
-    textBackgroundColor: String? = null
+    textBackgroundColor: String? = null,
+    musicAttachment: MusicAttachment? = null
   ): Result<Story> {
     if (isUploadInFlight) {
       return Result.failure(IllegalStateException("Another upload is currently in progress."))
@@ -1144,15 +1178,17 @@ class VybeRepository private constructor() {
       return Result.failure(IllegalArgumentException(msg))
     }
 
+    val sanitizedMusic = musicAttachment?.sanitized()
     val op = PendingUploadOperation.StoryUpload(
       clientUploadId = UUID.randomUUID().toString(),
       localOrRemoteMediaUri = mediaUrl,
       caption = caption.trim(),
       mediaType = mediaType,
       audience = audience,
-      musicTrackTitle = musicTrackTitle?.takeIf { it.isNotBlank() },
+      musicTrackTitle = musicTrackTitle?.takeIf { it.isNotBlank() } ?: sanitizedMusic?.displayLabel,
       location = location?.takeIf { it.isNotBlank() },
-      textBackgroundColor = textBackgroundColor
+      textBackgroundColor = textBackgroundColor,
+      musicAttachment = sanitizedMusic
     )
     return executeStoryUpload(op)
   }
@@ -1164,7 +1200,8 @@ class VybeRepository private constructor() {
     audience: StoryAudience = StoryAudience.EVERYONE,
     musicTrackTitle: String? = null,
     location: String? = null,
-    textBackgroundColor: String? = null
+    textBackgroundColor: String? = null,
+    musicAttachment: MusicAttachment? = null
   ) {
     if ((audience == StoryAudience.VYBE_MATCHES || audience == StoryAudience.CLOSE_FRIENDS) && _vybeMatches.value.isEmpty()) {
       _uploadStatus.value = UploadStatus.Failed(
@@ -1174,15 +1211,17 @@ class VybeRepository private constructor() {
       return
     }
 
+    val sanitizedMusic = musicAttachment?.sanitized()
     val op = PendingUploadOperation.StoryUpload(
       clientUploadId = UUID.randomUUID().toString(),
       localOrRemoteMediaUri = mediaUrl,
       caption = caption.trim(),
       mediaType = mediaType,
       audience = audience,
-      musicTrackTitle = musicTrackTitle?.takeIf { it.isNotBlank() },
+      musicTrackTitle = musicTrackTitle?.takeIf { it.isNotBlank() } ?: sanitizedMusic?.displayLabel,
       location = location?.takeIf { it.isNotBlank() },
-      textBackgroundColor = textBackgroundColor
+      textBackgroundColor = textBackgroundColor,
+      musicAttachment = sanitizedMusic
     )
     ioScope.launch {
       executeStoryUpload(op)
@@ -1206,11 +1245,13 @@ class VybeRepository private constructor() {
     }
 
     isUploadInFlight = true
+    var renderedStoryUriToCleanup: String? = null
     return try {
       val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
       var resolvedUrl = op.localOrRemoteMediaUri
       var resolvedStoragePath: String? = null
       var resolvedMediaType = op.mediaType
+      var effectiveAttachment = op.musicAttachment?.sanitized()
 
       val needsBinaryUpload = op.mediaType != StoryMediaType.TEXT &&
         op.localOrRemoteMediaUri.isNotBlank() &&
@@ -1220,15 +1261,40 @@ class VybeRepository private constructor() {
 
       if (needsBinaryUpload && ctx != null) {
         _uploadStatus.value = UploadStatus.Uploading("Preparing story media...", 5)
-        val payload = MediaUtils.readMediaPayload(ctx, op.localOrRemoteMediaUri)
+        val initialPayload = MediaUtils.readMediaPayload(ctx, op.localOrRemoteMediaUri)
           ?: throw IllegalStateException("Unable to read story media file. Please select it again.")
 
-        if (payload.bytes.isEmpty()) {
+        if (initialPayload.bytes.isEmpty()) {
           throw IllegalStateException("Selected media file is empty or corrupted.")
         }
-        if (payload.isVideo) {
+
+        var payload = initialPayload
+        if (initialPayload.isVideo) {
           resolvedMediaType = StoryMediaType.VIDEO
         }
+
+        // Render Photo Story into playable MP4 video with music OR mix music into Video Story
+        if (effectiveAttachment != null && !effectiveAttachment.streamUrl.isNullOrBlank()) {
+          val renderResult = if (initialPayload.isVideo) {
+            _uploadStatus.value = UploadStatus.Processing("Mixing music into Story video...")
+            StoryReelMediaComposer.mixMusicIntoVideo(ctx, op.localOrRemoteMediaUri, effectiveAttachment)
+          } else {
+            _uploadStatus.value = UploadStatus.Processing("Rendering playable Story video with music...")
+            StoryReelMediaComposer.renderPhotoStoryWithMusic(ctx, op.localOrRemoteMediaUri, effectiveAttachment)
+          }
+          if (renderResult.isSuccess) {
+            val renderedUri = renderResult.getOrThrow()
+            val renderedPayload = MediaUtils.readMediaPayload(ctx, renderedUri)
+            if (renderedPayload != null && renderedPayload.bytes.isNotEmpty()) {
+              payload = renderedPayload
+              resolvedUrl = renderedUri
+              resolvedMediaType = StoryMediaType.VIDEO
+              renderedStoryUriToCleanup = renderedUri
+              effectiveAttachment = effectiveAttachment.copy(isRenderedWithMixedAudio = true)
+            }
+          }
+        }
+
         if (supabaseRepo.isConfigured) {
           val fileName = "story_${op.clientUploadId}.${payload.extension}"
           val uploadRes = supabaseRepo.uploadMediaWithProgress(
@@ -1248,6 +1314,8 @@ class VybeRepository private constructor() {
           val uploaded = uploadRes.getOrElse { throw it }
           resolvedUrl = uploaded.url
           resolvedStoragePath = uploaded.storagePath
+        } else {
+          renderedStoryUriToCleanup = null // Keep local rendered file in local-only mode
         }
       }
 
@@ -1261,7 +1329,8 @@ class VybeRepository private constructor() {
         caption = op.caption,
         mediaType = resolvedMediaType,
         audience = op.audience,
-        musicTrackTitle = op.musicTrackTitle,
+        musicTrackTitle = op.musicTrackTitle ?: effectiveAttachment?.displayLabel,
+        musicAttachment = effectiveAttachment,
         location = op.location,
         textBackgroundColor = op.textBackgroundColor,
         timestamp = "Just now",
@@ -1311,8 +1380,37 @@ class VybeRepository private constructor() {
       )
       Result.failure(e)
     } finally {
+      if (ctx != null && !renderedStoryUriToCleanup.isNullOrBlank()) {
+        MediaUtils.cleanupStagedFileIfOwned(ctx, renderedStoryUriToCleanup)
+      }
       isUploadInFlight = false
     }
+  }
+
+  /**
+   * Returns published Reels (and music-tagged posts) associated with [trackId], combining
+   * in-memory synced posts with live Supabase queries so cross-device discovery stays accurate.
+   */
+  suspend fun fetchReelsForMusicTrack(trackId: String): List<Post> {
+    val cleanId = trackId.trim()
+    if (cleanId.isBlank()) return emptyList()
+
+    val localMatches = _posts.value.filter { post ->
+      !post.isArchived && post.musicAttachment?.trackId == cleanId
+    }
+
+    if (!supabaseRepo.isConfigured || !_isOnline.value) {
+      return localMatches
+    }
+
+    val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+    val remoteRes = supabaseRepo.fetchReelsByMusicTrack(
+      trackId = cleanId,
+      currentUserId = _currentUser.value?.id,
+      accessToken = token
+    )
+    val remoteMatches = remoteRes.getOrDefault(emptyList()).filter { !it.isArchived }
+    return (remoteMatches + localMatches).distinctBy { it.id }
   }
 
   // =========================================================================

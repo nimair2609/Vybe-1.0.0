@@ -40,6 +40,8 @@ import com.example.ui.theme.*
 import com.example.util.FeedAudioController
 import com.example.util.rememberRelativeTimestamp
 
+import com.example.data.model.MusicAttachment
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PostCard(
@@ -62,6 +64,7 @@ fun PostCard(
   shouldPlayAudio: Boolean = shouldAutoPlay && isAudioEnabled,
   isHighlighted: Boolean = false,
   onToggleAudio: ((Boolean) -> Unit)? = null,
+  onOpenMusicTrack: ((MusicAttachment) -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
   var showCommentDialog by remember { mutableStateOf(false) }
@@ -107,18 +110,30 @@ fun PostCard(
   val anySheetOpen = showCommentDialog || showAnalyticsSheet || showDeleteConfirm || showReportDialog
 
   // Coordinate non-overlapping music playback for photo/text posts that carry an audio track
-  LaunchedEffect(post.id, post.audioTrackTitle, isVideoPost, shouldPlayAudio, anySheetOpen) {
-    if (!isVideoPost && !post.audioTrackTitle.isNullOrBlank()) {
+  LaunchedEffect(post.id, post.musicAttachment, post.audioTrackTitle, isVideoPost, shouldPlayAudio, anySheetOpen) {
+    val activePlay = shouldPlayAudio && !anySheetOpen
+    val attached = post.musicAttachment
+    if (!isVideoPost && attached != null && !attached.streamUrl.isNullOrBlank()) {
+      if (activePlay) {
+        com.example.util.music.MusicPreviewController.playAttachment(attached, muted = false)
+      } else if (com.example.util.music.MusicPreviewController.isPlayingTrack(attached.trackId)) {
+        com.example.util.music.MusicPreviewController.stop()
+      }
+    } else if (!isVideoPost && !post.audioTrackTitle.isNullOrBlank()) {
       FeedAudioController.syncPostMusicTrack(
         postId = post.id,
         audioTrackTitle = post.audioTrackTitle,
-        shouldPlayAudio = shouldPlayAudio && !anySheetOpen
+        shouldPlayAudio = activePlay
       )
     }
   }
 
   DisposableEffect(post.id) {
     onDispose {
+      val attached = post.musicAttachment
+      if (!isVideoPost && attached != null && com.example.util.music.MusicPreviewController.isPlayingTrack(attached.trackId)) {
+        com.example.util.music.MusicPreviewController.stop()
+      }
       if (!isVideoPost && !post.audioTrackTitle.isNullOrBlank()) {
         FeedAudioController.syncPostMusicTrack(post.id, post.audioTrackTitle, shouldPlayAudio = false)
       }
@@ -291,45 +306,75 @@ fun PostCard(
         }
       }
 
-      // Interactive Feed Music Pill if present (toggles persistent Feed music state)
-      if (!post.audioTrackTitle.isNullOrBlank()) {
+      // Interactive Feed Music Pill if present (toggles persistent Feed music state + opens Track Page)
+      val effectiveTrackLabel = post.musicAttachment?.displayLabel ?: post.audioTrackTitle
+      if (!effectiveTrackLabel.isNullOrBlank()) {
         Spacer(modifier = Modifier.height(8.dp))
-        Surface(
-          color = if (shouldPlayAudio) VybeViolet.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant,
-          shape = RoundedCornerShape(10.dp),
-          border = if (shouldPlayAudio) BorderStroke(1.dp, VybeViolet.copy(alpha = 0.5f)) else null,
-          modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
-            .clickable { onToggleAudio?.invoke(!isAudioEnabled) }
-            .testTag("post_music_toggle_${post.id}")
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-          Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
+          Surface(
+            color = if (shouldPlayAudio) VybeViolet.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant,
+            shape = RoundedCornerShape(10.dp),
+            border = if (shouldPlayAudio) BorderStroke(1.dp, VybeViolet.copy(alpha = 0.5f)) else null,
+            modifier = Modifier
+              .weight(1f, fill = false)
+              .clip(RoundedCornerShape(10.dp))
+              .clickable { onToggleAudio?.invoke(!isAudioEnabled) }
+              .testTag("post_music_toggle_${post.id}")
           ) {
-            Icon(
-              imageVector = Icons.Outlined.MusicNote,
-              contentDescription = "Audio track",
-              tint = if (shouldPlayAudio) VybeViolet else VybeMagenta,
-              modifier = Modifier.size(14.dp)
-            )
-            Spacer(modifier = Modifier.width(5.dp))
-            Text(
-              text = post.audioTrackTitle,
-              fontSize = 11.sp,
-              fontWeight = if (shouldPlayAudio) FontWeight.SemiBold else FontWeight.Normal,
-              color = if (shouldPlayAudio) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-              modifier = Modifier.weight(1f, fill = false)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Icon(
-              imageVector = if (isAudioEnabled) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
-              contentDescription = if (isAudioEnabled) "Mute feed music" else "Enable feed music",
-              tint = if (isAudioEnabled) VybeViolet else MaterialTheme.colorScheme.onSurfaceVariant,
-              modifier = Modifier.size(15.dp)
-            )
+            Row(
+              modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Icon(
+                imageVector = Icons.Outlined.MusicNote,
+                contentDescription = "Audio track",
+                tint = if (shouldPlayAudio) VybeViolet else VybeMagenta,
+                modifier = Modifier.size(14.dp)
+              )
+              Spacer(modifier = Modifier.width(5.dp))
+              Text(
+                text = effectiveTrackLabel,
+                fontSize = 11.sp,
+                fontWeight = if (shouldPlayAudio) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (shouldPlayAudio) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
+              )
+              Spacer(modifier = Modifier.width(8.dp))
+              Icon(
+                imageVector = if (isAudioEnabled) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
+                contentDescription = if (isAudioEnabled) "Mute feed music" else "Enable feed music",
+                tint = if (isAudioEnabled) VybeViolet else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(15.dp)
+              )
+            }
+          }
+
+          if (post.musicAttachment != null && onOpenMusicTrack != null) {
+            TextButton(
+              onClick = { onOpenMusicTrack(post.musicAttachment) },
+              contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+              modifier = Modifier
+                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                .testTag("post_open_track_${post.id}")
+            ) {
+              Text(
+                text = "Track",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = VybeBrandCyan
+              )
+              Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = "Open music track page",
+                tint = VybeBrandCyan,
+                modifier = Modifier.size(14.dp)
+              )
+            }
           }
         }
       }

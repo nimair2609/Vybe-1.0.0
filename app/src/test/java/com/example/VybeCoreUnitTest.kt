@@ -252,16 +252,86 @@ class VybeCoreUnitTest {
   fun testGitHubUpdaterVersionComparison() {
     assertTrue(com.example.util.GitHubUpdater.isNewerVersion("2.0.0", "v2.1.0"))
     assertTrue(com.example.util.GitHubUpdater.isNewerVersion("v1.0.0", "v1.0.1"))
+    assertTrue(com.example.util.GitHubUpdater.isNewerVersion("1.2.1", "v1.2.54"))
     assertTrue(com.example.util.GitHubUpdater.isNewerVersion("2.0.0", "2.0.1"))
     assertFalse(com.example.util.GitHubUpdater.isNewerVersion("2.1.0", "v2.0.9"))
+    assertFalse(com.example.util.GitHubUpdater.isNewerVersion("1.2.2", "V1.0.2"))
+    assertTrue(com.example.util.GitHubUpdater.isOlderVersion("1.2.2", "V1.0.2"))
     assertFalse(com.example.util.GitHubUpdater.isNewerVersion("2.0.0", "v2.0.0"))
   }
 
   @Test
-  fun testGitHubUpdaterSlugCleaning() {
+  fun testGitHubUpdaterSlugCleaningAndDefaultRepo() {
+    assertEquals("nimair2609/Vybe-1.0.0", com.example.util.GitHubUpdater.DEFAULT_GITHUB_REPO)
+    assertEquals("nimair2609/Vybe-1.0.0", com.example.util.GitHubUpdater.cleanRepoSlug("https://github.com/nimair2609/Vybe-1.0.0/releases"))
     assertEquals("nrnext/vybe", com.example.util.GitHubUpdater.cleanRepoSlug("https://github.com/nrnext/vybe/"))
     assertEquals("nrnext/vybe", com.example.util.GitHubUpdater.cleanRepoSlug("github.com/nrnext/vybe"))
     assertEquals("owner/app", com.example.util.GitHubUpdater.cleanRepoSlug("owner/app"))
+  }
+
+  @Test
+  fun testGitHubUpdaterSelectsHighestVersionReleaseAndNewestMatchingApk() {
+    val sampleReleasesJson = """
+      [
+        {
+          "tag_name": "V1.0.2",
+          "name": "Old Manual Release",
+          "draft": false,
+          "published_at": "2026-10-22T18:37:53Z",
+          "html_url": "https://github.com/nimair2609/Vybe-1.0.0/releases/tag/V1.0.2",
+          "assets": [
+            {
+              "name": "app-debug.apk",
+              "size": 28443732,
+              "updated_at": "2026-10-22T18:47:40Z",
+              "browser_download_url": "https://github.com/nimair2609/Vybe-1.0.0/releases/download/V1.0.2/app-debug.apk"
+            }
+          ]
+        },
+        {
+          "tag_name": "v1.2.54",
+          "name": "VYBE v1.2.54 (Build #54)",
+          "draft": false,
+          "published_at": "2026-10-28T13:30:00Z",
+          "html_url": "https://github.com/nimair2609/Vybe-1.0.0/releases/tag/v1.2.54",
+          "assets": [
+            {
+              "name": "vybe-debug-apk.zip",
+              "size": 27000000,
+              "updated_at": "2026-10-28T13:31:00Z",
+              "browser_download_url": "https://github.com/nimair2609/Vybe-1.0.0/releases/download/v1.2.54/vybe-debug-apk.zip"
+            },
+            {
+              "name": "app-debug-old.apk",
+              "size": 28000000,
+              "updated_at": "2026-10-28T13:29:00Z",
+              "browser_download_url": "https://github.com/nimair2609/Vybe-1.0.0/releases/download/v1.2.54/app-debug-old.apk"
+            },
+            {
+              "name": "VYBE-v1.2.54.apk",
+              "size": 28600000,
+              "updated_at": "2026-10-28T13:30:30Z",
+              "browser_download_url": "https://github.com/nimair2609/Vybe-1.0.0/releases/download/v1.2.54/VYBE-v1.2.54.apk"
+            }
+          ]
+        }
+      ]
+    """.trimIndent()
+
+    val selected = com.example.util.GitHubUpdater.parseAndSelectBestRelease(
+      releasesArrayStr = sampleReleasesJson,
+      cleanRepo = "nimair2609/Vybe-1.0.0",
+      installedVersion = "1.2.2"
+    )
+    assertNotNull(selected)
+    assertEquals("v1.2.54", selected!!.tagName)
+    assertTrue(selected.isNewerThanInstalled)
+    assertFalse(selected.isOlderThanInstalled)
+    assertEquals("VYBE-v1.2.54.apk", selected.apkFileName)
+    assertEquals(
+      "https://github.com/nimair2609/Vybe-1.0.0/releases/download/v1.2.54/VYBE-v1.2.54.apk",
+      selected.downloadUrl
+    )
   }
 
   @Test

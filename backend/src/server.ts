@@ -7,6 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { handleMusicCatalogRequest } from './musicProvider';
 
 dotenv.config();
 
@@ -608,6 +609,10 @@ app.get('/api/v1/admin/push-stats', requireAdmin, async (req: Request, res: Resp
     res.status(500).json({ error: err.message });
   }
 });
+
+// Licensed Music Catalog Proxy Routes (Provider-Adapter Architecture; Private API keys stay server-side)
+app.get('/api/v1/music/catalog', handleMusicCatalogRequest);
+app.get('/api/v1/music/tracks/:trackId', handleMusicCatalogRequest);
 
 // Fallback Route: Serve Web Admin index.html
 app.get('*', (req: Request, res: Response) => {

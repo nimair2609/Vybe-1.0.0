@@ -616,6 +616,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
                 shouldPlayAudio = (isFeedAudioEnabled && post.id == activeAudioPostId),
                 isHighlighted = (post.id == highlightedPostId),
                 onToggleAudio = { enabled -> viewModel.setFeedAudioEnabled(enabled) },
+                onOpenMusicTrack = { attachment -> viewModel.openMusicTrackPage(attachment) },
                 modifier = Modifier.widthIn(max = 600.dp)
               )
             }

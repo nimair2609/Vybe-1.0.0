@@ -46,7 +46,8 @@ enum class Screen {
   STORY_VIEWER,
   NOTIFICATIONS,
   LIVE_STUDIO,
-  COMMUNITY_ZONE
+  COMMUNITY_ZONE,
+  MUSIC_TRACK_DETAIL
 }
 
 class VybeViewModel : ViewModel() {
@@ -140,6 +141,19 @@ class VybeViewModel : ViewModel() {
   private val _searchQuery = MutableStateFlow("")
   val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
   private var remoteSearchJob: Job? = null
+
+  // Music Track Page & Composer Pre-Selection State
+  private val _selectedMusicTrackAttachment = MutableStateFlow<MusicAttachment?>(null)
+  val selectedMusicTrackAttachment: StateFlow<MusicAttachment?> = _selectedMusicTrackAttachment.asStateFlow()
+
+  private val _trackPageReels = MutableStateFlow<List<Post>>(emptyList())
+  val trackPageReels: StateFlow<List<Post>> = _trackPageReels.asStateFlow()
+
+  private val _isLoadingTrackPage = MutableStateFlow(false)
+  val isLoadingTrackPage: StateFlow<Boolean> = _isLoadingTrackPage.asStateFlow()
+
+  private val _pendingComposerMusicTrack = MutableStateFlow<LicensedMusicTrack?>(null)
+  val pendingComposerMusicTrack: StateFlow<LicensedMusicTrack?> = _pendingComposerMusicTrack.asStateFlow()
 
   // Exposed Repository Flows
   val currentUser = repository.currentUser
@@ -658,7 +672,8 @@ class VybeViewModel : ViewModel() {
     latitude: Double? = null,
     longitude: Double? = null,
     audioTrackTitle: String? = null,
-    preferredAspectRatio: Float? = null
+    preferredAspectRatio: Float? = null,
+    musicAttachment: MusicAttachment? = null
   ): Result<Post> {
     val result = repository.publishPostAwait(
       caption = caption,
@@ -671,7 +686,8 @@ class VybeViewModel : ViewModel() {
       latitude = latitude,
       longitude = longitude,
       audioTrackTitle = audioTrackTitle,
-      preferredAspectRatio = preferredAspectRatio
+      preferredAspectRatio = preferredAspectRatio,
+      musicAttachment = musicAttachment
     )
     if (result.isSuccess) {
       navigateBack()
@@ -689,7 +705,8 @@ class VybeViewModel : ViewModel() {
     latitude: Double? = null,
     longitude: Double? = null,
     audioTrackTitle: String? = null,
-    preferredAspectRatio: Float? = null
+    preferredAspectRatio: Float? = null,
+    musicAttachment: MusicAttachment? = null
   ) {
     repository.createPost(
       caption = caption,
@@ -701,7 +718,8 @@ class VybeViewModel : ViewModel() {
       latitude = latitude,
       longitude = longitude,
       audioTrackTitle = audioTrackTitle,
-      preferredAspectRatio = preferredAspectRatio
+      preferredAspectRatio = preferredAspectRatio,
+      musicAttachment = musicAttachment
     )
     navigateBack()
   }
@@ -837,7 +855,8 @@ class VybeViewModel : ViewModel() {
     audience: StoryAudience = StoryAudience.EVERYONE,
     musicTrackTitle: String? = null,
     location: String? = null,
-    textBackgroundColor: String? = null
+    textBackgroundColor: String? = null,
+    musicAttachment: MusicAttachment? = null
   ): Result<Story> = repository.publishStoryAwait(
     mediaUrl = mediaUrl,
     caption = caption,
@@ -845,7 +864,8 @@ class VybeViewModel : ViewModel() {
     audience = audience,
     musicTrackTitle = musicTrackTitle,
     location = location,
-    textBackgroundColor = textBackgroundColor
+    textBackgroundColor = textBackgroundColor,
+    musicAttachment = musicAttachment
   )
 
   fun createStory(
@@ -855,7 +875,8 @@ class VybeViewModel : ViewModel() {
     audience: StoryAudience = StoryAudience.EVERYONE,
     musicTrackTitle: String? = null,
     location: String? = null,
-    textBackgroundColor: String? = null
+    textBackgroundColor: String? = null,
+    musicAttachment: MusicAttachment? = null
   ) = repository.createStory(
     mediaUrl = mediaUrl,
     caption = caption,
@@ -863,7 +884,8 @@ class VybeViewModel : ViewModel() {
     audience = audience,
     musicTrackTitle = musicTrackTitle,
     location = location,
-    textBackgroundColor = textBackgroundColor
+    textBackgroundColor = textBackgroundColor,
+    musicAttachment = musicAttachment
   )
 
   fun markStoryViewed(storyId: String) = repository.markStoryViewed(storyId)
@@ -1199,4 +1221,46 @@ class VybeViewModel : ViewModel() {
     repository.updateCommunityMember(communityId, targetUserId, role, status)
   fun removeCommunityMember(communityId: String, targetUserId: String) =
     repository.removeCommunityMember(communityId, targetUserId)
+
+  // --- Music Track Page & Discovery ---
+  fun openMusicTrackPage(attachment: MusicAttachment) {
+    com.example.util.music.MusicPreviewController.stop()
+    val sanitized = attachment.sanitized()
+    _selectedMusicTrackAttachment.value = sanitized
+    // Immediate local matches so UI renders responsively
+    _trackPageReels.value = repository.posts.value.filter { post ->
+      !post.isArchived && post.musicAttachment?.trackId == sanitized.trackId
+    }
+    navigateTo(Screen.MUSIC_TRACK_DETAIL)
+    refreshMusicTrackReels(sanitized.trackId)
+  }
+
+  fun refreshMusicTrackReels(trackId: String = _selectedMusicTrackAttachment.value?.trackId.orEmpty()) {
+    if (trackId.isBlank()) return
+    viewModelScope.launch {
+      _isLoadingTrackPage.value = true
+      try {
+        _trackPageReels.value = repository.fetchReelsForMusicTrack(trackId)
+      } finally {
+        _isLoadingTrackPage.value = false
+      }
+    }
+  }
+
+  fun useTrackInReel(track: LicensedMusicTrack) {
+    com.example.util.music.MusicPreviewController.stop()
+    _pendingComposerMusicTrack.value = track
+    navigateTo(Screen.CREATE_POST)
+  }
+
+  fun consumePendingComposerMusicTrack(): LicensedMusicTrack? {
+    val track = _pendingComposerMusicTrack.value
+    _pendingComposerMusicTrack.value = null
+    return track
+  }
+
+  override fun onCleared() {
+    com.example.util.music.MusicPreviewController.stop()
+    super.onCleared()
+  }
 }

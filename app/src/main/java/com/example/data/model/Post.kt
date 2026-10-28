@@ -58,6 +58,7 @@ data class Post(
   val remixOriginalAuthor: String? = null,
   val comments: List<PostComment> = emptyList(),
   val audioTrackTitle: String? = null,
+  val musicAttachment: MusicAttachment? = null,
   val locationName: String? = null,
   val latitude: Double? = null,
   val longitude: Double? = null,

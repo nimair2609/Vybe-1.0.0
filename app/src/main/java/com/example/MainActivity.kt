@@ -193,6 +193,7 @@ class MainActivity : ComponentActivity() {
         val isMediaPlaybackScreen = isFeedOrReelsMain ||
           currentScreen == Screen.REELS_VIEWER ||
           currentScreen == Screen.STORY_VIEWER ||
+          currentScreen == Screen.MUSIC_TRACK_DETAIL ||
           currentScreen == Screen.LIVE_STUDIO
 
         volumeControlStream = when {
@@ -239,6 +240,7 @@ class MainActivity : ComponentActivity() {
                 Screen.NOTIFICATIONS -> NotificationCenterScreen(viewModel)
                 Screen.LIVE_STUDIO -> LiveStudioScreen(viewModel)
                 Screen.COMMUNITY_ZONE -> CommunityZoneScreen(viewModel)
+                Screen.MUSIC_TRACK_DETAIL -> MusicTrackScreen(viewModel)
               }
 
               // Floating Upload Status Banner positioned cleanly below the top header
@@ -347,6 +349,7 @@ class MainActivity : ComponentActivity() {
     super.onPause()
     VybeNotificationHelper.isAppInForeground = false
     FeedAudioController.stopAllFeedAudio()
+    com.example.util.music.MusicPreviewController.stop()
   }
 
   override fun onNewIntent(intent: Intent) {
