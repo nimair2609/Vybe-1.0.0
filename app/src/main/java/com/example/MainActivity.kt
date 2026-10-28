@@ -294,6 +294,7 @@ class MainActivity : ComponentActivity() {
   override fun onResume() {
     super.onResume()
     VybeNotificationHelper.isAppInForeground = true
+    com.example.notifications.VybeRealtimePushManager.ensureConnected(applicationContext)
   }
 
   override fun onPause() {

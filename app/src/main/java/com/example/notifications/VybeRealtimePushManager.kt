@@ -87,6 +87,17 @@ object VybeRealtimePushManager {
     pushAccessTokenIfValid(accessToken)
   }
 
+  fun ensureConnected(context: Context) {
+    val appCtx = context.applicationContext
+    val session = SessionManager.getInstance(appCtx)
+    val uid = currentUserId ?: session.userId
+    if (session.isLoggedIn && !uid.isNullOrBlank()) {
+      if (webSocket == null || !isActiveSession.get()) {
+        start(appCtx, uid, session.accessToken)
+      }
+    }
+  }
+
   fun stop() {
     isActiveSession.set(false)
     currentUserId = null
