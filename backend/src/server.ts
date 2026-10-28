@@ -3,20 +3,28 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+import path from 'path';
 import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+// Default to port 3000 to match AI Studio / Cloud Run nginx proxy mapping
+const PORT = process.env.PORT || 3000;
 
 // Security & Middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false // Allow CDNs for Admin Dashboard (Chart.js, Lucide, Google Fonts, Supabase)
+}));
 app.use(cors({
   origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : '*',
   credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));
+
+// Static Web Admin Portal
+const webDirectory = path.resolve(__dirname, '../../web');
+app.use(express.static(webDirectory));
 
 // Rate Limiting (Abuse Prevention)
 const generalLimiter = rateLimit({
@@ -27,7 +35,7 @@ const generalLimiter = rateLimit({
 app.use('/api/', generalLimiter);
 
 // Supabase Service Client (Using SERVICE_ROLE_KEY securely on the server only)
-const supabaseUrl = process.env.SUPABASE_URL || '';
+const supabaseUrl = process.env.SUPABASE_URL || 'https://cppwadedazpbevkfrchg.supabase.co';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 const supabaseAdmin = (supabaseUrl && supabaseServiceKey) 
@@ -38,7 +46,7 @@ const supabaseAdmin = (supabaseUrl && supabaseServiceKey)
 app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({
     status: 'healthy',
-    product: 'VYBE 3.0 API',
+    product: 'VYBE 3.0 API & Admin Console',
     brand: 'NR Next | NR Group',
     timestamp: new Date().toISOString(),
     supabaseConnected: Boolean(supabaseAdmin)
@@ -70,7 +78,7 @@ const requireAdmin = async (req: Request, res: Response, next: NextFunction): Pr
     .eq('id', user.id)
     .single();
 
-  if (!profile || profile.role !== 'ADMIN') {
+  if (!profile || (profile.role !== 'ADMIN' && profile.role !== 'MODERATOR')) {
     res.status(403).json({ error: 'Forbidden: Requires Administrator privileges.' });
     return;
   }
@@ -160,9 +168,14 @@ app.post('/api/v1/capsules/expire', async (req: Request, res: Response): Promise
 
   res.status(200).json({
     success: true,
-    unlockedCount: toUnlock?.length || 0,
-    deletedExpiredCount: toDelete?.length || 0
+    unlockedCount: (toUnlock as any)?.length || 0,
+    deletedExpiredCount: (toDelete as any)?.length || 0
   });
+});
+
+// Fallback Route: Serve Web Admin index.html
+app.get('*', (req: Request, res: Response) => {
+  res.sendFile(path.join(webDirectory, 'index.html'));
 });
 
 // 5. Global Error Handler
@@ -172,5 +185,5 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`[VYBE 3.0 API] Listening on port ${PORT}`);
+  console.log(`[VYBE 3.0 API & Admin Console] Listening on port ${PORT}`);
 });

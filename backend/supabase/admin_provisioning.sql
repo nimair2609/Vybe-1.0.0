@@ -1,136 +1,122 @@
 -- ====================================================================
--- VYBE 3.0 SECURE INITIAL ADMIN PROVISIONING SCRIPT
+-- VYBE 3.0 SECURE INITIAL ADMIN PROVISIONING SCRIPT (V2)
+-- Product of NR Next | NR Group
 -- Execute this script in the Supabase SQL Editor (Dashboard -> SQL Editor)
--- to elevate the authorized account 'nrnexthq@gmail.com' to ADMIN status
--- with Verified VIP badges, without encountering PostgreSQL error 'P0001'.
+-- to elevate 'renukadas083@gmail.com' and 'nrnexthq@gmail.com' to OWNER_ADMIN
 -- ====================================================================
 
--- 1. Ensure the trigger function allows administrative / SQL Editor operations
--- (Prevents PostgreSQL error P0001 when executed by database admin / postgres role)
-CREATE OR REPLACE FUNCTION public.check_profile_elevation()
-RETURNS TRIGGER AS $$
-DECLARE
-    jwt_role TEXT;
+-- 1. Ensure columns and tables exist
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS is_suspended BOOLEAN DEFAULT FALSE;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS suspended_until TIMESTAMPTZ;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS suspension_reason TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS is_banned BOOLEAN DEFAULT FALSE;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS ban_reason TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS admin_internal_notes TEXT;
+
+DO $$ 
 BEGIN
-    IF (OLD.role IS DISTINCT FROM NEW.role OR 
-        OLD.is_verified IS DISTINCT FROM NEW.is_verified OR 
-        OLD.is_vip IS DISTINCT FROM NEW.is_vip) THEN
-        
-        -- Check if request is coming from PostgREST / Supabase Client API
-        BEGIN
-            jwt_role := current_setting('request.jwt.claim.role', true);
-        EXCEPTION WHEN OTHERS THEN
-            jwt_role := NULL;
-        END;
-
-        -- If executed directly by database administrator in SQL Editor / migrations
-        -- (where jwt_role is NULL) or via backend service_role, allow elevation
-        IF jwt_role IS NULL OR jwt_role = 'service_role' OR current_user IN ('postgres', 'supabase_admin') THEN
-            RETURN NEW;
-        END IF;
-
-        -- For client-initiated updates (authenticated users via API):
-        -- Caller MUST be an authenticated ADMIN
-        IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'ADMIN') THEN
-            RAISE EXCEPTION 'Only administrators can modify verification badges or role status.';
-        END IF;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- 2. Execute Admin Provisioning for the authorized administrator email
-DO $$
-DECLARE
-    target_admin_email TEXT := 'nrnexthq@gmail.com';
-    target_user_record RECORD;
-    target_user_id UUID;
-    target_username TEXT;
-    target_display_name TEXT;
-BEGIN
-    -- Case-insensitive lookup in auth.users
-    SELECT * INTO target_user_record 
-    FROM auth.users 
-    WHERE LOWER(email) = LOWER(target_admin_email);
-
-    IF target_user_record.id IS NOT NULL THEN
-        target_user_id := target_user_record.id;
-        
-        -- 2a. Confirm email in auth.users so the admin can log in immediately
-        UPDATE auth.users
-        SET email_confirmed_at = COALESCE(email_confirmed_at, NOW())
-        WHERE id = target_user_id;
-
-        -- 2b. Extract metadata or set clean defaults
-        target_username := COALESCE(
-            target_user_record.raw_user_meta_data->>'username',
-            LOWER(REGEXP_REPLACE(SPLIT_PART(target_admin_email, '@', 1), '[^a-zA-Z0-9_]', '', 'g'))
-        );
-        target_display_name := COALESCE(
-            target_user_record.raw_user_meta_data->>'display_name',
-            'VYBE Administrator'
-        );
-
-        -- 2c. Upsert into public.profiles to guarantee existence and ADMIN role
-        INSERT INTO public.profiles (
-            id,
-            username,
-            display_name,
-            first_name,
-            last_name,
-            email,
-            role,
-            is_verified,
-            is_vip
-        ) VALUES (
-            target_user_id,
-            target_username,
-            target_display_name,
-            COALESCE(target_user_record.raw_user_meta_data->>'first_name', 'Admin'),
-            COALESCE(target_user_record.raw_user_meta_data->>'last_name', 'User'),
-            target_admin_email,
-            'ADMIN',
-            TRUE,
-            TRUE
-        )
-        ON CONFLICT (id) DO UPDATE SET
-            role = 'ADMIN',
-            is_verified = TRUE,
-            is_vip = TRUE,
-            email = EXCLUDED.email;
-
-        -- 2d. Ensure user settings row exists
-        INSERT INTO public.user_settings (user_id)
-        VALUES (target_user_id)
-        ON CONFLICT (user_id) DO NOTHING;
-
-        -- 2e. Ensure notification preferences row exists
-        INSERT INTO public.notification_preferences (user_id)
-        VALUES (target_user_id)
-        ON CONFLICT (user_id) DO NOTHING;
-
-        -- 2f. Record security audit log
-        INSERT INTO public.audit_logs (actor_id, action, target_entity, details)
-        VALUES (
-            target_user_id,
-            'PROVISION_FIRST_ADMIN',
-            'profiles',
-            jsonb_build_object(
-                'email', target_admin_email,
-                'user_id', target_user_id,
-                'assigned_role', 'ADMIN',
-                'is_verified', TRUE,
-                'is_vip', TRUE
-            )
-        );
-
-        RAISE NOTICE 'SUCCESS: Account % (UUID: %) has been confirmed and elevated to ADMIN with Verified VIP badges.', target_admin_email, target_user_id;
-    ELSE
-        RAISE NOTICE 'NOTICE: User with email % has not signed up in Supabase Auth yet. Please register via the VYBE Android app (or invite via Supabase Auth Dashboard), then re-run this script.', target_admin_email;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'admin_sub_role_enum') THEN
+        CREATE TYPE admin_sub_role_enum AS ENUM ('OWNER_ADMIN', 'MODERATOR', 'SUPPORT_ADMIN', 'ANALYST');
     END IF;
 END $$;
 
--- OPTIONAL: If the administrator forgets their password or needs a direct reset via SQL Editor:
--- UPDATE auth.users 
--- SET encrypted_password = crypt('YourNewSecurePassword123!', gen_salt('bf'))
--- WHERE LOWER(email) = 'nrnexthq@gmail.com';
+CREATE TABLE IF NOT EXISTS public.admin_users (
+    user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    email VARCHAR(255) NOT NULL,
+    role admin_sub_role_enum NOT NULL DEFAULT 'MODERATOR',
+    permissions JSONB DEFAULT '{"all": true}'::jsonb,
+    is_active BOOLEAN DEFAULT TRUE,
+    assigned_by UUID REFERENCES auth.users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.admin_audit_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    admin_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    admin_email VARCHAR(255),
+    action VARCHAR(100) NOT NULL,
+    target_type VARCHAR(50) NOT NULL,
+    target_id VARCHAR(100) NOT NULL,
+    details JSONB DEFAULT '{}'::jsonb,
+    ip_address VARCHAR(45),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2. Execute Admin Provisioning for the authorized administrator emails
+DO $$
+DECLARE
+    target_emails TEXT[] := ARRAY['renukadas083@gmail.com', 'nrnexthq@gmail.com'];
+    target_email TEXT;
+    target_user_record RECORD;
+    target_user_id UUID;
+BEGIN
+    FOREACH target_email IN ARRAY target_emails
+    LOOP
+        SELECT * INTO target_user_record 
+        FROM auth.users 
+        WHERE LOWER(email) = LOWER(target_email);
+
+        IF target_user_record.id IS NOT NULL THEN
+            target_user_id := target_user_record.id;
+            
+            -- Confirm email
+            UPDATE auth.users
+            SET email_confirmed_at = COALESCE(email_confirmed_at, NOW())
+            WHERE id = target_user_id;
+
+            -- Elevate profile
+            INSERT INTO public.profiles (
+                id,
+                username,
+                display_name,
+                email,
+                role,
+                is_verified,
+                is_vip
+            ) VALUES (
+                target_user_id,
+                COALESCE(target_user_record.raw_user_meta_data->>'username', LOWER(REGEXP_REPLACE(SPLIT_PART(target_email, '@', 1), '[^a-zA-Z0-9_]', '', 'g'))),
+                COALESCE(target_user_record.raw_user_meta_data->>'display_name', 'VYBE Administrator'),
+                target_email,
+                'ADMIN',
+                TRUE,
+                TRUE
+            )
+            ON CONFLICT (id) DO UPDATE SET
+                role = 'ADMIN',
+                is_verified = TRUE,
+                is_vip = TRUE,
+                email = EXCLUDED.email;
+
+            -- Insert into admin_users
+            INSERT INTO public.admin_users (
+                user_id,
+                email,
+                role,
+                permissions,
+                is_active
+            ) VALUES (
+                target_user_id,
+                target_email,
+                'OWNER_ADMIN',
+                '{"all": true, "can_moderate_content": true, "can_manage_users": true, "can_grant_badges": true, "can_manage_admins": true}'::jsonb,
+                TRUE
+            )
+            ON CONFLICT (user_id) DO UPDATE SET
+                role = 'OWNER_ADMIN',
+                is_active = TRUE;
+
+            -- Log action
+            INSERT INTO public.admin_audit_logs (
+                admin_id, admin_email, action, target_type, target_id, details
+            ) VALUES (
+                target_user_id, target_email, 'PROVISION_OWNER_ADMIN', 'admin_users', target_user_id::text, jsonb_build_object('role', 'OWNER_ADMIN')
+            );
+
+            RAISE NOTICE 'SUCCESS: % (UUID: %) elevated to OWNER_ADMIN with full privileges.', target_email, target_user_id;
+        ELSE
+            RAISE NOTICE 'INFO: % has not signed up in Supabase Auth yet. Run this again after signing up.', target_email;
+        END IF;
+    END LOOP;
+END $$;
