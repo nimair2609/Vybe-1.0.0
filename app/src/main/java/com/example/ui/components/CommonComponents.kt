@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -124,19 +126,17 @@ fun VerificationBadge(user: User) {
     Spacer(modifier = Modifier.width(3.dp))
     Box(
       modifier = Modifier
-        .size(17.dp)
+        .size(18.dp)
         .clip(CircleShape)
         .background(Brush.linearGradient(listOf(Color(0xFFFFD700), Color(0xFFFFA500))))
-        .padding(1.2.dp)
-        .clip(CircleShape)
-        .background(Color(0xFF0F121E))
         .testTag("vip_badge"),
       contentAlignment = Alignment.Center
     ) {
-      Image(
-        painter = painterResource(id = R.drawable.vybe_app_icon_clean),
-        contentDescription = "VYBE Authorized VIP Badge",
-        modifier = Modifier.size(13.dp)
+      Icon(
+        imageVector = Icons.Default.Star,
+        contentDescription = "VYBE VIP Creator Badge",
+        tint = Color(0xFF0F121E),
+        modifier = Modifier.size(12.dp)
       )
     }
   }
@@ -144,36 +144,34 @@ fun VerificationBadge(user: User) {
   // Official Verified Badge
   if (user.isVerified || user.isVerifiedPublicFigure) {
     Spacer(modifier = Modifier.width(3.dp))
-    Box(
+    Icon(
+      imageVector = Icons.Default.CheckCircle,
+      contentDescription = "VYBE Verified Badge",
+      tint = VybeBrandCyan,
       modifier = Modifier
-        .size(17.dp)
-        .clip(CircleShape)
-        .background(Brush.linearGradient(listOf(VybeBrandCyan, VybeBrandBlue)))
-        .padding(1.2.dp)
-        .clip(CircleShape)
-        .background(Color(0xFF060714))
-        .testTag("verified_badge"),
-      contentAlignment = Alignment.Center
-    ) {
-      Image(
-        painter = painterResource(id = R.drawable.vybe_app_icon_clean),
-        contentDescription = "VYBE Authorized Verified Badge",
-        modifier = Modifier.size(13.dp)
-      )
-    }
+        .size(18.dp)
+        .testTag("verified_badge")
+    )
   }
 
   // Verified Business Shop Badge
   if (user.isVerifiedBusiness) {
     Spacer(modifier = Modifier.width(3.dp))
-    Icon(
-      imageVector = Icons.Default.Store,
-      contentDescription = "Verified Business Shop",
-      tint = VybeVerifiedGold,
+    Box(
       modifier = Modifier
-        .size(16.dp)
-        .testTag("business_badge")
-    )
+        .size(18.dp)
+        .clip(CircleShape)
+        .background(Brush.linearGradient(listOf(Color(0xFF00E676), Color(0xFF00B0FF))))
+        .testTag("business_badge"),
+      contentAlignment = Alignment.Center
+    ) {
+      Icon(
+        imageVector = Icons.Default.Store,
+        contentDescription = "Verified Business Shop",
+        tint = Color(0xFF060714),
+        modifier = Modifier.size(12.dp)
+      )
+    }
   }
 }
 

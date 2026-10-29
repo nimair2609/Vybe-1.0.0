@@ -99,6 +99,8 @@ data class SupabaseProfileDto(
   val role: String? = "USER",
   @Json(name = "is_verified") val isVerified: Boolean? = false,
   @Json(name = "is_vip") val isVip: Boolean? = false,
+  @Json(name = "is_verified_business") val isVerifiedBusiness: Boolean? = false,
+  @Json(name = "is_verified_public_figure") val isVerifiedPublicFigure: Boolean? = false,
   @Json(name = "is_private_account") val isPrivateAccount: Boolean? = false,
   @Json(name = "message_privacy") val messagePrivacy: String? = "EVERYONE",
   @Json(name = "followers_count") val followersCount: Int? = 0,
