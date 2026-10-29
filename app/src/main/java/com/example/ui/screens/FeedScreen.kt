@@ -12,17 +12,21 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.border
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -36,6 +40,7 @@ import com.example.data.model.MediaType
 import com.example.data.model.MoodType
 import com.example.data.model.belongsToMainFeed
 import com.example.data.model.matchesMoodFilter
+import com.example.ui.MainTab
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
@@ -229,115 +234,92 @@ fun FeedScreen(viewModel: VybeViewModel) {
       TopAppBar(
         windowInsets = WindowInsets.statusBars,
         title = {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-              modifier = Modifier
-                .size(32.dp)
-                .clip(RoundedCornerShape(9.dp))
-            ) {
-              Image(
-                painter = painterResource(id = R.drawable.vybe_app_icon_clean),
-                contentDescription = "VYBE",
-                modifier = Modifier.fillMaxSize()
-              )
-            }
-            Spacer(modifier = Modifier.width(10.dp))
-            Text(
-              text = "VYBE",
-              fontFamily = SyneFontFamily,
-              fontSize = 21.sp,
-              fontWeight = FontWeight.ExtraBold,
-              letterSpacing = 1.6.sp,
-              color = MaterialTheme.colorScheme.onBackground
-            )
-          }
+          Text(
+            text = "VYBE",
+            fontFamily = SyneFontFamily,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Black,
+            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+            letterSpacing = 1.8.sp,
+            color = Color.White
+          )
         },
         actions = {
-          if (audioCapablePostIds.isNotEmpty()) {
-            IconButton(
-              onClick = { viewModel.toggleFeedAudio() },
-              modifier = Modifier
-                .size(48.dp)
-                .testTag("feed_audio_global_toggle")
-            ) {
-              Icon(
-                imageVector = if (isFeedAudioEnabled) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
-                contentDescription = if (isFeedAudioEnabled) "Feed music on (tap to mute)" else "Feed music muted (tap to enable)",
-                tint = if (isFeedAudioEnabled) VybeViolet else MaterialTheme.colorScheme.onSurfaceVariant
-              )
-            }
-          }
-          val unreadNotifsCount = remember(notifications) { notifications.count { !it.isRead } }
+          // Search Button
           IconButton(
-            onClick = { showVybeMatchesDialog = true },
+            onClick = { viewModel.selectTab(MainTab.EXPLORE) },
             modifier = Modifier
-              .size(48.dp)
-              .testTag("vybe_matches_top_button")
+              .size(44.dp)
+              .testTag("header_search_button")
           ) {
-            BadgedBox(
-              badge = {
-                if (vybeMatches.isNotEmpty()) {
-                  Badge(containerColor = Color(0xFF10B981)) {
-                    Text("${vybeMatches.size}")
-                  }
-                }
-              }
-            ) {
-              Icon(Icons.Default.Group, contentDescription = "VYBE Matches", tint = Color(0xFF10B981))
-            }
+            Icon(
+              imageVector = Icons.Outlined.Search,
+              contentDescription = "Search",
+              tint = Color.White,
+              modifier = Modifier.size(24.dp)
+            )
           }
+
+          // Notification Bell with Cyan Unread Indicator Dot
+          val unreadNotifsCount = remember(notifications) { notifications.count { !it.isRead } }
           IconButton(
             onClick = { viewModel.navigateTo(Screen.NOTIFICATIONS) },
             modifier = Modifier
-              .size(48.dp)
+              .size(44.dp)
               .testTag("notification_bell_button")
           ) {
             BadgedBox(
               badge = {
                 if (unreadNotifsCount > 0) {
-                  Badge(containerColor = VybeMagenta) {
-                    Text("$unreadNotifsCount")
-                  }
+                  Box(
+                    modifier = Modifier
+                      .size(8.dp)
+                      .clip(CircleShape)
+                      .background(Color(0xFF06B6D4))
+                  )
                 }
               }
             ) {
-              Icon(Icons.Default.Notifications, contentDescription = "Notification Center")
+              Icon(
+                imageVector = Icons.Outlined.Notifications,
+                contentDescription = "Notifications",
+                tint = Color.White,
+                modifier = Modifier.size(24.dp)
+              )
             }
           }
-          IconButton(
-            onClick = { viewModel.navigateTo(Screen.SETTINGS) },
-            modifier = Modifier
-              .size(48.dp)
-              .testTag("settings_top_button")
-          ) {
-            Icon(Icons.Default.Settings, contentDescription = "Settings")
-          }
+
+          // Profile circular avatar with subtle gradient ring
           if (currentUser != null) {
-            IconButton(
-              onClick = { viewModel.openUserProfile(currentUser!!) },
+            Box(
               modifier = Modifier
-                .size(48.dp)
-                .testTag("profile_avatar_top_button")
+                .padding(start = 2.dp, end = 12.dp)
+                .size(34.dp)
+                .clip(CircleShape)
+                .border(
+                  width = 1.5.dp,
+                  brush = Brush.sweepGradient(
+                    listOf(
+                      Color(0xFF3B82F6),
+                      Color(0xFF8B5CF6),
+                      Color(0xFFEC4899),
+                      Color(0xFF3B82F6)
+                    )
+                  ),
+                  shape = CircleShape
+                )
+                .clickable { viewModel.openUserProfile(currentUser!!) }
+                .testTag("profile_avatar_top_button"),
+              contentAlignment = Alignment.Center
             ) {
-              VybeAvatar(user = currentUser!!, size = 32.dp)
+              VybeAvatar(user = currentUser!!, size = 30.dp)
             }
           }
         },
         colors = TopAppBarDefaults.topAppBarColors(
-          containerColor = MaterialTheme.colorScheme.background
+          containerColor = Color(0xFF070A13)
         )
       )
-    },
-    floatingActionButton = {
-      FloatingActionButton(
-        onClick = { viewModel.navigateTo(Screen.CREATE_POST) },
-        containerColor = VybeViolet,
-        contentColor = Color.White,
-        shape = CircleShape,
-        modifier = Modifier.testTag("create_post_fab")
-      ) {
-        Icon(Icons.Default.Add, contentDescription = "Create Post")
-      }
     }
   ) { paddingValues ->
     PullToRefreshBox(
@@ -615,6 +597,8 @@ fun FeedScreen(viewModel: VybeViewModel) {
                 isAudioEnabled = isFeedAudioEnabled,
                 shouldPlayAudio = (isFeedAudioEnabled && post.id == activeAudioPostId),
                 isHighlighted = (post.id == highlightedPostId),
+                isFollowing = followingUserIds.contains(post.author.id),
+                onFollowClick = { viewModel.toggleFollowUser(post.author.id) },
                 onToggleAudio = { enabled -> viewModel.setFeedAudioEnabled(enabled) },
                 onOpenMusicTrack = { attachment -> viewModel.openMusicTrackPage(attachment) },
                 modifier = Modifier.widthIn(max = 600.dp)

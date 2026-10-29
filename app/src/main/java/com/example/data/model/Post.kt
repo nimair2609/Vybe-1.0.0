@@ -5,6 +5,7 @@ enum class MediaType {
 }
 
 enum class VybeReaction(val label: String, val emoji: String) {
+  LOVE("LOVE", "🫰"),
   PULSE("PULSE", "⚡"),
   SPARK("SPARK", "✨"),
   WAVE("WAVE", "💫"),
@@ -13,11 +14,12 @@ enum class VybeReaction(val label: String, val emoji: String) {
   companion object {
     fun fromWire(raw: String?): VybeReaction {
       return when (raw?.trim()?.uppercase()) {
-        "PULSE", "PURE_ENERGY", "LIKE" -> PULSE
+        "LOVE", "HEART", "FINGER_HEART", "LIKE" -> LOVE
+        "PULSE", "PURE_ENERGY" -> PULSE
         "SPARK", "UPLIFT" -> SPARK
         "WAVE", "DEEP_VIBE", "CALM" -> WAVE
         "FLAME", "HEAT" -> FLAME
-        else -> PULSE
+        else -> LOVE
       }
     }
   }

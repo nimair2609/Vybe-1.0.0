@@ -36,15 +36,17 @@ import com.example.data.model.VybeReaction
 import com.example.ui.theme.*
 
 fun reactionColor(reaction: VybeReaction): Color = when (reaction) {
+  VybeReaction.LOVE -> Color(0xFFEC4899)  // Signature Finger Heart Magenta
   VybeReaction.PULSE -> Color(0xFFF59E0B) // Amber Electric Pulse
-  VybeReaction.SPARK -> Color(0xFFEC4899) // Neon Magenta Spark
+  VybeReaction.SPARK -> Color(0xFFA855F7) // Neon Violet Spark
   VybeReaction.WAVE -> Color(0xFF06B6D4)  // Vibrant Cyan Wave
   VybeReaction.FLAME -> Color(0xFFEF4444) // Vivid Flame Coral
 }
 
 fun reactionGradient(reaction: VybeReaction): Brush = when (reaction) {
+  VybeReaction.LOVE -> Brush.linearGradient(listOf(Color(0xFFEC4899), Color(0xFF8B5CF6)))
   VybeReaction.PULSE -> Brush.linearGradient(listOf(Color(0xFFF59E0B), Color(0xFFFBBF24)))
-  VybeReaction.SPARK -> Brush.linearGradient(listOf(Color(0xFFEC4899), Color(0xFFD946EF)))
+  VybeReaction.SPARK -> Brush.linearGradient(listOf(Color(0xFFA855F7), Color(0xFFD946EF)))
   VybeReaction.WAVE -> Brush.linearGradient(listOf(Color(0xFF06B6D4), Color(0xFF3B82F6)))
   VybeReaction.FLAME -> Brush.linearGradient(listOf(Color(0xFFEF4444), Color(0xFFF97316)))
 }
@@ -87,65 +89,82 @@ fun VybeReactionOutlineIcon(
   tint: Color = reactionColor(reaction),
   modifier: Modifier = Modifier
 ) {
-  Canvas(modifier = modifier.size(size)) {
-    val w = this.size.width
-    val h = this.size.height
-    val stroke = Stroke(
-      width = (w * 0.095f).coerceAtLeast(1.8f),
-      cap = StrokeCap.Round,
-      join = StrokeJoin.Round
-    )
-    val path = Path()
-    when (reaction) {
-      VybeReaction.PULSE -> {
-        // Crisp single-line electric lightning bolt outline
-        path.moveTo(w * 0.56f, h * 0.08f)
-        path.lineTo(w * 0.22f, h * 0.54f)
-        path.lineTo(w * 0.48f, h * 0.54f)
-        path.lineTo(w * 0.42f, h * 0.92f)
-        path.lineTo(w * 0.78f, h * 0.44f)
-        path.lineTo(w * 0.52f, h * 0.44f)
-        path.close()
-      }
-      VybeReaction.SPARK -> {
-        // 4-point star spark outline
-        path.moveTo(w * 0.50f, h * 0.08f)
-        path.quadraticTo(w * 0.54f, h * 0.44f, w * 0.92f, h * 0.50f)
-        path.quadraticTo(w * 0.54f, h * 0.56f, w * 0.50f, h * 0.92f)
-        path.quadraticTo(w * 0.46f, h * 0.56f, w * 0.08f, h * 0.50f)
-        path.quadraticTo(w * 0.46f, h * 0.44f, w * 0.50f, h * 0.08f)
-        path.close()
-      }
-      VybeReaction.WAVE -> {
-        // Twin harmonic resonance wave curves
-        path.moveTo(w * 0.10f, h * 0.38f)
-        path.cubicTo(w * 0.30f, h * 0.14f, w * 0.46f, h * 0.62f, w * 0.66f, h * 0.38f)
-        path.quadraticTo(w * 0.80f, h * 0.22f, w * 0.90f, h * 0.38f)
-
-        path.moveTo(w * 0.10f, h * 0.66f)
-        path.cubicTo(w * 0.30f, h * 0.42f, w * 0.46f, h * 0.90f, w * 0.66f, h * 0.66f)
-        path.quadraticTo(w * 0.80f, h * 0.50f, w * 0.90f, h * 0.66f)
-      }
-      VybeReaction.FLAME -> {
-        // Clean modern single-stroke flame silhouette
-        path.moveTo(w * 0.52f, h * 0.10f)
-        path.cubicTo(w * 0.78f, h * 0.30f, w * 0.84f, h * 0.58f, w * 0.72f, h * 0.78f)
-        path.cubicTo(w * 0.62f, h * 0.92f, w * 0.38f, h * 0.92f, w * 0.28f, h * 0.78f)
-        path.cubicTo(w * 0.16f, h * 0.60f, w * 0.24f, h * 0.40f, w * 0.38f, h * 0.30f)
-        path.quadraticTo(w * 0.36f, h * 0.48f, w * 0.48f, h * 0.44f)
-        path.quadraticTo(w * 0.44f, h * 0.26f, w * 0.52f, h * 0.10f)
-        path.close()
-      }
+  if (reaction == VybeReaction.LOVE) {
+    Box(
+      modifier = modifier.size(size),
+      contentAlignment = Alignment.Center
+    ) {
+      Text(
+        text = "🫰",
+        fontSize = (size.value * 0.86f).sp,
+        lineHeight = (size.value * 0.86f).sp,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+      )
     }
-    drawPath(path = path, color = tint, style = stroke)
+  } else {
+    Canvas(modifier = modifier.size(size)) {
+      val w = this.size.width
+      val h = this.size.height
+      val stroke = Stroke(
+        width = (w * 0.095f).coerceAtLeast(1.8f),
+        cap = StrokeCap.Round,
+        join = StrokeJoin.Round
+      )
+      val path = Path()
+      when (reaction) {
+        VybeReaction.LOVE -> { /* handled above */ }
+        VybeReaction.PULSE -> {
+          // Crisp single-line electric lightning bolt outline
+          path.moveTo(w * 0.56f, h * 0.08f)
+          path.lineTo(w * 0.22f, h * 0.54f)
+          path.lineTo(w * 0.48f, h * 0.54f)
+          path.lineTo(w * 0.42f, h * 0.92f)
+          path.lineTo(w * 0.78f, h * 0.44f)
+          path.lineTo(w * 0.52f, h * 0.44f)
+          path.close()
+        }
+        VybeReaction.SPARK -> {
+          // 4-point star spark outline
+          path.moveTo(w * 0.50f, h * 0.08f)
+          path.quadraticTo(w * 0.54f, h * 0.44f, w * 0.92f, h * 0.50f)
+          path.quadraticTo(w * 0.54f, h * 0.56f, w * 0.50f, h * 0.92f)
+          path.quadraticTo(w * 0.46f, h * 0.56f, w * 0.08f, h * 0.50f)
+          path.quadraticTo(w * 0.46f, h * 0.44f, w * 0.50f, h * 0.08f)
+          path.close()
+        }
+        VybeReaction.WAVE -> {
+          // Twin harmonic resonance wave curves
+          path.moveTo(w * 0.10f, h * 0.38f)
+          path.cubicTo(w * 0.30f, h * 0.14f, w * 0.46f, h * 0.62f, w * 0.66f, h * 0.38f)
+          path.quadraticTo(w * 0.80f, h * 0.22f, w * 0.90f, h * 0.38f)
+
+          path.moveTo(w * 0.10f, h * 0.66f)
+          path.cubicTo(w * 0.30f, h * 0.42f, w * 0.46f, h * 0.90f, w * 0.66f, h * 0.66f)
+          path.quadraticTo(w * 0.80f, h * 0.50f, w * 0.90f, h * 0.66f)
+        }
+        VybeReaction.FLAME -> {
+          // Clean modern single-stroke flame silhouette
+          path.moveTo(w * 0.52f, h * 0.10f)
+          path.cubicTo(w * 0.78f, h * 0.30f, w * 0.84f, h * 0.58f, w * 0.72f, h * 0.78f)
+          path.cubicTo(w * 0.62f, h * 0.92f, w * 0.38f, h * 0.92f, w * 0.28f, h * 0.78f)
+          path.cubicTo(w * 0.16f, h * 0.60f, w * 0.24f, h * 0.40f, w * 0.38f, h * 0.30f)
+          path.quadraticTo(w * 0.36f, h * 0.48f, w * 0.48f, h * 0.44f)
+          path.quadraticTo(w * 0.44f, h * 0.26f, w * 0.52f, h * 0.10f)
+          path.close()
+        }
+      }
+      drawPath(path = path, color = tint, style = stroke)
+    }
   }
 }
 
 /**
- * Premium Animated Reaction Selector for VYBE:
- * - Displays all four reactions: PULSE, SPARK, WAVE, FLAME using VYBE single-colour outline icons.
- * - Single-tap selects a reaction; tapping an already selected reaction removes it.
- * - Selecting another switches the reaction.
+ * Minimalist Instagram-Style Reaction Bar for VYBE:
+ * - Displays all 5 reactions (LOVE 🫰, PULSE ⚡, SPARK ✨, WAVE 💫, FLAME 🔥) in a single,
+ *   thin, continuous outlined floating bar.
+ * - Icons only; clean and distraction-free without text labels.
+ * - Single-tap selects a reaction or toggles off if already active.
+ * - Smooth spring scale animation on selection.
  */
 @Composable
 fun VybeReactionSelector(
@@ -155,17 +174,17 @@ fun VybeReactionSelector(
   modifier: Modifier = Modifier
 ) {
   Surface(
-    color = Color(0xFF141726).copy(alpha = 0.96f),
-    shape = RoundedCornerShape(26.dp),
-    border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(VybeBrandCyan, VybeBrandViolet, VybeBrandMagenta))),
-    shadowElevation = 12.dp,
+    color = Color(0xFF0C1020).copy(alpha = 0.97f),
+    shape = RoundedCornerShape(32.dp),
+    border = BorderStroke(1.dp, Color(0xFF232D48)),
+    shadowElevation = 16.dp,
     modifier = modifier
-      .padding(horizontal = 8.dp, vertical = 4.dp)
+      .padding(horizontal = 4.dp, vertical = 2.dp)
       .testTag("vybe_reaction_selector")
   ) {
     Row(
       modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
       verticalAlignment = Alignment.CenterVertically
     ) {
       VybeReaction.values().forEach { reaction ->
@@ -189,31 +208,22 @@ fun VybeReactionSelector(
         Box(
           modifier = Modifier
             .scale(scale.value)
+            .size(38.dp)
             .clip(CircleShape)
             .background(
-              if (isSelected) rColor.copy(alpha = 0.22f) else Color.Transparent
+              if (isSelected) rColor.copy(alpha = 0.26f) else Color.Transparent
             )
             .clickable {
               onSelectReaction(reaction)
             }
-            .padding(horizontal = 10.dp, vertical = 7.dp)
             .testTag("reaction_item_${reaction.name}"),
           contentAlignment = Alignment.Center
         ) {
-          Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            VybeReactionOutlineIcon(
-              reaction = reaction,
-              size = 22.dp,
-              tint = rColor
-            )
-            Spacer(modifier = Modifier.height(3.dp))
-            Text(
-              text = reaction.label,
-              fontSize = 9.sp,
-              fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold,
-              color = if (isSelected) rColor else Color.White.copy(alpha = 0.78f)
-            )
-          }
+          VybeReactionOutlineIcon(
+            reaction = reaction,
+            size = 23.dp,
+            tint = if (isSelected) rColor else Color.White.copy(alpha = 0.88f)
+          )
         }
       }
     }

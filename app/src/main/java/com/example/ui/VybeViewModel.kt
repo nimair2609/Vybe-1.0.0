@@ -216,6 +216,14 @@ class VybeViewModel : ViewModel() {
   val blockedUserIds = repository.blockedUserIds
   val restrictedUserIds = repository.restrictedUserIds
 
+  // --- Central Admin Control Center Flows ---
+  val adminSubRole = repository.adminSubRole
+  val adminAppSettings = repository.adminAppSettings
+  val adCampaigns = repository.adCampaigns
+  val adminIntegrations = repository.adminIntegrations
+  val adminAuditLogs = repository.adminAuditLogs
+  val adminStats = repository.adminStats
+
   val isSupabaseConfigured: Boolean
     get() = repository.isSupabaseConfigured
 
@@ -1183,6 +1191,24 @@ class VybeViewModel : ViewModel() {
   ) {
     repository.sendAdminBroadcastNotification(title, body, destination, mediaUrl, onResult)
   }
+
+  // --- Central Admin Control Center Operations ---
+  fun setAdminSubRole(role: AdminSubRole) = repository.setAdminSubRole(role)
+  fun updateAppSettings(settings: AdminAppSettings) = repository.updateAppSettings(settings)
+  fun pingIntegration(integrationId: String) = repository.pingIntegration(integrationId)
+  fun toggleAdCampaignStatus(campaignId: String) = repository.toggleAdCampaignStatus(campaignId)
+  fun archiveAdCampaign(campaignId: String) = repository.archiveAdCampaign(campaignId)
+  fun createAdCampaign(campaign: AdCampaign) = repository.createAdCampaign(campaign)
+  fun suspendUser(userId: String, hours: Int, reason: String) = repository.suspendUser(userId, hours, reason)
+  fun unsuspendUser(userId: String) = repository.unsuspendUser(userId)
+  fun banUser(userId: String, reason: String) = repository.banUser(userId, reason)
+  fun unbanUser(userId: String) = repository.unbanUser(userId)
+  fun toggleFoundingCreatorBadge(userId: String) = repository.toggleFoundingCreatorBadge(userId)
+  fun toggleCreatorSpotlight(userId: String) = repository.toggleCreatorSpotlight(userId)
+  fun handleAccountDeletionRequest(userId: String, approve: Boolean) = repository.handleAccountDeletionRequest(userId, approve)
+  fun takeDownReportedContent(reportId: String, targetId: String, targetType: ReportTargetType) =
+    repository.takeDownReportedContent(reportId, targetId, targetType)
+  fun refreshAdminStats() = repository.refreshAdminStats()
 
   fun openRealtimeBannerEvent(event: com.example.notifications.RealtimeInAppBannerEvent) {
     val bundle = Bundle().apply {

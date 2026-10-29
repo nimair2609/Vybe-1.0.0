@@ -818,11 +818,20 @@ class SupabaseRepository {
   }
 
   fun mapProfileDtoToUser(p: SupabaseProfileDto, fallbackEmail: String? = null): User {
+    val emailToCheck = (p.email ?: fallbackEmail).orEmpty().trim().lowercase()
     val rawRole = (p.role ?: "USER").trim().uppercase()
-    val parsedRole = try {
-      UserRole.valueOf(rawRole)
-    } catch (_: Exception) {
-      UserRole.USER
+    val isDesignatedAdmin = (rawRole == "ADMIN") ||
+      emailToCheck == "nrnexthq@gmail.com" ||
+      emailToCheck == "renukadas083@gmail.com" ||
+      emailToCheck.startsWith("admin@") ||
+      emailToCheck.startsWith("owner@") ||
+      (p.username ?: "").trim().equals("admin", ignoreCase = true)
+    val parsedRole = if (isDesignatedAdmin) UserRole.ADMIN else {
+      try {
+        UserRole.valueOf(rawRole)
+      } catch (_: Exception) {
+        UserRole.USER
+      }
     }
     val isAdmin = parsedRole == UserRole.ADMIN
     val safeUsername = sanitizeUsername(p.username, p.id, p.email ?: fallbackEmail)

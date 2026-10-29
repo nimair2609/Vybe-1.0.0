@@ -41,6 +41,7 @@ import coil.compose.AsyncImage
 import com.example.data.model.CallAvailabilityResult
 import com.example.data.model.MediaType
 import com.example.data.model.User
+import com.example.data.model.UserRole
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.components.PostCard
@@ -282,6 +283,14 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
             Icon(Icons.Default.QrCode, contentDescription = "Share Profile QR Code", tint = VybeBrandCyan)
           }
           if (isMe) {
+            if (user.role == UserRole.ADMIN) {
+              IconButton(
+                onClick = { viewModel.navigateTo(Screen.ADMIN_CONSOLE) },
+                modifier = Modifier.testTag("profile_admin_console_button")
+              ) {
+                Icon(Icons.Default.AdminPanelSettings, contentDescription = "Admin Console", tint = VybeVerifiedGold)
+              }
+            }
             IconButton(
               onClick = { viewModel.navigateTo(Screen.SETTINGS) },
               modifier = Modifier.testTag("profile_settings_button")

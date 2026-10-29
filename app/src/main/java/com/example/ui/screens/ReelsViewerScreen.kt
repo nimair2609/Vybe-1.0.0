@@ -269,7 +269,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
               onTap = { isPlaying = !isPlaying },
               onDoubleTap = {
                 showDoubleTapResonance = true
-                viewModel.reactToPost(reelPost.id, VybeReaction.PULSE)
+                viewModel.reactToPost(reelPost.id, VybeReaction.LOVE)
               }
             )
           }
@@ -291,12 +291,12 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
           onTapOverlay = { isPlaying = !isPlaying },
           onDoubleTapOverlay = {
             showDoubleTapResonance = true
-            viewModel.reactToPost(reelPost.id, VybeReaction.PULSE)
+            viewModel.reactToPost(reelPost.id, VybeReaction.LOVE)
           },
           modifier = Modifier.fillMaxSize()
         )
 
-        // Double-Tap Resonance PULSE Animation Overlay
+        // Double-Tap Resonance LOVE Animation Overlay
         androidx.compose.animation.AnimatedVisibility(
           visible = showDoubleTapResonance,
           enter = androidx.compose.animation.scaleIn(initialScale = 0.4f) + androidx.compose.animation.fadeIn(),
@@ -307,13 +307,13 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
             modifier = Modifier
               .size(90.dp)
               .clip(CircleShape)
-              .background(Color.Black.copy(alpha = 0.55f)),
+              .background(Color.Black.copy(alpha = 0.6f)),
             contentAlignment = Alignment.Center
           ) {
-            VybeLikeIcon(
-              isLiked = true,
+            VybeReactionOutlineIcon(
+              reaction = VybeReaction.LOVE,
               size = 54.dp,
-              activeTintOverride = VybeMagenta
+              tint = Color(0xFFEC4899)
             )
           }
         }
@@ -406,7 +406,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                   if (reelPost.userReaction != null) {
                     viewModel.reactToPost(reelPost.id, reelPost.userReaction)
                   } else {
-                    viewModel.reactToPost(reelPost.id, VybeReaction.PULSE)
+                    viewModel.reactToPost(reelPost.id, VybeReaction.LOVE)
                   }
                 },
                 modifier = Modifier
@@ -419,7 +419,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                         if (reelPost.userReaction != null) {
                           viewModel.reactToPost(reelPost.id, reelPost.userReaction)
                         } else {
-                          viewModel.reactToPost(reelPost.id, VybeReaction.PULSE)
+                          viewModel.reactToPost(reelPost.id, VybeReaction.LOVE)
                         }
                       },
                       onLongPress = {
@@ -436,10 +436,10 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                     tint = reactionColor(reelPost.userReaction)
                   )
                 } else {
-                  VybeLikeIcon(
-                    isLiked = false,
-                    size = 22.dp,
-                    inactiveTint = Color.White
+                  VybeReactionOutlineIcon(
+                    reaction = VybeReaction.LOVE,
+                    size = 24.dp,
+                    tint = Color.White
                   )
                 }
               }
