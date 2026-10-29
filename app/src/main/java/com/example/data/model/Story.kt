@@ -21,7 +21,6 @@ data class Story(
   val mediaType: StoryMediaType = StoryMediaType.PHOTO,
   val audience: StoryAudience = StoryAudience.EVERYONE,
   val musicTrackTitle: String? = null,
-  val musicAttachment: MusicAttachment? = null,
   val timestamp: String = "Just now",
   val expiresHoursRemaining: Int = 24,
   val isViewed: Boolean = false,

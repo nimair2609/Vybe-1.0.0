@@ -39,17 +39,12 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
-import com.example.data.model.MusicAttachment
 import com.example.data.model.StoryAudience
 import com.example.data.model.StoryMediaType
 import com.example.ui.VybeViewModel
 import com.example.ui.theme.*
 import com.example.util.MediaUtils
-import com.example.util.music.BindMusicPreviewLifecycle
-import com.example.util.music.MusicPreviewController
-import com.example.util.music.MusicPreviewState
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 val StoryGradients = listOf(
   "NEON_PURPLE" to listOf(Color(0xFF8A2387), Color(0xFFE94057), Color(0xFFF27121)),
@@ -58,6 +53,14 @@ val StoryGradients = listOf(
   "DEEP_SPACE" to listOf(Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364)),
   "EMERALD" to listOf(Color(0xFF134E5E), Color(0xFF71B280)),
   "ROYAL_INDIGO" to listOf(Color(0xFF654EA3), Color(0xFFEAAFC8))
+)
+
+val IndianIndieMusicTracks = listOf(
+  "Midnight Tape 04" to "Aarav Roy • Indie Chill",
+  "Bombay Monsoon Beats" to "Kabir & The Vibe • Lo-Fi",
+  "Streets of Colaba" to "Mira Sen • Ambient Acoustic",
+  "Bengaluru Tech Sunsets" to "Electronic Pulse • Synthwave",
+  "Paharganj Nightwalk" to "Delhi Sound Project • Bass"
 )
 
 enum class StoryCreateMode {
@@ -99,15 +102,11 @@ fun StoryCreateDialog(
   var pickedVideoUri by remember { mutableStateOf<Uri?>(null) }
   var detectedVideoRatio by remember { mutableStateOf(9f / 16f) }
 
-  BindMusicPreviewLifecycle(stopOnDispose = true)
-  val musicPreviewState by MusicPreviewController.state.collectAsState()
-
   var textBackgroundKey by remember { mutableStateOf("NEON_PURPLE") }
   val currentGradient = StoryGradients.firstOrNull { it.first == textBackgroundKey }?.second
     ?: StoryGradients.first().second
 
-  var selectedMusicAttachment by remember { mutableStateOf<MusicAttachment?>(null) }
-  var showMusicPickerSheet by remember { mutableStateOf(false) }
+  var selectedTrack by remember { mutableStateOf(IndianIndieMusicTracks.first()) }
 
   val photoPicker = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.PickVisualMedia()
@@ -169,11 +168,7 @@ fun StoryCreateDialog(
         else true to ""
       }
       StoryCreateMode.MUSIC -> {
-        if (selectedMusicAttachment == null) {
-          false to "Select a licensed song via 'Add Music 🎵' before sharing a Music story."
-        } else {
-          true to (pickedPhotoUri?.toString() ?: "")
-        }
+        true to (pickedPhotoUri?.toString() ?: "")
       }
     }
   }
@@ -189,13 +184,10 @@ fun StoryCreateDialog(
     val mediaType = when (selectedMode) {
       StoryCreateMode.CAMERA_PHOTO -> StoryMediaType.PHOTO
       StoryCreateMode.TYPE_TEXT -> StoryMediaType.TEXT
-      StoryCreateMode.MUSIC -> if (pickedPhotoUri != null) StoryMediaType.PHOTO else StoryMediaType.MUSIC
+      StoryCreateMode.MUSIC -> StoryMediaType.MUSIC
       StoryCreateMode.VIDEO -> StoryMediaType.VIDEO
     }
 
-    val attachedMusic = if (selectedMode == StoryCreateMode.TYPE_TEXT) null else selectedMusicAttachment?.sanitized()
-
-    MusicPreviewController.stop()
     isPublishingStory = true
     validationError = null
     coroutineScope.launch {
@@ -204,10 +196,9 @@ fun StoryCreateDialog(
         caption = captionText.trim(),
         mediaType = mediaType,
         audience = targetAudience,
-        musicTrackTitle = attachedMusic?.displayLabel,
+        musicTrackTitle = if (selectedMode == StoryCreateMode.MUSIC) selectedTrack.first else null,
         location = selectedLocation,
-        textBackgroundColor = if (selectedMode == StoryCreateMode.TYPE_TEXT) textBackgroundKey else null,
-        musicAttachment = attachedMusic
+        textBackgroundColor = if (selectedMode == StoryCreateMode.TYPE_TEXT) textBackgroundKey else null
       )
       isPublishingStory = false
       if (result.isSuccess) {
@@ -226,12 +217,7 @@ fun StoryCreateDialog(
   }
 
   Dialog(
-    onDismissRequest = {
-      if (!isPublishingStory) {
-        MusicPreviewController.stop()
-        onDismiss()
-      }
-    },
+    onDismissRequest = { if (!isPublishingStory) onDismiss() },
     properties = DialogProperties(
       usePlatformDefaultWidth = false,
       decorFitsSystemWindows = false
@@ -254,12 +240,7 @@ fun StoryCreateDialog(
           },
           navigationIcon = {
             IconButton(
-              onClick = {
-                if (!isPublishingStory) {
-                  MusicPreviewController.stop()
-                  onDismiss()
-                }
-              },
+              onClick = { if (!isPublishingStory) onDismiss() },
               enabled = !isPublishingStory,
               modifier = Modifier.size(48.dp).testTag("close_story_dialog_button")
             ) {
@@ -590,9 +571,8 @@ fun StoryCreateDialog(
                     videoUrl = pickedVideoUri.toString(),
                     autoPlay = true,
                     isLooping = true,
-                    initialMuted = selectedMusicAttachment == null,
-                    audioVolume = selectedMusicAttachment?.originalAudioVolume ?: 1f,
-                    isPausedExternal = isPublishingStory || showMusicPickerSheet,
+                    initialMuted = true,
+                    isPausedExternal = isPublishingStory,
                     fitMode = VideoFitMode.FIT_CONTAIN,
                     showControls = true,
                     onAspectRatioDetected = { ratio -> detectedVideoRatio = ratio },
@@ -643,65 +623,38 @@ fun StoryCreateDialog(
                   modifier = Modifier
                     .fillMaxSize()
                     .background(Brush.verticalGradient(listOf(Color(0xFF1E1B4B), Color(0xFF0F172A))))
-                    .clickable(enabled = !isPublishingStory && selectedMusicAttachment == null) {
-                      showMusicPickerSheet = true
-                    }
                     .padding(20.dp),
                   contentAlignment = Alignment.Center
                 ) {
-                  if (pickedPhotoUri != null) {
-                    AsyncImage(
-                      model = pickedPhotoUri,
-                      contentDescription = "Music story backdrop",
-                      contentScale = ContentScale.Fit,
-                      modifier = Modifier.fillMaxSize()
-                    )
-                  } else {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                      Box(
-                        modifier = Modifier
-                          .size(76.dp)
-                          .clip(CircleShape)
-                          .background(Brush.linearGradient(listOf(VybeMagenta, VybeBrandCyan))),
-                        contentAlignment = Alignment.Center
-                      ) {
-                        Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(38.dp))
-                      }
-                      Spacer(modifier = Modifier.height(14.dp))
-                      Text(
-                        text = selectedMusicAttachment?.title ?: "Tap 'Add Music 🎵' below",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        textAlign = TextAlign.Center
-                      )
-                      Spacer(modifier = Modifier.height(4.dp))
-                      Text(
-                        text = selectedMusicAttachment?.artist ?: "Search licensed tracks by song, artist, genre, or mood",
-                        color = Color.White.copy(alpha = 0.72f),
-                        fontSize = 11.sp,
-                        textAlign = TextAlign.Center
-                      )
+                  Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(
+                      modifier = Modifier
+                        .size(76.dp)
+                        .clip(CircleShape)
+                        .background(Brush.linearGradient(listOf(VybeMagenta, VybeBrandCyan))),
+                      contentAlignment = Alignment.Center
+                    ) {
+                      Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(38.dp))
                     }
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Surface(
+                      color = Color.White.copy(alpha = 0.14f),
+                      shape = RoundedCornerShape(12.dp)
+                    ) {
+                      Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                      ) {
+                        Icon(Icons.Default.GraphicEq, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(selectedTrack.first, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                      }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(selectedTrack.second, color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp)
                   }
                 }
               }
-            }
-
-            // Music Sticker Overlay on Photo, Video, or Music Story Preview Canvas
-            if (selectedMode != StoryCreateMode.TYPE_TEXT && selectedMusicAttachment != null) {
-              val music = selectedMusicAttachment!!
-              VybeMusicSticker(
-                title = music.title,
-                artist = music.artist,
-                artworkUrl = music.artworkUrl,
-                segmentLabel = music.formattedSegmentRange,
-                onClick = { if (!isPublishingStory) showMusicPickerSheet = true },
-                modifier = Modifier
-                  .align(Alignment.TopCenter)
-                  .padding(top = 14.dp, start = 16.dp, end = 16.dp)
-                  .testTag("story_music_sticker")
-              )
             }
           }
 
@@ -795,166 +748,35 @@ fun StoryCreateDialog(
             }
           }
 
-          // --- 3b. Instagram-Style Story Music Integration (Photo, Video & Music Stories) ---
-          if (selectedMode != StoryCreateMode.TYPE_TEXT) {
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Text(
-                text = "STORY MUSIC",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 1.sp
-              )
-              if (selectedMusicAttachment != null) {
-                TextButton(
-                  onClick = {
-                    MusicPreviewController.stop()
-                    selectedMusicAttachment = null
-                  },
-                  enabled = !isPublishingStory,
+          if (selectedMode == StoryCreateMode.MUSIC) {
+            Text("SELECT SOUNDTRACK", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+              IndianIndieMusicTracks.forEach { track ->
+                val isTrackSelected = selectedTrack == track
+                Surface(
+                  color = if (isTrackSelected) VybeMagenta.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
+                  shape = RoundedCornerShape(10.dp),
                   modifier = Modifier
-                    .heightIn(min = 48.dp)
-                    .testTag("story_remove_music_button")
+                    .fillMaxWidth()
+                    .clickable(enabled = !isPublishingStory) { selectedTrack = track }
                 ) {
-                  Text("Remove Music", color = VybeDanger, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                }
-              }
-            }
-
-            if (selectedMusicAttachment == null) {
-              OutlinedButton(
-                onClick = { showMusicPickerSheet = true },
-                enabled = !isPublishingStory,
-                border = BorderStroke(1.5.dp, VybeMagenta.copy(alpha = 0.75f)),
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .heightIn(min = 48.dp)
-                  .testTag("story_add_music_button")
-              ) {
-                Icon(Icons.Default.MusicNote, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                  text = "Add Music \uD83C\uDFB5",
-                  fontWeight = FontWeight.Bold,
-                  fontSize = 13.sp,
-                  color = MaterialTheme.colorScheme.onSurface
-                )
-              }
-            } else {
-              val music = selectedMusicAttachment!!
-              val isPlayingPreview = (musicPreviewState as? MusicPreviewState.Playing)?.trackId == music.trackId
-              Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.dp, VybeMagenta.copy(alpha = 0.45f)),
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .testTag("story_music_controls_card")
-              ) {
-                Column(modifier = Modifier.padding(12.dp)) {
                   Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.padding(10.dp),
                     verticalAlignment = Alignment.CenterVertically
                   ) {
+                    Icon(
+                      imageVector = if (isTrackSelected) Icons.Default.GraphicEq else Icons.Default.MusicNote,
+                      contentDescription = null,
+                      tint = if (isTrackSelected) VybeMagenta else MaterialTheme.colorScheme.onSurfaceVariant,
+                      modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                      Text(
-                        text = "${music.title} • ${music.artist}",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                      )
-                      Text(
-                        text = "Segment ${music.formattedSegmentRange} • ${if (selectedMode == StoryCreateMode.CAMERA_PHOTO) "Renders playable MP4 video" else "Mixes into Story video"}",
-                        fontSize = 11.sp,
-                        color = VybeBrandCyan
-                      )
+                      Text(track.first, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                      Text(track.second, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    IconButton(
-                      onClick = {
-                        if (isPlayingPreview) {
-                          MusicPreviewController.stop()
-                        } else {
-                          MusicPreviewController.playAttachment(music, muted = false)
-                        }
-                      },
-                      enabled = !isPublishingStory && !music.streamUrl.isNullOrBlank(),
-                      modifier = Modifier
-                        .size(48.dp)
-                        .testTag("story_preview_music_button")
-                    ) {
-                      Icon(
-                        imageVector = if (isPlayingPreview) Icons.Default.Stop else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlayingPreview) "Stop music preview" else "Preview selected music",
-                        tint = if (isPlayingPreview) VybeMagenta else VybeViolet
-                      )
-                    }
-                    OutlinedButton(
-                      onClick = { showMusicPickerSheet = true },
-                      enabled = !isPublishingStory,
-                      shape = RoundedCornerShape(10.dp),
-                      contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                      modifier = Modifier
-                        .defaultMinSize(minHeight = 48.dp)
-                        .testTag("story_add_music_button")
-                    ) {
-                      Text("Change", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                  }
-
-                  Spacer(modifier = Modifier.height(6.dp))
-                  Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                  ) {
-                    Text(
-                      text = "Music Vol ${(music.musicVolume * 100).roundToInt()}%",
-                      fontSize = 11.sp,
-                      fontWeight = FontWeight.SemiBold,
-                      modifier = Modifier.width(102.dp)
-                    )
-                    Slider(
-                      value = music.musicVolume,
-                      onValueChange = { v ->
-                        val updated = music.copy(musicVolume = v.coerceIn(0f, 1f)).sanitized()
-                        selectedMusicAttachment = updated
-                        MusicPreviewController.setVolume(updated.musicVolume)
-                      },
-                      valueRange = 0f..1f,
-                      enabled = !isPublishingStory,
-                      modifier = Modifier
-                        .weight(1f)
-                        .testTag("story_music_volume_slider")
-                    )
-                  }
-
-                  if (selectedMode == StoryCreateMode.VIDEO) {
-                    Row(
-                      modifier = Modifier.fillMaxWidth(),
-                      verticalAlignment = Alignment.CenterVertically
-                    ) {
-                      Text(
-                        text = "Video Audio ${(music.originalAudioVolume * 100).roundToInt()}%",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.width(102.dp)
-                      )
-                      Slider(
-                        value = music.originalAudioVolume,
-                        onValueChange = { v ->
-                          selectedMusicAttachment = music.copy(originalAudioVolume = v.coerceIn(0f, 1f)).sanitized()
-                        },
-                        valueRange = 0f..1f,
-                        enabled = !isPublishingStory,
-                        modifier = Modifier
-                          .weight(1f)
-                          .testTag("story_original_volume_slider")
-                      )
+                    if (isTrackSelected) {
+                      Icon(Icons.Default.Check, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(16.dp))
                     }
                   }
                 }
@@ -1079,20 +901,6 @@ fun StoryCreateDialog(
           Spacer(modifier = Modifier.height(12.dp))
         }
       }
-    }
-
-    if (showMusicPickerSheet) {
-      MusicPickerSheet(
-        initialAttachment = selectedMusicAttachment,
-        showOriginalAudioControl = selectedMode == StoryCreateMode.VIDEO,
-        defaultClipDurationMs = 15_000L,
-        onDismiss = { showMusicPickerSheet = false },
-        onMusicSelected = { attachment ->
-          selectedMusicAttachment = attachment
-          validationError = null
-          showMusicPickerSheet = false
-        }
-      )
     }
 
     if (showLocationPickerDialog) {

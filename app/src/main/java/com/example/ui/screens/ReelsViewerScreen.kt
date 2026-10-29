@@ -51,13 +51,8 @@ import com.example.ui.components.reactionColor
 import com.example.ui.components.VybeReactionOutlineIcon
 import com.example.ui.components.VybeReactionSelector
 import com.example.ui.components.VybeVideoPlayer
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.ui.layout.ContentScale
-import coil.compose.AsyncImage
 import com.example.ui.theme.*
 import com.example.util.FeedAudioController
-import com.example.util.music.BindMusicPreviewLifecycle
-import com.example.util.music.MusicPreviewController
 import com.example.util.rememberRelativeTimestamp
 import kotlinx.coroutines.delay
 
@@ -72,10 +67,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
   val allUsers by viewModel.allUsers.collectAsState()
   val targetReelId by viewModel.targetReelId.collectAsState()
 
-  BindMusicPreviewLifecycle(stopOnDispose = true)
-
   fun handleBackFromReels() {
-    MusicPreviewController.stop()
     if (currentScreen == Screen.MAIN) {
       viewModel.selectTab(MainTab.FEED)
     } else {
@@ -92,9 +84,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
 
   DisposableEffect(Unit) {
     FeedAudioController.stopAll()
-    onDispose {
-      MusicPreviewController.stop()
-    }
+    onDispose { }
   }
 
   var isPlaying by remember { mutableStateOf(true) }
@@ -212,31 +202,6 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
     viewModel.loadCommentsForPost(activeReel.id)
   }
 
-  // Synchronize external licensed music segment when a Reel was published without pre-mixed audio
-  val settledReel = videoPosts.getOrNull(pagerState.settledPage)
-  val settledMusic = settledReel?.musicAttachment
-  val shouldPlayExternalMusic = settledMusic != null &&
-    !settledMusic.isRenderedWithMixedAudio &&
-    !settledMusic.streamUrl.isNullOrBlank() &&
-    isPlaying &&
-    !isMuted &&
-    !showCommentsSheet &&
-    !showShareInboxSheet
-
-  LaunchedEffect(
-    settledReel?.id,
-    settledMusic?.trackId,
-    settledMusic?.isRenderedWithMixedAudio,
-    shouldPlayExternalMusic,
-    settledMusic?.musicVolume
-  ) {
-    if (shouldPlayExternalMusic && settledMusic != null) {
-      MusicPreviewController.playAttachment(settledMusic, muted = false)
-    } else {
-      MusicPreviewController.stop()
-    }
-  }
-
   // Full-bleed container — no unintended nested boxes around reels
   Box(
     modifier = Modifier
@@ -269,34 +234,28 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
               onTap = { isPlaying = !isPlaying },
               onDoubleTap = {
                 showDoubleTapResonance = true
-                viewModel.reactToPost(reelPost.id, VybeReaction.LOVE)
+                viewModel.reactToPost(reelPost.id, VybeReaction.PULSE)
               }
             )
           }
       ) {
-        val reelOriginalVolume = if (reelPost.musicAttachment != null && !reelPost.musicAttachment.isRenderedWithMixedAudio) {
-          reelPost.musicAttachment.originalAudioVolume
-        } else {
-          1f
-        }
         VybeVideoPlayer(
           videoUrl = reelPost.mediaUrls.first(),
           autoPlay = isCurrentPage,
           isLooping = true,
-          initialMuted = isMuted || reelOriginalVolume <= 0.01f,
+          initialMuted = isMuted,
           isPausedExternal = !isCurrentPage || !isPlaying || showCommentsSheet || showShareInboxSheet,
           fitMode = VideoFitMode.FIT_CONTAIN,
           showControls = false,
-          audioVolume = reelOriginalVolume,
           onTapOverlay = { isPlaying = !isPlaying },
           onDoubleTapOverlay = {
             showDoubleTapResonance = true
-            viewModel.reactToPost(reelPost.id, VybeReaction.LOVE)
+            viewModel.reactToPost(reelPost.id, VybeReaction.PULSE)
           },
           modifier = Modifier.fillMaxSize()
         )
 
-        // Double-Tap Resonance LOVE Animation Overlay
+        // Double-Tap Resonance PULSE Animation Overlay
         androidx.compose.animation.AnimatedVisibility(
           visible = showDoubleTapResonance,
           enter = androidx.compose.animation.scaleIn(initialScale = 0.4f) + androidx.compose.animation.fadeIn(),
@@ -307,13 +266,13 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
             modifier = Modifier
               .size(90.dp)
               .clip(CircleShape)
-              .background(Color.Black.copy(alpha = 0.6f)),
+              .background(Color.Black.copy(alpha = 0.55f)),
             contentAlignment = Alignment.Center
           ) {
-            VybeReactionOutlineIcon(
-              reaction = VybeReaction.LOVE,
+            VybeLikeIcon(
+              isLiked = true,
               size = 54.dp,
-              tint = Color(0xFFEC4899)
+              activeTintOverride = VybeMagenta
             )
           }
         }
@@ -372,10 +331,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
             )
 
             IconButton(
-              onClick = {
-                MusicPreviewController.stop()
-                viewModel.navigateTo(Screen.CREATE_POST)
-              },
+              onClick = { viewModel.navigateTo(Screen.CREATE_POST) },
               modifier = Modifier
                 .size(48.dp)
                 .testTag("reels_create_shortcut_button")
@@ -399,23 +355,70 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
           verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
           // Like & 4-Reactions (Reels: Show total reactions and individual reaction breakdowns)
-          // Like & Reactions (Press-and-Hold + Drag to 5 Reactions, Tap to 🫰 Love, Total Count)
           Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            ReelReactionGestureButton(
-              userReaction = reelPost.userReaction,
-              onReact = { rx ->
-                viewModel.reactToPost(reelPost.id, rx)
-              },
-              onToggleDefault = {
+            Box {
+              IconButton(
+                onClick = {
+                  if (reelPost.userReaction != null) {
+                    viewModel.reactToPost(reelPost.id, reelPost.userReaction)
+                  } else {
+                    viewModel.reactToPost(reelPost.id, VybeReaction.PULSE)
+                  }
+                },
+                modifier = Modifier
+                  .size(48.dp)
+                  .clip(CircleShape)
+                  .background(Color.Black.copy(alpha = 0.5f))
+                  .pointerInput(reelPost.id, reelPost.userReaction) {
+                    detectTapGestures(
+                      onTap = {
+                        if (reelPost.userReaction != null) {
+                          viewModel.reactToPost(reelPost.id, reelPost.userReaction)
+                        } else {
+                          viewModel.reactToPost(reelPost.id, VybeReaction.PULSE)
+                        }
+                      },
+                      onLongPress = {
+                        showReactionSelectorReelId = if (showReactionSelectorReelId == reelPost.id) null else reelPost.id
+                      }
+                    )
+                  }
+                  .testTag("reel_like_button")
+              ) {
                 if (reelPost.userReaction != null) {
-                  viewModel.reactToPost(reelPost.id, reelPost.userReaction)
+                  VybeReactionOutlineIcon(
+                    reaction = reelPost.userReaction,
+                    size = 24.dp,
+                    tint = reactionColor(reelPost.userReaction)
+                  )
                 } else {
-                  viewModel.reactToPost(reelPost.id, VybeReaction.LOVE)
+                  VybeLikeIcon(
+                    isLiked = false,
+                    size = 22.dp,
+                    inactiveTint = Color.White
+                  )
                 }
               }
-            )
 
-            // Total reactions count - clean text without dropdown arrow
+              if (showReactionSelectorReelId == reelPost.id) {
+                Box(
+                  modifier = Modifier
+                    .offset(x = (-180).dp, y = (-8).dp)
+                    .zIndex(30f)
+                ) {
+                  VybeReactionSelector(
+                    selectedReaction = reelPost.userReaction,
+                    onSelectReaction = { rx ->
+                      showReactionSelectorReelId = null
+                      viewModel.reactToPost(reelPost.id, rx)
+                    },
+                    onDismiss = { showReactionSelectorReelId = null }
+                  )
+                }
+              }
+            }
+
+            // Total reactions count - tappable to see breakdown of all 4 reactions
             Row(
               modifier = Modifier
                 .clickable { showBreakdownSheetReel = reelPost }
@@ -427,6 +430,13 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
                 fontSize = 12.sp
+              )
+              Spacer(modifier = Modifier.width(2.dp))
+              Icon(
+                imageVector = Icons.Outlined.KeyboardArrowDown,
+                contentDescription = "Breakdown",
+                tint = Color.White.copy(alpha = 0.7f),
+                modifier = Modifier.size(14.dp)
               )
             }
           }
@@ -579,71 +589,24 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
             }
 
             Spacer(modifier = Modifier.height(8.dp))
-            val attachedMusic = reelPost.musicAttachment
             Surface(
-              color = Color.Black.copy(alpha = 0.58f),
-              shape = RoundedCornerShape(16.dp),
-              border = BorderStroke(
-                width = 1.dp,
-                color = if (attachedMusic != null) VybeBrandCyan.copy(alpha = 0.55f) else Color.White.copy(alpha = 0.22f)
-              ),
-              modifier = Modifier
-                .then(
-                  if (attachedMusic != null) {
-                    Modifier
-                      .defaultMinSize(minHeight = 48.dp)
-                      .clip(RoundedCornerShape(16.dp))
-                      .clickable {
-                        MusicPreviewController.stop()
-                        viewModel.openMusicTrackPage(attachedMusic)
-                      }
-                  } else {
-                    Modifier
-                  }
-                )
-                .testTag("reel_music_track_pill")
+              color = Color.White.copy(alpha = 0.18f),
+              shape = RoundedCornerShape(12.dp)
             ) {
               Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = if (attachedMusic != null) 8.dp else 5.dp),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                if (!attachedMusic?.artworkUrl.isNullOrBlank()) {
-                  AsyncImage(
-                    model = attachedMusic?.artworkUrl,
-                    contentDescription = "${attachedMusic?.title} artwork",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                      .size(24.dp)
-                      .clip(RoundedCornerShape(6.dp))
-                  )
-                  Spacer(modifier = Modifier.width(8.dp))
-                } else {
-                  Icon(
-                    imageVector = if (attachedMusic != null) Icons.Default.GraphicEq else Icons.Default.MusicNote,
-                    contentDescription = "Reel audio track",
-                    tint = if (attachedMusic != null) VybeBrandCyan else Color.White,
-                    modifier = Modifier.size(16.dp)
-                  )
-                  Spacer(modifier = Modifier.width(6.dp))
-                }
+                Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                  text = attachedMusic?.displayLabel ?: reelPost.audioTrackTitle ?: "Original Audio • ${reelPost.author.displayName}",
+                  text = reelPost.audioTrackTitle ?: "Original Audio • ${reelPost.author.displayName}",
                   color = Color.White,
-                  fontSize = 12.sp,
-                  fontWeight = FontWeight.SemiBold,
+                  fontSize = 11.sp,
+                  fontWeight = FontWeight.Medium,
                   maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                  modifier = Modifier.weight(1f, fill = false)
+                  overflow = TextOverflow.Ellipsis
                 )
-                if (attachedMusic != null) {
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = "Open track page",
-                    tint = VybeBrandCyan,
-                    modifier = Modifier.size(16.dp)
-                  )
-                }
               }
             }
           }

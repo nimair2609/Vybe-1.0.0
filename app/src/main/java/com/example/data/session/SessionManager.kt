@@ -41,7 +41,6 @@ class SessionManager private constructor(context: Context) {
     private const val KEY_IS_PHONE_VERIFIED = "is_phone_verified"
     private const val KEY_JOINED_DATE = "joined_date"
     private const val KEY_CREATED_AT_ISO = "created_at_iso"
-    private const val KEY_FCM_TOKEN = "vybe_fcm_device_token"
 
     @Volatile
     private var instance: SessionManager? = null
@@ -53,19 +52,6 @@ class SessionManager private constructor(context: Context) {
     }
 
     fun get(): SessionManager? = instance
-  }
-
-  val fcmToken: String?
-    get() = prefs.getString(KEY_FCM_TOKEN, null)
-
-  fun saveFcmToken(token: String) {
-    if (token.isNotBlank()) {
-      prefs.edit().putString(KEY_FCM_TOKEN, token).apply()
-    }
-  }
-
-  fun clearFcmToken() {
-    prefs.edit().remove(KEY_FCM_TOKEN).apply()
   }
 
   val isLoggedIn: Boolean
@@ -163,11 +149,7 @@ class SessionManager private constructor(context: Context) {
   }
 
   fun clearSession() {
-    val existingFcmToken = fcmToken
     prefs.edit().clear().apply()
-    if (!existingFcmToken.isNullOrBlank()) {
-      saveFcmToken(existingFcmToken)
-    }
   }
 
   fun loadCurrentUser(): User? {

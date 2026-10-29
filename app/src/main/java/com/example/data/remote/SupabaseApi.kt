@@ -388,32 +388,6 @@ interface SupabaseRestApi {
     @Body body: Map<String, Boolean>
   ): Response<Unit>
 
-  // --- FCM DEVICE TOKENS ---
-  @POST("user_device_tokens")
-  suspend fun upsertDeviceToken(
-    @Header("apikey") apiKey: String,
-    @Header("Authorization") authHeader: String? = null,
-    @Header("Prefer") prefer: String = "resolution=merge-duplicates,return=representation",
-    @Body body: SupabaseDeviceTokenDto
-  ): Response<List<SupabaseDeviceTokenDto>>
-
-  @DELETE("user_device_tokens")
-  suspend fun deleteDeviceToken(
-    @Header("apikey") apiKey: String,
-    @Header("Authorization") authHeader: String? = null,
-    @Query("user_id") userIdFilter: String,
-    @Query("fcm_token") tokenFilter: String
-  ): Response<Unit>
-
-  @PATCH("user_device_tokens")
-  suspend fun deactivateDeviceToken(
-    @Header("apikey") apiKey: String,
-    @Header("Authorization") authHeader: String? = null,
-    @Query("user_id") userIdFilter: String,
-    @Query("fcm_token") tokenFilter: String,
-    @Body body: Map<String, Boolean>
-  ): Response<Unit>
-
   // --- FOLLOWS ---
   @GET("follows")
   suspend fun getFollowsByFollower(
@@ -545,14 +519,6 @@ interface SupabaseRestApi {
   ): Response<List<SupabaseStoryDto>>
 
   @POST("stories")
-  suspend fun insertStoryWithMusic(
-    @Header("apikey") apiKey: String,
-    @Header("Authorization") authHeader: String? = null,
-    @Header("Prefer") prefer: String = "return=representation",
-    @Body story: SupabaseStoryExtendedMusicInsertDto
-  ): Response<List<SupabaseStoryDto>>
-
-  @POST("stories")
   suspend fun insertStoryLegacy(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
@@ -610,31 +576,12 @@ interface SupabaseRestApi {
     @Query("select") select: String = "*,post_media(*),profiles:author_id(*)"
   ): Response<List<SupabasePostDto>>
 
-  @GET("posts")
-  suspend fun getPostsByMusicTrackId(
-    @Header("apikey") apiKey: String,
-    @Header("Authorization") authHeader: String? = null,
-    @Query("music_track_id") musicTrackIdFilter: String,
-    @Query("is_archived") archivedFilter: String = "eq.false",
-    @Query("select") select: String = "*,post_media(*),profiles:author_id(*)",
-    @Query("order") order: String = "created_at.desc",
-    @Query("limit") limit: Int = 50
-  ): Response<List<SupabasePostDto>>
-
   @POST("posts")
   suspend fun insertPost(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Header("Prefer") prefer: String = "return=representation",
     @Body post: SupabasePostInsertDto
-  ): Response<List<SupabasePostDto>>
-
-  @POST("posts")
-  suspend fun insertPostWithMusic(
-    @Header("apikey") apiKey: String,
-    @Header("Authorization") authHeader: String? = null,
-    @Header("Prefer") prefer: String = "return=representation",
-    @Body post: SupabasePostExtendedMusicInsertDto
   ): Response<List<SupabasePostDto>>
 
   @POST("posts")

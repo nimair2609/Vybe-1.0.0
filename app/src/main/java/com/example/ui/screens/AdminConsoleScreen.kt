@@ -1,12 +1,10 @@
 package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -15,28 +13,22 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.data.model.*
+import com.example.data.model.ReportStatus
 import com.example.ui.VybeViewModel
-import com.example.ui.screens.admin.*
-import com.example.ui.theme.*
-import kotlinx.coroutines.launch
+import com.example.ui.theme.VybeDanger
+import com.example.ui.theme.VybeOnlineGreen
+import com.example.ui.theme.VybeVerifiedGold
+import com.example.ui.theme.VybeViolet
 
-enum class AdminCentralTab(val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
-  DASHBOARD("Dashboard", Icons.Default.Dashboard),
-  INTEGRATIONS("APIs & Integrations", Icons.Default.Api),
-  SETTINGS("App Settings", Icons.Default.Settings),
-  ADVERTISEMENTS("Ads & Sponsors", Icons.Default.Campaign),
-  USERS_CREATORS("Users & Creators", Icons.Default.People),
-  MODERATION("Content Safety", Icons.Default.Shield),
-  BROADCAST("Push Alerts", Icons.Default.Notifications),
-  AUDIT_LOGS("Audit Logs", Icons.Default.History)
+enum class AdminTab(val title: String) {
+  MODERATION("Moderation"),
+  VERIFICATIONS("Badges & Shops"),
+  COMPLIANCE("Security & Audit")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,31 +38,13 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
     viewModel.navigateBack()
   }
 
-  val currentUser by viewModel.currentUser.collectAsState()
-  val adminSubRole by viewModel.adminSubRole.collectAsState()
-  val adminAppSettings by viewModel.adminAppSettings.collectAsState()
-  val adCampaigns by viewModel.adCampaigns.collectAsState()
-  val adminIntegrations by viewModel.adminIntegrations.collectAsState()
-  val adminAuditLogs by viewModel.adminAuditLogs.collectAsState()
-  val adminStats by viewModel.adminStats.collectAsState()
   val reports by viewModel.adminReports.collectAsState()
-  val allUsers by viewModel.allUsers.collectAsState()
-
-  val snackbarHostState = remember { SnackbarHostState() }
-  val scope = rememberCoroutineScope()
-
+  val currentUser by viewModel.currentUser.collectAsState()
   var isVerifyingRole by remember { mutableStateOf(currentUser == null) }
-  var selectedTab by remember { mutableStateOf(AdminCentralTab.DASHBOARD) }
-  var isRoleSwitcherOpen by remember { mutableStateOf(false) }
-
-  fun showSnackbar(message: String) {
-    scope.launch {
-      snackbarHostState.showSnackbar(message)
-    }
-  }
+  var selectedTab by remember { mutableStateOf(AdminTab.MODERATION) }
 
   LaunchedEffect(currentUser?.id) {
-    if (currentUser == null || currentUser?.role != UserRole.ADMIN) {
+    if (currentUser == null || currentUser?.role != com.example.data.model.UserRole.ADMIN) {
       isVerifyingRole = true
       viewModel.refreshCurrentUserRole {
         isVerifyingRole = false
@@ -82,7 +56,7 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
 
   if (isVerifyingRole) {
     Box(
-      modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+      modifier = Modifier.fillMaxSize(),
       contentAlignment = Alignment.Center
     ) {
       Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -98,9 +72,9 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
     return
   }
 
-  if (currentUser?.role != UserRole.ADMIN) {
+  if (currentUser?.role != com.example.data.model.UserRole.ADMIN) {
     Box(
-      modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+      modifier = Modifier.fillMaxSize(),
       contentAlignment = Alignment.Center
     ) {
       Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
@@ -108,11 +82,7 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
         Spacer(modifier = Modifier.height(16.dp))
         Text("Admin Access Restricted", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(8.dp))
-        Text(
-          "This portal is reserved for authorized platform administrators and trust & safety moderators.",
-          textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-          color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Text("This portal is reserved for authorized platform administrators and trust & safety moderators.", textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(modifier = Modifier.height(16.dp))
         Button(onClick = { viewModel.navigateBack() }) {
           Text("Go Back")
@@ -122,12 +92,9 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
     return
   }
 
-  BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-    val isWideScreen = maxWidth >= 720.dp
-
-    Scaffold(
-      snackbarHost = { SnackbarHost(snackbarHostState) },
-      topBar = {
+  Scaffold(
+    topBar = {
+      Column {
         TopAppBar(
           navigationIcon = {
             IconButton(
@@ -139,330 +106,387 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
           },
           title = {
             Column {
-              Text("Central Admin Control Center", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-              Text(
-                currentUser?.email?.ifBlank { "owner@vybe.nrnext.in" } ?: "owner@vybe.nrnext.in",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-              )
+              Text("Admin & Trust Safety", fontWeight = FontWeight.Bold)
+              Text("Owner Admin: renukadas083@gmail.com", fontSize = 11.sp, color = VybeVerifiedGold)
             }
           },
           actions = {
-            // Role switcher pill button
             Surface(
               shape = RoundedCornerShape(8.dp),
-              color = Color(adminSubRole.badgeColorHex).copy(alpha = 0.15f),
-              border = BorderStroke(1.dp, Color(adminSubRole.badgeColorHex).copy(alpha = 0.4f)),
-              modifier = Modifier
-                .padding(end = 12.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .clickable { isRoleSwitcherOpen = true }
-                .testTag("admin_role_badge_button")
+              color = VybeVerifiedGold.copy(alpha = 0.15f),
+              modifier = Modifier.padding(end = 12.dp)
             ) {
-              Row(
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Box(
-                  modifier = Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(Color(adminSubRole.badgeColorHex))
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                  text = adminSubRole.displayName,
-                  fontSize = 10.sp,
-                  fontWeight = FontWeight.Bold,
-                  color = Color(adminSubRole.badgeColorHex)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Icon(
-                  Icons.Default.ArrowDropDown,
-                  contentDescription = "Switch Role",
-                  tint = Color(adminSubRole.badgeColorHex),
-                  modifier = Modifier.size(14.dp)
-                )
-              }
+              Text(
+                text = "OWNER ADMIN",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = VybeVerifiedGold,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+              )
             }
           },
           colors = TopAppBarDefaults.topAppBarColors(
             containerColor = MaterialTheme.colorScheme.background
           )
         )
-      }
-    ) { paddingValues ->
 
-      if (isWideScreen) {
-        // Tablet / Desktop Wide Layout with Side Navigation Rail
-        Row(
-          modifier = Modifier
-            .fillMaxSize()
-            .padding(paddingValues)
+        // Admin Sub-Navigation Tabs
+        TabRow(
+          selectedTabIndex = selectedTab.ordinal,
+          containerColor = MaterialTheme.colorScheme.surface,
+          contentColor = MaterialTheme.colorScheme.primary
         ) {
-          NavigationRail(
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.width(180.dp)
-          ) {
-            AdminCentralTab.values().forEach { tab ->
-              NavigationRailItem(
-                selected = selectedTab == tab,
-                onClick = { selectedTab = tab },
-                icon = { Icon(tab.icon, contentDescription = tab.title) },
-                label = { Text(tab.title, fontSize = 10.sp, maxLines = 1) },
-                modifier = Modifier.testTag("admin_rail_tab_${tab.name.lowercase()}")
-              )
-            }
-          }
-
-          VerticalDivider(thickness = 1.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-
-          LazyColumn(
-            modifier = Modifier
-              .weight(1f)
-              .fillMaxHeight()
-              .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-          ) {
-            item {
-              RenderActiveTabContent(
-                tab = selectedTab,
-                viewModel = viewModel,
-                stats = adminStats,
-                recentLogs = adminAuditLogs,
-                integrations = adminIntegrations,
-                appSettings = adminAppSettings,
-                campaigns = adCampaigns,
-                reports = reports,
-                users = allUsers,
-                onNavigateToTab = { target ->
-                  AdminCentralTab.values().firstOrNull { it.name == target }?.let { selectedTab = it }
-                },
-                onShowSnackbar = { showSnackbar(it) }
-              )
-            }
-            item { Spacer(modifier = Modifier.height(60.dp)) }
-          }
-        }
-      } else {
-        // Mobile Compact Layout with Horizontal Scrollable Tab Row
-        Column(
-          modifier = Modifier
-            .fillMaxSize()
-            .padding(paddingValues)
-        ) {
-          ScrollableTabRow(
-            selectedTabIndex = selectedTab.ordinal,
-            edgePadding = 12.dp,
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.fillMaxWidth().testTag("admin_scrollable_tabs")
-          ) {
-            AdminCentralTab.values().forEach { tab ->
-              Tab(
-                selected = selectedTab == tab,
-                onClick = { selectedTab = tab },
-                text = {
-                  Text(
-                    tab.title,
-                    fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal,
-                    fontSize = 11.sp
-                  )
-                },
-                modifier = Modifier.testTag("admin_tab_${tab.name.lowercase()}")
-              )
-            }
-          }
-
-          LazyColumn(
-            modifier = Modifier
-              .fillMaxSize()
-              .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-          ) {
-            item {
-              RenderActiveTabContent(
-                tab = selectedTab,
-                viewModel = viewModel,
-                stats = adminStats,
-                recentLogs = adminAuditLogs,
-                integrations = adminIntegrations,
-                appSettings = adminAppSettings,
-                campaigns = adCampaigns,
-                reports = reports,
-                users = allUsers,
-                onNavigateToTab = { target ->
-                  AdminCentralTab.values().firstOrNull { it.name == target }?.let { selectedTab = it }
-                },
-                onShowSnackbar = { showSnackbar(it) }
-              )
-            }
-            item { Spacer(modifier = Modifier.height(80.dp)) }
+          AdminTab.values().forEach { tab ->
+            Tab(
+              selected = selectedTab == tab,
+              onClick = { selectedTab = tab },
+              text = {
+                Text(
+                  tab.title,
+                  fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal,
+                  fontSize = 12.sp
+                )
+              },
+              modifier = Modifier.testTag("admin_tab_${tab.name.lowercase()}")
+            )
           }
         }
       }
     }
-  }
+  ) { paddingValues ->
+    LazyColumn(
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(paddingValues)
+        .padding(16.dp),
+      verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
 
-  // Role Switcher Modal Dialog
-  if (isRoleSwitcherOpen) {
-    AlertDialog(
-      onDismissRequest = { isRoleSwitcherOpen = false },
-      title = { Text("Select Administrator Role", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
-      text = {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          Text(
-            "Switch perspective to test role-specific view permissions and audit log attribution.",
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-          )
-          Spacer(modifier = Modifier.height(4.dp))
-
-          AdminSubRole.values().forEach { role ->
-            Surface(
-              shape = RoundedCornerShape(10.dp),
-              color = if (adminSubRole == role) Color(role.badgeColorHex).copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
-              border = BorderStroke(1.dp, if (adminSubRole == role) Color(role.badgeColorHex) else Color.Transparent),
-              modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .clickable {
-                  viewModel.setAdminSubRole(role)
-                  isRoleSwitcherOpen = false
-                  showSnackbar("Switched active view to ${role.displayName}")
-                }
+      when (selectedTab) {
+        AdminTab.MODERATION -> {
+          item {
+            Card(
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+              shape = RoundedCornerShape(16.dp)
             ) {
-              Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Box(
-                  modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(Color(role.badgeColorHex))
+              Column(modifier = Modifier.padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Icon(Icons.Default.AdminPanelSettings, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(22.dp))
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Text("Zero-Trust Security & Minimum Age Enforcement", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                  text = "Indian IT Rules (Intermediary Guidelines) compliance active. Reports are reviewed with audit logging. Private messages remain inaccessible without lawful warrant.",
+                  fontSize = 11.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  lineHeight = 15.sp
                 )
-                Spacer(modifier = Modifier.width(10.dp))
-                Column {
-                  Text(role.displayName, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+              }
+            }
+          }
+
+          item {
+            Text(
+              "Pending Incident & Violation Queue (${reports.size})",
+              style = MaterialTheme.typography.titleMedium,
+              fontWeight = FontWeight.Bold
+            )
+          }
+
+          if (reports.isEmpty()) {
+            item {
+              Box(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(32.dp),
+                contentAlignment = Alignment.Center
+              ) {
+                Text("No flagged reports in queue.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+              }
+            }
+          } else {
+            items(reports, key = { it.id }) { report ->
+              Card(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .testTag("report_card_${report.id}"),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+              ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Surface(
+                      color = if (report.severity == "High") VybeDanger.copy(alpha = 0.15f) else VybeVerifiedGold.copy(alpha = 0.15f),
+                      shape = RoundedCornerShape(6.dp)
+                    ) {
+                      Text(
+                        text = "Severity: ${report.severity}",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (report.severity == "High") VybeDanger else VybeVerifiedGold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                      )
+                    }
+
+                    Text(
+                      text = report.timestamp,
+                      fontSize = 11.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                  }
+
+                  Spacer(modifier = Modifier.height(8.dp))
+
+                  Text(
+                    text = report.reason,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                  )
+
+                  Spacer(modifier = Modifier.height(4.dp))
+
+                  Text(
+                    text = report.summaryText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    lineHeight = 18.sp
+                  )
+
+                  Spacer(modifier = Modifier.height(6.dp))
+
+                  Text(
+                    text = "Reported User: @${report.reportedUser} • Reporter: @${report.reportedByUsername}",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+
+                  Spacer(modifier = Modifier.height(12.dp))
+
+                  if (report.status == ReportStatus.PENDING) {
+                    Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.End,
+                      verticalAlignment = Alignment.CenterVertically
+                    ) {
+                      TextButton(
+                        onClick = { viewModel.submitAdminAction(report.id, ReportStatus.DISMISSED) },
+                        modifier = Modifier.testTag("dismiss_report_${report.id}")
+                      ) {
+                        Text("Dismiss")
+                      }
+
+                      Spacer(modifier = Modifier.width(8.dp))
+
+                      Button(
+                        onClick = { viewModel.submitAdminAction(report.id, ReportStatus.ACTION_TAKEN) },
+                        colors = ButtonDefaults.buttonColors(containerColor = VybeDanger),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.testTag("action_report_${report.id}")
+                      ) {
+                        Text("Take Down / Suspend", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                      }
+                    }
+                  } else {
+                    Surface(
+                      color = VybeOnlineGreen.copy(alpha = 0.15f),
+                      shape = RoundedCornerShape(8.dp),
+                      modifier = Modifier.align(Alignment.End)
+                    ) {
+                      Text(
+                        text = "Status: ${report.status.name}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = VybeOnlineGreen,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                      )
+                    }
+                  }
                 }
               }
             }
           }
         }
-      },
-      confirmButton = {
-        TextButton(onClick = { isRoleSwitcherOpen = false }) {
-          Text("Cancel")
+
+        AdminTab.VERIFICATIONS -> {
+          item {
+            val businessApplications by viewModel.businessApplications.collectAsState()
+            Text(
+              "Business & Shop Verification Applications (${businessApplications.size})",
+              style = MaterialTheme.typography.titleMedium,
+              fontWeight = FontWeight.Bold
+            )
+          }
+
+          item {
+            val businessApplications by viewModel.businessApplications.collectAsState()
+            if (businessApplications.isEmpty()) {
+              Box(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(24.dp),
+                contentAlignment = Alignment.Center
+              ) {
+                Text("No pending business applications.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              }
+            } else {
+              Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                businessApplications.forEach { app ->
+                  Card(
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .testTag("business_app_card_${app.id}"),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    shape = RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, VybeVerifiedGold.copy(alpha = 0.4f))
+                  ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                      Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                      ) {
+                        Text(app.businessName, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Surface(
+                          color = when (app.status) {
+                            com.example.data.model.BusinessVerificationStatus.APPROVED -> VybeOnlineGreen.copy(alpha = 0.2f)
+                            com.example.data.model.BusinessVerificationStatus.PENDING -> VybeVerifiedGold.copy(alpha = 0.2f)
+                            else -> VybeDanger.copy(alpha = 0.2f)
+                          },
+                          shape = RoundedCornerShape(6.dp)
+                        ) {
+                          Text(
+                            text = app.status.name,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = when (app.status) {
+                              com.example.data.model.BusinessVerificationStatus.APPROVED -> VybeOnlineGreen
+                              com.example.data.model.BusinessVerificationStatus.PENDING -> VybeVerifiedGold
+                              else -> VybeDanger
+                            },
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                          )
+                        }
+                      }
+
+                      Spacer(modifier = Modifier.height(4.dp))
+                      Text("${app.category} • Reg/GST: ${app.registrationNumberOrGst}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      Text("Address: ${app.address} • Contact: ${app.contactEmail}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                      if (app.status == com.example.data.model.BusinessVerificationStatus.PENDING) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                          modifier = Modifier.fillMaxWidth(),
+                          horizontalArrangement = Arrangement.End
+                        ) {
+                          TextButton(
+                            onClick = {
+                              viewModel.reviewBusinessApplication(
+                                app.id,
+                                com.example.data.model.BusinessVerificationStatus.REJECTED,
+                                "Missing trade license documentation."
+                              )
+                            },
+                            modifier = Modifier.testTag("reject_biz_app_${app.id}")
+                          ) {
+                            Text("Reject", color = VybeDanger, fontSize = 11.sp)
+                          }
+                          Spacer(modifier = Modifier.width(8.dp))
+                          Button(
+                            onClick = {
+                              viewModel.reviewBusinessApplication(
+                                app.id,
+                                com.example.data.model.BusinessVerificationStatus.APPROVED,
+                                "Verified against commercial registry."
+                              )
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = VybeOnlineGreen),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.testTag("approve_biz_app_${app.id}")
+                          ) {
+                            Text("Approve Verification ✓", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        AdminTab.COMPLIANCE -> {
+          item {
+            Card(
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+              shape = RoundedCornerShape(16.dp),
+              border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+            ) {
+              Column(modifier = Modifier.padding(16.dp)) {
+                Text("VYBE Platform Compliance Status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                  Text("Brand:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  Text("VYBE by NR Next | NR Group", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                  Text("Intermediary Rules:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  Text("Active (24h Grievance Window)", fontSize = 12.sp, color = VybeOnlineGreen, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                  Text("Age Verification (18+):", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  Text("Enforced on Age-Restricted & Direct Messaging", fontSize = 12.sp, color = VybeOnlineGreen, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                  Text("Monetization Services:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  Text("Not Configured (3.0 Scope)", fontSize = 12.sp, color = VybeVerifiedGold, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                  Text("Target Launch Date:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  Text("January 1, 2027", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+              }
+            }
+          }
+
+          item {
+            Card(
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+              shape = RoundedCornerShape(16.dp)
+            ) {
+              Column(modifier = Modifier.padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Icon(Icons.Default.Language, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Text("Web Admin Console Available", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                  "For large-screen management on Windows laptops and desktops, access the VYBE Web Admin Panel via the web portal with Owner Admin credentials.",
+                  fontSize = 11.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  lineHeight = 15.sp
+                )
+              }
+            }
+          }
         }
       }
-    )
-  }
-}
 
-@Composable
-private fun RenderActiveTabContent(
-  tab: AdminCentralTab,
-  viewModel: VybeViewModel,
-  stats: AdminDashboardStats,
-  recentLogs: List<AdminAuditLog>,
-  integrations: List<AdminIntegrationItem>,
-  appSettings: AdminAppSettings,
-  campaigns: List<AdCampaign>,
-  reports: List<AdminReport>,
-  users: List<User>,
-  onNavigateToTab: (String) -> Unit,
-  onShowSnackbar: (String) -> Unit
-) {
-  when (tab) {
-    AdminCentralTab.DASHBOARD -> {
-      AdminDashboardTab(
-        stats = stats,
-        recentLogs = recentLogs,
-        onNavigateToTab = onNavigateToTab
-      )
-    }
-
-    AdminCentralTab.INTEGRATIONS -> {
-      AdminIntegrationsTab(
-        integrations = integrations,
-        onTestConnection = { id ->
-          val result = viewModel.pingIntegration(id)
-          onShowSnackbar(result.second)
-        },
-        onShowSnackbar = onShowSnackbar
-      )
-    }
-
-    AdminCentralTab.SETTINGS -> {
-      AdminSettingsTab(
-        initialSettings = appSettings,
-        onSaveSettings = { updated ->
-          viewModel.updateAppSettings(updated)
-        },
-        onShowSnackbar = onShowSnackbar
-      )
-    }
-
-    AdminCentralTab.ADVERTISEMENTS -> {
-      AdminAdsTab(
-        campaigns = campaigns,
-        onToggleStatus = { id -> viewModel.toggleAdCampaignStatus(id) },
-        onArchive = { id -> viewModel.archiveAdCampaign(id) },
-        onCreateCampaign = { campaign -> viewModel.createAdCampaign(campaign) },
-        onShowSnackbar = onShowSnackbar
-      )
-    }
-
-    AdminCentralTab.USERS_CREATORS -> {
-      AdminUsersTab(
-        users = users,
-        onSuspendUser = { uid, hours, reason -> viewModel.suspendUser(uid, hours, reason) },
-        onUnsuspendUser = { uid -> viewModel.unsuspendUser(uid) },
-        onBanUser = { uid, reason -> viewModel.banUser(uid, reason) },
-        onUnbanUser = { uid -> viewModel.unbanUser(uid) },
-        onToggleFoundingBadge = { uid -> viewModel.toggleFoundingCreatorBadge(uid) },
-        onToggleSpotlight = { uid -> viewModel.toggleCreatorSpotlight(uid) },
-        onHandleDeletionRequest = { uid, approve -> viewModel.handleAccountDeletionRequest(uid, approve) },
-        onShowSnackbar = onShowSnackbar
-      )
-    }
-
-    AdminCentralTab.MODERATION -> {
-      AdminModerationTab(
-        reports = reports,
-        onTakeDown = { repId, targetId, type ->
-          viewModel.takeDownReportedContent(repId, targetId, type)
-        },
-        onDismiss = { repId ->
-          viewModel.submitAdminAction(repId, ReportStatus.DISMISSED)
-        },
-        onSuspendAuthor = { username ->
-          val target = users.firstOrNull { it.username == username }
-          if (target != null) {
-            viewModel.suspendUser(target.id, 24, "Content Moderation Sanction")
-          }
-        },
-        onShowSnackbar = onShowSnackbar
-      )
-    }
-
-    AdminCentralTab.BROADCAST -> {
-      AdminBroadcastTab(
-        onSendBroadcast = { title, body, destination, mediaUrl, callback ->
-          viewModel.sendAdminBroadcastNotification(title, body, destination, mediaUrl, callback)
-        },
-        onShowSnackbar = onShowSnackbar
-      )
-    }
-
-    AdminCentralTab.AUDIT_LOGS -> {
-      AdminAuditTab(
-        auditLogs = recentLogs,
-        backendStatus = stats.backendStatus,
-        storageUsageMb = stats.storageUsageMb
-      )
+      item {
+        Spacer(modifier = Modifier.height(80.dp))
+      }
     }
   }
 }

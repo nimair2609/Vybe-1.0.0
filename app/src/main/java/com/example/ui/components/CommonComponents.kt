@@ -257,9 +257,9 @@ fun VybeFollowButton(
     }
     isFollowRequested -> {
       Surface(
-        color = Color(0xFF241838),
+        color = Color(0xFF281E10),
         shape = RoundedCornerShape(if (compact) 14.dp else 12.dp),
-        border = BorderStroke(1.dp, Color(0xFF8A2BE2).copy(alpha = 0.5f)),
+        border = BorderStroke(1.dp, Color(0xFFD97706).copy(alpha = 0.8f)),
         modifier = modifier
           .clip(RoundedCornerShape(if (compact) 14.dp else 12.dp))
           .clickable { onClick() }
@@ -276,21 +276,21 @@ fun VybeFollowButton(
             text = label,
             fontSize = if (compact) 12.sp else 14.sp,
             fontWeight = FontWeight.SemiBold,
-            color = Color(0xFFD8B4FE)
+            color = Color(0xFFFBBF24)
           )
         }
       }
     }
     else -> {
-      // Filled Gradient Follow Button
+      // Primary Filled VYBE Violet Follow Button with high-contrast White Text
       Surface(
         color = Color.Transparent,
         shape = RoundedCornerShape(if (compact) 14.dp else 12.dp),
         modifier = modifier
           .clip(RoundedCornerShape(if (compact) 14.dp else 12.dp))
           .background(
-            Brush.linearGradient(
-              listOf(Color(0xFF00F0FF), Color(0xFF8A2BE2))
+            Brush.horizontalGradient(
+              listOf(Color(0xFF7B2CBF), Color(0xFF9D4EDD))
             )
           )
           .clickable { onClick() }
@@ -307,7 +307,7 @@ fun VybeFollowButton(
             text = label,
             fontSize = if (compact) 12.sp else 14.sp,
             fontWeight = FontWeight.Bold,
-            color = Color(0xFF060714)
+            color = Color.White
           )
         }
       }

@@ -41,7 +41,6 @@ import coil.compose.AsyncImage
 import com.example.data.model.CallAvailabilityResult
 import com.example.data.model.MediaType
 import com.example.data.model.User
-import com.example.data.model.UserRole
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.components.PostCard
@@ -283,14 +282,6 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
             Icon(Icons.Default.QrCode, contentDescription = "Share Profile QR Code", tint = VybeBrandCyan)
           }
           if (isMe) {
-            if (user.role == UserRole.ADMIN) {
-              IconButton(
-                onClick = { viewModel.navigateTo(Screen.ADMIN_CONSOLE) },
-                modifier = Modifier.testTag("profile_admin_console_button")
-              ) {
-                Icon(Icons.Default.AdminPanelSettings, contentDescription = "Admin Console", tint = VybeVerifiedGold)
-              }
-            }
             IconButton(
               onClick = { viewModel.navigateTo(Screen.SETTINGS) },
               modifier = Modifier.testTag("profile_settings_button")
@@ -773,32 +764,43 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
               ) {
-                if (isBlocked) {
-                  Button(
-                    onClick = { viewModel.toggleBlockUser(user.id) },
-                    colors = ButtonDefaults.buttonColors(containerColor = VybeDanger),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                      .weight(1f)
-                      .heightIn(min = 48.dp)
-                      .testTag("follow_user_button")
-                  ) {
-                    Text(
-                      text = "Unblock",
-                      color = Color.White,
-                      fontWeight = FontWeight.Bold,
-                      maxLines = 1
-                    )
-                  }
-                } else {
-                  VybeFollowButton(
-                    isFollowing = isFollowed,
-                    isFollowRequested = isFollowRequested,
-                    followsMe = followsMe,
-                    onClick = { viewModel.toggleFollowUser(user.id) },
-                    modifier = Modifier
-                      .weight(1f)
-                      .heightIn(min = 48.dp)
+                val followLabel = when {
+                  isBlocked -> "Unblock"
+                  isFollowed -> "Following"
+                  isFollowRequested -> "Requested"
+                  followsMe -> "Follow Back"
+                  else -> "Follow"
+                }
+                val followContainer = when {
+                  isBlocked -> VybeDanger
+                  isFollowed || isFollowRequested -> MaterialTheme.colorScheme.surfaceVariant
+                  else -> VybeViolet
+                }
+                val followTextColor = when {
+                  isFollowed || isFollowRequested -> MaterialTheme.colorScheme.onSurface
+                  else -> Color.White
+                }
+
+                Button(
+                  onClick = {
+                    if (isBlocked) {
+                      viewModel.toggleBlockUser(user.id)
+                    } else {
+                      viewModel.toggleFollowUser(user.id)
+                    }
+                  },
+                  colors = ButtonDefaults.buttonColors(containerColor = followContainer),
+                  shape = RoundedCornerShape(12.dp),
+                  modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 48.dp)
+                    .testTag("follow_user_button")
+                ) {
+                  Text(
+                    text = followLabel,
+                    color = followTextColor,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
                   )
                 }
 

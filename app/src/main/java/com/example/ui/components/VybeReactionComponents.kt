@@ -46,18 +46,18 @@ import com.example.ui.theme.*
 
 fun reactionColor(reaction: VybeReaction): Color = when (reaction) {
   VybeReaction.LOVE -> Color(0xFFEC4899)  // Signature Finger Heart Magenta
-  VybeReaction.PULSE -> Color(0xFFF59E0B) // Amber Electric Pulse
-  VybeReaction.SPARK -> Color(0xFFA855F7) // Neon Violet Spark
-  VybeReaction.WAVE -> Color(0xFF06B6D4)  // Vibrant Cyan Wave
   VybeReaction.FLAME -> Color(0xFFEF4444) // Vivid Flame Coral
+  VybeReaction.LAUGH -> Color(0xFFF59E0B) // Amber / Gold Laugh
+  VybeReaction.WOW -> Color(0xFF00F0FF)   // Neon Wow Cyan
+  VybeReaction.SAD -> Color(0xFF3B82F6)   // Ocean Sad Blue
 }
 
 fun reactionGradient(reaction: VybeReaction): Brush = when (reaction) {
   VybeReaction.LOVE -> Brush.linearGradient(listOf(Color(0xFFEC4899), Color(0xFF8B5CF6)))
-  VybeReaction.PULSE -> Brush.linearGradient(listOf(Color(0xFFF59E0B), Color(0xFFFBBF24)))
-  VybeReaction.SPARK -> Brush.linearGradient(listOf(Color(0xFFA855F7), Color(0xFFD946EF)))
-  VybeReaction.WAVE -> Brush.linearGradient(listOf(Color(0xFF06B6D4), Color(0xFF3B82F6)))
   VybeReaction.FLAME -> Brush.linearGradient(listOf(Color(0xFFEF4444), Color(0xFFF97316)))
+  VybeReaction.LAUGH -> Brush.linearGradient(listOf(Color(0xFFF59E0B), Color(0xFFFBBF24)))
+  VybeReaction.WOW -> Brush.linearGradient(listOf(Color(0xFF00F0FF), Color(0xFF38BDF8)))
+  VybeReaction.SAD -> Brush.linearGradient(listOf(Color(0xFF3B82F6), Color(0xFF6366F1)))
 }
 
 fun moodOutlineVector(mood: MoodType): ImageVector = when (mood) {
@@ -88,8 +88,12 @@ fun VybeMoodOutlineIcon(
 }
 
 /**
- * Custom VYBE-branded single-colour outline vector icon drawn via Compose Canvas
- * for PULSE, SPARK, WAVE, and FLAME.
+ * Custom VYBE-branded reaction icon for the 5 official reactions:
+ * 1. Finger Heart (🫰) [Default]
+ * 2. Fire (🔥)
+ * 3. Laugh (😂)
+ * 4. Wow (😮)
+ * 5. Sad (😢)
  */
 @Composable
 fun VybeReactionOutlineIcon(
@@ -98,72 +102,16 @@ fun VybeReactionOutlineIcon(
   tint: Color = reactionColor(reaction),
   modifier: Modifier = Modifier
 ) {
-  if (reaction == VybeReaction.LOVE) {
-    Box(
-      modifier = modifier.size(size),
-      contentAlignment = Alignment.Center
-    ) {
-      Text(
-        text = "🫰",
-        fontSize = (size.value * 0.86f).sp,
-        lineHeight = (size.value * 0.86f).sp,
-        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-      )
-    }
-  } else {
-    Canvas(modifier = modifier.size(size)) {
-      val w = this.size.width
-      val h = this.size.height
-      val stroke = Stroke(
-        width = (w * 0.095f).coerceAtLeast(1.8f),
-        cap = StrokeCap.Round,
-        join = StrokeJoin.Round
-      )
-      val path = Path()
-      when (reaction) {
-        VybeReaction.LOVE -> { /* handled above */ }
-        VybeReaction.PULSE -> {
-          // Crisp single-line electric lightning bolt outline
-          path.moveTo(w * 0.56f, h * 0.08f)
-          path.lineTo(w * 0.22f, h * 0.54f)
-          path.lineTo(w * 0.48f, h * 0.54f)
-          path.lineTo(w * 0.42f, h * 0.92f)
-          path.lineTo(w * 0.78f, h * 0.44f)
-          path.lineTo(w * 0.52f, h * 0.44f)
-          path.close()
-        }
-        VybeReaction.SPARK -> {
-          // 4-point star spark outline
-          path.moveTo(w * 0.50f, h * 0.08f)
-          path.quadraticTo(w * 0.54f, h * 0.44f, w * 0.92f, h * 0.50f)
-          path.quadraticTo(w * 0.54f, h * 0.56f, w * 0.50f, h * 0.92f)
-          path.quadraticTo(w * 0.46f, h * 0.56f, w * 0.08f, h * 0.50f)
-          path.quadraticTo(w * 0.46f, h * 0.44f, w * 0.50f, h * 0.08f)
-          path.close()
-        }
-        VybeReaction.WAVE -> {
-          // Twin harmonic resonance wave curves
-          path.moveTo(w * 0.10f, h * 0.38f)
-          path.cubicTo(w * 0.30f, h * 0.14f, w * 0.46f, h * 0.62f, w * 0.66f, h * 0.38f)
-          path.quadraticTo(w * 0.80f, h * 0.22f, w * 0.90f, h * 0.38f)
-
-          path.moveTo(w * 0.10f, h * 0.66f)
-          path.cubicTo(w * 0.30f, h * 0.42f, w * 0.46f, h * 0.90f, w * 0.66f, h * 0.66f)
-          path.quadraticTo(w * 0.80f, h * 0.50f, w * 0.90f, h * 0.66f)
-        }
-        VybeReaction.FLAME -> {
-          // Clean modern single-stroke flame silhouette
-          path.moveTo(w * 0.52f, h * 0.10f)
-          path.cubicTo(w * 0.78f, h * 0.30f, w * 0.84f, h * 0.58f, w * 0.72f, h * 0.78f)
-          path.cubicTo(w * 0.62f, h * 0.92f, w * 0.38f, h * 0.92f, w * 0.28f, h * 0.78f)
-          path.cubicTo(w * 0.16f, h * 0.60f, w * 0.24f, h * 0.40f, w * 0.38f, h * 0.30f)
-          path.quadraticTo(w * 0.36f, h * 0.48f, w * 0.48f, h * 0.44f)
-          path.quadraticTo(w * 0.44f, h * 0.26f, w * 0.52f, h * 0.10f)
-          path.close()
-        }
-      }
-      drawPath(path = path, color = tint, style = stroke)
-    }
+  Box(
+    modifier = modifier.size(size),
+    contentAlignment = Alignment.Center
+  ) {
+    Text(
+      text = reaction.emoji,
+      fontSize = (size.value * 0.88f).sp,
+      lineHeight = (size.value * 0.88f).sp,
+      textAlign = androidx.compose.ui.text.style.TextAlign.Center
+    )
   }
 }
 
@@ -242,9 +190,14 @@ fun VybeReactionSelector(
 /**
  * Interactive Reel Reaction Button with Press-and-Hold + Drag-to-Highlight Gesture.
  * - Single tap: Applies default 🫰 (Finger Heart) or toggles off active reaction.
- * - Press & hold: Displays horizontal floating bar with 5 reactions (LOVE, PULSE, SPARK, WAVE, FLAME).
- * - Drag across bar: Highlights reaction with 1.38x scale and haptic feedback.
+/**
+ * Upgraded Interactive Reaction Button with Press-and-Hold + Drag-to-Highlight Gesture.
+ * Supports:
+ * - Single tap: Applies default 🫰 (Finger Heart) or toggles off active reaction.
+ * - Press & hold: Displays horizontal floating bar with 5 reactions (LOVE 🫰, FLAME 🔥, LAUGH 😂, WOW 😮, SAD 😢).
+ * - Drag across bar: Highlights reaction with 1.35x scale and haptic feedback.
  * - Release: Commits selected reaction immediately.
+ * - Dragged away & released outside: Cancels without reacting.
  */
 @Composable
 fun ReelReactionGestureButton(
@@ -253,24 +206,68 @@ fun ReelReactionGestureButton(
   onToggleDefault: () -> Unit,
   modifier: Modifier = Modifier
 ) {
+  VybeReactionGestureButtonInternal(
+    userReaction = userReaction,
+    onReact = onReact,
+    onToggleDefault = onToggleDefault,
+    isSideBar = true,
+    testTagPrefix = "reel",
+    modifier = modifier
+  )
+}
+
+@Composable
+fun PostReactionGestureButton(
+  userReaction: VybeReaction?,
+  onReact: (VybeReaction) -> Unit,
+  onToggleDefault: () -> Unit,
+  modifier: Modifier = Modifier
+) {
+  VybeReactionGestureButtonInternal(
+    userReaction = userReaction,
+    onReact = onReact,
+    onToggleDefault = onToggleDefault,
+    isSideBar = false,
+    testTagPrefix = "post",
+    modifier = modifier
+  )
+}
+
+@Composable
+private fun VybeReactionGestureButtonInternal(
+  userReaction: VybeReaction?,
+  onReact: (VybeReaction) -> Unit,
+  onToggleDefault: () -> Unit,
+  isSideBar: Boolean,
+  testTagPrefix: String,
+  modifier: Modifier = Modifier
+) {
   val haptic = LocalHapticFeedback.current
   var isBarVisible by remember { mutableStateOf(false) }
   var hoveredIndex by remember { mutableStateOf<Int?>(null) }
   val reactions = remember { VybeReaction.values() }
 
   Box(modifier = modifier) {
-    // Floating horizontal bar when press-and-hold is active
+    // Floating horizontal 5-reaction bar when press-and-hold is active
     if (isBarVisible) {
       Surface(
-        color = Color(0xFF0C1020).copy(alpha = 0.96f),
+        color = Color(0xFF0C1020).copy(alpha = 0.97f),
         shape = RoundedCornerShape(28.dp),
-        border = BorderStroke(1.dp, Color(0xFF232D48)),
-        shadowElevation = 16.dp,
-        modifier = Modifier
-          .align(Alignment.CenterEnd)
-          .offset(x = (-56).dp)
-          .zIndex(50f)
-          .testTag("reel_reaction_gesture_bar")
+        border = BorderStroke(1.dp, Color(0xFF2E3856)),
+        shadowElevation = 18.dp,
+        modifier = if (isSideBar) {
+          Modifier
+            .align(Alignment.CenterEnd)
+            .offset(x = (-56).dp)
+            .zIndex(50f)
+            .testTag("${testTagPrefix}_reaction_gesture_bar")
+        } else {
+          Modifier
+            .align(Alignment.TopStart)
+            .offset(y = (-52).dp)
+            .zIndex(50f)
+            .testTag("${testTagPrefix}_reaction_gesture_bar")
+        }
       ) {
         Row(
           modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
@@ -282,17 +279,17 @@ fun ReelReactionGestureButton(
             val isCurrent = userReaction == rx
             val rColor = reactionColor(rx)
             val scaleAnim by animateFloatAsState(
-              targetValue = if (isHovered) 1.38f else if (isCurrent) 1.15f else 1f,
+              targetValue = if (isHovered) 1.35f else if (isCurrent) 1.15f else 1f,
               animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)
             )
 
             Box(
               modifier = Modifier
                 .scale(scaleAnim)
-                .size(36.dp)
+                .size(38.dp)
                 .clip(CircleShape)
                 .background(
-                  if (isHovered) rColor.copy(alpha = 0.35f)
+                  if (isHovered) rColor.copy(alpha = 0.38f)
                   else if (isCurrent) rColor.copy(alpha = 0.22f)
                   else Color.Transparent
                 )
@@ -304,8 +301,8 @@ fun ReelReactionGestureButton(
             ) {
               VybeReactionOutlineIcon(
                 reaction = rx,
-                size = 22.dp,
-                tint = if (isHovered || isCurrent) rColor else Color.White.copy(alpha = 0.88f)
+                size = 24.dp,
+                tint = if (isHovered || isCurrent) rColor else Color.White
               )
             }
           }
@@ -313,13 +310,16 @@ fun ReelReactionGestureButton(
       }
     }
 
-    // Reaction trigger button with pointerInput for tap & press-and-hold drag
+    // Reaction trigger button with pointerInput gesture detector
     Box(
       modifier = Modifier
-        .size(48.dp)
+        .size(if (isSideBar) 48.dp else 40.dp)
         .clip(CircleShape)
-        .background(Color.Black.copy(alpha = 0.5f))
-        .pointerInput(userReaction) {
+        .background(
+          if (isSideBar) Color.Black.copy(alpha = 0.5f)
+          else Color.White.copy(alpha = 0.08f)
+        )
+        .pointerInput(userReaction, isSideBar) {
           awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
             hoveredIndex = null
@@ -330,10 +330,10 @@ fun ReelReactionGestureButton(
             }
 
             if (upOrCancel != null) {
-              // Quick tap: toggle default 🫰 (Finger Heart)
+              // Normal tap: toggle default reaction 🫰 (Finger Heart)
               onToggleDefault()
             } else {
-              // Press and hold detected!
+              // Long press & hold detected!
               isBarVisible = true
               haptic.performHapticFeedback(HapticFeedbackType.LongPress)
 
@@ -348,23 +348,52 @@ fun ReelReactionGestureButton(
                     onReact(reactions[finalIndex])
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                   }
+                  // Cancel if released outside
                   isBarVisible = false
                   hoveredIndex = null
                   change.consume()
                   break
                 }
 
-                // Compute relative hover position:
-                // Bar is to the left of the button, ~220dp wide, roughly x in [-220, 0]
+                // Compute relative hover position based on orientation
                 val currentX = change.position.x
-                val barStartX = -220f * density
-                val barEndX = -10f * density
-                if (currentX in barStartX..barEndX) {
-                  val progress = ((currentX - barStartX) / (barEndX - barStartX)).coerceIn(0f, 0.99f)
-                  val newIndex = (progress * reactions.size).toInt()
-                  if (newIndex != hoveredIndex) {
-                    hoveredIndex = newIndex
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                val currentY = change.position.y
+
+                if (isSideBar) {
+                  // Side bar: located to left of button [-230dp, -10dp], vertical within [-25dp, 65dp]
+                  val barStartX = -225f * density
+                  val barEndX = -10f * density
+                  val barMinY = -25f * density
+                  val barMaxY = 65f * density
+
+                  if (currentX in barStartX..barEndX && currentY in barMinY..barMaxY) {
+                    val progress = ((currentX - barStartX) / (barEndX - barStartX)).coerceIn(0f, 0.99f)
+                    val newIndex = (progress * reactions.size).toInt()
+                    if (newIndex != hoveredIndex) {
+                      hoveredIndex = newIndex
+                      haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
+                  } else {
+                    // Dragged outside: clear highlight
+                    hoveredIndex = null
+                  }
+                } else {
+                  // Top bar (Feed Post): located above button [-10dp, 230dp], vertical within [-70dp, 5dp]
+                  val barStartX = -10f * density
+                  val barEndX = 225f * density
+                  val barMinY = -70f * density
+                  val barMaxY = 5f * density
+
+                  if (currentX in barStartX..barEndX && currentY in barMinY..barMaxY) {
+                    val progress = ((currentX - barStartX) / (barEndX - barStartX)).coerceIn(0f, 0.99f)
+                    val newIndex = (progress * reactions.size).toInt()
+                    if (newIndex != hoveredIndex) {
+                      hoveredIndex = newIndex
+                      haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
+                  } else {
+                    // Dragged outside: clear highlight
+                    hoveredIndex = null
                   }
                 }
                 change.consume()
@@ -372,22 +401,16 @@ fun ReelReactionGestureButton(
             }
           }
         }
-        .testTag("reel_like_button"),
+        .testTag("${testTagPrefix}_like_button"),
       contentAlignment = Alignment.Center
     ) {
-      if (userReaction != null) {
-        VybeReactionOutlineIcon(
-          reaction = userReaction,
-          size = 24.dp,
-          tint = reactionColor(userReaction)
-        )
-      } else {
-        VybeReactionOutlineIcon(
-          reaction = VybeReaction.LOVE,
-          size = 24.dp,
-          tint = Color.White
-        )
-      }
+      val displayReaction = userReaction ?: VybeReaction.LOVE
+      val isReacted = userReaction != null
+      VybeReactionOutlineIcon(
+        reaction = displayReaction,
+        size = if (isSideBar) 24.dp else 22.dp,
+        tint = if (isReacted) reactionColor(displayReaction) else Color.White
+      )
     }
   }
 }

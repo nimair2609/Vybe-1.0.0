@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.vybe.nzqpvx"
     minSdk = 24
     targetSdk = 36
-    versionCode = 5
-    versionName = "1.2.2"
+    versionCode = 1
+    versionName = "1.0.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = "GOOGLE_MAPS_API_KEY_DEFAULT_VALUE"
@@ -84,14 +84,6 @@ secrets {
   ignoreList.add("SMS_GATEWAY_API_KEY")
   ignoreList.add("VYBE_API_BASE_URL")
   ignoreList.add("VYBE_WEBRTC_SIGNALING_URL")
-  ignoreList.add("FIREBASE_SERVICE_ACCOUNT")
-  ignoreList.add("FCM_SERVER_KEY")
-  ignoreList.add("MUSIC_PROVIDER")
-  ignoreList.add("MUSIC_PROVIDER_API_KEY")
-  ignoreList.add("MUSIC_PROVIDER_BASE_URL")
-  ignoreList.add("JAMENDO_CLIENT_ID")
-  ignoreList.add("MUSIC_LICENSE_APPROVED")
-  ignoreList.add("MUSIC_COMMERCIAL_SYNC_VERIFIED")
 }
 
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
@@ -100,8 +92,7 @@ googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.W
 // This makes it easy to add them back in the future if needed.
 dependencies {
   implementation(platform(libs.androidx.compose.bom))
-  implementation(platform(libs.firebase.bom))
-  implementation(libs.firebase.messaging)
+  // implementation(platform(libs.firebase.bom))
   // implementation(libs.accompanist.permissions)
   implementation(libs.androidx.activity.compose)
   implementation(libs.androidx.camera.camera2)

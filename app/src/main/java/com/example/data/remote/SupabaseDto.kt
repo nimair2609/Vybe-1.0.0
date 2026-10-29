@@ -99,11 +99,6 @@ data class SupabaseProfileDto(
   val role: String? = "USER",
   @Json(name = "is_verified") val isVerified: Boolean? = false,
   @Json(name = "is_vip") val isVip: Boolean? = false,
-  @Json(name = "is_verified_business") val isVerifiedBusiness: Boolean? = false,
-  @Json(name = "is_verified_public_figure") val isVerifiedPublicFigure: Boolean? = false,
-  @Json(name = "is_worker") val isWorker: Boolean? = false,
-  @Json(name = "badge_display_status") val badgeDisplayStatus: String? = "ACCEPTED",
-  @Json(name = "badge_type") val badgeType: String? = null,
   @Json(name = "is_private_account") val isPrivateAccount: Boolean? = false,
   @Json(name = "message_privacy") val messagePrivacy: String? = "EVERYONE",
   @Json(name = "followers_count") val followersCount: Int? = 0,
@@ -128,7 +123,6 @@ data class SupabaseProfilePatchDto(
   @Json(name = "is_phone_verified") val isPhoneVerified: Boolean? = null,
   @Json(name = "is_private_account") val isPrivateAccount: Boolean? = null,
   @Json(name = "message_privacy") val messagePrivacy: String? = null,
-  @Json(name = "badge_display_status") val badgeDisplayStatus: String? = null,
   @Json(name = "live_pulse") val livePulse: String? = null,
   @Json(name = "last_seen_at") val lastSeenAt: String? = null
 )
@@ -297,15 +291,6 @@ data class SupabaseStoryDto(
   val caption: String? = "",
   val audience: String? = "EVERYONE",
   @Json(name = "music_title") val musicTitle: String? = null,
-  @Json(name = "music_track_id") val musicTrackId: String? = null,
-  @Json(name = "music_provider") val musicProvider: String? = null,
-  @Json(name = "music_artist") val musicArtist: String? = null,
-  @Json(name = "music_artwork_url") val musicArtworkUrl: String? = null,
-  @Json(name = "music_stream_url") val musicStreamUrl: String? = null,
-  @Json(name = "music_start_ms") val musicStartMs: Int? = null,
-  @Json(name = "music_duration_ms") val musicDurationMs: Int? = null,
-  @Json(name = "music_volume") val musicVolume: Double? = null,
-  @Json(name = "original_audio_volume") val originalAudioVolume: Double? = null,
   @Json(name = "location_name") val locationName: String? = null,
   @Json(name = "text_bg_key") val textBgKey: String? = null,
   @Json(name = "storage_path") val storagePath: String? = null,
@@ -326,30 +311,6 @@ data class SupabaseStoryInsertDto(
   val caption: String? = "",
   val audience: String? = "EVERYONE",
   @Json(name = "music_title") val musicTitle: String? = null,
-  @Json(name = "location_name") val locationName: String? = null,
-  @Json(name = "text_bg_key") val textBgKey: String? = null,
-  @Json(name = "storage_path") val storagePath: String? = null,
-  @Json(name = "client_upload_id") val clientUploadId: String? = null,
-  @Json(name = "expires_at") val expiresAt: String
-)
-
-data class SupabaseStoryExtendedMusicInsertDto(
-  @Json(name = "author_id") val authorId: String,
-  @Json(name = "media_url") val mediaUrl: String,
-  @Json(name = "media_type") val mediaType: String = "PHOTO",
-  @Json(name = "story_type") val storyType: String = mediaType,
-  val caption: String? = "",
-  val audience: String? = "EVERYONE",
-  @Json(name = "music_title") val musicTitle: String? = null,
-  @Json(name = "music_track_id") val musicTrackId: String? = null,
-  @Json(name = "music_provider") val musicProvider: String? = null,
-  @Json(name = "music_artist") val musicArtist: String? = null,
-  @Json(name = "music_artwork_url") val musicArtworkUrl: String? = null,
-  @Json(name = "music_stream_url") val musicStreamUrl: String? = null,
-  @Json(name = "music_start_ms") val musicStartMs: Int? = null,
-  @Json(name = "music_duration_ms") val musicDurationMs: Int? = null,
-  @Json(name = "music_volume") val musicVolume: Double? = null,
-  @Json(name = "original_audio_volume") val originalAudioVolume: Double? = null,
   @Json(name = "location_name") val locationName: String? = null,
   @Json(name = "text_bg_key") val textBgKey: String? = null,
   @Json(name = "storage_path") val storagePath: String? = null,
@@ -381,15 +342,6 @@ data class SupabasePostDto(
   val latitude: Double? = null,
   val longitude: Double? = null,
   @Json(name = "music_title") val musicTitle: String? = null,
-  @Json(name = "music_track_id") val musicTrackId: String? = null,
-  @Json(name = "music_provider") val musicProvider: String? = null,
-  @Json(name = "music_artist") val musicArtist: String? = null,
-  @Json(name = "music_artwork_url") val musicArtworkUrl: String? = null,
-  @Json(name = "music_stream_url") val musicStreamUrl: String? = null,
-  @Json(name = "music_start_ms") val musicStartMs: Int? = null,
-  @Json(name = "music_duration_ms") val musicDurationMs: Int? = null,
-  @Json(name = "music_volume") val musicVolume: Double? = null,
-  @Json(name = "original_audio_volume") val originalAudioVolume: Double? = null,
   @Json(name = "is_unfiltered") val isUnfiltered: Boolean? = false,
   @Json(name = "is_vybes_reel") val isVybesReel: Boolean? = false,
   @Json(name = "is_spiritual") val isSpiritual: Boolean? = false,
@@ -419,30 +371,6 @@ data class SupabasePostInsertDto(
   val latitude: Double? = null,
   val longitude: Double? = null,
   @Json(name = "music_title") val musicTitle: String? = null,
-  @Json(name = "client_upload_id") val clientUploadId: String? = null,
-  @Json(name = "is_unfiltered") val isUnfiltered: Boolean? = false,
-  @Json(name = "is_vybes_reel") val isVybesReel: Boolean? = false,
-  @Json(name = "views_count") val viewsCount: Int? = 0
-)
-
-data class SupabasePostExtendedMusicInsertDto(
-  @Json(name = "author_id") val authorId: String,
-  val caption: String? = "",
-  @Json(name = "media_type") val mediaType: String? = "TEXT",
-  @Json(name = "mood_zone") val moodZone: String? = null,
-  @Json(name = "location_name") val locationName: String? = null,
-  val latitude: Double? = null,
-  val longitude: Double? = null,
-  @Json(name = "music_title") val musicTitle: String? = null,
-  @Json(name = "music_track_id") val musicTrackId: String? = null,
-  @Json(name = "music_provider") val musicProvider: String? = null,
-  @Json(name = "music_artist") val musicArtist: String? = null,
-  @Json(name = "music_artwork_url") val musicArtworkUrl: String? = null,
-  @Json(name = "music_stream_url") val musicStreamUrl: String? = null,
-  @Json(name = "music_start_ms") val musicStartMs: Int? = null,
-  @Json(name = "music_duration_ms") val musicDurationMs: Int? = null,
-  @Json(name = "music_volume") val musicVolume: Double? = null,
-  @Json(name = "original_audio_volume") val originalAudioVolume: Double? = null,
   @Json(name = "client_upload_id") val clientUploadId: String? = null,
   @Json(name = "is_unfiltered") val isUnfiltered: Boolean? = false,
   @Json(name = "is_vybes_reel") val isVybesReel: Boolean? = false,
@@ -1010,19 +938,5 @@ data class SupabaseCommunityCommentInsertDto(
   @Json(name = "author_id") val authorId: String,
   val content: String
 )
-
-data class SupabaseDeviceTokenDto(
-  val id: String? = null,
-  @Json(name = "user_id") val userId: String,
-  @Json(name = "fcm_token") val fcmToken: String,
-  @Json(name = "device_model") val deviceModel: String? = null,
-  val platform: String = "android",
-  @Json(name = "app_version") val appVersion: String? = null,
-  @Json(name = "is_active") val isActive: Boolean = true,
-  @Json(name = "last_seen_at") val lastSeenAt: String? = null,
-  @Json(name = "created_at") val createdAt: String? = null,
-  @Json(name = "updated_at") val updatedAt: String? = null
-)
-
 
 

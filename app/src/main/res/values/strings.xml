@@ -1,29 +1,3 @@
 <resources>
     <string name="app_name">VYBE</string>
-    <string name="add_music_emoji">Add Music 🎵</string>
-    <string name="music_add_button_label">Add Music 🎵</string>
-    <string name="music_change_button_label">Change Music 🎵</string>
-    <string name="music_picker_title">Licensed Music</string>
-    <string name="music_picker_search_hint">Search song title, artist, genre, or mood…</string>
-    <string name="music_search_placeholder">Search song title, artist, genre, or mood…</string>
-    <string name="music_volume_label">Music Volume</string>
-    <string name="original_audio_volume_label">Original Audio</string>
-    <string name="music_original_audio_label">Original Audio</string>
-    <string name="music_track_volume_label">Music Volume</string>
-    <string name="music_segment_selector_label">Select Clip Segment</string>
-    <string name="use_selected_music">Attach Music</string>
-    <string name="music_attach_confirm_button">Attach Music</string>
-    <string name="music_unavailable_track">Unavailable</string>
-    <string name="track_page_title">Audio Track</string>
-    <string name="music_track_page_title">Audio Track</string>
-    <string name="track_page_use_audio">Use Audio in Reel</string>
-    <string name="track_page_reels_header">Reels Using This Track</string>
-    <string name="music_use_in_reel_cta">Use Audio in Reel</string>
-    <string name="music_use_in_story_cta">Use in Story</string>
-    <string name="music_provider_not_configured_title">Licensed Music Provider Not Connected</string>
-    <string name="music_provider_not_configured_body">Configure your licensed music API credentials and commercial sync approval in server / Supabase Edge Function secrets to enable streaming.</string>
-    <string name="music_license_pending_title">Commercial Sync License Approval Required</string>
-    <string name="music_license_pending_body">Your music provider credentials are set, but commercial sync licensing verification (MUSIC_LICENSE_APPROVED=true &amp; MUSIC_COMMERCIAL_SYNC_VERIFIED=true) is required before enabling production playback.</string>
-    <string name="music_empty_results_title">No Licensed Tracks Found</string>
-    <string name="music_empty_results_body">Try another song title, artist, mood, or category filter.</string>
 </resources>

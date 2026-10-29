@@ -100,6 +100,25 @@ class VybeFirebaseMessagingService : FirebaseMessagingService() {
         return
       }
 
+      val dedupeKey = data["event_key"]
+        ?: data["notification_id"]?.let { "notif_$it" }
+        ?: data["message_id"]?.let { "msg_$it" }
+        ?: remoteMessage.messageId?.let { "fcm_$it" }
+
+      val hasSystemNotificationBlock = notification != null
+      val isBackground = !VybeNotificationHelper.isAppInForeground
+
+      // If Android OS already posted a system tray notification from the top-level notification block
+      // while the app is in the background or killed, mark as notified to prevent duplicate local display
+      if (hasSystemNotificationBlock && isBackground) {
+        VybeNotificationHelper.markEventAsNotified(applicationContext, dedupeKey)
+        Log.d(TAG, "OS displayed system notification in background. Deduplicated key=$dedupeKey")
+        if (session.isLoggedIn) {
+          try { VybeRepository.get().refreshNotifications() } catch (_: Exception) {}
+        }
+        return
+      }
+
       val channelType = data["channel"] ?: data["type"] ?: ""
       val channelId = when {
         channelType.contains("CALL", ignoreCase = true) -> VybeNotificationHelper.CHANNEL_ID_CALLS
@@ -123,11 +142,6 @@ class VybeFirebaseMessagingService : FirebaseMessagingService() {
           VybeRepository.get().refreshNotifications()
         } catch (_: Exception) {}
       }
-
-      val dedupeKey = data["event_key"]
-        ?: data["notification_id"]?.let { "notif_$it" }
-        ?: data["message_id"]?.let { "msg_$it" }
-        ?: remoteMessage.messageId?.let { "fcm_$it" }
 
       val enrichedData = data.toMutableMap()
       if (!actorId.isNullOrBlank()) {

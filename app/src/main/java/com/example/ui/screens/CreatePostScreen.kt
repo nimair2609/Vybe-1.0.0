@@ -35,34 +35,26 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
-import com.example.R
 import com.example.data.model.MediaType
 import com.example.data.model.MoodType
-import com.example.data.model.MusicAttachment
-import com.example.data.model.formatMusicMillis
 import com.example.ui.VybeViewModel
 import com.example.ui.components.LocationPickerDialog
-import com.example.ui.components.MusicPickerSheet
 import com.example.ui.components.SelectedLocationResult
 import com.example.ui.components.StoryCreateDialog
 import com.example.ui.components.VideoFitMode
 import com.example.ui.components.VybeAvatar
 import com.example.ui.components.VybeGradientButton
 import com.example.ui.components.VybeMoodOutlineIcon
-import com.example.ui.components.VybeMusicSticker
 import com.example.ui.components.VybeVideoPlayer
 import com.example.ui.theme.VybeBrandCyan
 import com.example.ui.theme.VybeMagenta
 import com.example.ui.theme.VybeViolet
 import com.example.util.FeedAudioController
 import com.example.util.MediaUtils
-import com.example.util.music.BindMusicPreviewLifecycle
-import com.example.util.music.MusicPreviewController
-import com.example.util.music.MusicPreviewState
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.ui.res.stringResource
+import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Stop
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 enum class PublishDestination {
   FEED_POST, VYBES_REEL
@@ -76,9 +68,6 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
   val currentUser by viewModel.currentUser.collectAsState()
   val isOnline by viewModel.isOnline.collectAsState()
 
-  BindMusicPreviewLifecycle(stopOnDispose = true)
-  val musicPreviewState by MusicPreviewController.state.collectAsState()
-
   var publishDestination by remember { mutableStateOf(PublishDestination.FEED_POST) }
   var caption by remember { mutableStateOf("") }
   var selectedMood by remember { mutableStateOf<MoodType?>(null) }
@@ -88,32 +77,21 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
   var detectedMediaRatio by remember { mutableStateOf<Float?>(null) }
   var showPreviewDialog by remember { mutableStateOf(false) }
   var selectedLocationResult by remember { mutableStateOf<SelectedLocationResult?>(null) }
-  var selectedMusicAttachment by remember { mutableStateOf<MusicAttachment?>(null) }
-  var showMusicPickerSheet by remember { mutableStateOf(false) }
+  var selectedAudioTrack by remember { mutableStateOf<String?>(null) }
+  var previewingAudioTrack by remember { mutableStateOf<String?>(null) }
   var showLocationDialog by remember { mutableStateOf(false) }
   var showStoryComposerDialog by remember { mutableStateOf(false) }
   var localValidationMessage by remember { mutableStateOf<String?>(null) }
   var isSubmitting by remember { mutableStateOf(false) }
 
-  LaunchedEffect(Unit) {
-    val pendingTrack = viewModel.consumePendingComposerMusicTrack()
-    if (pendingTrack != null) {
-      publishDestination = PublishDestination.VYBES_REEL
-      selectedMediaType = MediaType.REEL
-      selectedMusicAttachment = MusicAttachment.fromTrack(pendingTrack)
-    }
-  }
-
   DisposableEffect(Unit) {
     onDispose {
       FeedAudioController.stopMusicTrack("composer_preview")
-      MusicPreviewController.stop()
     }
   }
 
   BackHandler(enabled = !isSubmitting) {
     FeedAudioController.stopMusicTrack("composer_preview")
-    MusicPreviewController.stop()
     viewModel.navigateBack()
   }
 
@@ -225,9 +203,8 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
     isSubmitting = true
     localValidationMessage = null
     FeedAudioController.stopMusicTrack("composer_preview")
-    MusicPreviewController.stop()
+    previewingAudioTrack = null
     coroutineScope.launch {
-      val sanitizedMusic = selectedMusicAttachment?.sanitized()
       val result = viewModel.publishPostAwait(
         caption = caption.trim(),
         mood = selectedMood,
@@ -237,9 +214,8 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
         locationName = selectedLocationResult?.displayName,
         latitude = selectedLocationResult?.latitude,
         longitude = selectedLocationResult?.longitude,
-        audioTrackTitle = sanitizedMusic?.displayLabel,
-        preferredAspectRatio = if (selectedMediaUri != null) preferredAspectRatio else null,
-        musicAttachment = sanitizedMusic
+        audioTrackTitle = selectedAudioTrack,
+        preferredAspectRatio = if (selectedMediaUri != null) preferredAspectRatio else null
       )
       isSubmitting = false
       if (result.isFailure) {
@@ -261,13 +237,7 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
       TopAppBar(
         navigationIcon = {
           IconButton(
-            onClick = {
-              if (!isSubmitting) {
-                FeedAudioController.stopMusicTrack("composer_preview")
-                MusicPreviewController.stop()
-                viewModel.navigateBack()
-              }
-            },
+            onClick = { if (!isSubmitting) viewModel.navigateBack() },
             enabled = !isSubmitting,
             modifier = Modifier
               .size(48.dp)
@@ -338,10 +308,7 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
             verticalAlignment = Alignment.CenterVertically
           ) {
             OutlinedButton(
-              onClick = {
-                MusicPreviewController.stop()
-                showStoryComposerDialog = true
-              },
+              onClick = { showStoryComposerDialog = true },
               enabled = !isSubmitting,
               shape = RoundedCornerShape(14.dp),
               modifier = Modifier
@@ -648,20 +615,14 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
               .background(Color(0xFF0A0A0F))
               .testTag("create_post_media_preview")
           ) {
-            val isMusicSyncPlaying = selectedMusicAttachment != null &&
-              musicPreviewState is MusicPreviewState.Playing &&
-              (musicPreviewState as MusicPreviewState.Playing).trackId == selectedMusicAttachment?.trackId
-            val effectiveOriginalVolume = selectedMusicAttachment?.originalAudioVolume ?: 1f
-
             if (isVideoMedia) {
               VybeVideoPlayer(
                 videoUrl = selectedMediaUri!!,
                 autoPlay = true,
                 isLooping = true,
-                initialMuted = if (isMusicSyncPlaying) effectiveOriginalVolume <= 0.01f else true,
-                isPausedExternal = showPreviewDialog || showMusicPickerSheet || isSubmitting,
+                initialMuted = true,
+                isPausedExternal = showPreviewDialog || isSubmitting,
                 fitMode = VideoFitMode.FIT_CONTAIN,
-                audioVolume = effectiveOriginalVolume,
                 onAspectRatioDetected = { ratio ->
                   if (detectedMediaRatio == null) {
                     detectedMediaRatio = ratio
@@ -675,24 +636,6 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
                 contentDescription = "Selected photo preview",
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
-              )
-            }
-
-            selectedMusicAttachment?.let { attached ->
-              VybeMusicSticker(
-                title = attached.title,
-                artist = attached.artist,
-                artworkUrl = attached.artworkUrl,
-                segmentLabel = attached.formattedSegmentRange,
-                onClick = {
-                  MusicPreviewController.stop()
-                  showMusicPickerSheet = true
-                },
-                modifier = Modifier
-                  .align(Alignment.TopStart)
-                  .padding(12.dp)
-                  .widthIn(max = 260.dp)
-                  .testTag("reel_composer_music_sticker")
               )
             }
           }
@@ -764,288 +707,69 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
           }
         }
 
-        // Licensed Music Integration for VYBES Reels & Video/Feed Posts
+        // Optional Feed Music Track Selector
         Spacer(modifier = Modifier.height(14.dp))
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          Text(
-            text = if (publishDestination == PublishDestination.VYBES_REEL) {
-              "Reel Music & Audio Mix (Optional)"
-            } else {
-              "Post Music (Optional — Licensed Catalog)"
-            },
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold
-          )
-          if (selectedMusicAttachment != null) {
-            TextButton(
-              onClick = {
-                MusicPreviewController.stop()
-                showMusicPickerSheet = true
-              },
-              enabled = !isSubmitting,
-              modifier = Modifier
-                .heightIn(min = 48.dp)
-                .testTag("reel_change_music_button")
-            ) {
-              Text("Change Track", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = VybeBrandCyan)
-            }
-          }
-        }
+        Text(
+          text = "Feed Music (Optional — plays seamlessly in Feed)",
+          style = MaterialTheme.typography.labelLarge,
+          fontWeight = FontWeight.SemiBold
+        )
         Spacer(modifier = Modifier.height(8.dp))
-
-        if (selectedMusicAttachment == null) {
-          OutlinedButton(
-            onClick = {
-              MusicPreviewController.stop()
-              showMusicPickerSheet = true
-            },
-            enabled = !isSubmitting,
-            shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.2.dp, VybeMagenta.copy(alpha = 0.7f)),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            modifier = Modifier
-              .fillMaxWidth()
-              .heightIn(min = 48.dp)
-              .testTag("reel_add_music_button")
-          ) {
-            Icon(
-              imageVector = Icons.Default.MusicNote,
-              contentDescription = "Add Music",
-              tint = VybeMagenta,
-              modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-              text = stringResource(R.string.add_music_emoji),
-              fontWeight = FontWeight.Bold,
-              fontSize = 14.sp,
-              color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            Text(
-              text = "Search, trim & mix",
-              fontSize = 11.sp,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-          }
-        } else {
-          val music = selectedMusicAttachment!!
-          val isTrackPreviewing = (musicPreviewState is MusicPreviewState.Playing &&
-            (musicPreviewState as MusicPreviewState.Playing).trackId == music.trackId) ||
-            (musicPreviewState is MusicPreviewState.Buffering &&
-              (musicPreviewState as MusicPreviewState.Buffering).trackId == music.trackId)
-          val showDualAudioControls = publishDestination == PublishDestination.VYBES_REEL || isVideoMedia
-
-          Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
-            shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.2.dp, VybeViolet.copy(alpha = 0.65f)),
-            modifier = Modifier
-              .fillMaxWidth()
-              .testTag("reel_audio_studio_card")
-          ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                VybeMusicSticker(
-                  title = music.title,
-                  artist = music.artist,
-                  artworkUrl = music.artworkUrl,
-                  segmentLabel = music.formattedSegmentRange,
-                  onClick = {
-                    MusicPreviewController.stop()
-                    showMusicPickerSheet = true
-                  },
-                  modifier = Modifier.weight(1f)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                IconButton(
-                  onClick = {
-                    MusicPreviewController.togglePreview(
-                      track = music.toLicensedTrack(),
-                      startTimeMs = music.startTimeMs,
-                      clipDurationMs = music.clipDurationMs,
-                      volume = music.musicVolume
-                    )
-                  },
-                  enabled = !isSubmitting && !music.streamUrl.isNullOrBlank(),
-                  modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(VybeViolet.copy(alpha = 0.22f))
-                    .testTag("reel_music_preview_button")
-                ) {
-                  Icon(
-                    imageVector = if (isTrackPreviewing) Icons.Default.Stop else Icons.Default.PlayArrow,
-                    contentDescription = if (isTrackPreviewing) "Stop music preview" else "Preview music with reel",
-                    tint = if (isTrackPreviewing) VybeMagenta else VybeBrandCyan
-                  )
-                }
-                Spacer(modifier = Modifier.width(4.dp))
-                IconButton(
-                  onClick = {
-                    MusicPreviewController.stop()
-                    selectedMusicAttachment = null
-                  },
-                  enabled = !isSubmitting,
-                  modifier = Modifier
-                    .size(48.dp)
-                    .testTag("reel_remove_music_button")
-                ) {
-                  Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Remove selected music",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                  )
-                }
-              }
-
-              // Timeline / Start-Time Selector & Clip Duration Chips
-              Spacer(modifier = Modifier.height(12.dp))
-              val maxStartMs = (music.trackDurationMs - music.clipDurationMs).coerceAtLeast(0L)
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Text(
-                  text = "Start Time (${music.formattedSegmentRange})",
-                  fontSize = 11.sp,
-                  fontWeight = FontWeight.SemiBold,
-                  color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                  text = "Track ${formatMusicMillis(music.trackDurationMs)}",
-                  fontSize = 11.sp,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-              }
-              Slider(
-                value = music.startTimeMs.coerceIn(0L, maxStartMs).toFloat(),
-                onValueChange = { rawStart ->
-                  val updated = music.copy(startTimeMs = rawStart.toLong()).sanitized()
-                  selectedMusicAttachment = updated
-                  MusicPreviewController.updateSegmentBounds(updated.startTimeMs, updated.clipDurationMs)
-                },
-                valueRange = 0f..maxStartMs.coerceAtLeast(1L).toFloat(),
-                enabled = !isSubmitting && maxStartMs > 0L,
-                colors = SliderDefaults.colors(
-                  thumbColor = VybeBrandCyan,
-                  activeTrackColor = VybeBrandCyan
-                ),
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .testTag("reel_start_time_slider")
-              )
-
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Text(
-                  text = "Length:",
-                  fontSize = 11.sp,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                listOf(10_000L to "10s", 15_000L to "15s", 30_000L to "30s", 60_000L to "60s")
-                  .filter { (dur, _) -> dur <= music.trackDurationMs || dur == 15_000L }
-                  .forEach { (durMs, label) ->
-                    val targetClip = minOf(durMs, music.trackDurationMs.coerceAtLeast(1_000L))
-                    FilterChip(
-                      selected = kotlin.math.abs(music.clipDurationMs - targetClip) < 500L,
-                      onClick = {
-                        if (!isSubmitting) {
-                          val updated = music.copy(clipDurationMs = targetClip).sanitized()
-                          selectedMusicAttachment = updated
-                          MusicPreviewController.updateSegmentBounds(updated.startTimeMs, updated.clipDurationMs)
-                        }
-                      },
-                      label = { Text(label, fontSize = 11.sp) }
-                    )
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          items(FeedAudioController.PRESET_TRACKS) { track ->
+            val isSelected = selectedAudioTrack == track
+            val isPreviewing = previewingAudioTrack == track
+            Surface(
+              color = if (isSelected) VybeBrandCyan.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
+              shape = RoundedCornerShape(12.dp),
+              border = if (isSelected) BorderStroke(1.5.dp, VybeBrandCyan) else null,
+              modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(enabled = !isSubmitting) {
+                  if (isSelected) {
+                    selectedAudioTrack = null
+                    previewingAudioTrack = null
+                    FeedAudioController.stopMusicTrack("composer_preview")
+                  } else {
+                    selectedAudioTrack = track
                   }
-              }
-
-              Spacer(modifier = Modifier.height(8.dp))
-
-              // Music Volume Control
+                }
+            ) {
               Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
                 Icon(
-                  imageVector = Icons.Default.MusicNote,
+                  imageVector = Icons.Outlined.MusicNote,
                   contentDescription = null,
-                  tint = VybeMagenta,
-                  modifier = Modifier.size(16.dp)
+                  tint = if (isSelected) VybeBrandCyan else MaterialTheme.colorScheme.onSurfaceVariant,
+                  modifier = Modifier.size(15.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                  text = "Music ${(music.musicVolume * 100).roundToInt()}%",
-                  fontSize = 11.sp,
-                  fontWeight = FontWeight.SemiBold,
-                  modifier = Modifier.width(86.dp)
+                  text = track,
+                  fontSize = 12.sp,
+                  fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                  color = if (isSelected) VybeBrandCyan else MaterialTheme.colorScheme.onSurface
                 )
-                Slider(
-                  value = music.musicVolume,
-                  onValueChange = { vol ->
-                    val updated = music.copy(musicVolume = vol).sanitized()
-                    selectedMusicAttachment = updated
-                    MusicPreviewController.setVolume(updated.musicVolume)
-                  },
-                  valueRange = 0f..1f,
-                  enabled = !isSubmitting,
-                  colors = SliderDefaults.colors(
-                    thumbColor = VybeMagenta,
-                    activeTrackColor = VybeMagenta
-                  ),
+                Spacer(modifier = Modifier.width(6.dp))
+                Icon(
+                  imageVector = if (isPreviewing) Icons.Outlined.Stop else Icons.Outlined.PlayArrow,
+                  contentDescription = if (isPreviewing) "Stop preview" else "Preview track",
+                  tint = if (isPreviewing) VybeMagenta else MaterialTheme.colorScheme.onSurfaceVariant,
                   modifier = Modifier
-                    .weight(1f)
-                    .testTag("reel_music_volume_slider")
+                    .size(18.dp)
+                    .clickable(enabled = !isSubmitting) {
+                      if (isPreviewing) {
+                        previewingAudioTrack = null
+                        FeedAudioController.stopMusicTrack("composer_preview")
+                      } else {
+                        selectedAudioTrack = track
+                        previewingAudioTrack = track
+                        FeedAudioController.playMusicTrack("composer_preview", track)
+                      }
+                    }
                 )
-              }
-
-              // Separate Original Video Audio Volume Control
-              if (showDualAudioControls) {
-                Row(
-                  modifier = Modifier.fillMaxWidth(),
-                  verticalAlignment = Alignment.CenterVertically
-                ) {
-                  Icon(
-                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                    contentDescription = null,
-                    tint = VybeBrandCyan,
-                    modifier = Modifier.size(16.dp)
-                  )
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text(
-                    text = "Original ${(music.originalAudioVolume * 100).roundToInt()}%",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.width(86.dp)
-                  )
-                  Slider(
-                    value = music.originalAudioVolume,
-                    onValueChange = { origVol ->
-                      selectedMusicAttachment = music.copy(originalAudioVolume = origVol).sanitized()
-                    },
-                    valueRange = 0f..1f,
-                    enabled = !isSubmitting,
-                    colors = SliderDefaults.colors(
-                      thumbColor = VybeBrandCyan,
-                      activeTrackColor = VybeBrandCyan
-                    ),
-                    modifier = Modifier
-                      .weight(1f)
-                      .testTag("reel_original_volume_slider")
-                  )
-                }
               }
             }
           }
@@ -1198,19 +922,6 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
       onDismiss = { showLocationDialog = false },
       onLocationSelected = { picked ->
         selectedLocationResult = picked
-      }
-    )
-  }
-
-  if (showMusicPickerSheet) {
-    MusicPickerSheet(
-      initialAttachment = selectedMusicAttachment,
-      showOriginalAudioControl = publishDestination == PublishDestination.VYBES_REEL || isVideoMedia,
-      defaultClipDurationMs = if (publishDestination == PublishDestination.VYBES_REEL) 30_000L else 15_000L,
-      onDismiss = { showMusicPickerSheet = false },
-      onMusicSelected = { attachment ->
-        selectedMusicAttachment = attachment.sanitized()
-        showMusicPickerSheet = false
       }
     )
   }

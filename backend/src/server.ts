@@ -338,6 +338,7 @@ async function dispatchFcmPush(payload: PushDispatchPayload): Promise<{ successC
 
         for (const target of targets) {
           try {
+            const resolvedEventKey = String(data.event_key || data.notification_id || `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
             const resp = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
               method: 'POST',
               headers: {
@@ -347,21 +348,15 @@ async function dispatchFcmPush(payload: PushDispatchPayload): Promise<{ successC
               body: JSON.stringify({
                 message: {
                   ...(target.token ? { token: target.token } : { topic: target.topic }),
-                  notification: { title, body },
                   data: {
                     ...Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v ?? '')])),
                     title,
-                    body
+                    body,
+                    event_key: resolvedEventKey,
+                    channel_id: channelId
                   },
                   android: {
-                    priority: 'high',
-                    notification: {
-                      icon: 'ic_vybe_notification',
-                      color: '#8A2BE2',
-                      channel_id: channelId,
-                      default_sound: true,
-                      default_vibrate_timings: true
-                    }
+                    priority: 'high'
                   }
                 }
               })
@@ -605,6 +600,236 @@ app.get('/api/v1/admin/push-stats', requireAdmin, async (req: Request, res: Resp
       recentDevices,
       recentLogs: recentPushLogs
     });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin Official Badge Assignment & Revocation
+app.post('/api/v1/admin/badges/assign', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  const { userId, badgeCategory, isGrant } = req.body || {};
+  if (!userId || !badgeCategory) {
+    res.status(400).json({ error: 'userId and badgeCategory are required.' });
+    return;
+  }
+
+  const categoryUpper = String(badgeCategory).toUpperCase();
+  const grantBool = isGrant !== false;
+
+  const updates: Record<string, any> = {
+    updated_at: new Date().toISOString()
+  };
+
+  let badgeLabel = 'VYBE Verified';
+  if (categoryUpper === 'VERIFIED') {
+    updates.is_verified = grantBool;
+    updates.is_verified_public_figure = grantBool;
+    updates.badge_type = grantBool ? 'VERIFIED' : null;
+    badgeLabel = 'VYBE Verified (Blue Tick)';
+  } else if (categoryUpper === 'VIP') {
+    updates.is_vip = grantBool;
+    updates.badge_type = grantBool ? 'VIP' : null;
+    badgeLabel = 'VYBE VIP (Gold Badge)';
+  } else if (categoryUpper === 'WORKER') {
+    updates.is_worker = grantBool;
+    updates.badge_type = grantBool ? 'WORKER' : null;
+    badgeLabel = 'VYBE Worker (Green Tick)';
+  } else if (categoryUpper === 'SHOP') {
+    updates.is_verified_business = grantBool;
+    updates.badge_type = grantBool ? 'SHOP' : null;
+    badgeLabel = 'VYBE Verified Shop (Store)';
+  } else {
+    res.status(400).json({ error: 'Invalid badgeCategory. Must be VERIFIED, VIP, WORKER, or SHOP.' });
+    return;
+  }
+
+  if (grantBool) {
+    updates.badge_display_status = 'ACCEPTED';
+  }
+
+  try {
+    if (supabaseAdmin) {
+      const { error } = await supabaseAdmin.from('profiles').update(updates).eq('id', userId);
+      if (error) throw error;
+
+      if (grantBool) {
+        await supabaseAdmin.from('notifications').insert({
+          recipient_id: userId,
+          type: 'BADGE_APPROVAL',
+          title: '🎉 Badge Granted!',
+          message: `You have been granted the official ${badgeLabel}. You can manage its display in Settings.`,
+          target_id: userId
+        });
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      userId,
+      badgeCategory: categoryUpper,
+      isGrant: grantBool,
+      badgeLabel
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin Verification Applications Queue
+app.get('/api/v1/admin/verification-requests', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!supabaseAdmin) {
+      res.status(200).json({ requests: [] });
+      return;
+    }
+    const { data: requests, error } = await supabaseAdmin
+      .from('verification_requests')
+      .select('*, profiles:user_id(id, username, display_name, avatar_url, email)')
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (error) throw error;
+    res.status(200).json({ requests: requests || [] });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin Review Verification Application
+app.post('/api/v1/admin/verification-requests/:id/review', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { decision, notes } = req.body || {};
+
+  const decisionUpper = String(decision || '').toUpperCase();
+  if (!['APPROVED', 'REJECTED', 'MORE_INFO_REQUIRED'].includes(decisionUpper)) {
+    res.status(400).json({ error: 'decision must be APPROVED, REJECTED, or MORE_INFO_REQUIRED.' });
+    return;
+  }
+
+  try {
+    if (!supabaseAdmin) {
+      res.status(200).json({ success: true, id, status: decisionUpper });
+      return;
+    }
+
+    const { data: request, error: reqErr } = await supabaseAdmin
+      .from('verification_requests')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (reqErr || !request) {
+      res.status(404).json({ error: 'Verification request not found.' });
+      return;
+    }
+
+    const updatePayload: Record<string, any> = {
+      status: decisionUpper,
+      admin_notes: notes || null,
+      reviewed_at: new Date().toISOString()
+    };
+    if (decisionUpper === 'REJECTED') {
+      updatePayload.rejection_reason = notes || 'Application requirements not met.';
+    }
+
+    await supabaseAdmin.from('verification_requests').update(updatePayload).eq('id', id);
+
+    if (decisionUpper === 'APPROVED') {
+      const reqType = String(request.request_type).toUpperCase();
+      const profileUpdates: Record<string, any> = {
+        badge_display_status: 'ACCEPTED',
+        updated_at: new Date().toISOString()
+      };
+      if (reqType.includes('WORKER')) {
+        profileUpdates.is_worker = true;
+        profileUpdates.badge_type = 'WORKER';
+      } else if (reqType.includes('VIP')) {
+        profileUpdates.is_vip = true;
+        profileUpdates.badge_type = 'VIP';
+      } else if (reqType.includes('SHOP') || reqType.includes('BUSINESS')) {
+        profileUpdates.is_verified_business = true;
+        profileUpdates.badge_type = 'SHOP';
+      } else {
+        profileUpdates.is_verified = true;
+        profileUpdates.is_verified_public_figure = true;
+        profileUpdates.badge_type = 'VERIFIED';
+      }
+
+      await supabaseAdmin.from('profiles').update(profileUpdates).eq('id', request.user_id);
+
+      await supabaseAdmin.from('notifications').insert({
+        recipient_id: request.user_id,
+        type: 'BADGE_APPROVAL',
+        title: '🎉 Verification Approved!',
+        message: 'Your application for VYBE verification has been approved! Manage badge display in Settings.',
+        target_id: request.user_id
+      });
+    } else {
+      await supabaseAdmin.from('notifications').insert({
+        recipient_id: request.user_id,
+        type: 'VERIFICATION_UPDATE',
+        title: 'Verification Update',
+        message: decisionUpper === 'REJECTED'
+          ? `Your verification application was not approved: ${notes || 'Requirements not met.'}`
+          : `Additional information needed for verification: ${notes || 'Please update your details.'}`,
+        target_id: id
+      });
+    }
+
+    res.status(200).json({ success: true, id, status: decisionUpper });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// User Verification Application Submission
+app.post('/api/v1/user/verification/apply', async (req: Request, res: Response): Promise<void> => {
+  const { userId, requestType, fullName, category, identityUrl, supportingLinks } = req.body || {};
+  if (!userId || !fullName || !category) {
+    res.status(400).json({ error: 'userId, fullName, and category are required.' });
+    return;
+  }
+
+  try {
+    if (supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.from('verification_requests').insert({
+        user_id: userId,
+        request_type: requestType || 'VERIFIED',
+        full_name: fullName,
+        category,
+        identity_document_url: identityUrl || null,
+        supporting_links: supportingLinks || [],
+        status: 'PENDING'
+      }).select().single();
+
+      if (error) throw error;
+      res.status(200).json({ success: true, request: data });
+    } else {
+      res.status(200).json({ success: true, message: 'Application recorded' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// User Badge Display Status Toggle (Accept, Decline, Hide)
+app.post('/api/v1/user/verification/badge-display', async (req: Request, res: Response): Promise<void> => {
+  const { userId, displayStatus } = req.body || {};
+  const statusUpper = String(displayStatus || '').toUpperCase();
+  if (!['ACCEPTED', 'DECLINED', 'HIDDEN'].includes(statusUpper)) {
+    res.status(400).json({ error: 'displayStatus must be ACCEPTED, DECLINED, or HIDDEN.' });
+    return;
+  }
+
+  try {
+    if (supabaseAdmin) {
+      const { error } = await supabaseAdmin
+        .from('profiles')
+        .update({ badge_display_status: statusUpper, updated_at: new Date().toISOString() })
+        .eq('id', userId);
+      if (error) throw error;
+    }
+    res.status(200).json({ success: true, userId, displayStatus: statusUpper });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

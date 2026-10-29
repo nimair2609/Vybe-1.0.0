@@ -47,7 +47,8 @@ enum class Screen {
   NOTIFICATIONS,
   LIVE_STUDIO,
   COMMUNITY_ZONE,
-  MUSIC_TRACK_DETAIL
+  MUSIC_TRACK_DETAIL,
+  VERIFICATION_CENTER
 }
 
 class VybeViewModel : ViewModel() {
@@ -380,7 +381,56 @@ class VybeViewModel : ViewModel() {
           _currentScreen.value = Screen.AUTH
         }
       }
+      return
     }
+
+    // Canonical Profile Deep Link (`vybe://profile/{userId}` or `https://.../profile/{userId}` or `/u/{userId}`)
+    val isProfileLink = host == "profile" || path.startsWith("/profile") || path.startsWith("/u")
+    if (isProfileLink) {
+      val rawUserId = if (host == "profile") {
+        path.trim().removePrefix("/").takeIf { it.isNotBlank() } ?: uri.getQueryParameter("id") ?: uri.getQueryParameter("userId")
+      } else {
+        path.removePrefix("/profile/").removePrefix("/u/").trim().takeIf { it.isNotBlank() } ?: uri.getQueryParameter("id") ?: uri.getQueryParameter("userId")
+      }
+      val usernameQuery = uri.getQueryParameter("username")?.removePrefix("@")?.trim()
+
+      if (!rawUserId.isNullOrBlank() || !usernameQuery.isNullOrBlank()) {
+        viewModelScope.launch {
+          val matched = if (!rawUserId.isNullOrBlank()) {
+            repository.getUserProfileById(rawUserId)
+          } else {
+            repository.allUsers.value.firstOrNull { it.username.equals(usernameQuery, ignoreCase = true) }
+          }
+
+          if (matched != null) {
+            viewUserProfile(matched)
+          } else {
+            _uiBannerMessage.value = "User not found or account is deactivated."
+          }
+        }
+      }
+      return
+    }
+  }
+
+  // Verification & Badges
+  fun submitVerificationRequest(
+    requestType: String,
+    fullName: String,
+    category: String,
+    identityUrl: String?,
+    statement: String,
+    onComplete: (Boolean, String?) -> Unit
+  ) {
+    repository.submitVerificationRequest(requestType, fullName, category, identityUrl, statement, onComplete)
+  }
+
+  fun updateBadgeDisplayStatus(status: String) {
+    repository.updateBadgeDisplayStatus(status)
+  }
+
+  fun adminAssignBadge(userId: String, badgeCategory: String, isGrant: Boolean, onComplete: ((Boolean, String?) -> Unit)? = null) {
+    repository.adminAssignBadge(userId, badgeCategory, isGrant, onComplete)
   }
 
   /**

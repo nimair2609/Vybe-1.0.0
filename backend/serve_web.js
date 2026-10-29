@@ -147,32 +147,24 @@ async function dispatchFcmIfConfigured({ tokens, topic, title, body, data = {}, 
   let ok = 0;
 
   for (const target of targets) {
-    try {
-      const resp = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({
-          message: {
-            ...(target.token ? { token: target.token } : { topic: target.topic }),
-            notification: { title, body },
-            data: { ...data, title, body },
-            android: {
-              priority: 'high',
-              notification: {
-                icon: 'ic_vybe_notification',
-                color: '#8A2BE2',
-                channel_id: channelId,
-                default_sound: true,
-                default_vibrate_timings: true
+        const resolvedEventKey = String(data.event_key || data.notification_id || `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+        const resp = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`
+          },
+          body: JSON.stringify({
+            message: {
+              ...(target.token ? { token: target.token } : { topic: target.topic }),
+              data: { ...data, title, body, event_key: resolvedEventKey, channel_id: channelId },
+              android: {
+                priority: 'high'
               }
             }
-          }
-        })
-      });
-      if (resp.ok) ok++;
+          })
+        });
+        if (resp.ok) ok++;
     } catch {}
   }
   return { dispatchedFcm: true, count: ok };

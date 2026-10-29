@@ -365,6 +365,14 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                   subtitle = "Screen time insights and break reminders",
                   onClick = { activeSubpage = SettingsSubpage.TIME_MANAGEMENT }
                 )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                SettingsListItem(
+                  icon = Icons.Default.Verified,
+                  iconTint = Color(0xFF00B0FF),
+                  title = "Badges & Verification",
+                  subtitle = "Official badges, verification applications, and display preferences",
+                  onClick = { viewModel.navigateTo(Screen.VERIFICATION_CENTER) }
+                )
               }
             }
           }

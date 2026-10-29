@@ -48,7 +48,8 @@ object QrCodeGenerator {
     }
   }
 
-  const val CANONICAL_WEB_HOST = "ais-dev-ms5nkc6key5usu7rzmjfqx-730319811920.asia-northeast1.run.app"
+  const val CANONICAL_WEB_HOST = "ais-pre-7xxm4tly64qi3ais5txcm3-760594321314.asia-northeast1.run.app"
+  const val CANONICAL_DEV_HOST = "ais-dev-7xxm4tly64qi3ais5txcm3-760594321314.asia-northeast1.run.app"
   const val CANONICAL_WEB_BASE = "https://$CANONICAL_WEB_HOST"
 
   /**
@@ -65,6 +66,6 @@ object QrCodeGenerator {
   fun buildProfileShareUrl(username: String, userId: String): String {
     val cleanUser = username.removePrefix("@").trim()
     val cleanId = userId.trim()
-    return "$CANONICAL_WEB_BASE/u/$cleanId?username=$cleanUser"
+    return "$CANONICAL_WEB_BASE/profile/$cleanId?username=$cleanUser"
   }
 }

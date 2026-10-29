@@ -526,87 +526,35 @@ fun PostCard(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
-        // Left: Signature 🫰 Finger Heart Reaction Button + Count
-        Box {
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-              .testTag("like_button_${post.id}")
-              .pointerInput(post.id, post.userReaction, post.isLiked) {
-                detectTapGestures(
-                  onTap = {
-                    if (onReact != null) {
-                      if (post.isLiked) {
-                        onLikeClick()
-                      } else {
-                        onReact(VybeReaction.LOVE)
-                      }
-                    } else {
-                      onLikeClick()
-                    }
-                  },
-                  onLongPress = {
-                    showReactionSelector = !showReactionSelector
-                  }
-                )
+        // Left: Signature 5-Reaction Gesture Button (Normal tap toggles 🫰 Finger Heart, press-and-hold + drag reveals 5 reactions)
+        Row(
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          PostReactionGestureButton(
+            userReaction = post.userReaction,
+            onReact = { rx ->
+              if (onReact != null) {
+                onReact(rx)
+              } else {
+                onLikeClick()
               }
-          ) {
-            Box(
-              modifier = Modifier
-                .size(38.dp)
-                .clip(CircleShape)
-                .background(
-                  Brush.sweepGradient(
-                    listOf(
-                      Color(0xFF3B82F6),
-                      Color(0xFF8B5CF6),
-                      Color(0xFFEC4899),
-                      Color(0xFF3B82F6)
-                    )
-                  )
-                )
-                .padding(1.8.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF0A0E1A)),
-              contentAlignment = Alignment.Center
-            ) {
-              val activeRx = post.userReaction ?: VybeReaction.LOVE
-              VybeReactionOutlineIcon(
-                reaction = activeRx,
-                size = 20.dp,
-                tint = if (post.isLiked) reactionColor(activeRx) else Color.White
-              )
+            },
+            onToggleDefault = {
+              if (post.userReaction != null) {
+                if (onReact != null) onReact(post.userReaction!!) else onLikeClick()
+              } else {
+                if (onReact != null) onReact(VybeReaction.LOVE) else onLikeClick()
+              }
             }
+          )
 
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-              text = "${post.likesCount}",
-              fontSize = 14.sp,
-              fontWeight = FontWeight.SemiBold,
-              color = Color.White
-            )
-          }
-
-          if (showReactionSelector) {
-            Box(
-              modifier = Modifier
-                .offset(y = (-52).dp)
-                .zIndex(20f)
-            ) {
-              VybeReactionSelector(
-                selectedReaction = post.userReaction,
-                onSelectReaction = { rx ->
-                  showReactionSelector = false
-                  if (onReact != null) {
-                    onReact(rx)
-                  } else {
-                    onLikeClick()
-                  }
-                },
-                onDismiss = { showReactionSelector = false }
-              )
-            }
-          }
+          Spacer(modifier = Modifier.width(8.dp))
+          Text(
+            text = "${post.likesCount}",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.White
+          )
         }
 
         // Center: Minimalist Comment Outline + Count

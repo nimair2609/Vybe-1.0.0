@@ -1,26 +1,17 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.MainTab
-import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.theme.VybeMagenta
 import com.example.ui.theme.VybeViolet
@@ -34,159 +25,114 @@ fun MainScreen(viewModel: VybeViewModel) {
   Scaffold(
     contentWindowInsets = WindowInsets(0.dp),
     bottomBar = {
-      Surface(
-        color = Color(0xFF070A13),
+      NavigationBar(
+        containerColor = MaterialTheme.colorScheme.surface,
         tonalElevation = 8.dp,
-        modifier = Modifier
-          .fillMaxWidth()
-          .testTag("main_bottom_nav")
+        windowInsets = WindowInsets.navigationBars,
+        modifier = Modifier.testTag("main_bottom_nav")
       ) {
-        Row(
-          modifier = Modifier
-            .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.navigationBars)
-            .height(58.dp)
-            .padding(horizontal = 4.dp),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.SpaceAround
-        ) {
-          // Tab 1: Home
-          val isHome = selectedTab == MainTab.FEED
-          Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier
-              .weight(1f)
-              .clip(CircleShape)
-              .clickable { viewModel.selectTab(MainTab.FEED) }
-              .testTag("nav_tab_feed")
-          ) {
+        // Tab 1: Feed
+        NavigationBarItem(
+          selected = selectedTab == MainTab.FEED,
+          onClick = { viewModel.selectTab(MainTab.FEED) },
+          icon = {
             Icon(
-              imageVector = if (isHome) Icons.Filled.Home else Icons.Outlined.Home,
-              contentDescription = "Home",
-              tint = if (isHome) Color(0xFF3B82F6) else Color.White.copy(alpha = 0.65f),
-              modifier = Modifier.size(24.dp)
+              imageVector = Icons.Outlined.Home,
+              contentDescription = "Feed"
             )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-              text = "Home",
-              fontSize = 11.sp,
-              fontWeight = if (isHome) FontWeight.Bold else FontWeight.Normal,
-              color = if (isHome) Color(0xFF3B82F6) else Color.White.copy(alpha = 0.65f)
-            )
-          }
+          },
+          label = { Text("Feed", fontSize = 11.sp, fontWeight = if (selectedTab == MainTab.FEED) FontWeight.Bold else FontWeight.Normal) },
+          colors = NavigationBarItemDefaults.colors(
+            indicatorColor = VybeViolet.copy(alpha = 0.2f),
+            selectedIconColor = VybeViolet,
+            selectedTextColor = VybeViolet
+          ),
+          modifier = Modifier.testTag("nav_tab_feed")
+        )
 
-          // Tab 2: Explore
-          val isExplore = selectedTab == MainTab.EXPLORE
-          Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier
-              .weight(1f)
-              .clip(CircleShape)
-              .clickable { viewModel.selectTab(MainTab.EXPLORE) }
-              .testTag("nav_tab_explore")
-          ) {
+        // Tab 2: VYBES (Short-video destination per Section 10)
+        NavigationBarItem(
+          selected = selectedTab == MainTab.VYBES,
+          onClick = { viewModel.selectTab(MainTab.VYBES) },
+          icon = {
             Icon(
-              imageVector = if (isExplore) Icons.Filled.Explore else Icons.Outlined.Explore,
-              contentDescription = "Explore",
-              tint = if (isExplore) Color(0xFF3B82F6) else Color.White.copy(alpha = 0.65f),
-              modifier = Modifier.size(24.dp)
+              imageVector = Icons.Outlined.PlayCircleOutline,
+              contentDescription = "VYBES Short-Videos"
             )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-              text = "Explore",
-              fontSize = 11.sp,
-              fontWeight = if (isExplore) FontWeight.Bold else FontWeight.Normal,
-              color = if (isExplore) Color(0xFF3B82F6) else Color.White.copy(alpha = 0.65f)
-            )
-          }
+          },
+          label = { Text("VYBES", fontSize = 11.sp, fontWeight = if (selectedTab == MainTab.VYBES) FontWeight.Bold else FontWeight.Normal) },
+          colors = NavigationBarItemDefaults.colors(
+            indicatorColor = VybeMagenta.copy(alpha = 0.2f),
+            selectedIconColor = VybeMagenta,
+            selectedTextColor = VybeMagenta
+          ),
+          modifier = Modifier.testTag("nav_tab_vybes")
+        )
 
-          // Tab 3: Center Create Button (+) with Glowing Gradient Ring Border
-          Box(
-            modifier = Modifier
-              .weight(1f)
-              .fillMaxHeight(),
-            contentAlignment = Alignment.Center
-          ) {
-            Box(
-              modifier = Modifier
-                .size(46.dp)
-                .clip(CircleShape)
-                .border(
-                  width = 2.dp,
-                  brush = Brush.sweepGradient(
-                    listOf(
-                      Color(0xFF3B82F6),
-                      Color(0xFF8B5CF6),
-                      Color(0xFFEC4899),
-                      Color(0xFF3B82F6)
-                    )
-                  ),
-                  shape = CircleShape
-                )
-                .background(Color(0xFF070A13))
-                .clickable { viewModel.navigateTo(Screen.CREATE_POST) }
-                .testTag("nav_tab_create"),
-              contentAlignment = Alignment.Center
+        // Tab 3: Mood Zones
+        NavigationBarItem(
+          selected = selectedTab == MainTab.MOOD_ZONES,
+          onClick = { viewModel.selectTab(MainTab.MOOD_ZONES) },
+          icon = {
+            Icon(
+              imageVector = Icons.Outlined.Mood,
+              contentDescription = "Mood Zones"
+            )
+          },
+          label = { Text("Moods", fontSize = 11.sp, fontWeight = if (selectedTab == MainTab.MOOD_ZONES) FontWeight.Bold else FontWeight.Normal) },
+          colors = NavigationBarItemDefaults.colors(
+            indicatorColor = VybeViolet.copy(alpha = 0.2f),
+            selectedIconColor = VybeViolet,
+            selectedTextColor = VybeViolet
+          ),
+          modifier = Modifier.testTag("nav_tab_moods")
+        )
+
+        // Tab 4: Explore
+        NavigationBarItem(
+          selected = selectedTab == MainTab.EXPLORE,
+          onClick = { viewModel.selectTab(MainTab.EXPLORE) },
+          icon = {
+            Icon(
+              imageVector = Icons.Outlined.Explore,
+              contentDescription = "Explore"
+            )
+          },
+          label = { Text("Explore", fontSize = 11.sp, fontWeight = if (selectedTab == MainTab.EXPLORE) FontWeight.Bold else FontWeight.Normal) },
+          colors = NavigationBarItemDefaults.colors(
+            indicatorColor = VybeViolet.copy(alpha = 0.2f),
+            selectedIconColor = VybeViolet,
+            selectedTextColor = VybeViolet
+          ),
+          modifier = Modifier.testTag("nav_tab_explore")
+        )
+
+        // Tab 5: Inbox
+        NavigationBarItem(
+          selected = selectedTab == MainTab.INBOX,
+          onClick = { viewModel.selectTab(MainTab.INBOX) },
+          icon = {
+            BadgedBox(
+              badge = {
+                if (unreadTotal > 0) {
+                  Badge { Text("$unreadTotal") }
+                }
+              }
             ) {
               Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = "Create",
-                tint = Color.White,
-                modifier = Modifier.size(24.dp)
+                imageVector = Icons.Outlined.ChatBubbleOutline,
+                contentDescription = "Inbox"
               )
             }
-          }
-
-          // Tab 4: Reels (Short-Videos)
-          val isReels = selectedTab == MainTab.VYBES
-          Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier
-              .weight(1f)
-              .clip(CircleShape)
-              .clickable { viewModel.selectTab(MainTab.VYBES) }
-              .testTag("nav_tab_vybes")
-          ) {
-            Icon(
-              imageVector = if (isReels) Icons.Filled.Movie else Icons.Outlined.Movie,
-              contentDescription = "Reels",
-              tint = if (isReels) Color(0xFF3B82F6) else Color.White.copy(alpha = 0.65f),
-              modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-              text = "Reels",
-              fontSize = 11.sp,
-              fontWeight = if (isReels) FontWeight.Bold else FontWeight.Normal,
-              color = if (isReels) Color(0xFF3B82F6) else Color.White.copy(alpha = 0.65f)
-            )
-          }
-
-          // Tab 5: Profile
-          val isProfile = selectedTab == MainTab.PROFILE
-          Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier
-              .weight(1f)
-              .clip(CircleShape)
-              .clickable { viewModel.selectTab(MainTab.PROFILE) }
-              .testTag("nav_tab_profile")
-          ) {
-            Icon(
-              imageVector = if (isProfile) Icons.Filled.Person else Icons.Outlined.Person,
-              contentDescription = "Profile",
-              tint = if (isProfile) Color(0xFF3B82F6) else Color.White.copy(alpha = 0.65f),
-              modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-              text = "Profile",
-              fontSize = 11.sp,
-              fontWeight = if (isProfile) FontWeight.Bold else FontWeight.Normal,
-              color = if (isProfile) Color(0xFF3B82F6) else Color.White.copy(alpha = 0.65f)
-            )
-          }
-        }
+          },
+          label = { Text("Inbox", fontSize = 11.sp, fontWeight = if (selectedTab == MainTab.INBOX) FontWeight.Bold else FontWeight.Normal) },
+          colors = NavigationBarItemDefaults.colors(
+            indicatorColor = VybeViolet.copy(alpha = 0.2f),
+            selectedIconColor = VybeViolet,
+            selectedTextColor = VybeViolet
+          ),
+          modifier = Modifier.testTag("nav_tab_inbox")
+        )
       }
     }
   ) { paddingValues ->

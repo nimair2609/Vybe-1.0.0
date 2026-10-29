@@ -44,11 +44,8 @@ import com.example.ui.components.StoryGradients
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VideoFitMode
 import com.example.ui.components.VybeLikeIcon
-import com.example.ui.components.VybeMusicSticker
 import com.example.ui.components.VybeVideoPlayer
 import com.example.ui.theme.*
-import com.example.util.music.BindMusicPreviewLifecycle
-import com.example.util.music.MusicPreviewController
 import com.example.util.rememberRelativeTimestamp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -62,10 +59,7 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun StoryViewerScreen(viewModel: VybeViewModel) {
-  BindMusicPreviewLifecycle(stopOnDispose = true)
-
   BackHandler {
-    MusicPreviewController.stop()
     viewModel.closeStoryViewer()
   }
 
@@ -77,7 +71,6 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
   DisposableEffect(Unit) {
     com.example.util.FeedAudioController.stopAll()
     onDispose {
-      MusicPreviewController.stop()
       com.example.util.FeedAudioController.stopMusicTrack("story_music")
     }
   }
@@ -110,10 +103,10 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
 
   LaunchedEffect(currentStory.id, isPaused, videoDurationMs) {
     if (!isPaused) {
-      val targetDuration = when {
-        currentStory.mediaType == StoryMediaType.VIDEO -> videoDurationMs.coerceIn(4000, 60000)
-        currentStory.musicAttachment != null -> currentStory.musicAttachment.clipDurationMs.toInt().coerceIn(5000, 15000)
-        else -> 5500
+      val targetDuration = if (currentStory.mediaType == StoryMediaType.VIDEO) {
+        videoDurationMs.coerceIn(4000, 60000)
+      } else {
+        5500
       }
       val remainingFraction = (1f - progress.value).coerceIn(0.05f, 1f)
       progress.animateTo(
@@ -125,33 +118,20 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
       )
       val hasNext = viewModel.nextStory()
       if (!hasNext) {
-        MusicPreviewController.stop()
         viewModel.closeStoryViewer()
       }
     }
   }
 
-  // Synchronize external licensed music segment ONLY when audio wasn't already baked into the rendered MP4
-  LaunchedEffect(currentStory.id, currentStory.mediaType, currentStory.musicAttachment, isMuted, isPaused) {
-    val attachment = currentStory.musicAttachment
-    if (attachment != null && !attachment.isRenderedWithMixedAudio && !attachment.streamUrl.isNullOrBlank()) {
-      com.example.util.FeedAudioController.stopMusicTrack("story_music")
-      if (isPaused) {
-        MusicPreviewController.pause()
-      } else {
-        MusicPreviewController.playAttachment(attachment, muted = isMuted)
-      }
+  LaunchedEffect(currentStory.id, currentStory.mediaType, isMuted, isPaused) {
+    if (currentStory.mediaType == StoryMediaType.MUSIC && !isMuted && !isPaused) {
+      com.example.util.FeedAudioController.syncPostMusicTrack(
+        postId = "story_music",
+        audioTrackTitle = currentStory.musicTrackTitle ?: "Original Sound",
+        shouldPlayAudio = true
+      )
     } else {
-      MusicPreviewController.stop()
-      if (currentStory.mediaType == StoryMediaType.MUSIC && attachment == null && !isMuted && !isPaused) {
-        com.example.util.FeedAudioController.syncPostMusicTrack(
-          postId = "story_music",
-          audioTrackTitle = currentStory.musicTrackTitle ?: "Original Sound",
-          shouldPlayAudio = true
-        )
-      } else {
-        com.example.util.FeedAudioController.stopMusicTrack("story_music")
-      }
+      com.example.util.FeedAudioController.stopMusicTrack("story_music")
     }
   }
 
@@ -199,15 +179,10 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
         story = currentStory,
         isPaused = isPaused,
         isMuted = isMuted,
-        onOpenMusicTrack = { attachment ->
-          MusicPreviewController.stop()
-          viewModel.openMusicTrackPage(attachment)
-        },
         onVideoDurationDetected = { dur -> videoDurationMs = dur },
         onVideoCompleted = {
           val hasNext = viewModel.nextStory()
           if (!hasNext) {
-            MusicPreviewController.stop()
             viewModel.closeStoryViewer()
           }
         }
@@ -364,11 +339,7 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
           }
         }
 
-        if (
-          currentStory.mediaType == StoryMediaType.VIDEO ||
-          currentStory.mediaType == StoryMediaType.MUSIC ||
-          currentStory.musicAttachment != null
-        ) {
+        if (currentStory.mediaType == StoryMediaType.VIDEO || currentStory.mediaType == StoryMediaType.MUSIC) {
           IconButton(
             onClick = { isMuted = !isMuted },
             modifier = Modifier.size(48.dp).testTag("story_mute_toggle")
@@ -534,7 +505,6 @@ private fun StoryCanvas(
   story: Story,
   isPaused: Boolean,
   isMuted: Boolean,
-  onOpenMusicTrack: (com.example.data.model.MusicAttachment) -> Unit,
   onVideoDurationDetected: (Int) -> Unit,
   onVideoCompleted: () -> Unit
 ) {
@@ -643,20 +613,12 @@ private fun StoryCanvas(
       }
 
       StoryMediaType.VIDEO -> {
-        val videoOriginalAudioMultiplier = if (
-          story.musicAttachment != null && !story.musicAttachment.isRenderedWithMixedAudio
-        ) {
-          story.musicAttachment.originalAudioVolume
-        } else {
-          1f
-        }
         // Real uploaded video playback supporting both portrait & landscape dimensions cleanly
         VybeVideoPlayer(
           videoUrl = story.mediaUrl,
           autoPlay = true,
           isLooping = false,
           initialMuted = isMuted,
-          audioVolume = videoOriginalAudioMultiplier,
           isPausedExternal = isPaused,
           fitMode = VideoFitMode.FIT_CONTAIN,
           showControls = false,
@@ -665,22 +627,6 @@ private fun StoryCanvas(
           modifier = Modifier.fillMaxSize()
         )
       }
-    }
-
-    // Music Sticker Overlay (Track Title & Artist)
-    val musicAttachment = story.musicAttachment
-    if (musicAttachment != null || (!story.musicTrackTitle.isNullOrBlank() && story.mediaType != StoryMediaType.MUSIC)) {
-      VybeMusicSticker(
-        title = musicAttachment?.title ?: story.musicTrackTitle.orEmpty(),
-        artist = musicAttachment?.artist.orEmpty(),
-        artworkUrl = musicAttachment?.artworkUrl,
-        onClick = if (musicAttachment != null) ({ onOpenMusicTrack(musicAttachment) }) else null,
-        modifier = Modifier
-          .align(Alignment.TopCenter)
-          .statusBarsPadding()
-          .padding(top = 74.dp, start = 20.dp, end = 20.dp)
-          .testTag("story_viewer_music_sticker")
-      )
     }
 
     // Story Caption & Location overlay pill

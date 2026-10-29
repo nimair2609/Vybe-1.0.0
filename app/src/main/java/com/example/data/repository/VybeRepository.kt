@@ -6464,4 +6464,196 @@ class VybeRepository private constructor() {
       )
     )
   }
+
+  // =========================================================================
+  // OFFICIAL BADGES, VERIFICATION WORKFLOW & CANONICAL PROFILE DEEP LINKING
+  // =========================================================================
+
+  suspend fun getUserProfileById(userId: String): User? {
+    if (userId.isBlank()) return null
+    _allUsers.value.firstOrNull { it.id == userId }?.let { return it }
+    val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+    return try {
+      supabaseRepo.fetchUserProfile(userId, token)
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  fun updateBadgeDisplayStatus(newStatus: String) {
+    val current = _currentUser.value ?: return
+    val statusUpper = newStatus.trim().uppercase()
+    val updated = current.copy(badgeDisplayStatus = statusUpper)
+    _currentUser.value = updated
+    _allUsers.value = _allUsers.value.map { if (it.id == updated.id) it.copy(badgeDisplayStatus = statusUpper) else it }
+    SessionManager.get()?.updateCurrentUser(updated)
+    VybeLocalStore.get()?.saveUser(updated)
+
+    ioScope.launch {
+      try {
+        val payload = org.json.JSONObject().apply {
+          put("badge_display_status", statusUpper)
+          put("updated_at", com.example.util.TimestampUtils.currentIsoTimestamp())
+        }.toString()
+        val restUrl = "${com.example.data.remote.SupabaseConfig.getRestBaseUrl()}profiles?id=eq.${current.id}"
+        val req = okhttp3.Request.Builder()
+          .url(restUrl)
+          .addHeader("apikey", com.example.data.remote.SupabaseConfig.supabaseAnonKey)
+          .addHeader("Prefer", "return=minimal")
+          .apply {
+            com.example.data.remote.SupabaseConfig.buildAuthHeader(SessionManager.get()?.accessToken)?.let {
+              addHeader("Authorization", it)
+            }
+          }
+          .patch(okhttp3.RequestBody.create(okhttp3.MediaType.parse("application/json"), payload))
+          .build()
+        com.example.data.remote.SupabaseNetworkClient.okHttpClient.newCall(req).execute().close()
+      } catch (e: Exception) {
+        android.util.Log.w("VybeRepository", "Badge display update warning: ${e.message}")
+      }
+    }
+  }
+
+  fun submitVerificationRequest(
+    requestType: String,
+    fullName: String,
+    category: String,
+    identityUrl: String?,
+    statement: String,
+    onComplete: (Boolean, String?) -> Unit
+  ) {
+    val current = _currentUser.value
+    if (current == null) {
+      onComplete(false, "You must be signed in to apply.")
+      return
+    }
+
+    ioScope.launch {
+      try {
+        val payload = org.json.JSONObject().apply {
+          put("user_id", current.id)
+          put("request_type", requestType)
+          put("full_name", fullName)
+          put("category", category)
+          if (!identityUrl.isNullOrBlank()) put("identity_document_url", identityUrl)
+          put("admin_notes", statement)
+          put("status", "PENDING")
+        }.toString()
+
+        val restUrl = "${com.example.data.remote.SupabaseConfig.getRestBaseUrl()}verification_requests"
+        val req = okhttp3.Request.Builder()
+          .url(restUrl)
+          .addHeader("apikey", com.example.data.remote.SupabaseConfig.supabaseAnonKey)
+          .addHeader("Prefer", "return=minimal")
+          .apply {
+            com.example.data.remote.SupabaseConfig.buildAuthHeader(SessionManager.get()?.accessToken)?.let {
+              addHeader("Authorization", it)
+            }
+          }
+          .post(okhttp3.RequestBody.create(okhttp3.MediaType.parse("application/json"), payload))
+          .build()
+
+        com.example.data.remote.SupabaseNetworkClient.okHttpClient.newCall(req).execute().use { resp ->
+          if (resp.isSuccessful) {
+            withContext(Dispatchers.Main) {
+              onComplete(true, "Application submitted for review.")
+            }
+          } else {
+            val err = resp.body()?.string().orEmpty()
+            withContext(Dispatchers.Main) {
+              onComplete(false, if (err.isNotBlank()) err.take(120) else "Server returned ${resp.code()}")
+            }
+          }
+        }
+      } catch (e: Exception) {
+        withContext(Dispatchers.Main) {
+          onComplete(false, e.message ?: "Network error submitting application")
+        }
+      }
+    }
+  }
+
+  fun adminAssignBadge(
+    userId: String,
+    badgeCategory: String,
+    isGrant: Boolean,
+    onComplete: ((Boolean, String?) -> Unit)? = null
+  ) {
+    val categoryUpper = badgeCategory.trim().uppercase()
+    _allUsers.value = _allUsers.value.map { u ->
+      if (u.id == userId) {
+        when (categoryUpper) {
+          "VERIFIED" -> u.copy(isVerified = isGrant, isVerifiedPublicFigure = isGrant, badgeType = if (isGrant) "VERIFIED" else null)
+          "VIP" -> u.copy(isVip = isGrant, badgeType = if (isGrant) "VIP" else null)
+          "WORKER" -> u.copy(isWorker = isGrant, badgeType = if (isGrant) "WORKER" else null)
+          "SHOP" -> u.copy(isVerifiedBusiness = isGrant, badgeType = if (isGrant) "SHOP" else null)
+          else -> u
+        }
+      } else u
+    }
+
+    if (_currentUser.value?.id == userId) {
+      val me = _currentUser.value!!
+      _currentUser.value = when (categoryUpper) {
+        "VERIFIED" -> me.copy(isVerified = isGrant, isVerifiedPublicFigure = isGrant, badgeType = if (isGrant) "VERIFIED" else null)
+        "VIP" -> me.copy(isVip = isGrant, badgeType = if (isGrant) "VIP" else null)
+        "WORKER" -> me.copy(isWorker = isGrant, badgeType = if (isGrant) "WORKER" else null)
+        "SHOP" -> me.copy(isVerifiedBusiness = isGrant, badgeType = if (isGrant) "SHOP" else null)
+        else -> me
+      }
+    }
+
+    ioScope.launch {
+      try {
+        val payloadObj = org.json.JSONObject().apply {
+          put("updated_at", com.example.util.TimestampUtils.currentIsoTimestamp())
+          when (categoryUpper) {
+            "VERIFIED" -> {
+              put("is_verified", isGrant)
+              put("is_verified_public_figure", isGrant)
+              if (isGrant) put("badge_type", "VERIFIED")
+            }
+            "VIP" -> {
+              put("is_vip", isGrant)
+              if (isGrant) put("badge_type", "VIP")
+            }
+            "WORKER" -> {
+              put("is_worker", isGrant)
+              if (isGrant) put("badge_type", "WORKER")
+            }
+            "SHOP" -> {
+              put("is_verified_business", isGrant)
+              if (isGrant) put("badge_type", "SHOP")
+            }
+          }
+          if (isGrant) {
+            put("badge_display_status", "ACCEPTED")
+          }
+        }
+
+        val restUrl = "${com.example.data.remote.SupabaseConfig.getRestBaseUrl()}profiles?id=eq.$userId"
+        val req = okhttp3.Request.Builder()
+          .url(restUrl)
+          .addHeader("apikey", com.example.data.remote.SupabaseConfig.supabaseAnonKey)
+          .addHeader("Prefer", "return=minimal")
+          .apply {
+            com.example.data.remote.SupabaseConfig.buildAuthHeader(SessionManager.get()?.accessToken)?.let {
+              addHeader("Authorization", it)
+            }
+          }
+          .patch(okhttp3.RequestBody.create(okhttp3.MediaType.parse("application/json"), payloadObj.toString()))
+          .build()
+
+        com.example.data.remote.SupabaseNetworkClient.okHttpClient.newCall(req).execute().use { resp ->
+          withContext(Dispatchers.Main) {
+            onComplete?.invoke(resp.isSuccessful, if (!resp.isSuccessful) "Server returned code ${resp.code()}" else null)
+          }
+        }
+      } catch (e: Exception) {
+        withContext(Dispatchers.Main) {
+          onComplete?.invoke(false, e.message)
+        }
+      }
+    }
+  }
 }

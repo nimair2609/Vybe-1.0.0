@@ -25,14 +25,6 @@ object SupabaseConfig {
       LIVE_SUPABASE_URL
     }
 
-  val supabaseHost: String
-    get() = supabaseUrl
-      .removePrefix("https://")
-      .removePrefix("http://")
-      .substringBefore("/")
-      .substringBefore(":")
-      .trim()
-
   val supabaseAnonKey: String
     get() = try {
       val key = BuildConfig.SUPABASE_ANON_KEY.trim()
@@ -159,9 +151,4 @@ object SupabaseConfig {
     val base = (if (isConfigured()) supabaseUrl else LIVE_SUPABASE_URL).replaceFirst("https://", "wss://")
     return "$base/realtime/v1/websocket?apikey=$supabaseAnonKey&vsn=1.0.0"
   }
-
-  const val DEFAULT_VYBE_BACKEND_URL = "https://ais-pre-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app"
-
-  val vybeApiBaseUrl: String
-    get() = DEFAULT_VYBE_BACKEND_URL
 }

@@ -235,6 +235,17 @@ object VybeNotificationHelper {
     return false
   }
 
+  fun normalizeDedupeKey(key: String?): String {
+    if (key.isNullOrBlank()) return ""
+    var clean = key.trim().lowercase()
+    listOf("notif_", "rt_", "fcm_", "pg_", "msg_", "evt_", "bcast_").forEach { prefix ->
+      if (clean.startsWith(prefix)) {
+        clean = clean.removePrefix(prefix)
+      }
+    }
+    return clean
+  }
+
   @Synchronized
   fun markEventAsNotified(context: Context, eventKey: String?): Boolean {
     if (eventKey.isNullOrBlank()) return true
@@ -242,12 +253,24 @@ object VybeNotificationHelper {
     if (inMemoryNotifiedKeys.isEmpty()) {
       inMemoryNotifiedKeys.addAll(prefs.getStringSet(KEY_NOTIFIED_IDS, emptySet()).orEmpty())
     }
-    if (!inMemoryNotifiedKeys.add(eventKey)) {
+    val rawKey = eventKey.trim()
+    val normalized = normalizeDedupeKey(rawKey)
+
+    // Check if either raw key or normalized root key has already been notified
+    if (inMemoryNotifiedKeys.contains(rawKey) || (normalized.isNotBlank() && inMemoryNotifiedKeys.contains("norm_$normalized"))) {
+      Log.d(TAG, "Notification deduplicated: rawKey=$rawKey normalized=$normalized")
       return false
     }
-    val updated = (prefs.getStringSet(KEY_NOTIFIED_IDS, emptySet()).orEmpty() + eventKey)
+
+    inMemoryNotifiedKeys.add(rawKey)
+    if (normalized.isNotBlank()) {
+      inMemoryNotifiedKeys.add("norm_$normalized")
+    }
+
+    val keysToAdd = if (normalized.isNotBlank()) setOf(rawKey, "norm_$normalized") else setOf(rawKey)
+    val updated = (prefs.getStringSet(KEY_NOTIFIED_IDS, emptySet()).orEmpty() + keysToAdd)
       .toList()
-      .takeLast(600)
+      .takeLast(700)
       .toSet()
     prefs.edit().putStringSet(KEY_NOTIFIED_IDS, updated).apply()
     return true
