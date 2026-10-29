@@ -399,70 +399,23 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
           verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
           // Like & 4-Reactions (Reels: Show total reactions and individual reaction breakdowns)
+          // Like & Reactions (Press-and-Hold + Drag to 5 Reactions, Tap to 🫰 Love, Total Count)
           Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box {
-              IconButton(
-                onClick = {
-                  if (reelPost.userReaction != null) {
-                    viewModel.reactToPost(reelPost.id, reelPost.userReaction)
-                  } else {
-                    viewModel.reactToPost(reelPost.id, VybeReaction.LOVE)
-                  }
-                },
-                modifier = Modifier
-                  .size(48.dp)
-                  .clip(CircleShape)
-                  .background(Color.Black.copy(alpha = 0.5f))
-                  .pointerInput(reelPost.id, reelPost.userReaction) {
-                    detectTapGestures(
-                      onTap = {
-                        if (reelPost.userReaction != null) {
-                          viewModel.reactToPost(reelPost.id, reelPost.userReaction)
-                        } else {
-                          viewModel.reactToPost(reelPost.id, VybeReaction.LOVE)
-                        }
-                      },
-                      onLongPress = {
-                        showReactionSelectorReelId = if (showReactionSelectorReelId == reelPost.id) null else reelPost.id
-                      }
-                    )
-                  }
-                  .testTag("reel_like_button")
-              ) {
+            ReelReactionGestureButton(
+              userReaction = reelPost.userReaction,
+              onReact = { rx ->
+                viewModel.reactToPost(reelPost.id, rx)
+              },
+              onToggleDefault = {
                 if (reelPost.userReaction != null) {
-                  VybeReactionOutlineIcon(
-                    reaction = reelPost.userReaction,
-                    size = 24.dp,
-                    tint = reactionColor(reelPost.userReaction)
-                  )
+                  viewModel.reactToPost(reelPost.id, reelPost.userReaction)
                 } else {
-                  VybeReactionOutlineIcon(
-                    reaction = VybeReaction.LOVE,
-                    size = 24.dp,
-                    tint = Color.White
-                  )
+                  viewModel.reactToPost(reelPost.id, VybeReaction.LOVE)
                 }
               }
+            )
 
-              if (showReactionSelectorReelId == reelPost.id) {
-                Box(
-                  modifier = Modifier
-                    .offset(x = (-180).dp, y = (-8).dp)
-                    .zIndex(30f)
-                ) {
-                  VybeReactionSelector(
-                    selectedReaction = reelPost.userReaction,
-                    onSelectReaction = { rx ->
-                      showReactionSelectorReelId = null
-                      viewModel.reactToPost(reelPost.id, rx)
-                    },
-                    onDismiss = { showReactionSelectorReelId = null }
-                  )
-                }
-              }
-            }
-
-            // Total reactions count - tappable to see breakdown of all 4 reactions
+            // Total reactions count - clean text without dropdown arrow
             Row(
               modifier = Modifier
                 .clickable { showBreakdownSheetReel = reelPost }
@@ -474,13 +427,6 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
                 fontSize = 12.sp
-              )
-              Spacer(modifier = Modifier.width(2.dp))
-              Icon(
-                imageVector = Icons.Outlined.KeyboardArrowDown,
-                contentDescription = "Breakdown",
-                tint = Color.White.copy(alpha = 0.7f),
-                modifier = Modifier.size(14.dp)
               )
             }
           }

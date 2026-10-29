@@ -35,6 +35,9 @@ data class User(
   val isVip: Boolean = false, // Official VIP status badge with circular "V"
   val isVerifiedPublicFigure: Boolean = false,
   val isVerifiedBusiness: Boolean = false,
+  val isWorker: Boolean = false, // Official VYBE Worker (Green Tick)
+  val badgeDisplayStatus: String = "ACCEPTED", // "ACCEPTED", "DECLINED", "HIDDEN"
+  val badgeType: String? = null, // "VERIFIED", "VIP", "WORKER", "SHOP"
   val isFoundingCreator: Boolean = false,
   val isCreatorSpotlight: Boolean = false,
   val isSuspended: Boolean = false,

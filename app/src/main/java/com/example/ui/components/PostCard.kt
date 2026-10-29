@@ -66,6 +66,7 @@ fun PostCard(
   shouldPlayAudio: Boolean = shouldAutoPlay && isAudioEnabled,
   isHighlighted: Boolean = false,
   isFollowing: Boolean = false,
+  isFollowRequested: Boolean = false,
   onFollowClick: (() -> Unit)? = null,
   onToggleAudio: ((Boolean) -> Unit)? = null,
   onOpenMusicTrack: ((MusicAttachment) -> Unit)? = null,
@@ -209,26 +210,16 @@ fun PostCard(
           }
         }
 
-        // Outlined Follow Pill Button (if not author)
-        if (!isAuthor) {
-          Surface(
-            color = Color.Transparent,
-            shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, Color(0xFF2E3856)),
-            modifier = Modifier
-              .clip(RoundedCornerShape(16.dp))
-              .clickable { onFollowClick?.invoke() }
-              .testTag("follow_button_${post.id}")
-          ) {
-            Text(
-              text = if (isFollowing) "Following" else "Follow",
-              fontSize = 12.sp,
-              fontWeight = FontWeight.SemiBold,
-              color = Color.White,
-              modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-            )
-          }
-          Spacer(modifier = Modifier.width(4.dp))
+        // Premium Filled Follow Button (if not author)
+        if (!isAuthor && onFollowClick != null) {
+          VybeFollowButton(
+            isFollowing = isFollowing,
+            isFollowRequested = isFollowRequested,
+            onClick = { onFollowClick.invoke() },
+            compact = true,
+            modifier = Modifier.testTag("follow_button_${post.id}")
+          )
+          Spacer(modifier = Modifier.width(6.dp))
         }
 
         // 3-dot overflow menu
@@ -657,7 +648,7 @@ fun PostCard(
           )
           Spacer(modifier = Modifier.width(6.dp))
           Text(
-            text = "${post.sharesCount.coerceAtLeast(12)}",
+            text = "${post.sharesCount}",
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             color = Color.White
@@ -665,100 +656,113 @@ fun PostCard(
         }
       }
 
-      // Comments Preview Section: top comment + "View all X comments >"
-      Spacer(modifier = Modifier.height(12.dp))
+      // Comments Preview Section: real top comment or clean empty state
+      Spacer(modifier = Modifier.height(10.dp))
       val topComment = post.comments.firstOrNull()
-      val previewAuthor = topComment?.author?.username ?: "priya.__"
-      val previewContent = topComment?.content ?: "This view is insane! 😍"
-      val previewAvatar = topComment?.author?.avatarUrl
-      val previewTime = topComment?.timestamp ?: "1h ago"
 
-      Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          Box(
-            modifier = Modifier
-              .size(22.dp)
-              .clip(CircleShape)
-              .background(Color(0xFF1E2638)),
-            contentAlignment = Alignment.Center
+      if (topComment != null) {
+        val previewAuthor = topComment.author.displayName.ifBlank { topComment.author.username }
+        val previewContent = topComment.content
+        val previewAvatar = topComment.author.avatarUrl
+        val previewTime = rememberRelativeTimestamp(topComment.createdAtIso, topComment.timestamp)
+
+        Column(modifier = Modifier.fillMaxWidth()) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
           ) {
-            if (!previewAvatar.isNullOrBlank()) {
-              AsyncImage(
-                model = previewAvatar,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().clip(CircleShape)
-              )
-            } else {
-              Text(
-                text = previewAuthor.take(1).uppercase(),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-              )
+            Box(
+              modifier = Modifier
+                .size(22.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF1E2638)),
+              contentAlignment = Alignment.Center
+            ) {
+              if (previewAvatar.isNotBlank()) {
+                AsyncImage(
+                  model = previewAvatar,
+                  contentDescription = null,
+                  contentScale = ContentScale.Crop,
+                  modifier = Modifier.fillMaxSize().clip(CircleShape)
+                )
+              } else {
+                Text(
+                  text = previewAuthor.take(1).uppercase(),
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = Color.White
+                )
+              }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                  text = previewAuthor,
+                  fontSize = 12.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = Color.White
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                  text = previewContent,
+                  fontSize = 12.sp,
+                  color = Color.White.copy(alpha = 0.88f),
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis
+                )
+              }
+              Spacer(modifier = Modifier.height(2.dp))
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                if (previewTime.isNotBlank()) {
+                  Text(
+                    text = previewTime,
+                    fontSize = 10.sp,
+                    color = Color.White.copy(alpha = 0.5f)
+                  )
+                  Spacer(modifier = Modifier.width(10.dp))
+                }
+                Text(
+                  text = "Reply",
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.Medium,
+                  color = Color.White.copy(alpha = 0.65f),
+                  modifier = Modifier.clickable { showCommentDialog = true }
+                )
+              }
             }
           }
-          Spacer(modifier = Modifier.width(8.dp))
-          Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              Text(
-                text = previewAuthor,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-              )
-              Spacer(modifier = Modifier.width(6.dp))
-              Text(
-                text = previewContent,
-                fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.88f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-              )
-            }
-            Spacer(modifier = Modifier.height(2.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              Text(
-                text = previewTime,
-                fontSize = 10.sp,
-                color = Color.White.copy(alpha = 0.5f)
-              )
-              Spacer(modifier = Modifier.width(10.dp))
-              Text(
-                text = "Reply",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color.White.copy(alpha = 0.65f),
-                modifier = Modifier.clickable { showCommentDialog = true }
-              )
-            }
-          }
-          IconButton(
-            onClick = { /* like comment */ },
-            modifier = Modifier.size(28.dp)
-          ) {
-            Icon(
-              imageVector = Icons.Outlined.FavoriteBorder,
-              contentDescription = "Like comment",
-              tint = Color.White.copy(alpha = 0.6f),
-              modifier = Modifier.size(15.dp)
+
+          if (displayedCommentsCount > 1) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+              text = "View all $displayedCommentsCount comments >",
+              fontSize = 12.sp,
+              fontWeight = FontWeight.Medium,
+              color = Color(0xFF818CF8),
+              modifier = Modifier
+                .clickable { showCommentDialog = true }
+                .testTag("view_all_comments_${post.id}")
             )
           }
         }
-
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-          text = "View all $displayedCommentsCount comments >",
-          fontSize = 12.sp,
-          fontWeight = FontWeight.Medium,
-          color = Color(0xFF818CF8),
+      } else {
+        // Clean empty state with zero fake comments
+        Row(
           modifier = Modifier
+            .fillMaxWidth()
             .clickable { showCommentDialog = true }
-            .testTag("view_all_comments_${post.id}")
-        )
+            .padding(vertical = 4.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Text(
+            text = if (displayedCommentsCount > 0) "View all $displayedCommentsCount comments >" else "Add a comment...",
+            fontSize = 12.sp,
+            color = if (displayedCommentsCount > 0) Color(0xFF818CF8) else Color.White.copy(alpha = 0.45f),
+            fontWeight = if (displayedCommentsCount > 0) FontWeight.Medium else FontWeight.Normal,
+            modifier = Modifier.testTag("view_all_comments_${post.id}")
+          )
+        }
       }
     }
   }

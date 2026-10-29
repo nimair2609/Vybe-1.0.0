@@ -42,15 +42,17 @@ fun ProfileQrCodeDialog(
   onDismiss: () -> Unit
 ) {
   val context = LocalContext.current
-  val shareUrl = remember(user.username, user.publicVybeId) {
-    QrCodeGenerator.buildProfileShareUrl(user.username, user.publicVybeId)
+  val profileDeepLink = remember(user.id) {
+    QrCodeGenerator.buildProfileDeepLink(user.id)
+  }
+  val shareUrl = remember(user.username, user.id) {
+    QrCodeGenerator.buildProfileShareUrl(user.username, user.id)
   }
 
-  // Generate crisp QR bitmap in background
-  val qrBitmap = remember(shareUrl) {
-    // Generate sharp QR code with dark modules for maximum scan readability
+  // Generate crisp QR bitmap encoding canonical app deep link for direct routing
+  val qrBitmap = remember(profileDeepLink) {
     QrCodeGenerator.generateQrBitmap(
-      content = shareUrl,
+      content = profileDeepLink,
       sizePx = 512,
       foregroundHex = android.graphics.Color.BLACK,
       backgroundHex = android.graphics.Color.WHITE

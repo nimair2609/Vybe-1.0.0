@@ -101,6 +101,9 @@ data class SupabaseProfileDto(
   @Json(name = "is_vip") val isVip: Boolean? = false,
   @Json(name = "is_verified_business") val isVerifiedBusiness: Boolean? = false,
   @Json(name = "is_verified_public_figure") val isVerifiedPublicFigure: Boolean? = false,
+  @Json(name = "is_worker") val isWorker: Boolean? = false,
+  @Json(name = "badge_display_status") val badgeDisplayStatus: String? = "ACCEPTED",
+  @Json(name = "badge_type") val badgeType: String? = null,
   @Json(name = "is_private_account") val isPrivateAccount: Boolean? = false,
   @Json(name = "message_privacy") val messagePrivacy: String? = "EVERYONE",
   @Json(name = "followers_count") val followersCount: Int? = 0,
@@ -125,6 +128,7 @@ data class SupabaseProfilePatchDto(
   @Json(name = "is_phone_verified") val isPhoneVerified: Boolean? = null,
   @Json(name = "is_private_account") val isPrivateAccount: Boolean? = null,
   @Json(name = "message_privacy") val messagePrivacy: String? = null,
+  @Json(name = "badge_display_status") val badgeDisplayStatus: String? = null,
   @Json(name = "live_pulse") val livePulse: String? = null,
   @Json(name = "last_seen_at") val lastSeenAt: String? = null
 )

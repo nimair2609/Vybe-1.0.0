@@ -48,8 +48,23 @@ object QrCodeGenerator {
     }
   }
 
-  fun buildProfileShareUrl(username: String, publicId: String): String {
+  const val CANONICAL_WEB_HOST = "ais-dev-ms5nkc6key5usu7rzmjfqx-730319811920.asia-northeast1.run.app"
+  const val CANONICAL_WEB_BASE = "https://$CANONICAL_WEB_HOST"
+
+  /**
+   * Generates the official app deep link for instant Android applet routing (`vybe://profile/{userId}`).
+   */
+  fun buildProfileDeepLink(userId: String): String {
+    val cleanId = userId.trim()
+    return "vybe://profile/$cleanId"
+  }
+
+  /**
+   * Generates the canonical web URL fallback that routes to the profile with universal deep linking.
+   */
+  fun buildProfileShareUrl(username: String, userId: String): String {
     val cleanUser = username.removePrefix("@").trim()
-    return "https://vybe.social/@$cleanUser?id=$publicId"
+    val cleanId = userId.trim()
+    return "$CANONICAL_WEB_BASE/u/$cleanId?username=$cleanUser"
   }
 }

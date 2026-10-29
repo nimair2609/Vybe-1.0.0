@@ -282,6 +282,10 @@ class VybeLocalStore private constructor(context: Context) {
       put("role", u.role.name)
       put("isVerified", u.isVerified)
       put("isVip", u.isVip)
+      put("isVerifiedBusiness", u.isVerifiedBusiness)
+      put("isWorker", u.isWorker)
+      put("badgeDisplayStatus", u.badgeDisplayStatus)
+      if (u.badgeType != null) put("badgeType", u.badgeType)
       put("isPrivate", u.isPrivate)
       put("messagePrivacy", u.messagePrivacy)
       put("followersCount", u.followersCount)
@@ -330,6 +334,10 @@ class VybeLocalStore private constructor(context: Context) {
       role = role,
       isVerified = obj.optBoolean("isVerified", false),
       isVip = obj.optBoolean("isVip", false),
+      isVerifiedBusiness = obj.optBoolean("isVerifiedBusiness", false),
+      isWorker = obj.optBoolean("isWorker", false),
+      badgeDisplayStatus = obj.optString("badgeDisplayStatus", "ACCEPTED"),
+      badgeType = obj.optString("badgeType", "").ifBlank { null },
       isPrivate = obj.optBoolean("isPrivate", false),
       messagePrivacy = obj.optString("messagePrivacy", "EVERYONE"),
       followersCount = obj.optInt("followersCount", 0),

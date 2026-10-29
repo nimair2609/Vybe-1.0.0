@@ -117,11 +117,40 @@ fun VybeAvatar(
 
 /**
  * Official VYBE 2.0 Distinctive Circular Badges
- * Featuring the official folded ribbon "V" logo inside a precision circular ring
+/**
+ * Official VYBE 3-Tier Authority Badges:
+ * 1. VYBE Verified (Blue Tick): Public profile authenticity.
+ * 2. VYBE VIP / Shop (Gold Badge): VIP Creator star / Verified Shop business icon.
+ * 3. VYBE Worker (Green Tick): Verified VYBE employee/worker.
+ * Honors user preference: Hidden if badgeDisplayStatus is 'HIDDEN' or 'DECLINED'.
  */
 @Composable
 fun VerificationBadge(user: User) {
-  // Official VIP Badge
+  if (user.badgeDisplayStatus == "HIDDEN" || user.badgeDisplayStatus == "DECLINED") {
+    return
+  }
+
+  // 1. Official VYBE Worker Badge (Green Tick)
+  if (user.isWorker || user.role == UserRole.ADMIN || user.role == UserRole.MODERATOR) {
+    Spacer(modifier = Modifier.width(3.dp))
+    Box(
+      modifier = Modifier
+        .size(18.dp)
+        .clip(CircleShape)
+        .background(Brush.linearGradient(listOf(Color(0xFF00E676), Color(0xFF00C853))))
+        .testTag("worker_badge"),
+      contentAlignment = Alignment.Center
+    ) {
+      Icon(
+        imageVector = Icons.Default.Check,
+        contentDescription = "VYBE Verified Worker",
+        tint = Color(0xFF060714),
+        modifier = Modifier.size(12.dp)
+      )
+    }
+  }
+
+  // 2. Official VIP Creator (Gold Star) or Verified Shop (Store)
   if (user.isVip) {
     Spacer(modifier = Modifier.width(3.dp))
     Box(
@@ -139,29 +168,13 @@ fun VerificationBadge(user: User) {
         modifier = Modifier.size(12.dp)
       )
     }
-  }
-
-  // Official Verified Badge
-  if (user.isVerified || user.isVerifiedPublicFigure) {
-    Spacer(modifier = Modifier.width(3.dp))
-    Icon(
-      imageVector = Icons.Default.CheckCircle,
-      contentDescription = "VYBE Verified Badge",
-      tint = VybeBrandCyan,
-      modifier = Modifier
-        .size(18.dp)
-        .testTag("verified_badge")
-    )
-  }
-
-  // Verified Business Shop Badge
-  if (user.isVerifiedBusiness) {
+  } else if (user.isVerifiedBusiness) {
     Spacer(modifier = Modifier.width(3.dp))
     Box(
       modifier = Modifier
         .size(18.dp)
         .clip(CircleShape)
-        .background(Brush.linearGradient(listOf(Color(0xFF00E676), Color(0xFF00B0FF))))
+        .background(Brush.linearGradient(listOf(Color(0xFFFFD700), Color(0xFFFF9100))))
         .testTag("business_badge"),
       contentAlignment = Alignment.Center
     ) {
@@ -171,6 +184,133 @@ fun VerificationBadge(user: User) {
         tint = Color(0xFF060714),
         modifier = Modifier.size(12.dp)
       )
+    }
+  }
+
+  // 3. Official Verified Public Figure / Account (Blue Tick)
+  if (user.isVerified || user.isVerifiedPublicFigure) {
+    Spacer(modifier = Modifier.width(3.dp))
+    Box(
+      modifier = Modifier
+        .size(18.dp)
+        .clip(CircleShape)
+        .background(Brush.linearGradient(listOf(Color(0xFF00F0FF), Color(0xFF0091EA))))
+        .testTag("verified_badge"),
+      contentAlignment = Alignment.Center
+    ) {
+      Icon(
+        imageVector = Icons.Default.Check,
+        contentDescription = "VYBE Verified Badge",
+        tint = Color(0xFF060714),
+        modifier = Modifier.size(12.dp)
+      )
+    }
+  }
+}
+
+/**
+ * Premium Filled Follow Button for Feed, Post Cards, and User Profiles.
+ * Follows VYBE signature cyan-to-violet gradient with distinct Following and Requested states.
+ */
+@Composable
+fun VybeFollowButton(
+  isFollowing: Boolean,
+  isFollowRequested: Boolean = false,
+  followsMe: Boolean = false,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+  compact: Boolean = false
+) {
+  val label = when {
+    isFollowing -> "Following"
+    isFollowRequested -> "Requested"
+    followsMe -> "Follow Back"
+    else -> "Follow"
+  }
+
+  when {
+    isFollowing -> {
+      Surface(
+        color = Color(0xFF1E2638),
+        shape = RoundedCornerShape(if (compact) 14.dp else 12.dp),
+        border = BorderStroke(1.dp, Color(0xFF2E3856)),
+        modifier = modifier
+          .clip(RoundedCornerShape(if (compact) 14.dp else 12.dp))
+          .clickable { onClick() }
+          .testTag("follow_button_following")
+      ) {
+        Box(
+          contentAlignment = Alignment.Center,
+          modifier = Modifier.padding(
+            horizontal = if (compact) 14.dp else 20.dp,
+            vertical = if (compact) 6.dp else 10.dp
+          )
+        ) {
+          Text(
+            text = label,
+            fontSize = if (compact) 12.sp else 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.White.copy(alpha = 0.9f)
+          )
+        }
+      }
+    }
+    isFollowRequested -> {
+      Surface(
+        color = Color(0xFF241838),
+        shape = RoundedCornerShape(if (compact) 14.dp else 12.dp),
+        border = BorderStroke(1.dp, Color(0xFF8A2BE2).copy(alpha = 0.5f)),
+        modifier = modifier
+          .clip(RoundedCornerShape(if (compact) 14.dp else 12.dp))
+          .clickable { onClick() }
+          .testTag("follow_button_requested")
+      ) {
+        Box(
+          contentAlignment = Alignment.Center,
+          modifier = Modifier.padding(
+            horizontal = if (compact) 14.dp else 20.dp,
+            vertical = if (compact) 6.dp else 10.dp
+          )
+        ) {
+          Text(
+            text = label,
+            fontSize = if (compact) 12.sp else 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color(0xFFD8B4FE)
+          )
+        }
+      }
+    }
+    else -> {
+      // Filled Gradient Follow Button
+      Surface(
+        color = Color.Transparent,
+        shape = RoundedCornerShape(if (compact) 14.dp else 12.dp),
+        modifier = modifier
+          .clip(RoundedCornerShape(if (compact) 14.dp else 12.dp))
+          .background(
+            Brush.linearGradient(
+              listOf(Color(0xFF00F0FF), Color(0xFF8A2BE2))
+            )
+          )
+          .clickable { onClick() }
+          .testTag("follow_button_active")
+      ) {
+        Box(
+          contentAlignment = Alignment.Center,
+          modifier = Modifier.padding(
+            horizontal = if (compact) 14.dp else 20.dp,
+            vertical = if (compact) 6.dp else 10.dp
+          )
+        ) {
+          Text(
+            text = label,
+            fontSize = if (compact) 12.sp else 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF060714)
+          )
+        }
+      }
     }
   }
 }

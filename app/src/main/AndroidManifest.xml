@@ -61,11 +61,22 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="vybe" android:host="reset-password" />
             </intent-filter>
-            <!-- Web / HTTPS Production Deep Link Callback -->
+            <!-- Canonical Profile Deep Link (QR code & external scanners) -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="vybe" android:host="profile" />
+            </intent-filter>
+            <!-- Web / HTTPS Production Deep Link Callback & Canonical Profile Fallback -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="ais-dev-ms5nkc6key5usu7rzmjfqx-730319811920.asia-northeast1.run.app" android:pathPrefix="/auth/callback" />
+                <data android:scheme="https" android:host="ais-dev-ms5nkc6key5usu7rzmjfqx-730319811920.asia-northeast1.run.app" android:pathPrefix="/reset-password" />
+                <data android:scheme="https" android:host="ais-dev-ms5nkc6key5usu7rzmjfqx-730319811920.asia-northeast1.run.app" android:pathPrefix="/profile" />
+                <data android:scheme="https" android:host="ais-dev-ms5nkc6key5usu7rzmjfqx-730319811920.asia-northeast1.run.app" android:pathPrefix="/u" />
                 <data android:scheme="https" android:host="ais-pre-of6bxbjd5wujogdyorbmow-552256630561.asia-northeast1.run.app" android:pathPrefix="/auth/callback" />
                 <data android:scheme="https" android:host="ais-dev-of6bxbjd5wujogdyorbmow-552256630561.asia-northeast1.run.app" android:pathPrefix="/auth/callback" />
                 <data android:scheme="https" android:host="ais-pre-of6bxbjd5wujogdyorbmow-552256630561.asia-northeast1.run.app" android:pathPrefix="/reset-password" />

@@ -773,43 +773,32 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
               ) {
-                val followLabel = when {
-                  isBlocked -> "Unblock"
-                  isFollowed -> "Following"
-                  isFollowRequested -> "Requested"
-                  followsMe -> "Follow Back"
-                  else -> "Follow"
-                }
-                val followContainer = when {
-                  isBlocked -> VybeDanger
-                  isFollowed || isFollowRequested -> MaterialTheme.colorScheme.surfaceVariant
-                  else -> VybeViolet
-                }
-                val followTextColor = when {
-                  isFollowed || isFollowRequested -> MaterialTheme.colorScheme.onSurface
-                  else -> Color.White
-                }
-
-                Button(
-                  onClick = {
-                    if (isBlocked) {
-                      viewModel.toggleBlockUser(user.id)
-                    } else {
-                      viewModel.toggleFollowUser(user.id)
-                    }
-                  },
-                  colors = ButtonDefaults.buttonColors(containerColor = followContainer),
-                  shape = RoundedCornerShape(12.dp),
-                  modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 48.dp)
-                    .testTag("follow_user_button")
-                ) {
-                  Text(
-                    text = followLabel,
-                    color = followTextColor,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1
+                if (isBlocked) {
+                  Button(
+                    onClick = { viewModel.toggleBlockUser(user.id) },
+                    colors = ButtonDefaults.buttonColors(containerColor = VybeDanger),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                      .weight(1f)
+                      .heightIn(min = 48.dp)
+                      .testTag("follow_user_button")
+                  ) {
+                    Text(
+                      text = "Unblock",
+                      color = Color.White,
+                      fontWeight = FontWeight.Bold,
+                      maxLines = 1
+                    )
+                  }
+                } else {
+                  VybeFollowButton(
+                    isFollowing = isFollowed,
+                    isFollowRequested = isFollowRequested,
+                    followsMe = followsMe,
+                    onClick = { viewModel.toggleFollowUser(user.id) },
+                    modifier = Modifier
+                      .weight(1f)
+                      .heightIn(min = 48.dp)
                   )
                 }
 
