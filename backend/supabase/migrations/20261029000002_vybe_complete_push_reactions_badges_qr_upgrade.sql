@@ -13,6 +13,18 @@
 ALTER TABLE public.notifications
     ADD COLUMN IF NOT EXISTS event_key VARCHAR(160) DEFAULT NULL;
 
+-- Clear duplicate event_keys on any older historical rows before creating unique index
+WITH ranked_notifs AS (
+    SELECT id,
+           ROW_NUMBER() OVER (PARTITION BY recipient_id, event_key ORDER BY created_at DESC, id DESC) AS rn
+    FROM public.notifications
+    WHERE event_key IS NOT NULL
+)
+UPDATE public.notifications n
+SET event_key = NULL
+FROM ranked_notifs r
+WHERE n.id = r.id AND r.rn > 1;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_recipient_event_key
     ON public.notifications (recipient_id, event_key)
     WHERE event_key IS NOT NULL;
@@ -53,19 +65,95 @@ ALTER TABLE public.posts
     ADD COLUMN IF NOT EXISTS sad_count INT NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS flame_count INT NOT NULL DEFAULT 0;
 
+-- Drop older check constraints first so legacy rows can be normalized cleanly
 ALTER TABLE public.post_reactions
     DROP CONSTRAINT IF EXISTS chk_vybe_four_reaction_types;
 ALTER TABLE public.post_reactions
     DROP CONSTRAINT IF EXISTS chk_vybe_five_reaction_types;
 
+-- Temporarily drop reaction triggers while normalizing historical rows so bulk cleanup is fast and silent
+DROP TRIGGER IF EXISTS trg_recompute_post_reaction_counts ON public.post_reactions;
+DROP TRIGGER IF EXISTS trg_reaction_change ON public.post_reactions;
+
+-- Normalize all historical/legacy reaction_type rows (e.g. 'LIKE', 'HEART', lowercase, etc.)
+-- so zero rows violate chk_vybe_five_reaction_types
+UPDATE public.post_reactions
+SET reaction_type = CASE UPPER(BTRIM(COALESCE(reaction_type, 'LOVE')))
+    WHEN 'LOVE'      THEN 'LOVE'
+    WHEN 'LIKE'      THEN 'LOVE'
+    WHEN 'HEART'     THEN 'LOVE'
+    WHEN 'CARE'      THEN 'LOVE'
+    WHEN 'FLAME'     THEN 'FLAME'
+    WHEN 'FIRE'      THEN 'FLAME'
+    WHEN 'HEAT'      THEN 'FLAME'
+    WHEN 'LAUGH'     THEN 'LAUGH'
+    WHEN 'HAHA'      THEN 'LAUGH'
+    WHEN 'FUNNY'     THEN 'LAUGH'
+    WHEN 'WOW'       THEN 'WOW'
+    WHEN 'SURPRISE'  THEN 'WOW'
+    WHEN 'UPLIFT'    THEN 'WOW'
+    WHEN 'SAD'       THEN 'SAD'
+    WHEN 'CRY'       THEN 'SAD'
+    WHEN 'CALM'      THEN 'SAD'
+    WHEN 'DEEP_VIBE' THEN 'SAD'
+    WHEN 'PULSE'     THEN 'PULSE'
+    WHEN 'SPARK'     THEN 'SPARK'
+    WHEN 'WAVE'      THEN 'WAVE'
+    ELSE 'LOVE'
+END
+WHERE reaction_type IS NULL
+   OR reaction_type NOT IN ('LOVE', 'FLAME', 'LAUGH', 'WOW', 'SAD', 'PULSE', 'SPARK', 'WAVE');
+
+-- Remove any duplicate (post_id, user_id) reactions from pre-index tables, keeping newest
+WITH ranked_reactions AS (
+    SELECT ctid AS row_ctid,
+           ROW_NUMBER() OVER (PARTITION BY post_id, user_id ORDER BY created_at DESC NULLS LAST) AS rn
+    FROM public.post_reactions
+)
+DELETE FROM public.post_reactions pr
+USING ranked_reactions rr
+WHERE pr.ctid = rr.row_ctid AND rr.rn > 1;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_post_reactions_unique_post_user
+    ON public.post_reactions (post_id, user_id);
+
 ALTER TABLE public.post_reactions
     ADD CONSTRAINT chk_vybe_five_reaction_types
     CHECK (reaction_type IN ('LOVE', 'FLAME', 'LAUGH', 'WOW', 'SAD', 'PULSE', 'SPARK', 'WAVE'));
+
+-- Ensure RLS policies on post_reactions permit all 5 official reactions across devices
+ALTER TABLE public.post_reactions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Authenticated users manage own reactions" ON public.post_reactions;
+DROP POLICY IF EXISTS "Users manage own reactions" ON public.post_reactions;
+DROP POLICY IF EXISTS "Users insert own reaction" ON public.post_reactions;
+DROP POLICY IF EXISTS "Users update own reaction" ON public.post_reactions;
+DROP POLICY IF EXISTS "Users delete own reaction" ON public.post_reactions;
+
+CREATE POLICY "Users insert own reaction"
+    ON public.post_reactions FOR INSERT
+    WITH CHECK (
+        auth.uid() = user_id
+        AND reaction_type IN ('LOVE', 'FLAME', 'LAUGH', 'WOW', 'SAD', 'PULSE', 'SPARK', 'WAVE')
+    );
+
+CREATE POLICY "Users update own reaction"
+    ON public.post_reactions FOR UPDATE
+    USING (auth.uid() = user_id)
+    WITH CHECK (
+        auth.uid() = user_id
+        AND reaction_type IN ('LOVE', 'FLAME', 'LAUGH', 'WOW', 'SAD', 'PULSE', 'SPARK', 'WAVE')
+    );
+
+CREATE POLICY "Users delete own reaction"
+    ON public.post_reactions FOR DELETE
+    USING (auth.uid() = user_id);
 
 CREATE OR REPLACE FUNCTION public.recompute_post_reaction_counts()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
     v_post_id UUID;
@@ -85,10 +173,31 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS trg_recompute_post_reaction_counts ON public.post_reactions;
 CREATE TRIGGER trg_recompute_post_reaction_counts
 AFTER INSERT OR UPDATE OR DELETE ON public.post_reactions
 FOR EACH ROW EXECUTE FUNCTION public.recompute_post_reaction_counts();
+
+-- Backfill reaction breakdown counts across all existing posts
+UPDATE public.posts p
+SET likes_count = COALESCE(agg.total_cnt, 0),
+    love_count  = COALESCE(agg.love_cnt, 0),
+    flame_count = COALESCE(agg.flame_cnt, 0),
+    laugh_count = COALESCE(agg.laugh_cnt, 0),
+    wow_count   = COALESCE(agg.wow_cnt, 0),
+    sad_count   = COALESCE(agg.sad_cnt, 0)
+FROM (
+    SELECT p2.id AS post_id,
+           COUNT(pr.user_id)::INT AS total_cnt,
+           COUNT(pr.user_id) FILTER (WHERE pr.reaction_type = 'LOVE')::INT AS love_cnt,
+           COUNT(pr.user_id) FILTER (WHERE pr.reaction_type = 'FLAME')::INT AS flame_cnt,
+           COUNT(pr.user_id) FILTER (WHERE pr.reaction_type IN ('LAUGH', 'PULSE'))::INT AS laugh_cnt,
+           COUNT(pr.user_id) FILTER (WHERE pr.reaction_type IN ('WOW', 'SPARK'))::INT AS wow_cnt,
+           COUNT(pr.user_id) FILTER (WHERE pr.reaction_type IN ('SAD', 'WAVE'))::INT AS sad_cnt
+    FROM public.posts p2
+    LEFT JOIN public.post_reactions pr ON pr.post_id = p2.id
+    GROUP BY p2.id
+) agg
+WHERE p.id = agg.post_id;
 
 -- ------------------------------------------------------------------------------
 -- 3. THREE OFFICIAL BADGE TYPES, VIP EXPIRY, USER ACCEPTANCE & HIDE CONTROLS
@@ -104,10 +213,48 @@ ALTER TABLE public.profiles
     ADD COLUMN IF NOT EXISTS badge_display_status VARCHAR(24) DEFAULT 'ACCEPTED',
     ADD COLUMN IF NOT EXISTS badge_type VARCHAR(32) DEFAULT NULL;
 
+CREATE TABLE IF NOT EXISTS public.verification_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    request_type VARCHAR(50) NOT NULL,
+    full_name VARCHAR(150) NOT NULL,
+    category VARCHAR(100) NOT NULL,
+    identity_document_url TEXT,
+    supporting_links JSONB DEFAULT '[]'::jsonb,
+    status VARCHAR(30) DEFAULT 'PENDING',
+    rejection_reason TEXT,
+    admin_notes TEXT,
+    reviewed_by UUID REFERENCES auth.users(id),
+    reviewed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 ALTER TABLE public.verification_requests
+    ADD COLUMN IF NOT EXISTS admin_notes TEXT DEFAULT NULL,
     ADD COLUMN IF NOT EXISTS statement TEXT DEFAULT NULL,
     ADD COLUMN IF NOT EXISTS vip_expires_at TIMESTAMPTZ DEFAULT NULL,
     ADD COLUMN IF NOT EXISTS user_response_status VARCHAR(24) DEFAULT 'PENDING_REVIEW';
+
+CREATE INDEX IF NOT EXISTS idx_verification_requests_user_id ON public.verification_requests(user_id);
+CREATE INDEX IF NOT EXISTS idx_verification_requests_status ON public.verification_requests(status);
+
+ALTER TABLE public.verification_requests ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view their own verification requests" ON public.verification_requests;
+CREATE POLICY "Users can view their own verification requests"
+    ON public.verification_requests FOR SELECT
+    USING (auth.uid() = user_id OR public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS "Users can submit verification request" ON public.verification_requests;
+CREATE POLICY "Users can submit verification request"
+    ON public.verification_requests FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Admins can update verification requests" ON public.verification_requests;
+CREATE POLICY "Admins can update verification requests"
+    ON public.verification_requests FOR UPDATE
+    USING (public.is_admin(auth.uid()));
 
 -- Prevent non-admin users from self-granting badges, VIP expiry, or admin roles via profile PATCH!
 CREATE OR REPLACE FUNCTION public.enforce_profile_badge_and_role_security()
@@ -503,6 +650,9 @@ $$;
 -- 5. DEDUPLICATED CANONICAL NOTIFICATION TRIGGERS & ACCURATE COMMENT COUNTS
 --    Eliminates duplicate Format-1 (DB trigger) vs Format-2 (client insert) rows!
 -- ------------------------------------------------------------------------------
+
+ALTER TABLE public.follows
+    ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'ACCEPTED';
 
 CREATE OR REPLACE FUNCTION public.handle_follow_change()
 RETURNS TRIGGER
