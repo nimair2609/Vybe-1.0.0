@@ -616,3 +616,105 @@ fun VybeMatchesManagerDialog(
     }
   }
 }
+
+/**
+ * Instagram-style foreground real-time notification pill banner for DMs, reactions, comments,
+ * follows, badge approvals, and official announcements.
+ */
+@Composable
+fun RealtimeNotificationBanner(
+  event: com.example.notifications.RealtimeInAppBannerEvent?,
+  onOpen: (com.example.notifications.RealtimeInAppBannerEvent) -> Unit,
+  onDismiss: () -> Unit,
+  modifier: Modifier = Modifier
+) {
+  AnimatedVisibility(
+    visible = event != null,
+    enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+    exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+    modifier = modifier
+  ) {
+    val active = event ?: return@AnimatedVisibility
+    Surface(
+      color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+      contentColor = MaterialTheme.colorScheme.onSurface,
+      shape = RoundedCornerShape(20.dp),
+      tonalElevation = 8.dp,
+      shadowElevation = 10.dp,
+      modifier = Modifier
+        .widthIn(max = 520.dp)
+        .fillMaxWidth()
+        .padding(horizontal = 14.dp, vertical = 4.dp)
+        .clickable {
+          onOpen(active)
+          onDismiss()
+        }
+        .testTag("realtime_notification_banner")
+    ) {
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        if (!active.actorAvatarUrl.isNullOrBlank()) {
+          AsyncImage(
+            model = active.actorAvatarUrl,
+            contentDescription = active.actorDisplayName ?: active.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+              .size(40.dp)
+              .clip(CircleShape)
+          )
+        } else {
+          Box(
+            modifier = Modifier
+              .size(40.dp)
+              .clip(CircleShape)
+              .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center
+          ) {
+            Icon(
+              imageVector = Icons.Default.NotificationsActive,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.primary,
+              modifier = Modifier.size(20.dp)
+            )
+          }
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = active.title.ifBlank { "VYBE" },
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
+          Text(
+            text = active.body,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+          )
+        }
+
+        IconButton(
+          onClick = onDismiss,
+          modifier = Modifier.size(36.dp)
+        ) {
+          Icon(
+            imageVector = Icons.Default.Close,
+            contentDescription = "Dismiss notification banner",
+            modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+          )
+        }
+      }
+    }
+  }
+}
+

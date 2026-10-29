@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 sealed class UploadStatus {
@@ -307,6 +308,9 @@ class VybeRepository private constructor() {
   private val _businessApplications = MutableStateFlow<List<BusinessApplication>>(emptyList())
   val businessApplications: StateFlow<List<BusinessApplication>> = _businessApplications.asStateFlow()
 
+  private val _verificationRequests = MutableStateFlow<List<BadgeVerificationRequest>>(emptyList())
+  val verificationRequests: StateFlow<List<BadgeVerificationRequest>> = _verificationRequests.asStateFlow()
+
   // --- Central Admin Control Center State Flows ---
   private val _adminSubRole = MutableStateFlow(AdminSubRole.OWNER_ADMIN)
   val adminSubRole: StateFlow<AdminSubRole> = _adminSubRole.asStateFlow()
@@ -353,6 +357,7 @@ class VybeRepository private constructor() {
     _communityPosts.value = emptyList()
     _communityMembers.value = emptyList()
     _communityComments.value = emptyMap()
+    _verificationRequests.value = emptyList()
     _adminReports.value = createInitialAdminReports()
 
     _spiritualReflections.value = listOf(
@@ -431,11 +436,7 @@ class VybeRepository private constructor() {
     if (session.isLoggedIn) {
       val user = session.loadCurrentUser()
       if (user != null) {
-        val latestUser = if (user.role == UserRole.ADMIN) {
-          user.copy(isVerified = true, isVip = true)
-        } else {
-          savedUsers.firstOrNull { it.id == user.id } ?: user
-        }
+        val latestUser = savedUsers.firstOrNull { it.id == user.id } ?: user
         _currentUser.value = latestUser
         _isLoggedIn.value = true
         viewedStoryIdsLocal = localStore.loadViewedStoryIds(latestUser.id)
@@ -451,7 +452,7 @@ class VybeRepository private constructor() {
         _notifications.value = enrichNotificationsWithLocalContext(localStore.loadNotifications())
         _followingUserIds.value = localStore.loadFollowing()
         rebuildVybeMatchesList()
-        VybeRealtimePushManager.start(context, latestUser.id, session.accessToken)
+        VybeRealtimePushManager.start(context, latestUser.id, session.accessToken.orEmpty())
         VybeFirebaseMessagingService.subscribeStandardTopics(latestUser.id)
         session.fcmToken?.takeIf { it.isNotBlank() }?.let { token ->
           syncDeviceFcmToken(latestUser.id, token, session.accessToken)
@@ -577,6 +578,22 @@ class VybeRepository private constructor() {
           notifications = _notifications.value,
           conversations = _conversations.value
         )
+
+        val isAdminUser = _currentUser.value?.role == UserRole.ADMIN
+        val verRes = supabaseRepo.fetchVerificationRequests(
+          userId = if (isAdminUser) null else myId,
+          status = null,
+          accessToken = validToken
+        )
+        if (verRes.isSuccess) {
+          _verificationRequests.value = verRes.getOrThrow()
+        }
+        if (isAdminUser) {
+          val remoteLogs = supabaseRepo.fetchAdminAuditLogsRemote(validToken)
+          if (remoteLogs.isNotEmpty()) {
+            _adminAuditLogs.value = (remoteLogs + _adminAuditLogs.value).distinctBy { it.id }.take(120)
+          }
+        }
       }
     } catch (e: Exception) {
       Log.w(TAG, "syncAllFromSupabase warning: ${e.message}")
@@ -835,6 +852,7 @@ class VybeRepository private constructor() {
         NotificationType.FOLLOW -> "USER_PROFILE"
         NotificationType.DIRECT_MESSAGE,
         NotificationType.GROUP_MESSAGE -> "INBOX"
+        NotificationType.BUSINESS_VERIFICATION_UPDATE -> "VERIFICATION_CENTER"
         else -> item.destinationScreen ?: "MAIN"
       }
 
@@ -1057,7 +1075,7 @@ class VybeRepository private constructor() {
             finalMediaUrls = listOf(uploaded.url)
             finalStoragePaths = listOf(uploaded.storagePath)
           } else {
-            finalMediaUrls = listOf(effectiveLocalUri)
+            finalMediaUrls = listOfNotNull(effectiveLocalUri)
             renderedMixedUriToCleanup = null // Keep local mixed file when running in local-only mode
           }
         } else {
@@ -1563,7 +1581,7 @@ class VybeRepository private constructor() {
   fun toggleLikePost(postId: String) {
     val current = _posts.value
     val post = current.firstOrNull { it.id == postId } ?: return
-    val targetReaction = post.userReaction ?: VybeReaction.PULSE
+    val targetReaction = post.userReaction ?: VybeReaction.LOVE
     reactToPost(postId, targetReaction)
   }
 
@@ -1683,11 +1701,13 @@ class VybeRepository private constructor() {
       val res = supabaseRepo.fetchCommentsForPost(postId, token)
       if (res.isSuccess) {
         val comments = res.getOrThrow()
-        _posts.value = _posts.value.map { p ->
+        val updatedPosts = _posts.value.map { p ->
           if (p.id == postId) {
-            p.copy(comments = comments, commentsCount = maxOf(p.commentsCount, comments.size))
+            p.copy(comments = comments, commentsCount = comments.size)
           } else p
         }
+        _posts.value = updatedPosts
+        VybeLocalStore.get()?.savePosts(updatedPosts)
       }
     }
   }
@@ -2150,6 +2170,17 @@ class VybeRepository private constructor() {
 
   // --- Follow, Follow-Back & Private Account Follow Approval ---
 
+  fun registerDiscoveredUser(user: User): User {
+    if (user.id.isBlank()) return user
+    val decorated = decorateUserRelationshipFlags(user)
+    val existingIndex = _allUsers.value.indexOfFirst { it.id == user.id }
+    if (existingIndex < 0) {
+      _allUsers.value = _allUsers.value + decorated
+      return decorated
+    }
+    return _allUsers.value[existingIndex]
+  }
+
   fun toggleFollowUser(targetUserId: String): Boolean {
     val me = _currentUser.value ?: return false
     if (me.id == targetUserId || me.username.equals(targetUserId, ignoreCase = true)) {
@@ -2180,6 +2211,7 @@ class VybeRepository private constructor() {
           decorateUserRelationshipFlags(u.copy(followersCount = nextCount))
         } else decorateUserRelationshipFlags(u)
       }
+      syncAuthorSnapshotsAcrossContent()
 
       if (supabaseRepo.isConfigured) {
         ioScope.launch {
@@ -2191,6 +2223,7 @@ class VybeRepository private constructor() {
       // Send PENDING follow request for Private Profile
       _requestedFollowUserIds.value = _requestedFollowUserIds.value + targetUserId
       _allUsers.value = _allUsers.value.map { decorateUserRelationshipFlags(it) }
+      syncAuthorSnapshotsAcrossContent()
 
       if (supabaseRepo.isConfigured) {
         ioScope.launch {
@@ -2201,6 +2234,7 @@ class VybeRepository private constructor() {
             _requestedFollowUserIds.value = _requestedFollowUserIds.value - targetUserId
             _followingUserIds.value = _followingUserIds.value + targetUserId
             _allUsers.value = _allUsers.value.map { decorateUserRelationshipFlags(it) }
+            syncAuthorSnapshotsAcrossContent()
           } else if (res.isSuccess) {
             supabaseRepo.createInteractionNotificationIfNeeded(
               recipientId = targetUserId,
@@ -2235,6 +2269,14 @@ class VybeRepository private constructor() {
           decorateUserRelationshipFlags(updatedMe)
         } else decorateUserRelationshipFlags(u)
       }
+      if (_allUsers.value.none { it.id == targetUserId }) {
+        val postAuthor = _posts.value.firstOrNull { it.author.id == targetUserId }?.author
+        if (postAuthor != null) {
+          val promoted = decorateUserRelationshipFlags(postAuthor.copy(followersCount = postAuthor.followersCount + 1))
+          _allUsers.value = listOf(promoted) + _allUsers.value
+        }
+      }
+      syncAuthorSnapshotsAcrossContent()
 
       if (supabaseRepo.isConfigured) {
         ioScope.launch {
@@ -2258,6 +2300,27 @@ class VybeRepository private constructor() {
         }
       }
       return true
+    }
+  }
+
+  private fun syncAuthorSnapshotsAcrossContent() {
+    val usersById = _allUsers.value.associateBy { it.id }.toMutableMap()
+    _currentUser.value?.let { me -> usersById[me.id] = decorateUserRelationshipFlags(me) }
+    if (usersById.isEmpty()) return
+
+    _posts.value = _posts.value.map { post ->
+      val freshAuthor = usersById[post.author.id]
+      val updatedComments = if (post.comments.isEmpty()) post.comments else post.comments.map { c ->
+        val freshCommenter = usersById[c.author.id]
+        if (freshCommenter != null) c.copy(author = freshCommenter) else c
+      }
+      if (freshAuthor != null || updatedComments !== post.comments) {
+        post.copy(author = freshAuthor ?: post.author, comments = updatedComments)
+      } else post
+    }
+    _stories.value = _stories.value.map { story ->
+      val freshAuthor = usersById[story.author.id]
+      if (freshAuthor != null) story.copy(author = freshAuthor) else story
     }
   }
 
@@ -3390,6 +3453,7 @@ class VybeRepository private constructor() {
     _incomingFollowRequestUserIds.value = emptySet()
     _blockedUserIds.value = emptySet()
     _restrictedUserIds.value = emptySet()
+    _verificationRequests.value = emptyList()
     _uploadStatus.value = UploadStatus.Idle
 
     if (supabaseRepo.isConfigured) {
@@ -3817,6 +3881,11 @@ class VybeRepository private constructor() {
     presenceLoopJob = ioScope.launch {
       var tick = 0
       while (isActive && _isLoggedIn.value) {
+        // Avoid background polling when VYBE is backgrounded/locked — FCM HTTP v1 handles background wake-ups.
+        if (!VybeNotificationHelper.isAppInForeground && _activeCall.value == null) {
+          delay(12_000L)
+          continue
+        }
         try {
           val me = _currentUser.value
           val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
@@ -5236,6 +5305,8 @@ class VybeRepository private constructor() {
     )
   }
 
+  fun shouldDeliverPushForType(rawType: String): Boolean = isPushAllowedByPreferences(rawType)
+
   fun isPushAllowedByPreferences(rawType: String): Boolean {
     val prefs = _notificationPreferences.value
     return when (rawType.uppercase()) {
@@ -5246,6 +5317,76 @@ class VybeRepository private constructor() {
       "CROSSED_PATHS", "CROSSED_PATHS_INTERACTION" -> prefs.pushCrossedPathsRequests
       else -> true
     }
+  }
+
+  /**
+   * Ensures every eligible incoming push event also appears immediately in VYBE's In-App
+   * Notification Center without creating duplicate entries when Supabase sync completes.
+   */
+  fun ingestIncomingPushEvent(
+    title: String,
+    body: String,
+    data: Map<String, String>,
+    eventKey: String?
+  ) {
+    val rawType = (data["type"] ?: data["channel"] ?: "ACTIVITY").uppercase()
+    if (rawType in setOf("DIRECT_MESSAGE", "GROUP_MESSAGE", "CHAT", "MESSAGE", "INCOMING_CALL", "CALL")) {
+      return
+    }
+    val actorId = data["actor_id"] ?: data["sender_id"]
+    if (!actorId.isNullOrBlank() && _blockedUserIds.value.contains(actorId)) return
+    if (!actorId.isNullOrBlank() && actorId == _currentUser.value?.id) return
+
+    val notifId = data["notification_id"]?.takeIf { it.isNotBlank() }
+    val cleanEventKey = (eventKey ?: data["event_key"])?.trim()?.takeIf { it.isNotBlank() }
+    val existing = _notifications.value.firstOrNull { item ->
+      (!notifId.isNullOrBlank() && item.id == notifId) ||
+        (!cleanEventKey.isNullOrBlank() && (
+          item.eventKey.equals(cleanEventKey, ignoreCase = true) ||
+            "notif_${item.id}".equals(cleanEventKey, ignoreCase = true)
+          ))
+    }
+    if (existing != null) return
+
+    val mappedType = when (rawType) {
+      "LIKE", "REACTION" -> NotificationType.LIKE
+      "COMMENT", "COMMENT_OR_REPLY" -> NotificationType.COMMENT_OR_REPLY
+      "FOLLOW", "FOLLOW_REQUEST", "FOLLOW_ACCEPTED" -> NotificationType.FOLLOW
+      "BADGE_UPDATE", "VERIFICATION_UPDATE", "BUSINESS_VERIFICATION_UPDATE" -> NotificationType.BUSINESS_VERIFICATION_UPDATE
+      "ANNOUNCEMENT", "BROADCAST", "SECURITY_ACCOUNT_UPDATE" -> NotificationType.SECURITY_ACCOUNT_UPDATE
+      else -> NotificationType.SECURITY_ACCOUNT_UPDATE
+    }
+    val actorUser = if (!actorId.isNullOrBlank()) {
+      _allUsers.value.firstOrNull { it.id == actorId } ?: User(
+        id = actorId,
+        username = data["actor_username"]?.ifBlank { "vyber" } ?: "vyber",
+        displayName = data["actor_display_name"]?.ifBlank { "VYBE Member" } ?: "VYBE Member",
+        avatarUrl = data["actor_avatar_url"].orEmpty()
+      )
+    } else null
+
+    val nowIso = TimestampUtils.currentIsoTimestamp()
+    val newItem = NotificationItem(
+      id = notifId ?: "push_${(cleanEventKey ?: UUID.randomUUID().toString()).hashCode()}",
+      type = mappedType,
+      title = title,
+      message = body,
+      timestamp = "Just now",
+      createdAtIso = nowIso,
+      isRead = false,
+      actorUser = actorUser,
+      destinationScreen = data["destination"] ?: when (mappedType) {
+        NotificationType.BUSINESS_VERIFICATION_UPDATE -> "VERIFICATION_CENTER"
+        NotificationType.FOLLOW -> "USER_PROFILE"
+        else -> "NOTIFICATIONS"
+      },
+      targetEntityId = data["target_id"],
+      contentPreviewUrl = data["media_url"],
+      eventKey = cleanEventKey
+    )
+    val enriched = enrichNotificationsWithLocalContext(listOf(newItem) + _notifications.value)
+    _notifications.value = enriched
+    VybeLocalStore.get()?.saveNotifications(enriched)
   }
 
   private fun reconcileAndDispatchSystemNotifications(
@@ -5266,6 +5407,7 @@ class VybeRepository private constructor() {
       val isBrandNewUnread = !n.isRead && createdMs != null && (nowMs - createdMs) in 0..freshWindowMs
       if (!isBrandNewUnread) {
         baselineKeys.add("notif_${n.id}")
+        n.eventKey?.takeIf { it.isNotBlank() }?.let { baselineKeys.add(it) }
       }
     }
     conversations.forEach { conv ->
@@ -5280,12 +5422,18 @@ class VybeRepository private constructor() {
 
     // 1. Dispatch system tray alerts for any new unread NotificationItems
     notifications.asReversed().forEach { item ->
-      if (!item.isRead && item.actorUser?.id != myId && isPushAllowedByPreferences(item.type.name)) {
+      if (!item.isRead && item.actorUser?.id != myId && !_blockedUserIds.value.contains(item.actorUser?.id) && isPushAllowedByPreferences(item.type.name)) {
+        val canonicalKey = item.eventKey?.takeIf { it.isNotBlank() } ?: "notif_${item.id}"
+        if (VybeNotificationHelper.hasEventBeenNotified(ctx, canonicalKey) ||
+          VybeNotificationHelper.hasEventBeenNotified(ctx, "notif_${item.id}")
+        ) {
+          return@forEach
+        }
         val dataMap = mutableMapOf(
           "type" to item.type.name,
           "destination" to (item.destinationScreen ?: "NOTIFICATIONS"),
           "notification_id" to item.id,
-          "event_key" to "notif_${item.id}"
+          "event_key" to canonicalKey
         )
         item.actorUser?.let { actor ->
           if (actor.id.isNotBlank()) dataMap["actor_id"] = actor.id
@@ -5311,8 +5459,9 @@ class VybeRepository private constructor() {
           body = item.message,
           data = dataMap,
           channelId = channelId,
-          dedupeKey = "notif_${item.id}"
+          dedupeKey = canonicalKey
         )
+        VybeNotificationHelper.markEventAsNotified(ctx, canonicalKey, listOf("notif_${item.id}"))
       }
     }
 
@@ -5978,6 +6127,7 @@ class VybeRepository private constructor() {
           AdCampaignStatus.PAUSED -> AdCampaignStatus.ACTIVE
           AdCampaignStatus.SCHEDULED -> AdCampaignStatus.ACTIVE
           AdCampaignStatus.DRAFT -> AdCampaignStatus.ACTIVE
+          AdCampaignStatus.COMPLETED -> AdCampaignStatus.ACTIVE
           AdCampaignStatus.ARCHIVED -> AdCampaignStatus.ACTIVE
         }
         recordAuditLog(
@@ -6470,48 +6620,190 @@ class VybeRepository private constructor() {
   // =========================================================================
 
   suspend fun getUserProfileById(userId: String): User? {
-    if (userId.isBlank()) return null
-    _allUsers.value.firstOrNull { it.id == userId }?.let { return it }
+    val clean = userId.trim()
+    if (clean.isBlank()) return null
+    return resolveProfileFromDeepLink(userId = clean, username = null)
+  }
+
+  /**
+   * Resolves a scanned QR code or shared canonical profile deep link to the exact VYBE user.
+   * Queries live Supabase by immutable UUID first, then falls back to `@username` / `VYBE-` public ID.
+   * Returns `null` if the account does not exist or is deactivated — NEVER opens a wrong profile.
+   */
+  suspend fun resolveProfileFromDeepLink(userId: String?, username: String?): User? {
+    val cleanId = userId?.trim()?.removePrefix("@").orEmpty()
+    val cleanUser = username?.trim()?.removePrefix("@").orEmpty()
+    if (cleanId.isBlank() && cleanUser.isBlank()) return null
+
+    val me = _currentUser.value
+    if (me != null && !me.isDeactivated) {
+      if ((cleanId.isNotBlank() && (me.id.equals(cleanId, ignoreCase = true) || me.publicVybeId.equals(cleanId, ignoreCase = true))) ||
+        (cleanUser.isNotBlank() && me.username.equals(cleanUser, ignoreCase = true))
+      ) {
+        return me
+      }
+    }
+
     val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
-    return try {
-      supabaseRepo.fetchUserProfile(userId, token)
-    } catch (_: Exception) {
-      null
+    val looksLikeUuid = cleanId.length == 36 && cleanId.count { it == '-' } == 4
+
+    // 1. Live Supabase lookup by immutable UUID
+    if (looksLikeUuid && supabaseRepo.isConfigured) {
+      val fetchedById = try {
+        supabaseRepo.fetchUserProfile(cleanId, token)
+      } catch (_: Exception) {
+        null
+      }
+      if (fetchedById != null) {
+        if (fetchedById.isDeactivated) return null
+        val decorated = decorateUserRelationshipFlags(fetchedById)
+        upsertUserIntoCache(decorated)
+        return decorated
+      }
+    }
+
+    // 2. Live Supabase lookup by username / publicVybeId
+    val handleCandidate = when {
+      !looksLikeUuid && cleanId.isNotBlank() -> cleanId
+      cleanUser.isNotBlank() -> cleanUser
+      else -> ""
+    }
+    if (handleCandidate.isNotBlank() && supabaseRepo.isConfigured) {
+      val fetchedByHandle = try {
+        supabaseRepo.fetchUserProfileByUsername(handleCandidate, token)
+      } catch (_: Exception) {
+        null
+      }
+      if (fetchedByHandle != null) {
+        if (fetchedByHandle.isDeactivated) return null
+        val decorated = decorateUserRelationshipFlags(fetchedByHandle)
+        upsertUserIntoCache(decorated)
+        return decorated
+      }
+    }
+
+    // 3. Offline / local cache fallback (strict exact match only)
+    val cached = _allUsers.value.firstOrNull { u ->
+      !u.isDeactivated && (
+        (cleanId.isNotBlank() && (u.id.equals(cleanId, ignoreCase = true) || u.publicVybeId.equals(cleanId, ignoreCase = true))) ||
+          (handleCandidate.isNotBlank() && u.username.equals(handleCandidate, ignoreCase = true))
+        )
+    }
+    return cached?.let { decorateUserRelationshipFlags(it) }
+  }
+
+  private fun upsertUserIntoCache(user: User) {
+    val existing = _allUsers.value
+    val next = if (existing.any { it.id == user.id }) {
+      existing.map { if (it.id == user.id) user else it }
+    } else {
+      listOf(user) + existing
+    }
+    _allUsers.value = next
+    if (_currentUser.value?.id == user.id) {
+      _currentUser.value = user
+      SessionManager.get()?.updateCurrentUser(user)
+      VybeLocalStore.get()?.saveUser(user)
+    }
+    syncAuthorSnapshotsAcrossContent()
+  }
+
+  fun refreshVerificationRequests() {
+    val me = _currentUser.value ?: return
+    if (!supabaseRepo.isConfigured) return
+    ioScope.launch {
+      val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+      val isAdmin = me.role == UserRole.ADMIN
+      val res = supabaseRepo.fetchVerificationRequests(
+        userId = if (isAdmin) null else me.id,
+        status = null,
+        accessToken = token
+      )
+      if (res.isSuccess) {
+        _verificationRequests.value = res.getOrThrow()
+      }
+      if (isAdmin) {
+        val remoteLogs = supabaseRepo.fetchAdminAuditLogsRemote(token)
+        if (remoteLogs.isNotEmpty()) {
+          _adminAuditLogs.value = (remoteLogs + _adminAuditLogs.value).distinctBy { it.id }.take(120)
+        }
+      }
+    }
+  }
+
+  /**
+   * User response to an approved badge offer or visibility toggle:
+   * - `ACCEPT` / `SHOW`: Displays approved official badge(s) publicly.
+   * - `DECLINE`: Declines displaying the offered badge.
+   * - `HIDE`: Hides badge from public display without losing approval (blocked if mandatory Worker policy applies).
+   */
+  fun respondToBadgeOffer(
+    action: String,
+    onComplete: ((Boolean, String?) -> Unit)? = null
+  ) {
+    val current = _currentUser.value
+    if (current == null) {
+      onComplete?.invoke(false, "Please sign in first.")
+      return
+    }
+    val actionUpper = action.trim().uppercase()
+    if ((actionUpper == "HIDE" || actionUpper == "HIDDEN") && current.isWorker && current.isWorkerBadgeMandatory) {
+      onComplete?.invoke(false, "VYBE Staff / Worker badge display is required by organizational policy.")
+      return
+    }
+    if (!current.hasAnyApprovedBadge && actionUpper in setOf("ACCEPT", "ACCEPTED", "SHOW")) {
+      onComplete?.invoke(false, "No approved official badge is available on your account.")
+      return
+    }
+
+    val nextDisplayStatus = when (actionUpper) {
+      "ACCEPT", "ACCEPTED", "SHOW" -> "ACCEPTED"
+      "DECLINE", "DECLINED" -> "DECLINED"
+      "HIDE", "HIDDEN" -> "HIDDEN"
+      else -> actionUpper
+    }
+    val rpcAction = when (actionUpper) {
+      "ACCEPTED" -> "ACCEPT"
+      "DECLINED" -> "DECLINE"
+      "HIDDEN" -> "HIDE"
+      else -> actionUpper
+    }
+
+    val updated = current.copy(badgeDisplayStatus = nextDisplayStatus)
+    upsertUserIntoCache(updated)
+
+    if (!supabaseRepo.isConfigured) {
+      onComplete?.invoke(true, "Badge preference updated.")
+      return
+    }
+
+    ioScope.launch {
+      val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+      val res = supabaseRepo.respondToBadgeOfferRemote(current.id, rpcAction, token)
+      if (res.isSuccess) {
+        refreshCurrentUserRole()
+        refreshVerificationRequests()
+        syncAuthorSnapshotsAcrossContent()
+        withContext(Dispatchers.Main) {
+          val msg = when (nextDisplayStatus) {
+            "ACCEPTED" -> "Your official VYBE badge is now active on your profile!"
+            "DECLINED" -> "Badge offer declined."
+            "HIDDEN" -> "Your badge is now hidden from public view."
+            else -> "Badge preference updated."
+          }
+          onComplete?.invoke(true, msg)
+        }
+      } else {
+        upsertUserIntoCache(current)
+        withContext(Dispatchers.Main) {
+          onComplete?.invoke(false, res.exceptionOrNull()?.message ?: "Failed to update badge preference.")
+        }
+      }
     }
   }
 
   fun updateBadgeDisplayStatus(newStatus: String) {
-    val current = _currentUser.value ?: return
-    val statusUpper = newStatus.trim().uppercase()
-    val updated = current.copy(badgeDisplayStatus = statusUpper)
-    _currentUser.value = updated
-    _allUsers.value = _allUsers.value.map { if (it.id == updated.id) it.copy(badgeDisplayStatus = statusUpper) else it }
-    SessionManager.get()?.updateCurrentUser(updated)
-    VybeLocalStore.get()?.saveUser(updated)
-
-    ioScope.launch {
-      try {
-        val payload = org.json.JSONObject().apply {
-          put("badge_display_status", statusUpper)
-          put("updated_at", com.example.util.TimestampUtils.currentIsoTimestamp())
-        }.toString()
-        val restUrl = "${com.example.data.remote.SupabaseConfig.getRestBaseUrl()}profiles?id=eq.${current.id}"
-        val req = okhttp3.Request.Builder()
-          .url(restUrl)
-          .addHeader("apikey", com.example.data.remote.SupabaseConfig.supabaseAnonKey)
-          .addHeader("Prefer", "return=minimal")
-          .apply {
-            com.example.data.remote.SupabaseConfig.buildAuthHeader(SessionManager.get()?.accessToken)?.let {
-              addHeader("Authorization", it)
-            }
-          }
-          .patch(okhttp3.RequestBody.create(okhttp3.MediaType.parse("application/json"), payload))
-          .build()
-        com.example.data.remote.SupabaseNetworkClient.okHttpClient.newCall(req).execute().close()
-      } catch (e: Exception) {
-        android.util.Log.w("VybeRepository", "Badge display update warning: ${e.message}")
-      }
-    }
+    respondToBadgeOffer(newStatus, null)
   }
 
   fun submitVerificationRequest(
@@ -6527,47 +6819,58 @@ class VybeRepository private constructor() {
       onComplete(false, "You must be signed in to apply.")
       return
     }
+    val typeUpper = requestType.trim().uppercase()
+    if (typeUpper !in setOf("VERIFIED", "VIP", "SHOP", "WORKER")) {
+      onComplete(false, "Please select a valid official VYBE badge category.")
+      return
+    }
+    if (fullName.isBlank() || category.isBlank() || statement.isBlank()) {
+      onComplete(false, "Please fill in all required application details.")
+      return
+    }
+
+    val optimisticReq = BadgeVerificationRequest(
+      id = "vr_local_${System.currentTimeMillis()}",
+      userId = current.id,
+      username = current.username,
+      displayName = current.displayName,
+      avatarUrl = current.avatarUrl,
+      requestType = typeUpper,
+      fullName = fullName.trim(),
+      category = category.trim(),
+      identityDocumentUrl = identityUrl?.trim()?.takeIf { it.isNotBlank() },
+      statement = statement.trim(),
+      status = "PENDING",
+      createdAtIso = TimestampUtils.currentIsoTimestamp(),
+      timestampLabel = "Just now"
+    )
+    _verificationRequests.value = listOf(optimisticReq) + _verificationRequests.value
+
+    if (!supabaseRepo.isConfigured) {
+      onComplete(true, "Application submitted for admin review.")
+      return
+    }
 
     ioScope.launch {
-      try {
-        val payload = org.json.JSONObject().apply {
-          put("user_id", current.id)
-          put("request_type", requestType)
-          put("full_name", fullName)
-          put("category", category)
-          if (!identityUrl.isNullOrBlank()) put("identity_document_url", identityUrl)
-          put("admin_notes", statement)
-          put("status", "PENDING")
-        }.toString()
-
-        val restUrl = "${com.example.data.remote.SupabaseConfig.getRestBaseUrl()}verification_requests"
-        val req = okhttp3.Request.Builder()
-          .url(restUrl)
-          .addHeader("apikey", com.example.data.remote.SupabaseConfig.supabaseAnonKey)
-          .addHeader("Prefer", "return=minimal")
-          .apply {
-            com.example.data.remote.SupabaseConfig.buildAuthHeader(SessionManager.get()?.accessToken)?.let {
-              addHeader("Authorization", it)
-            }
-          }
-          .post(okhttp3.RequestBody.create(okhttp3.MediaType.parse("application/json"), payload))
-          .build()
-
-        com.example.data.remote.SupabaseNetworkClient.okHttpClient.newCall(req).execute().use { resp ->
-          if (resp.isSuccessful) {
-            withContext(Dispatchers.Main) {
-              onComplete(true, "Application submitted for review.")
-            }
-          } else {
-            val err = resp.body()?.string().orEmpty()
-            withContext(Dispatchers.Main) {
-              onComplete(false, if (err.isNotBlank()) err.take(120) else "Server returned ${resp.code()}")
-            }
-          }
-        }
-      } catch (e: Exception) {
+      val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+      val res = supabaseRepo.submitBadgeVerificationApplication(
+        userId = current.id,
+        requestType = typeUpper,
+        fullName = fullName,
+        category = category,
+        identityDocumentUrl = identityUrl,
+        statement = statement,
+        accessToken = token
+      )
+      if (res.isSuccess) {
+        refreshVerificationRequests()
         withContext(Dispatchers.Main) {
-          onComplete(false, e.message ?: "Network error submitting application")
+          onComplete(true, "Application submitted! You'll receive a notification once reviewed.")
+        }
+      } else {
+        _verificationRequests.value = _verificationRequests.value.filterNot { it.id == optimisticReq.id }
+        withContext(Dispatchers.Main) {
+          onComplete(false, res.exceptionOrNull()?.message ?: "Unable to submit badge application.")
         }
       }
     }
@@ -6577,81 +6880,195 @@ class VybeRepository private constructor() {
     userId: String,
     badgeCategory: String,
     isGrant: Boolean,
+    vipExpiresAtIso: String? = null,
+    reason: String? = null,
+    requireAcceptance: Boolean = false,
+    workerMandatory: Boolean = false,
     onComplete: ((Boolean, String?) -> Unit)? = null
   ) {
-    val categoryUpper = badgeCategory.trim().uppercase()
-    _allUsers.value = _allUsers.value.map { u ->
-      if (u.id == userId) {
-        when (categoryUpper) {
-          "VERIFIED" -> u.copy(isVerified = isGrant, isVerifiedPublicFigure = isGrant, badgeType = if (isGrant) "VERIFIED" else null)
-          "VIP" -> u.copy(isVip = isGrant, badgeType = if (isGrant) "VIP" else null)
-          "WORKER" -> u.copy(isWorker = isGrant, badgeType = if (isGrant) "WORKER" else null)
-          "SHOP" -> u.copy(isVerifiedBusiness = isGrant, badgeType = if (isGrant) "SHOP" else null)
-          else -> u
-        }
-      } else u
+    val me = _currentUser.value
+    if (me == null || me.role != UserRole.ADMIN) {
+      onComplete?.invoke(false, "Admin authorization required to assign or revoke badges.")
+      return
+    }
+    if (isGrant && me.id == userId) {
+      onComplete?.invoke(false, "Self-granting official badges is not permitted. Another authorized admin must review.")
+      return
     }
 
-    if (_currentUser.value?.id == userId) {
-      val me = _currentUser.value!!
-      _currentUser.value = when (categoryUpper) {
-        "VERIFIED" -> me.copy(isVerified = isGrant, isVerifiedPublicFigure = isGrant, badgeType = if (isGrant) "VERIFIED" else null)
-        "VIP" -> me.copy(isVip = isGrant, badgeType = if (isGrant) "VIP" else null)
-        "WORKER" -> me.copy(isWorker = isGrant, badgeType = if (isGrant) "WORKER" else null)
-        "SHOP" -> me.copy(isVerifiedBusiness = isGrant, badgeType = if (isGrant) "SHOP" else null)
-        else -> me
+    val categoryUpper = badgeCategory.trim().uppercase()
+    val previousUsers = _allUsers.value
+    val nextDisplayStatus = when {
+      !isGrant -> null
+      requireAcceptance -> "PENDING_ACCEPTANCE"
+      else -> "ACCEPTED"
+    }
+
+    val applyBadgeChange: (User) -> User = { u ->
+      val updatedBase = when (categoryUpper) {
+        "VERIFIED" -> u.copy(
+          isVerified = isGrant,
+          isVerifiedPublicFigure = isGrant,
+          badgeType = if (isGrant) "VERIFIED" else if (u.badgeType == "VERIFIED") null else u.badgeType
+        )
+        "VIP" -> u.copy(
+          isVip = isGrant,
+          vipExpiresAtIso = if (isGrant) vipExpiresAtIso else null,
+          badgeType = if (isGrant) "VIP" else if (u.badgeType == "VIP") null else u.badgeType
+        )
+        "SHOP" -> u.copy(
+          isVerifiedBusiness = isGrant,
+          badgeType = if (isGrant) "SHOP" else if (u.badgeType == "SHOP") null else u.badgeType
+        )
+        "WORKER" -> u.copy(
+          isWorker = isGrant,
+          isWorkerBadgeMandatory = if (isGrant) workerMandatory else false,
+          badgeType = if (isGrant) "WORKER" else if (u.badgeType == "WORKER") null else u.badgeType
+        )
+        else -> u
       }
+      updatedBase.copy(
+        badgeApprovalStatus = if (isGrant) "APPROVED" else if (!updatedBase.hasAnyApprovedBadge) "NONE" else updatedBase.badgeApprovalStatus,
+        badgeDisplayStatus = nextDisplayStatus ?: if (!updatedBase.hasAnyApprovedBadge) "NONE" else updatedBase.badgeDisplayStatus
+      )
+    }
+
+    _allUsers.value = _allUsers.value.map { u ->
+      if (u.id == userId) applyBadgeChange(u) else u
+    }
+    if (_currentUser.value?.id == userId) {
+      val updatedMe = applyBadgeChange(_currentUser.value!!)
+      _currentUser.value = updatedMe
+      SessionManager.get()?.updateCurrentUser(updatedMe)
+      VybeLocalStore.get()?.saveUser(updatedMe)
+    }
+    VybeLocalStore.get()?.saveAllUsers(_allUsers.value)
+    syncAuthorSnapshotsAcrossContent()
+
+    recordAuditLog(
+      action = if (isGrant) "BADGE_ASSIGNED_$categoryUpper" else "BADGE_REVOKED_$categoryUpper",
+      targetType = "USER_BADGE",
+      targetId = userId,
+      details = "${if (isGrant) "Granted" else "Revoked"} $categoryUpper badge. ${reason?.let { "Reason: $it" } ?: ""}".trim()
+    )
+    refreshAdminStats()
+
+    if (!supabaseRepo.isConfigured) {
+      onComplete?.invoke(true, if (isGrant) "$categoryUpper badge assigned." else "$categoryUpper badge revoked.")
+      return
     }
 
     ioScope.launch {
-      try {
-        val payloadObj = org.json.JSONObject().apply {
-          put("updated_at", com.example.util.TimestampUtils.currentIsoTimestamp())
-          when (categoryUpper) {
-            "VERIFIED" -> {
-              put("is_verified", isGrant)
-              put("is_verified_public_figure", isGrant)
-              if (isGrant) put("badge_type", "VERIFIED")
-            }
-            "VIP" -> {
-              put("is_vip", isGrant)
-              if (isGrant) put("badge_type", "VIP")
-            }
-            "WORKER" -> {
-              put("is_worker", isGrant)
-              if (isGrant) put("badge_type", "WORKER")
-            }
-            "SHOP" -> {
-              put("is_verified_business", isGrant)
-              if (isGrant) put("badge_type", "SHOP")
-            }
-          }
-          if (isGrant) {
-            put("badge_display_status", "ACCEPTED")
-          }
+      val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+      val res = supabaseRepo.adminAssignOfficialBadge(
+        adminId = me.id,
+        targetUserId = userId,
+        badgeCategory = categoryUpper,
+        isGrant = isGrant,
+        vipExpiresAtIso = vipExpiresAtIso,
+        reason = reason,
+        requireAcceptance = requireAcceptance,
+        workerMandatory = workerMandatory,
+        accessToken = token
+      )
+      if (res.isSuccess) {
+        val freshTarget = supabaseRepo.fetchUserProfile(userId, token)
+        if (freshTarget != null) {
+          upsertUserIntoCache(decorateUserRelationshipFlags(freshTarget))
+          VybeLocalStore.get()?.saveAllUsers(_allUsers.value)
         }
-
-        val restUrl = "${com.example.data.remote.SupabaseConfig.getRestBaseUrl()}profiles?id=eq.$userId"
-        val req = okhttp3.Request.Builder()
-          .url(restUrl)
-          .addHeader("apikey", com.example.data.remote.SupabaseConfig.supabaseAnonKey)
-          .addHeader("Prefer", "return=minimal")
-          .apply {
-            com.example.data.remote.SupabaseConfig.buildAuthHeader(SessionManager.get()?.accessToken)?.let {
-              addHeader("Authorization", it)
-            }
-          }
-          .patch(okhttp3.RequestBody.create(okhttp3.MediaType.parse("application/json"), payloadObj.toString()))
-          .build()
-
-        com.example.data.remote.SupabaseNetworkClient.okHttpClient.newCall(req).execute().use { resp ->
-          withContext(Dispatchers.Main) {
-            onComplete?.invoke(resp.isSuccessful, if (!resp.isSuccessful) "Server returned code ${resp.code()}" else null)
-          }
-        }
-      } catch (e: Exception) {
+        refreshVerificationRequests()
         withContext(Dispatchers.Main) {
-          onComplete?.invoke(false, e.message)
+          onComplete?.invoke(true, if (isGrant) "$categoryUpper badge assigned." else "$categoryUpper badge revoked.")
+        }
+      } else {
+        _allUsers.value = previousUsers
+        syncAuthorSnapshotsAcrossContent()
+        withContext(Dispatchers.Main) {
+          onComplete?.invoke(false, res.exceptionOrNull()?.message ?: "Failed to update badge on server.")
+        }
+      }
+    }
+  }
+
+  fun adminReviewVerificationRequest(
+    requestId: String,
+    decision: String,
+    notes: String?,
+    vipExpiresAtIso: String? = null,
+    onComplete: ((Boolean, String?) -> Unit)? = null
+  ) {
+    val me = _currentUser.value
+    if (me == null || me.role != UserRole.ADMIN) {
+      onComplete?.invoke(false, "Admin authorization required.")
+      return
+    }
+    val decisionUpper = decision.trim().uppercase()
+    val targetReq = _verificationRequests.value.firstOrNull { it.id == requestId }
+    if (targetReq != null && targetReq.userId == me.id && decisionUpper == "APPROVED") {
+      onComplete?.invoke(false, "Self-approval of badge applications is strictly prohibited.")
+      return
+    }
+
+    val prevList = _verificationRequests.value
+    _verificationRequests.value = prevList.map { req ->
+      if (req.id == requestId) {
+        req.copy(
+          status = decisionUpper,
+          adminNotes = notes,
+          rejectionReason = if (decisionUpper == "REJECTED") notes else req.rejectionReason,
+          vipExpiresAtIso = vipExpiresAtIso ?: req.vipExpiresAtIso,
+          userResponseStatus = if (decisionUpper == "APPROVED") "PENDING_ACCEPTANCE" else req.userResponseStatus
+        )
+      } else req
+    }
+
+    recordAuditLog(
+      action = "BADGE_APPLICATION_$decisionUpper",
+      targetType = "VERIFICATION_REQUEST",
+      targetId = requestId,
+      details = "Reviewed ${targetReq?.requestType ?: "badge"} request for @${targetReq?.username ?: "user"}: $decisionUpper ${notes?.let { "• $it" } ?: ""}".trim()
+    )
+
+    if (!supabaseRepo.isConfigured) {
+      if (targetReq != null && decisionUpper == "APPROVED") {
+        adminAssignBadge(
+          userId = targetReq.userId,
+          badgeCategory = targetReq.requestType,
+          isGrant = true,
+          vipExpiresAtIso = vipExpiresAtIso,
+          reason = notes,
+          requireAcceptance = true
+        )
+      }
+      onComplete?.invoke(true, "Application marked $decisionUpper.")
+      return
+    }
+
+    ioScope.launch {
+      val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
+      val res = supabaseRepo.adminReviewBadgeApplication(
+        adminId = me.id,
+        requestId = requestId,
+        decision = decisionUpper,
+        notes = notes,
+        vipExpiresAtIso = vipExpiresAtIso,
+        accessToken = token
+      )
+      if (res.isSuccess) {
+        if (targetReq != null) {
+          supabaseRepo.fetchUserProfile(targetReq.userId, token)?.let { fresh ->
+            upsertUserIntoCache(decorateUserRelationshipFlags(fresh))
+          }
+        }
+        refreshVerificationRequests()
+        withContext(Dispatchers.Main) {
+          onComplete?.invoke(true, "Application marked $decisionUpper and applicant notified.")
+        }
+      } else {
+        _verificationRequests.value = prevList
+        withContext(Dispatchers.Main) {
+          onComplete?.invoke(false, res.exceptionOrNull()?.message ?: "Failed to review badge application.")
         }
       }
     }

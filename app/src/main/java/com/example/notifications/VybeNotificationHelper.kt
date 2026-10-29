@@ -247,33 +247,73 @@ object VybeNotificationHelper {
   }
 
   @Synchronized
-  fun markEventAsNotified(context: Context, eventKey: String?): Boolean {
-    if (eventKey.isNullOrBlank()) return true
+  fun hasEventBeenNotified(context: Context, eventKey: String?): Boolean {
+    if (eventKey.isNullOrBlank()) return false
     val prefs = context.applicationContext.getSharedPreferences(PREF_NOTIFIED_LEDGER, Context.MODE_PRIVATE)
     if (inMemoryNotifiedKeys.isEmpty()) {
       inMemoryNotifiedKeys.addAll(prefs.getStringSet(KEY_NOTIFIED_IDS, emptySet()).orEmpty())
     }
     val rawKey = eventKey.trim()
     val normalized = normalizeDedupeKey(rawKey)
+    return inMemoryNotifiedKeys.contains(rawKey) ||
+      (normalized.isNotBlank() && inMemoryNotifiedKeys.contains("norm_$normalized"))
+  }
 
-    // Check if either raw key or normalized root key has already been notified
-    if (inMemoryNotifiedKeys.contains(rawKey) || (normalized.isNotBlank() && inMemoryNotifiedKeys.contains("norm_$normalized"))) {
-      Log.d(TAG, "Notification deduplicated: rawKey=$rawKey normalized=$normalized")
-      return false
+  @Synchronized
+  fun markEventAsNotified(
+    context: Context,
+    eventKey: String?,
+    aliasKeys: Collection<String> = emptyList()
+  ): Boolean {
+    val candidateKeys = buildList {
+      if (!eventKey.isNullOrBlank()) add(eventKey.trim())
+      aliasKeys.forEach { k -> if (k.isNotBlank()) add(k.trim()) }
+    }
+    if (candidateKeys.isEmpty()) return true
+
+    val prefs = context.applicationContext.getSharedPreferences(PREF_NOTIFIED_LEDGER, Context.MODE_PRIVATE)
+    if (inMemoryNotifiedKeys.isEmpty()) {
+      inMemoryNotifiedKeys.addAll(prefs.getStringSet(KEY_NOTIFIED_IDS, emptySet()).orEmpty())
     }
 
-    inMemoryNotifiedKeys.add(rawKey)
-    if (normalized.isNotBlank()) {
-      inMemoryNotifiedKeys.add("norm_$normalized")
+    for (rawKey in candidateKeys) {
+      val normalized = normalizeDedupeKey(rawKey)
+      if (inMemoryNotifiedKeys.contains(rawKey) ||
+        (normalized.isNotBlank() && inMemoryNotifiedKeys.contains("norm_$normalized"))
+      ) {
+        Log.d(TAG, "Notification deduplicated: rawKey=$rawKey normalized=$normalized")
+        return false
+      }
     }
 
-    val keysToAdd = if (normalized.isNotBlank()) setOf(rawKey, "norm_$normalized") else setOf(rawKey)
-    val updated = (prefs.getStringSet(KEY_NOTIFIED_IDS, emptySet()).orEmpty() + keysToAdd)
+    val keysToStore = mutableSetOf<String>()
+    for (rawKey in candidateKeys) {
+      val normalized = normalizeDedupeKey(rawKey)
+      keysToStore.add(rawKey)
+      if (normalized.isNotBlank()) {
+        keysToStore.add("norm_$normalized")
+      }
+    }
+    inMemoryNotifiedKeys.addAll(keysToStore)
+
+    val updated = (prefs.getStringSet(KEY_NOTIFIED_IDS, emptySet()).orEmpty() + keysToStore)
       .toList()
-      .takeLast(700)
+      .takeLast(800)
       .toSet()
     prefs.edit().putStringSet(KEY_NOTIFIED_IDS, updated).apply()
     return true
+  }
+
+  @Synchronized
+  fun resetLedgerForTests(context: Context) {
+    inMemoryNotifiedKeys.clear()
+    conversationStacks.clear()
+    activeSocialNotifIds.clear()
+    context.applicationContext
+      .getSharedPreferences(PREF_NOTIFIED_LEDGER, Context.MODE_PRIVATE)
+      .edit()
+      .clear()
+      .commit()
   }
 
   fun conversationNotificationId(conversationId: String): Int =
@@ -408,10 +448,10 @@ object VybeNotificationHelper {
     val isChatMessage = typeUpper == "DIRECT_MESSAGE" || typeUpper == "GROUP_MESSAGE" ||
       typeUpper == "MESSAGE" || typeUpper == "CHAT"
 
-    // Suppress system tray notification ONLY when the user is actively viewing that exact chat screen
-    if (isAppInForeground && !convId.isNullOrBlank() && convId == activeOpenConversationId && isChatMessage) {
-      markEventAsNotified(appCtx, dedupeKey)
-      return
+    val aliasKeys = buildList {
+      data["event_key"]?.takeIf { it.isNotBlank() }?.let { add(it) }
+      data["notification_id"]?.takeIf { it.isNotBlank() }?.let { add("notif_$it") }
+      data["message_id"]?.takeIf { it.isNotBlank() }?.let { add("msg_$it") }
     }
 
     val effectiveDedupe = dedupeKey
@@ -419,7 +459,13 @@ object VybeNotificationHelper {
       ?: data["notification_id"]?.let { "notif_$it" }
       ?: data["message_id"]?.let { "msg_$it" }
 
-    if (!markEventAsNotified(appCtx, effectiveDedupe)) {
+    // Suppress system tray notification ONLY when the user is actively viewing that exact chat screen
+    if (isAppInForeground && !convId.isNullOrBlank() && convId == activeOpenConversationId && isChatMessage) {
+      markEventAsNotified(appCtx, effectiveDedupe, aliasKeys)
+      return
+    }
+
+    if (!markEventAsNotified(appCtx, effectiveDedupe, aliasKeys)) {
       Log.d(TAG, "Skipping already-displayed notification key=$effectiveDedupe")
       return
     }
@@ -640,9 +686,10 @@ object VybeNotificationHelper {
       requestKey = effectiveDedupe ?: data["target_id"] ?: System.currentTimeMillis().toString()
     )
 
+    val normalizedIdSeed = normalizeDedupeKey(effectiveDedupe)
     val notificationId = when {
-      !effectiveDedupe.isNullOrBlank() -> effectiveDedupe.hashCode()
-      data.containsKey("target_id") -> data["target_id"].hashCode()
+      normalizedIdSeed.isNotBlank() -> ("vybe_notif_$normalizedIdSeed").hashCode()
+      data.containsKey("target_id") -> ("vybe_target_${data["target_id"]}").hashCode()
       else -> notificationIdCounter.incrementAndGet()
     }
 
@@ -671,6 +718,7 @@ object VybeNotificationHelper {
       .setSubText(subLabel)
       .setColor(accentColor)
       .setAutoCancel(true)
+      .setOnlyAlertOnce(true)
       .setCategory(category)
       .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
       .setPriority(NotificationCompat.PRIORITY_HIGH)

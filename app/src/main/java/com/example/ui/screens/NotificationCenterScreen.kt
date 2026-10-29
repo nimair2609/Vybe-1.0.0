@@ -290,6 +290,10 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
               onClick = {
                 viewModel.markNotificationAsRead(item.id)
                 when {
+                  item.type == NotificationType.BUSINESS_VERIFICATION_UPDATE ||
+                    item.destinationScreen == "VERIFICATION_CENTER" -> {
+                    viewModel.navigateTo(Screen.VERIFICATION_CENTER)
+                  }
                   item.type == NotificationType.DIRECT_MESSAGE || item.type == NotificationType.GROUP_MESSAGE -> {
                     viewModel.selectTab(com.example.ui.MainTab.INBOX)
                     viewModel.navigateTo(Screen.MAIN)
@@ -478,6 +482,9 @@ fun NotificationCard(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f, fill = false)
           )
+          if (item.actorUser != null) {
+            com.example.ui.components.VerificationBadge(user = item.actorUser, iconSize = 14.dp)
+          }
           if (!item.isRead) {
             Spacer(modifier = Modifier.width(6.dp))
             Box(

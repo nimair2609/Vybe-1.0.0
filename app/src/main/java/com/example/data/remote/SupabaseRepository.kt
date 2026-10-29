@@ -837,8 +837,17 @@ class SupabaseRepository {
       age = p.age ?: 20,
       isUnder18 = p.isUnder18 ?: false,
       role = parsedRole,
-      isVerified = if (isAdmin) true else (p.isVerified ?: false),
-      isVip = if (isAdmin) true else (p.isVip ?: false),
+      isVerified = p.isVerified ?: false,
+      isVip = p.isVip ?: false,
+      isVerifiedPublicFigure = p.isVerifiedPublicFigure ?: false,
+      isVerifiedBusiness = p.isVerifiedBusiness ?: false,
+      isWorker = p.isWorker ?: false,
+      isWorkerBadgeMandatory = p.workerBadgeMandatory ?: false,
+      vipExpiresAtIso = p.vipExpiresAt?.takeIf { it.isNotBlank() && it != "null" },
+      badgeApprovalStatus = p.badgeApprovalStatus?.takeIf { it.isNotBlank() && it != "null" } ?: "ACCEPTED",
+      badgeDisplayStatus = p.badgeDisplayStatus?.takeIf { it.isNotBlank() && it != "null" } ?: "ACCEPTED",
+      badgeType = p.badgeType?.takeIf { it.isNotBlank() && it != "null" },
+      isDeactivated = p.isDeactivated ?: false,
       isPrivate = p.isPrivateAccount ?: false,
       messagePrivacy = p.messagePrivacy ?: "EVERYONE",
       livePulse = parsedPulse,
@@ -883,6 +892,26 @@ class SupabaseRepository {
       } catch (e: Exception) {
         Log.w(TAG, "getProfileByEmail failed: ${e.message}")
       }
+    }
+    return@withContext null
+  }
+
+  suspend fun fetchUserProfileByUsername(username: String, token: String? = null): User? = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext null
+    val clean = username.trim().removePrefix("@").lowercase()
+    if (clean.isBlank()) return@withContext null
+    val authHeader = authHeaderFor(token)
+    try {
+      val resp = SupabaseNetworkClient.restApi.getProfileByUsername(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        usernameFilter = "ilike.$clean"
+      )
+      if (resp.isSuccessful && !resp.body().isNullOrEmpty()) {
+        return@withContext mapProfileDtoToUser(resp.body()!!.first())
+      }
+    } catch (e: Exception) {
+      Log.w(TAG, "getProfileByUsername failed: ${e.message}")
     }
     return@withContext null
   }
@@ -1629,7 +1658,7 @@ class SupabaseRepository {
             allRResp.body().orEmpty().forEach { rDto ->
               val pairKey = "${rDto.postId}:${rDto.userId}"
               if (seenPairs.add(pairKey)) {
-                val parsed = VybeReaction.fromWire(rDto.reactionType) ?: VybeReaction.PULSE
+                val parsed = VybeReaction.fromWire(rDto.reactionType)
                 val postMap = aggregatedReactions.getOrPut(rDto.postId) { mutableMapOf() }
                 postMap[parsed] = (postMap[parsed] ?: 0) + 1
                 if (!currentUserId.isNullOrBlank() && rDto.userId == currentUserId) {
@@ -1652,7 +1681,7 @@ class SupabaseRepository {
           )
           if (rResp.isSuccessful) {
             rResp.body().orEmpty().forEach { dto ->
-              val reaction = VybeReaction.fromWire(dto.reactionType) ?: VybeReaction.PULSE
+              val reaction = VybeReaction.fromWire(dto.reactionType)
               myReactions[dto.postId] = reaction
             }
           }
@@ -1733,20 +1762,22 @@ class SupabaseRepository {
 
     val myReaction = myReactions[dto.id]
     val dtoBreakdown = buildMap<VybeReaction, Int> {
-      val p = (dto.pulseCount ?: 0).coerceAtLeast(0)
-      val s = (dto.sparkCount ?: 0).coerceAtLeast(0)
-      val w = (dto.waveCount ?: 0).coerceAtLeast(0)
-      val f = (dto.flameCount ?: 0).coerceAtLeast(0)
-      if (p > 0) put(VybeReaction.PULSE, p)
-      if (s > 0) put(VybeReaction.SPARK, s)
-      if (w > 0) put(VybeReaction.WAVE, w)
-      if (f > 0) put(VybeReaction.FLAME, f)
+      val love = (dto.loveCount ?: 0).coerceAtLeast(0)
+      val flame = (dto.flameCount ?: 0).coerceAtLeast(0)
+      val laugh = ((dto.laughCount ?: 0) + (dto.pulseCount ?: 0)).coerceAtLeast(0)
+      val wow = ((dto.wowCount ?: 0) + (dto.sparkCount ?: 0)).coerceAtLeast(0)
+      val sad = ((dto.sadCount ?: 0) + (dto.waveCount ?: 0)).coerceAtLeast(0)
+      if (love > 0) put(VybeReaction.LOVE, love)
+      if (flame > 0) put(VybeReaction.FLAME, flame)
+      if (laugh > 0) put(VybeReaction.LAUGH, laugh)
+      if (wow > 0) put(VybeReaction.WOW, wow)
+      if (sad > 0) put(VybeReaction.SAD, sad)
     }
     val rawLikes = (dto.likesCount ?: 0).coerceAtLeast(0)
     val resolvedReactionsCount: Map<VybeReaction, Int> = when {
       !liveReactionBreakdown.isNullOrEmpty() -> liveReactionBreakdown
       dtoBreakdown.isNotEmpty() -> dtoBreakdown
-      rawLikes > 0 -> mapOf((myReaction ?: VybeReaction.PULSE) to rawLikes)
+      rawLikes > 0 -> mapOf((myReaction ?: VybeReaction.LOVE) to rawLikes)
       myReaction != null -> mapOf(myReaction to 1)
       else -> emptyMap()
     }
@@ -2772,31 +2803,41 @@ class SupabaseRepository {
         val seenKeys = mutableSetOf<String>()
         val items = rawDtos.mapNotNull { dto ->
           val id = dto.id ?: return@mapNotNull null
-          val dedupKey = if (dto.type == "COMMENT") id else "${dto.type}_${dto.actorId}_${dto.targetId}"
+          val normalizedType = dto.type.uppercase()
+          val timeBucket = (parseIsoMillis(dto.createdAt) ?: 0L) / 15_000L
+          val dedupKey = when {
+            !dto.eventKey.isNullOrBlank() -> "ek_${dto.eventKey}"
+            normalizedType in setOf("COMMENT", "COMMENT_OR_REPLY") ->
+              "cmt_${dto.actorId}_${dto.targetId}_$timeBucket"
+            else -> "${normalizedType}_${dto.actorId}_${dto.targetId}"
+          }
           if (!seenKeys.add(dedupKey)) return@mapNotNull null
 
-          val notifType = when (dto.type.uppercase()) {
+          val notifType = when (normalizedType) {
             "LIKE", "REACTION" -> com.example.data.model.NotificationType.LIKE
             "COMMENT", "COMMENT_OR_REPLY" -> com.example.data.model.NotificationType.COMMENT_OR_REPLY
             "FOLLOW", "FOLLOW_REQUEST", "FOLLOW_ACCEPTED" -> com.example.data.model.NotificationType.FOLLOW
             "DIRECT_MESSAGE", "MESSAGE" -> com.example.data.model.NotificationType.DIRECT_MESSAGE
             "GROUP_MESSAGE" -> com.example.data.model.NotificationType.GROUP_MESSAGE
-            "SECURITY_ACCOUNT_UPDATE" -> com.example.data.model.NotificationType.SECURITY_ACCOUNT_UPDATE
+            "BUSINESS_VERIFICATION_UPDATE" -> com.example.data.model.NotificationType.BUSINESS_VERIFICATION_UPDATE
+            "SECURITY_ACCOUNT_UPDATE", "ANNOUNCEMENT", "BROADCAST" -> com.example.data.model.NotificationType.SECURITY_ACCOUNT_UPDATE
             else -> com.example.data.model.NotificationType.LIKE
           }
 
           val targetPost = dto.targetId?.let { postsById[it] }
-          val isReelContent = targetPost?.mediaType?.equals("VIDEO", ignoreCase = true) == true
+          val isReelContent = targetPost?.mediaType?.equals("VIDEO", ignoreCase = true) == true ||
+            (targetPost?.isVybesReel == true)
           val previewUrl = targetPost?.postMedia?.firstOrNull()?.mediaUrl?.takeIf { it.isNotBlank() }
           val snippet = targetPost?.caption?.trim()?.takeIf { it.isNotEmpty() }
 
           val dest = when (notifType) {
             com.example.data.model.NotificationType.FOLLOW -> "USER_PROFILE"
             com.example.data.model.NotificationType.DIRECT_MESSAGE,
-            com.example.data.model.NotificationType.GROUP_MESSAGE -> "INBOX"
+            com.example.data.model.NotificationType.GROUP_MESSAGE -> "CHAT_DETAIL"
+            com.example.data.model.NotificationType.BUSINESS_VERIFICATION_UPDATE -> "VERIFICATION_CENTER"
             com.example.data.model.NotificationType.LIKE,
             com.example.data.model.NotificationType.COMMENT_OR_REPLY -> if (isReelContent) "REELS_VIEWER" else "POST_DETAIL"
-            else -> "MAIN"
+            else -> "NOTIFICATIONS"
           }
 
           val actorUser = dto.actor?.let { mapProfileDtoToUser(it) }
@@ -2805,7 +2846,7 @@ class SupabaseRepository {
             }
 
           val resolvedTitle = if (notifType == com.example.data.model.NotificationType.LIKE && actorUser != null && actorUser.username != "vyber") {
-            "@${actorUser.username} liked your ${if (isReelContent) "Reel" else "post"}"
+            "@${actorUser.username} reacted to your ${if (isReelContent) "Reel" else "post"}"
           } else {
             dto.title
           }
@@ -2823,7 +2864,8 @@ class SupabaseRepository {
             targetEntityId = dto.targetId ?: dto.actorId,
             contentPreviewUrl = previewUrl,
             contentSnippet = snippet,
-            isReel = isReelContent
+            isReel = isReelContent,
+            eventKey = dto.eventKey ?: "notif_$id"
           )
         }
         Result.success(items)
@@ -2835,6 +2877,28 @@ class SupabaseRepository {
     }
   }
 
+  fun buildCanonicalNotificationEventKey(
+    type: String,
+    actorId: String,
+    recipientId: String,
+    targetId: String?,
+    conversationId: String?,
+    message: String
+  ): String {
+    val t = type.trim().uppercase()
+    return when (t) {
+      "LIKE", "REACTION" -> "like:${targetId.orEmpty()}:$actorId"
+      "FOLLOW" -> "follow:$actorId:$recipientId"
+      "FOLLOW_REQUEST" -> "follow_request:$actorId:$recipientId"
+      "FOLLOW_ACCEPTED" -> "follow_accepted:$actorId:$recipientId"
+      "COMMENT", "COMMENT_OR_REPLY" ->
+        "comment:${targetId.orEmpty()}:$actorId:${message.trim().take(60).hashCode()}"
+      "DIRECT_MESSAGE", "GROUP_MESSAGE", "MESSAGE" ->
+        "msg:${conversationId ?: targetId.orEmpty()}:$actorId:${System.currentTimeMillis() / 2000L}"
+      else -> "${t.lowercase()}:${targetId.orEmpty()}:$actorId"
+    }
+  }
+
   suspend fun createInteractionNotificationIfNeeded(
     recipientId: String,
     actorId: String,
@@ -2842,26 +2906,568 @@ class SupabaseRepository {
     title: String,
     message: String,
     targetId: String? = null,
+    conversationId: String? = null,
+    eventKey: String? = null,
+    actorUsername: String? = null,
+    actorDisplayName: String? = null,
+    actorAvatarUrl: String? = null,
+    mediaUrl: String? = null,
+    groupName: String? = null,
     accessToken: String = ""
   ) = withContext(Dispatchers.IO) {
     if (!isConfigured || recipientId.isBlank() || actorId.isBlank() || recipientId == actorId) return@withContext
     val authHeader = authHeaderFor(accessToken) ?: return@withContext
+    val canonicalKey = eventKey?.takeIf { it.isNotBlank() }
+      ?: buildCanonicalNotificationEventKey(type, actorId, recipientId, targetId, conversationId, message)
+
+    var persistedNotifId: String? = null
     try {
-      SupabaseNetworkClient.restApi.insertNotification(
+      // Check if PostgreSQL trigger (trg_reaction_change / trg_comment_change / trg_follow_change)
+      // already inserted the corresponding notification row in the last 20 seconds so we never double-insert!
+      val recentResp = SupabaseNetworkClient.restApi.getNotifications(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
-        notification = SupabaseNotificationInsertDto(
+        recipientIdFilter = "eq.$recipientId",
+        select = "id,actor_id,type,target_id,event_key,created_at",
+        limit = 8
+      )
+      val nowMs = System.currentTimeMillis()
+      val existingMatch = recentResp.body().orEmpty().firstOrNull { row ->
+        row.eventKey == canonicalKey || (
+          row.actorId == actorId &&
+            row.type.equals(type, ignoreCase = true) &&
+            (targetId == null || row.targetId == targetId) &&
+            ((nowMs - (parseIsoMillis(row.createdAt) ?: 0L)) in -5_000L..25_000L)
+          )
+      }
+      if (existingMatch != null) {
+        persistedNotifId = existingMatch.id
+      } else {
+        val dto = SupabaseNotificationInsertDto(
           recipientId = recipientId,
           actorId = actorId,
           type = type,
           title = title,
           message = message,
-          targetId = targetId,
+          targetId = targetId ?: conversationId,
+          eventKey = canonicalKey,
           isRead = false
         )
-      )
+        var upResp = SupabaseNetworkClient.restApi.upsertNotificationByEventKey(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          notification = dto
+        )
+        if (!upResp.isSuccessful) {
+          upResp = SupabaseNetworkClient.restApi.insertNotification(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = authHeader,
+            notification = dto.copy(eventKey = null)
+          )
+        }
+        persistedNotifId = upResp.body()?.firstOrNull()?.id
+      }
     } catch (_: Exception) {
-      // Safe no-op when DB trigger already created it or RLS restricts duplicate insert
+      // Safe fallback when RLS restricts cross-user notification SELECT; still attempt deduplicated insert
+      try {
+        val upResp = SupabaseNetworkClient.restApi.upsertNotificationByEventKey(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          notification = SupabaseNotificationInsertDto(
+            recipientId = recipientId,
+            actorId = actorId,
+            type = type,
+            title = title,
+            message = message,
+            targetId = targetId ?: conversationId,
+            eventKey = canonicalKey,
+            isRead = false
+          )
+        )
+        persistedNotifId = upResp.body()?.firstOrNull()?.id
+      } catch (_: Exception) {}
+    }
+
+    // Dispatch data-only FCM HTTP v1 push + Realtime broadcast using the exact same canonicalKey!
+    com.example.notifications.VybeRealtimePushManager.sendInstantUserPush(
+      recipientId = recipientId,
+      actorId = actorId,
+      type = type,
+      title = title,
+      body = message,
+      targetId = targetId,
+      conversationId = conversationId,
+      notificationId = persistedNotifId,
+      eventKey = canonicalKey,
+      actorUsername = actorUsername,
+      actorDisplayName = actorDisplayName,
+      actorAvatarUrl = actorAvatarUrl,
+      mediaUrl = mediaUrl,
+      groupName = groupName,
+      accessToken = accessToken
+    )
+    triggerBackendPush(
+      recipientId = recipientId,
+      actorId = actorId,
+      type = type,
+      title = title,
+      body = message,
+      targetId = targetId,
+      conversationId = conversationId,
+      notificationId = persistedNotifId,
+      eventKey = canonicalKey,
+      actorUsername = actorUsername,
+      actorDisplayName = actorDisplayName,
+      actorAvatarUrl = actorAvatarUrl,
+      mediaUrl = mediaUrl,
+      groupName = groupName,
+      accessToken = accessToken
+    )
+  }
+
+  suspend fun registerDeviceToken(
+    userId: String,
+    fcmToken: String,
+    accessToken: String = ""
+  ): Boolean = withContext(Dispatchers.IO) {
+    if (!isConfigured || userId.isBlank() || fcmToken.isBlank()) return@withContext false
+    val authHeader = authHeaderFor(accessToken) ?: return@withContext false
+    val nowIso = TimestampUtils.currentIsoTimestamp()
+    val model = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".trim().take(110)
+    try {
+      val resp = SupabaseNetworkClient.restApi.upsertDeviceToken(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        body = SupabaseDeviceTokenDto(
+          userId = userId,
+          fcmToken = fcmToken,
+          deviceModel = model.ifBlank { "Android Phone" },
+          platform = "android",
+          isActive = true,
+          lastSeenAt = nowIso,
+          updatedAt = nowIso
+        )
+      )
+      if (resp.isSuccessful) {
+        return@withContext true
+      }
+    } catch (e: Exception) {
+      Log.w(TAG, "registerDeviceToken REST upsert notice: ${e.message}")
+    }
+    // Also notify backend /api/v1/push/register-token when reachable
+    try {
+      val payload = JSONObject().apply {
+        put("user_id", userId)
+        put("fcm_token", fcmToken)
+        put("device_model", model)
+      }.toString()
+      val req = okhttp3.Request.Builder()
+        .url("${SupabaseConfig.vybeBackendBaseUrl}/api/v1/push/register-token")
+        .addHeader("Authorization", authHeader)
+        .post(payload.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull()))
+        .build()
+      SupabaseNetworkClient.okHttpClient.newCall(req).execute().use { return@withContext it.isSuccessful }
+    } catch (_: Exception) {
+      return@withContext false
+    }
+  }
+
+  suspend fun unregisterDeviceToken(
+    userId: String,
+    fcmToken: String,
+    accessToken: String = ""
+  ) = withContext(Dispatchers.IO) {
+    if (!isConfigured || userId.isBlank() || fcmToken.isBlank()) return@withContext
+    val authHeader = authHeaderFor(accessToken) ?: return@withContext
+    try {
+      SupabaseNetworkClient.restApi.patchDeviceToken(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        userIdFilter = "eq.$userId",
+        fcmTokenFilter = "eq.$fcmToken",
+        patch = SupabaseDeviceTokenPatchDto(
+          isActive = false,
+          updatedAt = TimestampUtils.currentIsoTimestamp()
+        )
+      )
+    } catch (_: Exception) {}
+  }
+
+  suspend fun triggerBackendPush(
+    recipientId: String,
+    actorId: String,
+    type: String,
+    title: String,
+    body: String,
+    targetId: String? = null,
+    conversationId: String? = null,
+    notificationId: String? = null,
+    eventKey: String? = null,
+    actorUsername: String? = null,
+    actorDisplayName: String? = null,
+    actorAvatarUrl: String? = null,
+    mediaUrl: String? = null,
+    groupName: String? = null,
+    accessToken: String? = null
+  ) = withContext(Dispatchers.IO) {
+    if (recipientId.isBlank() || recipientId == actorId) return@withContext
+    val authHeader = authHeaderFor(accessToken)
+    val canonicalKey = eventKey?.takeIf { it.isNotBlank() }
+      ?: buildCanonicalNotificationEventKey(type, actorId, recipientId, targetId, conversationId, body)
+
+    val json = JSONObject().apply {
+      put("recipient_id", recipientId)
+      put("actor_id", actorId)
+      put("type", type)
+      put("title", title)
+      put("body", body)
+      put("event_key", canonicalKey)
+      if (!targetId.isNullOrBlank()) put("target_id", targetId)
+      if (!conversationId.isNullOrBlank()) put("conversation_id", conversationId)
+      if (!notificationId.isNullOrBlank()) put("notification_id", notificationId)
+      if (!actorUsername.isNullOrBlank()) put("actor_username", actorUsername)
+      if (!actorDisplayName.isNullOrBlank()) put("actor_display_name", actorDisplayName)
+      if (!actorAvatarUrl.isNullOrBlank()) put("actor_avatar_url", actorAvatarUrl)
+      if (!mediaUrl.isNullOrBlank()) put("media_url", mediaUrl)
+      if (!groupName.isNullOrBlank()) put("group_name", groupName)
+    }.toString()
+
+    val jsonBody = json.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+    // 1. Primary serverless Supabase Edge Function (`push-dispatch`) using FCM HTTP v1 data-only payload
+    var dispatched = false
+    if (isConfigured && authHeader != null) {
+      try {
+        val edgeReq = okhttp3.Request.Builder()
+          .url("${SupabaseConfig.getFunctionsBaseUrl()}push-dispatch")
+          .addHeader("apikey", SupabaseConfig.supabaseAnonKey)
+          .addHeader("Authorization", authHeader)
+          .post(jsonBody)
+          .build()
+        SupabaseNetworkClient.okHttpClient.newCall(edgeReq).execute().use { resp ->
+          dispatched = resp.isSuccessful
+        }
+      } catch (_: Exception) {}
+    }
+
+    // 2. Fallback to hosted VYBE Cloud Run push endpoint (`/api/v1/push/send`)
+    if (!dispatched && authHeader != null) {
+      try {
+        val apiReq = okhttp3.Request.Builder()
+          .url("${SupabaseConfig.vybeBackendBaseUrl}/api/v1/push/send")
+          .addHeader("Authorization", authHeader)
+          .post(jsonBody)
+          .build()
+        SupabaseNetworkClient.okHttpClient.newCall(apiReq).execute().close()
+      } catch (_: Exception) {}
+    }
+  }
+
+  suspend fun triggerBackendAdminBroadcastPush(
+    title: String,
+    body: String,
+    destination: String = "NOTIFICATIONS",
+    mediaUrl: String? = null,
+    eventKey: String,
+    accessToken: String? = null
+  ) = withContext(Dispatchers.IO) {
+    val authHeader = authHeaderFor(accessToken) ?: return@withContext
+    val json = JSONObject().apply {
+      put("broadcast", true)
+      put("title", title)
+      put("body", body)
+      put("destination", destination)
+      put("event_key", eventKey)
+      if (!mediaUrl.isNullOrBlank()) put("media_url", mediaUrl)
+    }.toString()
+    val jsonBody = json.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+
+    var dispatched = false
+    if (isConfigured) {
+      try {
+        val edgeReq = okhttp3.Request.Builder()
+          .url("${SupabaseConfig.getFunctionsBaseUrl()}push-dispatch")
+          .addHeader("apikey", SupabaseConfig.supabaseAnonKey)
+          .addHeader("Authorization", authHeader)
+          .post(jsonBody)
+          .build()
+        SupabaseNetworkClient.okHttpClient.newCall(edgeReq).execute().use { resp ->
+          dispatched = resp.isSuccessful
+        }
+      } catch (_: Exception) {}
+    }
+
+    if (!dispatched) {
+      try {
+        val apiReq = okhttp3.Request.Builder()
+          .url("${SupabaseConfig.vybeBackendBaseUrl}/api/v1/push/broadcast")
+          .addHeader("Authorization", authHeader)
+          .post(jsonBody)
+          .build()
+        SupabaseNetworkClient.okHttpClient.newCall(apiReq).execute().close()
+      } catch (_: Exception) {}
+    }
+  }
+
+  // =========================================================================
+  // OFFICIAL VYBE BADGES, APPLICATIONS & AUDIT TRAIL
+  // =========================================================================
+
+  suspend fun fetchVerificationRequests(
+    userId: String? = null,
+    status: String? = null,
+    accessToken: String? = null
+  ): Result<List<com.example.data.model.BadgeVerificationRequest>> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(emptyList())
+    val authHeader = authHeaderFor(accessToken) ?: return@withContext Result.success(emptyList())
+    try {
+      var resp = SupabaseNetworkClient.restApi.getVerificationRequests(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        userIdFilter = userId?.takeIf { it.isNotBlank() }?.let { "eq.$it" },
+        statusFilter = status?.takeIf { it.isNotBlank() }?.let { "eq.$it" }
+      )
+      if (!resp.isSuccessful) {
+        resp = SupabaseNetworkClient.restApi.getVerificationRequests(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          userIdFilter = userId?.takeIf { it.isNotBlank() }?.let { "eq.$it" },
+          statusFilter = status?.takeIf { it.isNotBlank() }?.let { "eq.$it" },
+          select = "*"
+        )
+      }
+      if (!resp.isSuccessful) {
+        return@withContext Result.failure(Exception("Failed to load badge applications (${resp.code()})."))
+      }
+      val mapped = resp.body().orEmpty().map { dto ->
+        val prof = dto.profiles?.let { mapProfileDtoToUser(it) }
+        com.example.data.model.BadgeVerificationRequest(
+          id = dto.id,
+          userId = dto.userId,
+          username = prof?.username ?: "vyber",
+          displayName = prof?.displayName?.ifBlank { dto.fullName.orEmpty() } ?: dto.fullName.orEmpty(),
+          avatarUrl = prof?.avatarUrl.orEmpty(),
+          requestType = (dto.requestType ?: "VERIFIED").uppercase(),
+          fullName = dto.fullName.orEmpty(),
+          category = dto.category.orEmpty(),
+          identityDocumentUrl = dto.identityDocumentUrl,
+          statement = dto.statement?.ifBlank { dto.adminNotes.orEmpty() } ?: dto.adminNotes.orEmpty(),
+          status = (dto.status ?: "PENDING").uppercase(),
+          rejectionReason = dto.rejectionReason,
+          adminNotes = dto.adminNotes,
+          vipExpiresAtIso = dto.vipExpiresAt,
+          userResponseStatus = (dto.userResponseStatus ?: "NONE").uppercase(),
+          createdAtIso = dto.createdAt,
+          timestampLabel = TimestampUtils.formatRelative(dto.createdAt, "Recently")
+        )
+      }
+      Result.success(mapped)
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun submitBadgeVerificationApplication(
+    userId: String,
+    requestType: String,
+    fullName: String,
+    category: String,
+    identityDocumentUrl: String?,
+    statement: String,
+    accessToken: String? = null
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.failure(Exception("Supabase backend is not configured."))
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Please sign in before submitting an application."))
+    try {
+      var resp = SupabaseNetworkClient.restApi.insertVerificationRequest(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        body = SupabaseVerificationRequestInsertDto(
+          userId = userId,
+          requestType = requestType.trim().uppercase(),
+          fullName = fullName.trim(),
+          category = category.trim(),
+          identityDocumentUrl = identityDocumentUrl?.trim()?.takeIf { it.isNotBlank() },
+          statement = statement.trim(),
+          status = "PENDING"
+        )
+      )
+      if (!resp.isSuccessful && resp.code() == 400) {
+        // Fallback if `statement` column was not yet migrated; store statement in `admin_notes`
+        val fallbackJson = JSONObject().apply {
+          put("user_id", userId)
+          put("request_type", requestType.trim().uppercase())
+          put("full_name", fullName.trim())
+          put("category", category.trim())
+          if (!identityDocumentUrl.isNullOrBlank()) put("identity_document_url", identityDocumentUrl.trim())
+          put("admin_notes", statement.trim())
+          put("status", "PENDING")
+        }.toString()
+        val req = okhttp3.Request.Builder()
+          .url("${SupabaseConfig.getRestBaseUrl()}verification_requests")
+          .addHeader("apikey", SupabaseConfig.supabaseAnonKey)
+          .addHeader("Authorization", authHeader)
+          .addHeader("Prefer", "return=minimal")
+          .post(fallbackJson.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull()))
+          .build()
+        SupabaseNetworkClient.okHttpClient.newCall(req).execute().use { r ->
+          if (r.isSuccessful) return@withContext Result.success(Unit)
+        }
+      }
+      if (resp.isSuccessful) Result.success(Unit)
+      else Result.failure(Exception(parseErrorMessage(resp.errorBody()?.string().orEmpty(), "Unable to submit application.")))
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Network error submitting badge application.")))
+    }
+  }
+
+  suspend fun adminAssignOfficialBadge(
+    adminId: String,
+    targetUserId: String,
+    badgeCategory: String,
+    isGrant: Boolean,
+    vipExpiresAtIso: String? = null,
+    reason: String? = null,
+    requireAcceptance: Boolean = false,
+    workerMandatory: Boolean = false,
+    accessToken: String? = null
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.failure(Exception("Supabase backend is not configured."))
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Admin authentication required."))
+    try {
+      val rpcResp = SupabaseNetworkClient.restApi.adminAssignBadgeRpc(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        request = SupabaseRpcAdminAssignBadgeRequest(
+          targetUserId = targetUserId,
+          badgeCategory = badgeCategory.trim().uppercase(),
+          isGrant = isGrant,
+          adminId = adminId,
+          vipExpiresAt = vipExpiresAtIso?.trim()?.takeIf { it.isNotBlank() },
+          reason = reason?.trim()?.takeIf { it.isNotBlank() },
+          requireAcceptance = requireAcceptance,
+          workerMandatory = workerMandatory
+        )
+      )
+      if (rpcResp.isSuccessful) {
+        return@withContext Result.success(Unit)
+      }
+      // Fallback to hosted VYBE admin API endpoint (`/api/v1/admin/badges/assign`)
+      val apiJson = JSONObject().apply {
+        put("target_user_id", targetUserId)
+        put("badge_category", badgeCategory.trim().uppercase())
+        put("is_grant", isGrant)
+        if (!vipExpiresAtIso.isNullOrBlank()) put("vip_expires_at", vipExpiresAtIso.trim())
+        if (!reason.isNullOrBlank()) put("reason", reason.trim())
+        put("require_acceptance", requireAcceptance)
+        put("worker_mandatory", workerMandatory)
+      }.toString()
+      val req = okhttp3.Request.Builder()
+        .url("${SupabaseConfig.vybeBackendBaseUrl}/api/v1/admin/badges/assign")
+        .addHeader("Authorization", authHeader)
+        .post(apiJson.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull()))
+        .build()
+      SupabaseNetworkClient.okHttpClient.newCall(req).execute().use { r ->
+        if (r.isSuccessful) return@withContext Result.success(Unit)
+      }
+      val errText = parseErrorMessage(rpcResp.errorBody()?.string().orEmpty(), "Admin badge update failed (${rpcResp.code()}).")
+      Result.failure(Exception(errText))
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Failed to update user badge.")))
+    }
+  }
+
+  suspend fun adminReviewBadgeApplication(
+    adminId: String,
+    requestId: String,
+    decision: String,
+    notes: String?,
+    vipExpiresAtIso: String? = null,
+    accessToken: String? = null
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.failure(Exception("Supabase backend is not configured."))
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Admin authentication required."))
+    try {
+      val rpcResp = SupabaseNetworkClient.restApi.adminReviewVerificationRequestRpc(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        request = SupabaseRpcAdminReviewVerificationRequest(
+          requestId = requestId,
+          decision = decision.trim().uppercase(),
+          notes = notes?.trim()?.takeIf { it.isNotBlank() },
+          adminId = adminId,
+          vipExpiresAt = vipExpiresAtIso?.trim()?.takeIf { it.isNotBlank() }
+        )
+      )
+      if (rpcResp.isSuccessful) return@withContext Result.success(Unit)
+      val errText = parseErrorMessage(rpcResp.errorBody()?.string().orEmpty(), "Unable to review application (${rpcResp.code()}).")
+      Result.failure(Exception(errText))
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Network error reviewing badge application.")))
+    }
+  }
+
+  suspend fun respondToBadgeOfferRemote(
+    userId: String,
+    action: String,
+    accessToken: String? = null
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Authentication required."))
+    val actionUpper = action.trim().uppercase()
+    try {
+      val rpcResp = SupabaseNetworkClient.restApi.userRespondBadgeOfferRpc(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        request = SupabaseRpcUserRespondBadgeOfferRequest(action = actionUpper)
+      )
+      if (rpcResp.isSuccessful) return@withContext Result.success(Unit)
+
+      // Safe fallback to self-profile badge_display_status patch (RLS allows self update of display status only)
+      val displayValue = when (actionUpper) {
+        "DECLINE" -> "DECLINED"
+        "HIDE" -> "HIDDEN"
+        else -> "ACCEPTED"
+      }
+      val patchResp = SupabaseNetworkClient.restApi.patchProfile(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        idFilter = "eq.$userId",
+        patch = SupabaseProfilePatchDto(badgeDisplayStatus = displayValue)
+      )
+      if (patchResp.isSuccessful) Result.success(Unit)
+      else Result.failure(Exception(parseErrorMessage(rpcResp.errorBody()?.string().orEmpty(), "Unable to update badge preference.")))
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Unable to update badge preference.")))
+    }
+  }
+
+  suspend fun fetchAdminAuditLogsRemote(accessToken: String? = null): List<com.example.data.model.AdminAuditLog> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext emptyList()
+    val authHeader = authHeaderFor(accessToken) ?: return@withContext emptyList()
+    try {
+      val resp = SupabaseNetworkClient.restApi.getAdminAuditLogs(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader
+      )
+      if (!resp.isSuccessful) return@withContext emptyList()
+      resp.body().orEmpty().map { dto ->
+        com.example.data.model.AdminAuditLog(
+          id = dto.id,
+          adminEmail = dto.adminEmail ?: dto.adminId ?: "admin@vybe.social",
+          adminRole = "Administrator",
+          action = dto.action ?: "ADMIN_ACTION",
+          targetType = dto.targetType ?: "USER",
+          targetId = dto.targetId ?: "",
+          details = dto.details?.toString() ?: "",
+          timestamp = TimestampUtils.formatRelative(dto.createdAt, "Recently")
+        )
+      }
+    } catch (_: Exception) {
+      emptyList()
     }
   }
 
@@ -2910,6 +3516,27 @@ class SupabaseRepository {
       if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to delete notification"))
     } catch (e: Exception) {
       Result.failure(e)
+    }
+  }
+
+  suspend fun fetchReelsByMusicTrack(
+    trackId: String,
+    currentUserId: String? = null,
+    accessToken: String = ""
+  ): Result<List<Post>> = withContext(Dispatchers.IO) {
+    val cleanId = trackId.trim()
+    if (!isConfigured || cleanId.isBlank()) return@withContext Result.success(emptyList())
+    val postsRes = fetchPosts(
+      currentUserId = currentUserId,
+      accessToken = accessToken,
+      offset = 0,
+      limit = 80
+    )
+    postsRes.map { posts ->
+      posts.filter { post ->
+        post.musicAttachment?.trackId == cleanId ||
+          post.audioTrackTitle?.contains(cleanId, ignoreCase = true) == true
+      }
     }
   }
 

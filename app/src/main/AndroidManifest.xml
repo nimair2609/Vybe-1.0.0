@@ -68,23 +68,19 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="vybe" android:host="profile" />
             </intent-filter>
-            <!-- Web / HTTPS Production Deep Link Callback & Canonical Profile Fallback -->
-            <intent-filter>
+            <!-- Web / HTTPS Production Deep Link Callback & Canonical Profile QR Links -->
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="ais-pre-7xxm4tly64qi3ais5txcm3-760594321314.asia-northeast1.run.app" android:pathPrefix="/auth/callback" />
-                <data android:scheme="https" android:host="ais-pre-7xxm4tly64qi3ais5txcm3-760594321314.asia-northeast1.run.app" android:pathPrefix="/reset-password" />
-                <data android:scheme="https" android:host="ais-pre-7xxm4tly64qi3ais5txcm3-760594321314.asia-northeast1.run.app" android:pathPrefix="/profile" />
-                <data android:scheme="https" android:host="ais-pre-7xxm4tly64qi3ais5txcm3-760594321314.asia-northeast1.run.app" android:pathPrefix="/u" />
-                <data android:scheme="https" android:host="ais-dev-7xxm4tly64qi3ais5txcm3-760594321314.asia-northeast1.run.app" android:pathPrefix="/auth/callback" />
-                <data android:scheme="https" android:host="ais-dev-7xxm4tly64qi3ais5txcm3-760594321314.asia-northeast1.run.app" android:pathPrefix="/reset-password" />
-                <data android:scheme="https" android:host="ais-dev-7xxm4tly64qi3ais5txcm3-760594321314.asia-northeast1.run.app" android:pathPrefix="/profile" />
-                <data android:scheme="https" android:host="ais-dev-7xxm4tly64qi3ais5txcm3-760594321314.asia-northeast1.run.app" android:pathPrefix="/u" />
-                <data android:scheme="https" android:host="ais-dev-ms5nkc6key5usu7rzmjfqx-730319811920.asia-northeast1.run.app" android:pathPrefix="/auth/callback" />
-                <data android:scheme="https" android:host="ais-dev-ms5nkc6key5usu7rzmjfqx-730319811920.asia-northeast1.run.app" android:pathPrefix="/reset-password" />
-                <data android:scheme="https" android:host="ais-dev-ms5nkc6key5usu7rzmjfqx-730319811920.asia-northeast1.run.app" android:pathPrefix="/profile" />
-                <data android:scheme="https" android:host="ais-dev-ms5nkc6key5usu7rzmjfqx-730319811920.asia-northeast1.run.app" android:pathPrefix="/u" />
+                <data android:scheme="https" android:host="ais-pre-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app" android:pathPrefix="/auth/callback" />
+                <data android:scheme="https" android:host="ais-pre-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app" android:pathPrefix="/reset-password" />
+                <data android:scheme="https" android:host="ais-pre-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app" android:pathPrefix="/profile" />
+                <data android:scheme="https" android:host="ais-pre-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app" android:pathPrefix="/u" />
+                <data android:scheme="https" android:host="ais-dev-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app" android:pathPrefix="/auth/callback" />
+                <data android:scheme="https" android:host="ais-dev-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app" android:pathPrefix="/reset-password" />
+                <data android:scheme="https" android:host="ais-dev-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app" android:pathPrefix="/profile" />
+                <data android:scheme="https" android:host="ais-dev-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app" android:pathPrefix="/u" />
             </intent-filter>
         </activity>
 
@@ -126,7 +122,7 @@
             android:resource="@color/vybe_violet" />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="vybe_primary_notifications" />
+            android:value="vybe_activity_high_v2" />
     </application>
 
 </manifest>

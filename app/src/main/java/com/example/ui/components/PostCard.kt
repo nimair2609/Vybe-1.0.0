@@ -67,6 +67,7 @@ fun PostCard(
   isHighlighted: Boolean = false,
   isFollowing: Boolean = false,
   isFollowRequested: Boolean = false,
+  followsMe: Boolean = post.author.followsMe,
   onFollowClick: (() -> Unit)? = null,
   onToggleAudio: ((Boolean) -> Unit)? = null,
   onOpenMusicTrack: ((MusicAttachment) -> Unit)? = null,
@@ -215,9 +216,10 @@ fun PostCard(
           VybeFollowButton(
             isFollowing = isFollowing,
             isFollowRequested = isFollowRequested,
+            followsMe = followsMe,
             onClick = { onFollowClick.invoke() },
             compact = true,
-            modifier = Modifier.testTag("follow_button_${post.id}")
+            testTag = "follow_button_${post.id}"
           )
           Spacer(modifier = Modifier.width(6.dp))
         }
@@ -519,7 +521,7 @@ fun PostCard(
 
       // Action Bar: Signature 🫰 Reaction with count, Comment with count, Share with count
       Spacer(modifier = Modifier.height(14.dp))
-      val displayedCommentsCount = maxOf(post.commentsCount, post.comments.size)
+      val displayedCommentsCount = if (post.comments.isNotEmpty()) post.comments.size else post.commentsCount.coerceAtLeast(0)
 
       Row(
         modifier = Modifier.fillMaxWidth(),
@@ -651,6 +653,7 @@ fun PostCard(
                   fontWeight = FontWeight.Bold,
                   color = Color.White
                 )
+                VerificationBadge(user = topComment.author, iconSize = 14.dp)
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                   text = previewContent,
@@ -700,15 +703,15 @@ fun PostCard(
           modifier = Modifier
             .fillMaxWidth()
             .clickable { showCommentDialog = true }
-            .padding(vertical = 4.dp),
+            .padding(vertical = 4.dp)
+            .testTag("view_all_comments_${post.id}"),
           verticalAlignment = Alignment.CenterVertically
         ) {
           Text(
             text = if (displayedCommentsCount > 0) "View all $displayedCommentsCount comments >" else "Add a comment...",
             fontSize = 12.sp,
             color = if (displayedCommentsCount > 0) Color(0xFF818CF8) else Color.White.copy(alpha = 0.45f),
-            fontWeight = if (displayedCommentsCount > 0) FontWeight.Medium else FontWeight.Normal,
-            modifier = Modifier.testTag("view_all_comments_${post.id}")
+            fontWeight = if (displayedCommentsCount > 0) FontWeight.Medium else FontWeight.Normal
           )
         }
       }
@@ -717,7 +720,7 @@ fun PostCard(
 
   // VYBE Comments Bottom Sheet (Keyboard-safe)
   if (showCommentDialog) {
-    val displayedCount = maxOf(post.commentsCount, post.comments.size)
+    val displayedCount = if (post.comments.isNotEmpty()) post.comments.size else post.commentsCount.coerceAtLeast(0)
     val commentSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
       onDismissRequest = { showCommentDialog = false },
@@ -795,6 +798,7 @@ fun PostCard(
                   Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                       Text(comment.author.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                      VerificationBadge(user = comment.author, iconSize = 15.dp)
                       if (commentRelativeTime.isNotBlank()) {
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(commentRelativeTime, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -914,6 +918,8 @@ fun PostCard(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        val effectiveCommentTotal = if (post.comments.isNotEmpty()) post.comments.size else post.commentsCount.coerceAtLeast(0)
+
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -952,7 +958,7 @@ fun PostCard(
           }
           AnalyticsMetricCard(
             title = "Comments",
-            value = "${maxOf(post.commentsCount, post.comments.size)}",
+            value = "$effectiveCommentTotal",
             icon = Icons.Default.ChatBubble,
             iconTint = VybeViolet,
             modifier = Modifier.weight(1f)
@@ -979,7 +985,7 @@ fun PostCard(
             iconTint = VybeBrandCyan,
             modifier = Modifier.weight(1f)
           )
-          val totalInteractions = post.likesCount + maxOf(post.commentsCount, post.comments.size) + post.savesCount
+          val totalInteractions = post.likesCount + effectiveCommentTotal + post.savesCount
           val rate = ((totalInteractions.toFloat() / post.viewsCount.coerceAtLeast(1).toFloat()) * 100).let { "%.1f".format(it) }
           AnalyticsMetricCard(
             title = "Engagement",

@@ -86,8 +86,12 @@ data class MusicAttachment(
   val artist: String = "",
   val previewUrl: String? = null,
   val streamUrl: String? = previewUrl,
+  val startTimeSeconds: Int = 0,
   val durationSeconds: Int = 30,
-  val coverUrl: String? = null
+  val musicVolume: Float = 0.85f,
+  val originalAudioVolume: Float = 1.0f,
+  val coverUrl: String? = null,
+  val isRenderedWithMixedAudio: Boolean = false
 ) {
   val displayLabel: String
     get() = if (artist.isNotBlank()) "$title — $artist" else title
@@ -97,7 +101,9 @@ data class MusicAttachment(
     title = title.trim(),
     artist = artist.trim(),
     previewUrl = previewUrl?.trim()?.ifBlank { null },
-    streamUrl = (streamUrl ?: previewUrl)?.trim()?.ifBlank { null }
+    streamUrl = (streamUrl ?: previewUrl)?.trim()?.ifBlank { null },
+    musicVolume = musicVolume.coerceIn(0f, 1f),
+    originalAudioVolume = originalAudioVolume.coerceIn(0f, 1f)
   )
 }
 

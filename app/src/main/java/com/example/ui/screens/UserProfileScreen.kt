@@ -56,10 +56,12 @@ import kotlinx.coroutines.launch
 @Composable
 fun UserProfileScreen(viewModel: VybeViewModel) {
   BackHandler {
+    viewModel.clearProfileLookupError()
     viewModel.navigateBack()
   }
 
   val profileUser by viewModel.selectedUserProfile.collectAsState()
+  val profileLookupError by viewModel.profileLookupError.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
   val posts by viewModel.posts.collectAsState()
   val followingUserIds by viewModel.followingUserIds.collectAsState()
@@ -99,9 +101,88 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
   var photoActionTarget by remember { mutableStateOf<String?>(null) } // "AVATAR" or "BANNER"
   var showPhotoActionSheet by remember { mutableStateOf(false) }
 
-  if (profileUser == null && currentUser == null) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-      Text("User not found")
+  if (profileLookupError != null || (profileUser == null && currentUser == null)) {
+    Scaffold(
+      topBar = {
+        TopAppBar(
+          navigationIcon = {
+            IconButton(
+              onClick = {
+                viewModel.clearProfileLookupError()
+                viewModel.navigateBack()
+              },
+              modifier = Modifier.testTag("profile_unavailable_back_button")
+            ) {
+              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+          },
+          title = { Text("Profile Unavailable", fontWeight = FontWeight.Bold) },
+          colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+        )
+      }
+    ) { errPadding ->
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .padding(errPadding)
+          .padding(28.dp)
+          .testTag("profile_unavailable_state"),
+        contentAlignment = Alignment.Center
+      ) {
+        Card(
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
+          shape = RoundedCornerShape(20.dp),
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+          modifier = Modifier.widthIn(max = 420.dp).fillMaxWidth()
+        ) {
+          Column(
+            modifier = Modifier.padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+          ) {
+            Surface(
+              shape = CircleShape,
+              color = VybeDanger.copy(alpha = 0.14f),
+              modifier = Modifier.size(60.dp)
+            ) {
+              Box(contentAlignment = Alignment.Center) {
+                Icon(
+                  Icons.Default.PersonOff,
+                  contentDescription = "Profile Unavailable",
+                  tint = VybeDanger,
+                  modifier = Modifier.size(30.dp)
+                )
+              }
+            }
+            Spacer(modifier = Modifier.height(14.dp))
+            Text(
+              text = "Profile Unavailable",
+              style = MaterialTheme.typography.titleMedium,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+              text = profileLookupError ?: "This VYBE profile link may be invalid, or the account is no longer available.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              textAlign = TextAlign.Center,
+              lineHeight = 18.sp
+            )
+            Spacer(modifier = Modifier.height(18.dp))
+            Button(
+              onClick = {
+                viewModel.clearProfileLookupError()
+                viewModel.navigateBack()
+              },
+              colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+              shape = RoundedCornerShape(12.dp),
+              modifier = Modifier.heightIn(min = 48.dp)
+            ) {
+              Text("Go Back", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+          }
+        }
+      }
     }
     return
   }
@@ -249,7 +330,10 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
       TopAppBar(
         navigationIcon = {
           IconButton(
-            onClick = { viewModel.navigateBack() },
+            onClick = {
+              viewModel.clearProfileLookupError()
+              viewModel.navigateBack()
+            },
             modifier = Modifier.testTag("profile_back_button")
           ) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -335,10 +419,11 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
                   leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
                   onClick = {
                     showPeerMenu = false
+                    val canonicalLink = com.example.util.QrCodeGenerator.buildCanonicalProfileUrl(user.id, user.username)
                     val shareIntent = Intent(Intent.ACTION_SEND).apply {
                       type = "text/plain"
                       putExtra(Intent.EXTRA_SUBJECT, "VYBE - @${user.username}")
-                      putExtra(Intent.EXTRA_TEXT, "Connect with @${user.username} on VYBE (ID: ${user.publicVybeId})")
+                      putExtra(Intent.EXTRA_TEXT, "Connect with ${user.displayName} (@${user.username}) on VYBE:\n$canonicalLink")
                     }
                     context.startActivity(Intent.createChooser(shareIntent, "Share Profile"))
                   }
@@ -500,7 +585,11 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
               fontWeight = FontWeight.Bold
             )
             Spacer(modifier = Modifier.width(6.dp))
-            VerificationBadge(user = user)
+            VerificationBadge(
+              user = user,
+              iconSize = 20.dp,
+              enableExplanationDialog = true
+            )
             if (user.isOnline) {
               Spacer(modifier = Modifier.width(8.dp))
               Surface(
@@ -572,6 +661,39 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
                   modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                 )
+              }
+            }
+          }
+
+          if (isMe && user.isPendingBadgeAcceptance && (user.isVerified || user.hasActiveVip || user.isVerifiedBusiness || user.isWorker)) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Card(
+              colors = CardDefaults.cardColors(containerColor = VybeVerifiedGold.copy(alpha = 0.14f)),
+              shape = RoundedCornerShape(12.dp),
+              border = BorderStroke(1.dp, VybeVerifiedGold.copy(alpha = 0.55f)),
+              modifier = Modifier.fillMaxWidth().testTag("profile_pending_badge_banner")
+            ) {
+              Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+              ) {
+                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                  Text("Official VYBE Badge Approved", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                  Text(
+                    "Review and accept your official badge to display it publicly.",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                }
+                Button(
+                  onClick = { viewModel.navigateTo(Screen.VERIFICATION_CENTER) },
+                  colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                  shape = RoundedCornerShape(10.dp),
+                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                  Text("Review", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                }
               }
             }
           }
@@ -764,43 +886,34 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
               ) {
-                val followLabel = when {
-                  isBlocked -> "Unblock"
-                  isFollowed -> "Following"
-                  isFollowRequested -> "Requested"
-                  followsMe -> "Follow Back"
-                  else -> "Follow"
-                }
-                val followContainer = when {
-                  isBlocked -> VybeDanger
-                  isFollowed || isFollowRequested -> MaterialTheme.colorScheme.surfaceVariant
-                  else -> VybeViolet
-                }
-                val followTextColor = when {
-                  isFollowed || isFollowRequested -> MaterialTheme.colorScheme.onSurface
-                  else -> Color.White
-                }
-
-                Button(
-                  onClick = {
-                    if (isBlocked) {
-                      viewModel.toggleBlockUser(user.id)
-                    } else {
-                      viewModel.toggleFollowUser(user.id)
-                    }
-                  },
-                  colors = ButtonDefaults.buttonColors(containerColor = followContainer),
-                  shape = RoundedCornerShape(12.dp),
-                  modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 48.dp)
-                    .testTag("follow_user_button")
-                ) {
-                  Text(
-                    text = followLabel,
-                    color = followTextColor,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1
+                if (isBlocked) {
+                  Button(
+                    onClick = { viewModel.toggleBlockUser(user.id) },
+                    colors = ButtonDefaults.buttonColors(containerColor = VybeDanger),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                      .weight(1f)
+                      .heightIn(min = 48.dp)
+                      .testTag("follow_user_button")
+                  ) {
+                    Text(
+                      text = "Unblock",
+                      color = Color.White,
+                      fontWeight = FontWeight.Bold,
+                      maxLines = 1
+                    )
+                  }
+                } else {
+                  com.example.ui.components.VybeFollowButton(
+                    isFollowing = isFollowed,
+                    isFollowRequested = isFollowRequested,
+                    followsMe = followsMe,
+                    onClick = { viewModel.toggleFollowUser(user.id) },
+                    compact = false,
+                    modifier = Modifier
+                      .weight(1f)
+                      .heightIn(min = 48.dp)
+                      .testTag("follow_user_button")
                   )
                 }
 
@@ -1078,15 +1191,25 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
           PostCard(
             post = post,
             onLikeClick = { viewModel.toggleLike(post.id) },
+            onReact = { rx -> viewModel.reactToPost(post.id, rx) },
             onSaveClick = { viewModel.toggleSave(post.id) },
             onCommentClick = { viewModel.loadCommentsForPost(post.id) },
+            onLoadComments = { viewModel.loadCommentsForPost(post.id) },
             onAddComment = { text -> viewModel.addComment(post.id, text) },
             onShareClick = {},
             onUserClick = { viewModel.openUserProfile(post.author) },
             onRemixClick = { viewModel.openReelViewer(post.id) },
             onDeleteClick = { viewModel.deletePost(post.id) },
             onPostViewed = { viewModel.recordPostView(it) },
-            currentUserId = currentUser?.id
+            currentUserId = currentUser?.id,
+            isFollowing = followingUserIds.contains(post.author.id),
+            isFollowRequested = requestedFollowUserIds.contains(post.author.id) || post.author.isFollowRequestedByMe,
+            followsMe = post.author.followsMe,
+            onFollowClick = if (post.author.id != currentUser?.id) {
+              { viewModel.toggleFollowUser(post.author.id) }
+            } else {
+              null
+            }
           )
         }
       }
@@ -1607,20 +1730,13 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
                 if (u.id != currentUser?.id) {
                   val isUFollowed = followingUserIds.contains(u.id)
                   val isURequested = requestedFollowUserIds.contains(u.id) || u.isFollowRequestedByMe
-                  OutlinedButton(
+                  com.example.ui.components.VybeFollowButton(
+                    isFollowing = isUFollowed,
+                    isFollowRequested = isURequested,
+                    followsMe = u.followsMe,
                     onClick = { viewModel.toggleFollowUser(u.id) },
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                    shape = RoundedCornerShape(8.dp)
-                  ) {
-                    Text(
-                      text = when {
-                        isUFollowed -> "Following"
-                        isURequested -> "Requested"
-                        else -> "Follow"
-                      },
-                      fontSize = 11.sp
-                    )
-                  }
+                    compact = true
+                  )
                 }
               }
             }

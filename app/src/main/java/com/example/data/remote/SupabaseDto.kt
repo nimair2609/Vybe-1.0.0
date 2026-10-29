@@ -99,6 +99,15 @@ data class SupabaseProfileDto(
   val role: String? = "USER",
   @Json(name = "is_verified") val isVerified: Boolean? = false,
   @Json(name = "is_vip") val isVip: Boolean? = false,
+  @Json(name = "is_verified_public_figure") val isVerifiedPublicFigure: Boolean? = false,
+  @Json(name = "is_verified_business") val isVerifiedBusiness: Boolean? = false,
+  @Json(name = "is_worker") val isWorker: Boolean? = false,
+  @Json(name = "worker_badge_mandatory") val workerBadgeMandatory: Boolean? = false,
+  @Json(name = "vip_expires_at") val vipExpiresAt: String? = null,
+  @Json(name = "badge_approval_status") val badgeApprovalStatus: String? = "ACCEPTED",
+  @Json(name = "badge_display_status") val badgeDisplayStatus: String? = "ACCEPTED",
+  @Json(name = "badge_type") val badgeType: String? = null,
+  @Json(name = "is_deactivated") val isDeactivated: Boolean? = false,
   @Json(name = "is_private_account") val isPrivateAccount: Boolean? = false,
   @Json(name = "message_privacy") val messagePrivacy: String? = "EVERYONE",
   @Json(name = "followers_count") val followersCount: Int? = 0,
@@ -124,7 +133,8 @@ data class SupabaseProfilePatchDto(
   @Json(name = "is_private_account") val isPrivateAccount: Boolean? = null,
   @Json(name = "message_privacy") val messagePrivacy: String? = null,
   @Json(name = "live_pulse") val livePulse: String? = null,
-  @Json(name = "last_seen_at") val lastSeenAt: String? = null
+  @Json(name = "last_seen_at") val lastSeenAt: String? = null,
+  @Json(name = "badge_display_status") val badgeDisplayStatus: String? = null
 )
 
 data class SupabasePresencePatchDto(
@@ -203,7 +213,7 @@ data class SupabaseCommentInsertDto(
 data class SupabaseReactionDto(
   @Json(name = "post_id") val postId: String,
   @Json(name = "user_id") val userId: String,
-  @Json(name = "reaction_type") val reactionType: String = "PULSE",
+  @Json(name = "reaction_type") val reactionType: String = "LOVE",
   @Json(name = "created_at") val createdAt: String? = null
 )
 
@@ -221,6 +231,7 @@ data class SupabaseNotificationDto(
   val title: String,
   val message: String,
   @Json(name = "target_id") val targetId: String? = null,
+  @Json(name = "event_key") val eventKey: String? = null,
   @Json(name = "is_read") val isRead: Boolean? = false,
   @Json(name = "created_at") val createdAt: String? = null,
   val actor: SupabaseProfileDto? = null
@@ -237,6 +248,7 @@ data class SupabaseNotificationInsertDto(
   val title: String,
   val message: String,
   @Json(name = "target_id") val targetId: String? = null,
+  @Json(name = "event_key") val eventKey: String? = null,
   @Json(name = "is_read") val isRead: Boolean = false
 )
 
@@ -347,10 +359,14 @@ data class SupabasePostDto(
   @Json(name = "is_spiritual") val isSpiritual: Boolean? = false,
   @Json(name = "is_archived") val isArchived: Boolean? = false,
   @Json(name = "likes_count") val likesCount: Int? = 0,
+  @Json(name = "love_count") val loveCount: Int? = 0,
+  @Json(name = "flame_count") val flameCount: Int? = 0,
+  @Json(name = "laugh_count") val laughCount: Int? = 0,
+  @Json(name = "wow_count") val wowCount: Int? = 0,
+  @Json(name = "sad_count") val sadCount: Int? = 0,
   @Json(name = "pulse_count") val pulseCount: Int? = 0,
   @Json(name = "spark_count") val sparkCount: Int? = 0,
   @Json(name = "wave_count") val waveCount: Int? = 0,
-  @Json(name = "flame_count") val flameCount: Int? = 0,
   @Json(name = "comments_count") val commentsCount: Int? = 0,
   @Json(name = "saves_count") val savesCount: Int? = 0,
   @Json(name = "views_count") val viewsCount: Int? = 0,
@@ -937,6 +953,84 @@ data class SupabaseCommunityCommentInsertDto(
   @Json(name = "post_id") val postId: String,
   @Json(name = "author_id") val authorId: String,
   val content: String
+)
+
+// --- FCM DEVICE TOKENS & PUSH DISPATCH ---
+data class SupabaseDeviceTokenDto(
+  @Json(name = "user_id") val userId: String,
+  @Json(name = "fcm_token") val fcmToken: String,
+  @Json(name = "device_model") val deviceModel: String = "Android Phone",
+  val platform: String = "android",
+  @Json(name = "is_active") val isActive: Boolean = true,
+  @Json(name = "last_seen_at") val lastSeenAt: String? = null,
+  @Json(name = "updated_at") val updatedAt: String? = null
+)
+
+data class SupabaseDeviceTokenPatchDto(
+  @Json(name = "is_active") val isActive: Boolean,
+  @Json(name = "updated_at") val updatedAt: String
+)
+
+// --- VERIFICATION REQUESTS & OFFICIAL VYBE BADGE RPCs ---
+data class SupabaseVerificationRequestDto(
+  val id: String,
+  @Json(name = "user_id") val userId: String,
+  @Json(name = "request_type") val requestType: String? = "VERIFIED",
+  @Json(name = "full_name") val fullName: String? = "",
+  val category: String? = "",
+  @Json(name = "identity_document_url") val identityDocumentUrl: String? = null,
+  val statement: String? = "",
+  val status: String? = "PENDING",
+  @Json(name = "rejection_reason") val rejectionReason: String? = null,
+  @Json(name = "admin_notes") val adminNotes: String? = null,
+  @Json(name = "vip_expires_at") val vipExpiresAt: String? = null,
+  @Json(name = "user_response_status") val userResponseStatus: String? = "NONE",
+  @Json(name = "created_at") val createdAt: String? = null,
+  val profiles: SupabaseProfileDto? = null
+)
+
+data class SupabaseVerificationRequestInsertDto(
+  @Json(name = "user_id") val userId: String,
+  @Json(name = "request_type") val requestType: String,
+  @Json(name = "full_name") val fullName: String,
+  val category: String,
+  @Json(name = "identity_document_url") val identityDocumentUrl: String? = null,
+  val statement: String = "",
+  val status: String = "PENDING"
+)
+
+data class SupabaseRpcAdminAssignBadgeRequest(
+  @Json(name = "p_target_user_id") val targetUserId: String,
+  @Json(name = "p_badge_category") val badgeCategory: String,
+  @Json(name = "p_is_grant") val isGrant: Boolean = true,
+  @Json(name = "p_admin_id") val adminId: String? = null,
+  @Json(name = "p_vip_expires_at") val vipExpiresAt: String? = null,
+  @Json(name = "p_reason") val reason: String? = null,
+  @Json(name = "p_require_acceptance") val requireAcceptance: Boolean = false,
+  @Json(name = "p_worker_mandatory") val workerMandatory: Boolean = false
+)
+
+data class SupabaseRpcAdminReviewVerificationRequest(
+  @Json(name = "p_request_id") val requestId: String,
+  @Json(name = "p_decision") val decision: String, // APPROVED, REJECTED, MORE_INFO_REQUIRED
+  @Json(name = "p_notes") val notes: String? = null,
+  @Json(name = "p_admin_id") val adminId: String? = null,
+  @Json(name = "p_vip_expires_at") val vipExpiresAt: String? = null
+)
+
+data class SupabaseRpcUserRespondBadgeOfferRequest(
+  @Json(name = "p_action") val action: String // ACCEPT, DECLINE, HIDE, SHOW
+)
+
+data class SupabaseAuditLogDto(
+  val id: String,
+  @Json(name = "admin_id") val adminId: String? = null,
+  @Json(name = "admin_email") val adminEmail: String? = null,
+  val action: String? = "",
+  @Json(name = "target_type") val targetType: String? = "",
+  @Json(name = "target_id") val targetId: String? = "",
+  val details: Any? = null,
+  @Json(name = "created_at") val createdAt: String? = null
 )
 
 

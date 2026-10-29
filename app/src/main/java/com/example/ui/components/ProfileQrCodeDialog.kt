@@ -42,8 +42,11 @@ fun ProfileQrCodeDialog(
   onDismiss: () -> Unit
 ) {
   val context = LocalContext.current
-  val shareUrl = remember(user.username, user.publicVybeId) {
-    QrCodeGenerator.buildProfileShareUrl(user.username, user.publicVybeId)
+  val shareUrl = remember(user.id, user.username) {
+    QrCodeGenerator.buildCanonicalProfileUrl(
+      immutableUserId = user.id,
+      username = user.username
+    )
   }
 
   // Generate crisp QR bitmap in background
@@ -212,7 +215,7 @@ fun ProfileQrCodeDialog(
                   putExtra(Intent.EXTRA_SUBJECT, "Connect with @${user.username} on VYBE")
                   putExtra(
                     Intent.EXTRA_TEXT,
-                    "Connect with @${user.username} on VYBE! Scan QR or open: $shareUrl (Public ID: ${user.publicVybeId})"
+                    "Connect with @${user.username} on VYBE: $shareUrl"
                   )
                 }
                 context.startActivity(Intent.createChooser(shareIntent, "Share Profile QR"))

@@ -15,6 +15,10 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -120,98 +124,184 @@ fun VybeAvatar(
 
 /**
  * Official VYBE 3-Tier Authority Badges:
- * 1. VYBE Verified (Blue Tick): Public profile authenticity.
- * 2. VYBE VIP / Shop (Gold Badge): VIP Creator star / Verified Shop business icon.
- * 3. VYBE Worker (Green Tick): Verified VYBE employee/worker.
- * Honors user preference: Hidden if badgeDisplayStatus is 'HIDDEN' or 'DECLINED'.
+ * 1. VYBE Verified (Blue Tick): Public profile authenticity confirmed by admin review.
+ * 2. VYBE VIP / Shop (Gold Badge): Active VIP Creator star (honors vipExpiresAtIso) or Verified Business storefront.
+ * 3. VYBE Worker (Green Tick): Authorized VYBE employee/worker confirmed by admin.
+ *
+ * Strictly enforces:
+ * - Never auto-grants badges based on ADMIN/MODERATOR role or follower count.
+ * - Never displays badges while in PENDING_ACCEPTANCE, HIDDEN (unless mandatory worker policy), or DECLINED state.
+ * - Never displays expired VIP badges.
  */
 @Composable
-fun VerificationBadge(user: User) {
-  if (user.badgeDisplayStatus == "HIDDEN" || user.badgeDisplayStatus == "DECLINED") {
-    return
+fun VerificationBadge(
+  user: User,
+  modifier: Modifier = Modifier,
+  iconSize: Dp = 18.dp,
+  enableExplanationDialog: Boolean = false
+) {
+  val activeBadges = user.activePublicBadges
+  if (activeBadges.isEmpty()) return
+
+  var showExplanation by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+  val glyphSize = (iconSize.value * 0.66f).dp
+
+  Row(
+    verticalAlignment = Alignment.CenterVertically,
+    modifier = modifier.then(
+      if (enableExplanationDialog) {
+        Modifier
+          .clip(RoundedCornerShape(8.dp))
+          .clickable { showExplanation = true }
+          .testTag("badge_explanation_trigger")
+      } else {
+        Modifier
+      }
+    )
+  ) {
+    activeBadges.forEach { badge ->
+      Spacer(modifier = Modifier.width(3.dp))
+      when (badge) {
+        com.example.data.model.OfficialVybeBadge.WORKER_GREEN -> {
+          Box(
+            modifier = Modifier
+              .size(iconSize)
+              .clip(CircleShape)
+              .background(Brush.linearGradient(listOf(Color(0xFF10B981), Color(0xFF059669))))
+              .testTag("worker_badge"),
+            contentAlignment = Alignment.Center
+          ) {
+            Icon(
+              imageVector = Icons.Default.Check,
+              contentDescription = badge.title,
+              tint = Color.White,
+              modifier = Modifier.size(glyphSize)
+            )
+          }
+        }
+        com.example.data.model.OfficialVybeBadge.VIP_GOLD -> {
+          Box(
+            modifier = Modifier
+              .size(iconSize)
+              .clip(CircleShape)
+              .background(Brush.linearGradient(listOf(Color(0xFFFBBF24), Color(0xFFD97706))))
+              .testTag("vip_badge"),
+            contentAlignment = Alignment.Center
+          ) {
+            Icon(
+              imageVector = Icons.Default.Star,
+              contentDescription = badge.title,
+              tint = Color(0xFF0B0F19),
+              modifier = Modifier.size(glyphSize)
+            )
+          }
+        }
+        com.example.data.model.OfficialVybeBadge.SHOP_GOLD -> {
+          Box(
+            modifier = Modifier
+              .size(iconSize)
+              .clip(CircleShape)
+              .background(Brush.linearGradient(listOf(Color(0xFFFBBF24), Color(0xFFD97706))))
+              .testTag("business_badge"),
+            contentAlignment = Alignment.Center
+          ) {
+            Icon(
+              imageVector = Icons.Default.Store,
+              contentDescription = badge.title,
+              tint = Color(0xFF0B0F19),
+              modifier = Modifier.size(glyphSize)
+            )
+          }
+        }
+        com.example.data.model.OfficialVybeBadge.VERIFIED_BLUE -> {
+          Box(
+            modifier = Modifier
+              .size(iconSize)
+              .clip(CircleShape)
+              .background(Brush.linearGradient(listOf(Color(0xFF38BDF8), Color(0xFF2563EB))))
+              .testTag("verified_badge"),
+            contentAlignment = Alignment.Center
+          ) {
+            Icon(
+              imageVector = Icons.Default.Check,
+              contentDescription = badge.title,
+              tint = Color.White,
+              modifier = Modifier.size(glyphSize)
+            )
+          }
+        }
+      }
+    }
   }
 
-  // 1. Official VYBE Worker Badge (Green Tick)
-  if (user.isWorker || user.role == UserRole.ADMIN || user.role == UserRole.MODERATOR) {
-    Spacer(modifier = Modifier.width(3.dp))
-    Box(
-      modifier = Modifier
-        .size(18.dp)
-        .clip(CircleShape)
-        .background(Brush.linearGradient(listOf(Color(0xFF00E676), Color(0xFF00C853))))
-        .testTag("worker_badge"),
-      contentAlignment = Alignment.Center
-    ) {
-      Icon(
-        imageVector = Icons.Default.Check,
-        contentDescription = "VYBE Verified Worker",
-        tint = Color(0xFF060714),
-        modifier = Modifier.size(12.dp)
-      )
-    }
-  }
-
-  // 2. Official VIP Creator (Gold Star) or Verified Shop (Store)
-  if (user.isVip) {
-    Spacer(modifier = Modifier.width(3.dp))
-    Box(
-      modifier = Modifier
-        .size(18.dp)
-        .clip(CircleShape)
-        .background(Brush.linearGradient(listOf(Color(0xFFFFD700), Color(0xFFFFA500))))
-        .testTag("vip_badge"),
-      contentAlignment = Alignment.Center
-    ) {
-      Icon(
-        imageVector = Icons.Default.Star,
-        contentDescription = "VYBE VIP Creator",
-        tint = Color(0xFF060714),
-        modifier = Modifier.size(12.dp)
-      )
-    }
-  } else if (user.isVerifiedBusiness) {
-    Spacer(modifier = Modifier.width(3.dp))
-    Box(
-      modifier = Modifier
-        .size(18.dp)
-        .clip(CircleShape)
-        .background(Brush.linearGradient(listOf(Color(0xFFFFD700), Color(0xFFFFA500))))
-        .testTag("business_badge"),
-      contentAlignment = Alignment.Center
-    ) {
-      Icon(
-        imageVector = Icons.Default.Store,
-        contentDescription = "Verified Business Shop",
-        tint = Color(0xFF060714),
-        modifier = Modifier.size(12.dp)
-      )
-    }
-  }
-
-  // 3. Official Verified Public Figure / Account (Blue Tick)
-  if (user.isVerified || user.isVerifiedPublicFigure) {
-    Spacer(modifier = Modifier.width(3.dp))
-    Box(
-      modifier = Modifier
-        .size(18.dp)
-        .clip(CircleShape)
-        .background(Brush.linearGradient(listOf(Color(0xFF00F0FF), Color(0xFF0091EA))))
-        .testTag("verified_badge"),
-      contentAlignment = Alignment.Center
-    ) {
-      Icon(
-        imageVector = Icons.Default.Check,
-        contentDescription = "VYBE Verified Badge",
-        tint = Color(0xFF060714),
-        modifier = Modifier.size(12.dp)
-      )
-    }
+  if (showExplanation) {
+    AlertDialog(
+      onDismissRequest = { showExplanation = false },
+      title = {
+        Text(
+          text = "Official VYBE Verification",
+          fontWeight = FontWeight.Bold
+        )
+      },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          activeBadges.forEach { badge ->
+            val accent = when (badge) {
+              com.example.data.model.OfficialVybeBadge.VERIFIED_BLUE -> Color(0xFF2563EB)
+              com.example.data.model.OfficialVybeBadge.VIP_GOLD,
+              com.example.data.model.OfficialVybeBadge.SHOP_GOLD -> Color(0xFFD97706)
+              com.example.data.model.OfficialVybeBadge.WORKER_GREEN -> Color(0xFF059669)
+            }
+            Surface(
+              color = accent.copy(alpha = 0.12f),
+              shape = RoundedCornerShape(10.dp),
+              border = BorderStroke(1.dp, accent.copy(alpha = 0.35f)),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Column(modifier = Modifier.padding(10.dp)) {
+                Text(
+                  text = badge.title,
+                  fontWeight = FontWeight.Bold,
+                  fontSize = 13.sp,
+                  color = accent
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                  text = badge.description,
+                  fontSize = 12.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  lineHeight = 16.sp
+                )
+                if (badge == com.example.data.model.OfficialVybeBadge.VIP_GOLD && !user.vipExpiresAtIso.isNullOrBlank()) {
+                  Spacer(modifier = Modifier.height(4.dp))
+                  Text(
+                    text = "Active through ${user.vipExpiresAtIso.take(10)}",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = accent
+                  )
+                }
+              }
+            }
+          }
+        }
+      },
+      confirmButton = {
+        TextButton(onClick = { showExplanation = false }) {
+          Text("Got it", fontWeight = FontWeight.Bold)
+        }
+      },
+      modifier = Modifier.testTag("badge_explanation_dialog")
+    )
   }
 }
 
 /**
- * Premium Filled Follow Button for Feed, Post Cards, and User Profiles.
- * Follows VYBE signature cyan-to-violet gradient with distinct Following and Requested states.
+ * Filled VYBE Brand Follow Button for Feed, Reels, Search, and User Profiles.
+ * Readable and high-contrast in both Dark and Light themes with distinct states:
+ * - Follow / Follow Back: Filled VYBE brand blue-purple gradient with crisp white text
+ * - Following: Neutral secondary container surface with outline border
+ * - Requested: Amber-accented pending request surface with outline border
  */
 @Composable
 fun VybeFollowButton(
@@ -220,7 +310,8 @@ fun VybeFollowButton(
   followsMe: Boolean = false,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
-  compact: Boolean = false
+  compact: Boolean = false,
+  testTag: String? = null
 ) {
   val label = when {
     isFollowing -> "Following"
@@ -228,87 +319,94 @@ fun VybeFollowButton(
     followsMe -> "Follow Back"
     else -> "Follow"
   }
+  val shape = RoundedCornerShape(if (compact) 14.dp else 12.dp)
 
   when {
     isFollowing -> {
       Surface(
-        color = Color(0xFF1E2638),
-        shape = RoundedCornerShape(if (compact) 14.dp else 12.dp),
-        border = BorderStroke(1.dp, Color(0xFF2E3856)),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        shape = shape,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
         modifier = modifier
-          .clip(RoundedCornerShape(if (compact) 14.dp else 12.dp))
+          .minimumInteractiveComponentSize()
+          .clip(shape)
           .clickable { onClick() }
-          .testTag("follow_button_following")
+          .testTag(testTag ?: "follow_button_following")
       ) {
         Box(
           contentAlignment = Alignment.Center,
           modifier = Modifier.padding(
             horizontal = if (compact) 14.dp else 20.dp,
-            vertical = if (compact) 6.dp else 10.dp
+            vertical = if (compact) 7.dp else 11.dp
           )
         ) {
           Text(
             text = label,
             fontSize = if (compact) 12.sp else 14.sp,
             fontWeight = FontWeight.SemiBold,
-            color = Color.White.copy(alpha = 0.9f)
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            maxLines = 1
           )
         }
       }
     }
     isFollowRequested -> {
       Surface(
-        color = Color(0xFF281E10),
-        shape = RoundedCornerShape(if (compact) 14.dp else 12.dp),
+        color = Color(0xFFD97706).copy(alpha = 0.16f),
+        shape = shape,
         border = BorderStroke(1.dp, Color(0xFFD97706).copy(alpha = 0.8f)),
         modifier = modifier
-          .clip(RoundedCornerShape(if (compact) 14.dp else 12.dp))
+          .minimumInteractiveComponentSize()
+          .clip(shape)
           .clickable { onClick() }
-          .testTag("follow_button_requested")
+          .testTag(testTag ?: "follow_button_requested")
       ) {
         Box(
           contentAlignment = Alignment.Center,
           modifier = Modifier.padding(
             horizontal = if (compact) 14.dp else 20.dp,
-            vertical = if (compact) 6.dp else 10.dp
+            vertical = if (compact) 7.dp else 11.dp
           )
         ) {
           Text(
             text = label,
             fontSize = if (compact) 12.sp else 14.sp,
             fontWeight = FontWeight.SemiBold,
-            color = Color(0xFFFBBF24)
+            color = Color(0xFFD97706),
+            maxLines = 1
           )
         }
       }
     }
     else -> {
-      // Primary Filled VYBE Violet Follow Button with high-contrast White Text
       Surface(
         color = Color.Transparent,
-        shape = RoundedCornerShape(if (compact) 14.dp else 12.dp),
+        shape = shape,
+        shadowElevation = if (compact) 2.dp else 4.dp,
         modifier = modifier
-          .clip(RoundedCornerShape(if (compact) 14.dp else 12.dp))
+          .minimumInteractiveComponentSize()
+          .clip(shape)
           .background(
             Brush.horizontalGradient(
-              listOf(Color(0xFF7B2CBF), Color(0xFF9D4EDD))
+              listOf(Color(0xFF2563EB), Color(0xFF7C3AED))
             )
           )
           .clickable { onClick() }
-          .testTag("follow_button_active")
+          .testTag(testTag ?: "follow_button_active")
       ) {
         Box(
           contentAlignment = Alignment.Center,
           modifier = Modifier.padding(
             horizontal = if (compact) 14.dp else 20.dp,
-            vertical = if (compact) 6.dp else 10.dp
+            vertical = if (compact) 7.dp else 11.dp
           )
         ) {
           Text(
             text = label,
             fontSize = if (compact) 12.sp else 14.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = Color.White,
+            maxLines = 1
           )
         }
       }

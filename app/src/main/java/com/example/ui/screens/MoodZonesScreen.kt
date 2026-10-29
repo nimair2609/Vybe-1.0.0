@@ -42,6 +42,8 @@ fun MoodZonesScreen(viewModel: VybeViewModel) {
   val currentUser by viewModel.currentUser.collectAsState()
   val posts by viewModel.posts.collectAsState()
   val selectedMood by viewModel.selectedMoodFilter.collectAsState()
+  val followingUserIds by viewModel.followingUserIds.collectAsState()
+  val requestedFollowUserIds by viewModel.requestedFollowUserIds.collectAsState()
 
   val zonePosts = remember(posts, selectedMood) {
     posts.filter { !it.isArchived && it.matchesMoodFilter(selectedMood) }
@@ -294,7 +296,15 @@ fun MoodZonesScreen(viewModel: VybeViewModel) {
               }
             },
             onPostViewed = { viewModel.recordPostView(it) },
-            currentUserId = currentUser?.id
+            currentUserId = currentUser?.id,
+            isFollowing = followingUserIds.contains(post.author.id),
+            isFollowRequested = requestedFollowUserIds.contains(post.author.id) || post.author.isFollowRequestedByMe,
+            followsMe = post.author.followsMe,
+            onFollowClick = if (post.author.id != currentUser?.id) {
+              { viewModel.toggleFollowUser(post.author.id) }
+            } else {
+              null
+            }
           )
         }
       }

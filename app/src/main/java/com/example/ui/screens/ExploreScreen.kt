@@ -46,6 +46,8 @@ fun ExploreScreen(viewModel: VybeViewModel) {
   val liveStreams by viewModel.liveStreams.collectAsState()
   val allUsers by viewModel.allUsers.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
+  val followingUserIds by viewModel.followingUserIds.collectAsState()
+  val requestedFollowUserIds by viewModel.requestedFollowUserIds.collectAsState()
   val adminReports by viewModel.adminReports.collectAsState()
   val communities by viewModel.communities.collectAsState()
   val coroutineScope = rememberCoroutineScope()
@@ -395,7 +397,19 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                       }
                     }
                   }
-                  Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                  if (matchedUser.id != currentUser?.id) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    com.example.ui.components.VybeFollowButton(
+                      isFollowing = followingUserIds.contains(matchedUser.id),
+                      isFollowRequested = requestedFollowUserIds.contains(matchedUser.id) || matchedUser.isFollowRequestedByMe,
+                      followsMe = matchedUser.followsMe,
+                      onClick = { viewModel.toggleFollowUser(matchedUser.id) },
+                      compact = true,
+                      modifier = Modifier.testTag("explore_follow_user_${matchedUser.id}")
+                    )
+                  } else {
+                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                  }
                 }
               }
             }
@@ -474,7 +488,15 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                 onRemixClick = { viewModel.openReelViewer(post.id) },
                 onDeleteClick = { viewModel.deletePost(post.id) },
                 onPostViewed = { viewModel.recordPostView(it) },
-                currentUserId = currentUser?.id
+                currentUserId = currentUser?.id,
+                isFollowing = followingUserIds.contains(post.author.id),
+                isFollowRequested = requestedFollowUserIds.contains(post.author.id) || post.author.isFollowRequestedByMe,
+                followsMe = post.author.followsMe,
+                onFollowClick = if (post.author.id != currentUser?.id) {
+                  { viewModel.toggleFollowUser(post.author.id) }
+                } else {
+                  null
+                }
               )
             }
           }

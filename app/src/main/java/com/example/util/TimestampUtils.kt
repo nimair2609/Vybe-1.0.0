@@ -24,6 +24,8 @@ object TimestampUtils {
 
   fun nowIsoUtc(): String = formatIsoUtc(System.currentTimeMillis())
 
+  fun currentIsoTimestamp(): String = nowIsoUtc()
+
   fun formatIsoUtc(epochMillis: Long): String {
     val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
     sdf.timeZone = TimeZone.getTimeZone("UTC")

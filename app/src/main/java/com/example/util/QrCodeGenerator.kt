@@ -48,24 +48,156 @@ object QrCodeGenerator {
     }
   }
 
-  const val CANONICAL_WEB_HOST = "ais-pre-7xxm4tly64qi3ais5txcm3-760594321314.asia-northeast1.run.app"
-  const val CANONICAL_DEV_HOST = "ais-dev-7xxm4tly64qi3ais5txcm3-760594321314.asia-northeast1.run.app"
+  const val CANONICAL_WEB_HOST = "ais-pre-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app"
+  const val CANONICAL_DEV_HOST = "ais-dev-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app"
   const val CANONICAL_WEB_BASE = "https://$CANONICAL_WEB_HOST"
 
+  private val SUPPORTED_WEB_HOSTS = setOf(
+    CANONICAL_WEB_HOST.lowercase(),
+    CANONICAL_DEV_HOST.lowercase(),
+    "vybe.social",
+    "www.vybe.social"
+  )
+
+  data class ParsedProfileDeepLink(
+    val userId: String?,
+    val username: String?
+  )
+
   /**
-   * Generates the official app deep link for instant Android applet routing (`vybe://profile/{userId}`).
+   * Generates the official app deep link for instant Android routing (`vybe://profile/{userId}?u={username}`).
+   * Never embeds auth tokens, emails, phone numbers, or private secrets.
    */
-  fun buildProfileDeepLink(userId: String): String {
-    val cleanId = userId.trim()
-    return "vybe://profile/$cleanId"
+  fun buildProfileDeepLink(userId: String, username: String = ""): String {
+    val cleanId = sanitizeSegment(userId)
+    val cleanUser = sanitizeUsername(username)
+    if (cleanId.isBlank() && cleanUser.isBlank()) return "vybe://profile"
+    val targetSegment = cleanId.ifBlank { cleanUser }
+    return if (cleanUser.isNotBlank() && cleanUser != targetSegment) {
+      "vybe://profile/$targetSegment?u=${java.net.URLEncoder.encode(cleanUser, "UTF-8")}"
+    } else {
+      "vybe://profile/$targetSegment"
+    }
   }
 
   /**
-   * Generates the canonical web URL fallback that routes to the profile with universal deep linking.
+   * Generates the canonical HTTPS URL for VYBE profile QR codes and shares.
+   * Uses the immutable user ID as the primary path segment so username changes never break old QR codes.
+   */
+  fun buildCanonicalProfileUrl(immutableUserId: String, username: String): String {
+    val cleanId = sanitizeSegment(immutableUserId)
+    val cleanUser = sanitizeUsername(username)
+    val primarySegment = cleanId.ifBlank { cleanUser }
+    if (primarySegment.isBlank()) return CANONICAL_WEB_BASE
+    return if (cleanUser.isNotBlank()) {
+      "$CANONICAL_WEB_BASE/profile/$primarySegment?u=${java.net.URLEncoder.encode(cleanUser, "UTF-8")}"
+    } else {
+      "$CANONICAL_WEB_BASE/profile/$primarySegment"
+    }
+  }
+
+  /**
+   * Backwards-compatible wrapper delegating to [buildCanonicalProfileUrl].
    */
   fun buildProfileShareUrl(username: String, userId: String): String {
-    val cleanUser = username.removePrefix("@").trim()
-    val cleanId = userId.trim()
-    return "$CANONICAL_WEB_BASE/profile/$cleanId?username=$cleanUser"
+    return buildCanonicalProfileUrl(immutableUserId = userId, username = username)
+  }
+
+  /**
+   * Parses VYBE profile deep links (`vybe://profile/{id}?u={username}` and
+   * `https://<canonical-host>/profile/{id}?u={username}` or `/u/{id}`) while rejecting unrelated domains.
+   */
+  fun parseProfileDeepLink(rawUri: String?): ParsedProfileDeepLink? {
+    val trimmed = rawUri?.trim().orEmpty()
+    if (trimmed.isBlank()) return null
+
+    // Ignore OAuth/Auth recovery callbacks
+    if (trimmed.contains("access_token=", ignoreCase = true) ||
+      trimmed.contains("refresh_token=", ignoreCase = true) ||
+      trimmed.startsWith("vybe://auth-callback", ignoreCase = true) ||
+      trimmed.startsWith("vybe://reset-password", ignoreCase = true)
+    ) {
+      return null
+    }
+
+    return try {
+      val uri = java.net.URI(trimmed)
+      val scheme = uri.scheme?.lowercase().orEmpty()
+      val host = uri.host?.lowercase().orEmpty()
+      val pathSegments = (uri.path ?: "")
+        .split("/")
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+
+      val queryParams = parseQueryMap(uri.rawQuery)
+      val queryUsername = sanitizeUsername(queryParams["u"] ?: queryParams["username"] ?: "")
+
+      when (scheme) {
+        "vybe" -> {
+          if (host != "profile" && host != "u") return null
+          val rawSegment = pathSegments.firstOrNull().orEmpty()
+          classifyProfileTarget(rawSegment, queryUsername)
+        }
+        "https", "http" -> {
+          if (host !in SUPPORTED_WEB_HOSTS) return null
+          if (pathSegments.size < 2) return null
+          val prefix = pathSegments[0].lowercase()
+          if (prefix != "profile" && prefix != "u") return null
+          val rawSegment = java.net.URLDecoder.decode(pathSegments[1], "UTF-8").trim()
+          classifyProfileTarget(rawSegment, queryUsername)
+        }
+        else -> null
+      }
+    } catch (_: Throwable) {
+      null
+    }
+  }
+
+  private fun classifyProfileTarget(rawSegment: String, queryUsername: String): ParsedProfileDeepLink? {
+    val cleanedSegment = sanitizeSegment(rawSegment.removePrefix("@"))
+    if (cleanedSegment.isBlank() && queryUsername.isBlank()) return null
+
+    val looksLikeUuid = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+      .matches(cleanedSegment)
+    val looksLikeInternalId = looksLikeUuid || cleanedSegment.startsWith("u_")
+
+    return if (looksLikeInternalId) {
+      ParsedProfileDeepLink(
+        userId = cleanedSegment,
+        username = queryUsername.ifBlank { null }
+      )
+    } else if (cleanedSegment.startsWith("VYBE-", ignoreCase = true)) {
+      // Legacy publicVybeId QR fallback: prefer username query parameter if present
+      ParsedProfileDeepLink(
+        userId = cleanedSegment,
+        username = queryUsername.ifBlank { null }
+      )
+    } else {
+      ParsedProfileDeepLink(
+        userId = null,
+        username = cleanedSegment.ifBlank { queryUsername }.ifBlank { null }
+      )
+    }
+  }
+
+  private fun parseQueryMap(rawQuery: String?): Map<String, String> {
+    if (rawQuery.isNullOrBlank()) return emptyMap()
+    return rawQuery.split("&").mapNotNull { pair ->
+      val idx = pair.indexOf('=')
+      if (idx <= 0) null
+      else {
+        val k = java.net.URLDecoder.decode(pair.substring(0, idx), "UTF-8").trim()
+        val v = java.net.URLDecoder.decode(pair.substring(idx + 1), "UTF-8").trim()
+        k to v
+      }
+    }.toMap()
+  }
+
+  private fun sanitizeSegment(raw: String): String {
+    return raw.trim().replace(Regex("[^A-Za-z0-9._-]"), "")
+  }
+
+  private fun sanitizeUsername(raw: String): String {
+    return raw.trim().removePrefix("@").replace(Regex("[^A-Za-z0-9._]"), "")
   }
 }

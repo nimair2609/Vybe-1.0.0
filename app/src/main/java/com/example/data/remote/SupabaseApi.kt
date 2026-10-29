@@ -365,6 +365,15 @@ interface SupabaseRestApi {
     @Body notification: SupabaseNotificationInsertDto
   ): Response<List<SupabaseNotificationDto>>
 
+  @POST("notifications")
+  suspend fun upsertNotificationByEventKey(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "resolution=merge-duplicates,return=representation",
+    @Query("on_conflict") onConflict: String = "recipient_id,event_key",
+    @Body notification: SupabaseNotificationInsertDto
+  ): Response<List<SupabaseNotificationDto>>
+
   @DELETE("notifications")
   suspend fun deleteNotification(
     @Header("apikey") apiKey: String,
@@ -1184,4 +1193,72 @@ interface SupabaseRestApi {
     @Header("Prefer") prefer: String = "return=representation",
     @Body comment: SupabaseCommunityCommentInsertDto
   ): Response<List<SupabaseCommunityCommentDto>>
+
+  // --- FCM DEVICE TOKENS ---
+  @POST("user_device_tokens")
+  suspend fun upsertDeviceToken(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "resolution=merge-duplicates,return=representation",
+    @Query("on_conflict") onConflict: String = "user_id,fcm_token",
+    @Body body: SupabaseDeviceTokenDto
+  ): Response<List<SupabaseDeviceTokenDto>>
+
+  @PATCH("user_device_tokens")
+  suspend fun patchDeviceToken(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("user_id") userIdFilter: String,
+    @Query("fcm_token") fcmTokenFilter: String? = null,
+    @Body patch: SupabaseDeviceTokenPatchDto
+  ): Response<Unit>
+
+  // --- OFFICIAL VYBE BADGE APPLICATIONS & ADMIN RPCs ---
+  @GET("verification_requests")
+  suspend fun getVerificationRequests(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("user_id") userIdFilter: String? = null,
+    @Query("status") statusFilter: String? = null,
+    @Query("select") select: String = "*,profiles:user_id(*)",
+    @Query("order") order: String = "created_at.desc",
+    @Query("limit") limit: Int = 100
+  ): Response<List<SupabaseVerificationRequestDto>>
+
+  @POST("verification_requests")
+  suspend fun insertVerificationRequest(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=representation",
+    @Body body: SupabaseVerificationRequestInsertDto
+  ): Response<List<SupabaseVerificationRequestDto>>
+
+  @POST("rpc/admin_assign_badge")
+  suspend fun adminAssignBadgeRpc(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Body request: SupabaseRpcAdminAssignBadgeRequest
+  ): Response<Map<String, @JvmSuppressWildcards Any?>>
+
+  @POST("rpc/admin_review_verification_request")
+  suspend fun adminReviewVerificationRequestRpc(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Body request: SupabaseRpcAdminReviewVerificationRequest
+  ): Response<Map<String, @JvmSuppressWildcards Any?>>
+
+  @POST("rpc/user_respond_badge_offer")
+  suspend fun userRespondBadgeOfferRpc(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Body request: SupabaseRpcUserRespondBadgeOfferRequest
+  ): Response<Map<String, @JvmSuppressWildcards Any?>>
+
+  @GET("admin_audit_logs")
+  suspend fun getAdminAuditLogs(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("order") order: String = "created_at.desc",
+    @Query("limit") limit: Int = 50
+  ): Response<List<SupabaseAuditLogDto>>
 }

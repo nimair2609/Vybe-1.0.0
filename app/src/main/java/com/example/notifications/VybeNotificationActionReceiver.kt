@@ -35,11 +35,24 @@ class VybeNotificationActionReceiver : BroadcastReceiver() {
     when (action) {
       ACTION_DIRECT_REPLY -> {
         val remoteInput = RemoteInput.getResultsFromIntent(intent)
-        val replyText = remoteInput?.getCharSequence(KEY_TEXT_REPLY)?.toString()
+        val replyText = remoteInput?.getCharSequence(KEY_TEXT_REPLY)?.toString()?.trim()
+        val peerTitle = intent.getStringExtra(EXTRA_PEER_TITLE) ?: "VYBE Chat"
+        val isGroup = intent.getBooleanExtra(EXTRA_IS_GROUP, false)
         if (!replyText.isNullOrBlank() && !conversationId.isNullOrBlank()) {
+          VybeNotificationHelper.appendSelfReplyToNotification(
+            context = context,
+            conversationId = conversationId,
+            conversationTitle = peerTitle,
+            replyText = replyText,
+            isGroup = isGroup
+          )
           scope.launch {
             try {
-              VybeRepository.get().sendDirectMessage(conversationId, replyText)
+              val repo = VybeRepository.get()
+              repo.sendDirectMessage(conversationId, replyText)
+              if (!notifId.isNullOrBlank()) {
+                repo.markNotificationAsRead(notifId)
+              }
             } catch (e: Exception) {
               Log.w(TAG, "Direct reply error: ${e.message}")
             }
@@ -48,10 +61,22 @@ class VybeNotificationActionReceiver : BroadcastReceiver() {
       }
       ACTION_MARK_READ -> {
         if (!conversationId.isNullOrBlank()) {
-          try {
-            val notificationManager = NotificationManagerCompat.from(context)
-            notificationManager.cancel(conversationId.hashCode())
-          } catch (_: Exception) {}
+          VybeNotificationHelper.clearConversationNotifications(context, conversationId)
+          scope.launch {
+            try {
+              val repo = VybeRepository.get()
+              repo.markConversationAsRead(conversationId)
+              if (!notifId.isNullOrBlank()) {
+                repo.markNotificationAsRead(notifId)
+              }
+            } catch (_: Exception) {}
+          }
+        } else if (!notifId.isNullOrBlank()) {
+          scope.launch {
+            try {
+              VybeRepository.get().markNotificationAsRead(notifId)
+            } catch (_: Exception) {}
+          }
         }
       }
     }

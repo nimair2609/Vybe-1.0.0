@@ -13,7 +13,7 @@ data class CreatorStats(
 )
 
 enum class ReportTargetType {
-  POST, REEL, STORY, COMMENT, ROOM, USER_PROFILE, SHOP_REVIEW, CROSSED_PATHS_MESSAGE
+  POST, REEL, STORY, COMMENT, ROOM, COMMUNITY_POST, USER_PROFILE, SHOP_REVIEW, CROSSED_PATHS_MESSAGE
 }
 
 enum class ReportStatus {
@@ -63,7 +63,8 @@ data class NotificationItem(
   val targetEntityId: String? = null,
   val contentPreviewUrl: String? = null,
   val contentSnippet: String? = null,
-  val isReel: Boolean = false
+  val isReel: Boolean = false,
+  val eventKey: String? = null
 )
 
 enum class AdminSubRole(val displayName: String) {
@@ -88,11 +89,15 @@ data class AdminAppSettings(
 enum class AdCampaignPlacement(val displayName: String) {
   FEED_NATIVE("Feed Native Card"),
   REELS_IN_STREAM("Reels In-Stream Sponsor"),
-  EXPLORE_BANNER("Explore Zone Banner")
+  EXPLORE_BANNER("Explore Zone Banner"),
+  STORIES_INTERSTITIAL("Stories Interstitial");
+
+  val label: String
+    get() = displayName
 }
 
 enum class AdCampaignStatus {
-  ACTIVE, PAUSED, COMPLETED, ARCHIVED
+  ACTIVE, PAUSED, SCHEDULED, DRAFT, COMPLETED, ARCHIVED
 }
 
 data class AdCampaign(
@@ -186,4 +191,27 @@ data class LicensedMusicTrack(
     durationSeconds = durationSeconds,
     coverUrl = coverArtUrl
   )
+}
+
+data class BadgeVerificationRequest(
+  val id: String,
+  val userId: String,
+  val username: String,
+  val displayName: String,
+  val avatarUrl: String = "",
+  val requestType: String = "VERIFIED", // VERIFIED, VIP, SHOP, WORKER
+  val fullName: String = "",
+  val category: String = "",
+  val identityDocumentUrl: String? = null,
+  val statement: String = "",
+  val status: String = "PENDING", // PENDING, APPROVED, REJECTED, MORE_INFO_REQUIRED, EXPIRED
+  val rejectionReason: String? = null,
+  val adminNotes: String? = null,
+  val vipExpiresAtIso: String? = null,
+  val userResponseStatus: String = "NONE", // NONE, PENDING_ACCEPTANCE, ACCEPTED, DECLINED
+  val createdAtIso: String? = null,
+  val timestampLabel: String = "Recently"
+) {
+  val reviewerNotes: String?
+    get() = adminNotes
 }

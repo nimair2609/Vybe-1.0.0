@@ -61,6 +61,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
   val selectedMood by viewModel.selectedMoodFilter.collectAsState()
   val notifications by viewModel.notifications.collectAsState()
   val followingUserIds by viewModel.followingUserIds.collectAsState()
+  val requestedFollowUserIds by viewModel.requestedFollowUserIds.collectAsState()
   val allUsers by viewModel.allUsers.collectAsState()
   val vybeMatches by viewModel.vybeMatches.collectAsState()
   val unloadRooms by viewModel.unloadRooms.collectAsState()
@@ -615,6 +616,14 @@ fun FeedScreen(viewModel: VybeViewModel) {
                 isAudioEnabled = isFeedAudioEnabled,
                 shouldPlayAudio = (isFeedAudioEnabled && post.id == activeAudioPostId),
                 isHighlighted = (post.id == highlightedPostId),
+                isFollowing = followingUserIds.contains(post.author.id),
+                isFollowRequested = requestedFollowUserIds.contains(post.author.id) || post.author.isFollowRequestedByMe,
+                followsMe = post.author.followsMe,
+                onFollowClick = if (post.author.id != currentUser?.id) {
+                  { viewModel.toggleFollowUser(post.author.id) }
+                } else {
+                  null
+                },
                 onToggleAudio = { enabled -> viewModel.setFeedAudioEnabled(enabled) },
                 modifier = Modifier.widthIn(max = 600.dp)
               )

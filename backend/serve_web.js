@@ -78,6 +78,8 @@ function getFirebaseServiceAccount() {
   return null;
 }
 
+let cachedAccessToken = null;
+
 async function getGoogleAccessToken(sa) {
   if (!sa || !sa.client_email || !sa.private_key) return null;
   if (cachedAccessToken && Date.now() < cachedAccessToken.expiresAt - 60000) {
@@ -147,24 +149,26 @@ async function dispatchFcmIfConfigured({ tokens, topic, title, body, data = {}, 
   let ok = 0;
 
   for (const target of targets) {
-        const resolvedEventKey = String(data.event_key || data.notification_id || `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
-        const resp = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`
-          },
-          body: JSON.stringify({
-            message: {
-              ...(target.token ? { token: target.token } : { topic: target.topic }),
-              data: { ...data, title, body, event_key: resolvedEventKey, channel_id: channelId },
-              android: {
-                priority: 'high'
-              }
+    try {
+      const resolvedEventKey = String(data.event_key || data.notification_id || `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+      const stringData = Object.fromEntries(Object.entries({ ...data, title, body, event_key: resolvedEventKey, channel_id: channelId }).map(([k, v]) => [k, String(v ?? '')]));
+      const resp = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({
+          message: {
+            ...(target.token ? { token: target.token } : { topic: target.topic }),
+            data: stringData,
+            android: {
+              priority: 'high'
             }
-          })
-        });
-        if (resp.ok) ok++;
+          }
+        })
+      });
+      if (resp.ok) ok++;
     } catch {}
   }
   return { dispatchedFcm: true, count: ok };
@@ -736,6 +740,52 @@ const server = http.createServer(async (req, res) => {
   if (cleanUrl === '/api/v1/admin/audit-logs' && req.method === 'GET') {
     const state = loadAdminState();
     sendJson(res, 200, { success: true, logs: state.auditLogs || [] });
+    return;
+  }
+
+  // Canonical Profile QR & Share Fallback Page (/profile/:id or /u/:id)
+  if ((cleanUrl.startsWith('/profile/') || cleanUrl.startsWith('/u/')) && req.method === 'GET') {
+    const rawSegment = decodeURIComponent(cleanUrl.replace(/^\/(profile|u)\//, '').split('/')[0] || '').trim();
+    const parsedUrl = new URL(req.url || '/', 'http://localhost');
+    const uHint = (parsedUrl.searchParams.get('u') || parsedUrl.searchParams.get('username') || '').replace(/^@/, '').trim();
+    let profileRow = null;
+    try {
+      if (rawSegment) {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawSegment);
+        const query = isUuid
+          ? `id=eq.${encodeURIComponent(rawSegment)}`
+          : `username=ilike.${encodeURIComponent(rawSegment.replace(/^@/, ''))}`;
+        const pResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?${query}&select=id,username,display_name,bio,avatar_url,is_private_account,is_verified,is_vip,vip_expires_at,is_verified_business,is_worker,badge_display_status,badge_approval_status,followers_count,posts_count&limit=1`, {
+          headers: { 'apikey': SUPABASE_ANON_KEY }
+        });
+        if (pResp.ok) {
+          const rows = await pResp.json();
+          profileRow = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+        }
+      }
+    } catch {}
+
+    const esc = (s) => String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    if (!profileRow) {
+      res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Profile Unavailable • VYBE</title>
+      <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070913;color:#fff;font-family:system-ui,-apple-system,sans-serif;padding:24px}.card{max-width:400px;width:100%;background:#111729;border:1px solid #263252;border-radius:24px;padding:32px;text-align:center}</style></head>
+      <body><div class="card"><div style="font-size:38px;margin-bottom:12px">⚠️</div><h1 style="font-size:20px;margin:0 0 8px">Profile Unavailable</h1><p style="color:#94a3b8;font-size:14px;line-height:1.5">This VYBE profile (${esc(uHint ? '@' + uHint : rawSegment)}) could not be found or is no longer active.</p></div></body></html>`);
+      return;
+    }
+
+    const appDeepLink = `vybe://profile/${encodeURIComponent(profileRow.id)}?u=${encodeURIComponent(profileRow.username || '')}`;
+    const isPrivate = Boolean(profileRow.is_private_account);
+    const bioText = isPrivate ? 'This account is private. Follow in the VYBE app to see their posts and reels.' : (profileRow.bio || 'Official member on VYBE.');
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(profileRow.display_name || profileRow.username)} (@${esc(profileRow.username)}) • VYBE</title>
+    <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070913;color:#fff;font-family:system-ui,-apple-system,sans-serif;padding:24px}.card{max-width:420px;width:100%;background:#111729;border:1px solid #263252;border-radius:24px;padding:32px;text-align:center}.btn{display:inline-block;margin-top:20px;padding:13px 24px;border-radius:14px;background:linear-gradient(90deg,#2563eb,#7c3aed);color:#fff;text-decoration:none;font-weight:700;font-size:15px}</style></head>
+    <body><div class="card"><div style="font-size:12px;letter-spacing:2px;color:#38bdf8;font-weight:800;margin-bottom:14px">VYBE PROFILE</div>
+    <h1 style="font-size:22px;margin:0">${esc(profileRow.display_name || profileRow.username)}</h1>
+    <div style="color:#94a3b8;font-size:14px;margin-top:4px">@${esc(profileRow.username)}${isPrivate ? ' 🔒 Private' : ''}</div>
+    <p style="color:#cbd5e1;font-size:14px;line-height:1.5;margin:16px 0">${esc(bioText)}</p>
+    <div style="color:#94a3b8;font-size:12px">${Number(profileRow.followers_count || 0)} Followers • ${Number(profileRow.posts_count || 0)} Posts</div>
+    <a class="btn" href="${esc(appDeepLink)}">Open Profile in VYBE App</a></div></body></html>`);
     return;
   }
 

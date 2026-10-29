@@ -41,6 +41,7 @@ class SessionManager private constructor(context: Context) {
     private const val KEY_IS_PHONE_VERIFIED = "is_phone_verified"
     private const val KEY_JOINED_DATE = "joined_date"
     private const val KEY_CREATED_AT_ISO = "created_at_iso"
+    private const val KEY_FCM_TOKEN = "device_fcm_token"
 
     @Volatile
     private var instance: SessionManager? = null
@@ -68,6 +69,15 @@ class SessionManager private constructor(context: Context) {
 
   val userId: String?
     get() = prefs.getString(KEY_USER_ID, null)
+
+  val fcmToken: String?
+    get() = prefs.getString(KEY_FCM_TOKEN, null)?.takeIf { it.isNotBlank() }
+
+  fun saveFcmToken(token: String) {
+    val clean = token.trim()
+    if (clean.isBlank()) return
+    prefs.edit().putString(KEY_FCM_TOKEN, clean).apply()
+  }
 
   fun saveSession(
     user: User,
@@ -149,7 +159,13 @@ class SessionManager private constructor(context: Context) {
   }
 
   fun clearSession() {
-    prefs.edit().clear().apply()
+    val existingDeviceToken = fcmToken
+    prefs.edit().clear().apply {
+      if (!existingDeviceToken.isNullOrBlank()) {
+        putString(KEY_FCM_TOKEN, existingDeviceToken)
+      }
+      apply()
+    }
   }
 
   fun loadCurrentUser(): User? {

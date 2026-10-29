@@ -282,6 +282,14 @@ class VybeLocalStore private constructor(context: Context) {
       put("role", u.role.name)
       put("isVerified", u.isVerified)
       put("isVip", u.isVip)
+      put("isVerifiedPublicFigure", u.isVerifiedPublicFigure)
+      put("isVerifiedBusiness", u.isVerifiedBusiness)
+      put("isWorker", u.isWorker)
+      put("isWorkerBadgeMandatory", u.isWorkerBadgeMandatory)
+      if (!u.vipExpiresAtIso.isNullOrBlank()) put("vipExpiresAtIso", u.vipExpiresAtIso)
+      put("badgeApprovalStatus", u.badgeApprovalStatus)
+      put("badgeDisplayStatus", u.badgeDisplayStatus)
+      if (!u.badgeType.isNullOrBlank()) put("badgeType", u.badgeType)
       put("isPrivate", u.isPrivate)
       put("messagePrivacy", u.messagePrivacy)
       put("followersCount", u.followersCount)
@@ -330,6 +338,14 @@ class VybeLocalStore private constructor(context: Context) {
       role = role,
       isVerified = obj.optBoolean("isVerified", false),
       isVip = obj.optBoolean("isVip", false),
+      isVerifiedPublicFigure = obj.optBoolean("isVerifiedPublicFigure", false),
+      isVerifiedBusiness = obj.optBoolean("isVerifiedBusiness", false),
+      isWorker = obj.optBoolean("isWorker", false),
+      isWorkerBadgeMandatory = obj.optBoolean("isWorkerBadgeMandatory", false),
+      vipExpiresAtIso = obj.optString("vipExpiresAtIso", "").takeUnless { it.isBlank() || it.equals("null", true) },
+      badgeApprovalStatus = obj.optString("badgeApprovalStatus", "ACCEPTED").takeUnless { it.isBlank() || it.equals("null", true) } ?: "ACCEPTED",
+      badgeDisplayStatus = obj.optString("badgeDisplayStatus", "ACCEPTED").takeUnless { it.isBlank() || it.equals("null", true) } ?: "ACCEPTED",
+      badgeType = obj.optString("badgeType", "").takeUnless { it.isBlank() || it.equals("null", true) },
       isPrivate = obj.optBoolean("isPrivate", false),
       messagePrivacy = obj.optString("messagePrivacy", "EVERYONE"),
       followersCount = obj.optInt("followersCount", 0),

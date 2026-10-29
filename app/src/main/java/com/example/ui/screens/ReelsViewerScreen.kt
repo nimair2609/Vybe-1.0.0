@@ -43,6 +43,7 @@ import com.example.ui.MainTab
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.components.ReelReactionBreakdownSheet
+import com.example.ui.components.ReelReactionGestureButton
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VideoFitMode
 import com.example.ui.components.VybeAvatar
@@ -65,6 +66,8 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
   val posts by viewModel.posts.collectAsState()
   val conversations by viewModel.conversations.collectAsState()
   val allUsers by viewModel.allUsers.collectAsState()
+  val followingUserIds by viewModel.followingUserIds.collectAsState()
+  val requestedFollowUserIds by viewModel.requestedFollowUserIds.collectAsState()
   val targetReelId by viewModel.targetReelId.collectAsState()
 
   fun handleBackFromReels() {
@@ -90,7 +93,6 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
   var isPlaying by remember { mutableStateOf(true) }
   var showShareInboxSheet by remember { mutableStateOf(false) }
   var showCommentsSheet by remember { mutableStateOf(false) }
-  var showReactionSelectorReelId by remember { mutableStateOf<String?>(null) }
   var showBreakdownSheetReel by remember { mutableStateOf<Post?>(null) }
   var reelCommentText by remember { mutableStateOf("") }
   var shareSearchQuery by remember { mutableStateOf("") }
@@ -354,94 +356,36 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
           horizontalAlignment = Alignment.CenterHorizontally,
           verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-          // Like & 4-Reactions (Reels: Show total reactions and individual reaction breakdowns)
+          // Signature 5-Reaction Gesture Button (Tap toggles 🫰, Press-Hold-Drag selects from 5 reactions, zero dropdown arrow)
           Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box {
-              IconButton(
-                onClick = {
-                  if (reelPost.userReaction != null) {
-                    viewModel.reactToPost(reelPost.id, reelPost.userReaction)
-                  } else {
-                    viewModel.reactToPost(reelPost.id, VybeReaction.LOVE)
-                  }
-                },
-                modifier = Modifier
-                  .size(48.dp)
-                  .clip(CircleShape)
-                  .background(Color.Black.copy(alpha = 0.5f))
-                  .pointerInput(reelPost.id, reelPost.userReaction) {
-                    detectTapGestures(
-                      onTap = {
-                        if (reelPost.userReaction != null) {
-                          viewModel.reactToPost(reelPost.id, reelPost.userReaction)
-                        } else {
-                          viewModel.reactToPost(reelPost.id, VybeReaction.LOVE)
-                        }
-                      },
-                      onLongPress = {
-                        showReactionSelectorReelId = if (showReactionSelectorReelId == reelPost.id) null else reelPost.id
-                      }
-                    )
-                  }
-                  .testTag("reel_like_button")
-              ) {
+            ReelReactionGestureButton(
+              userReaction = reelPost.userReaction,
+              onReact = { rx ->
+                viewModel.reactToPost(reelPost.id, rx)
+              },
+              onToggleDefault = {
                 if (reelPost.userReaction != null) {
-                  VybeReactionOutlineIcon(
-                    reaction = reelPost.userReaction,
-                    size = 24.dp,
-                    tint = reactionColor(reelPost.userReaction)
-                  )
+                  viewModel.reactToPost(reelPost.id, reelPost.userReaction)
                 } else {
-                  VybeLikeIcon(
-                    isLiked = false,
-                    size = 22.dp,
-                    inactiveTint = Color.White
-                  )
+                  viewModel.reactToPost(reelPost.id, VybeReaction.LOVE)
                 }
               }
+            )
 
-              if (showReactionSelectorReelId == reelPost.id) {
-                Box(
-                  modifier = Modifier
-                    .offset(x = (-180).dp, y = (-8).dp)
-                    .zIndex(30f)
-                ) {
-                  VybeReactionSelector(
-                    selectedReaction = reelPost.userReaction,
-                    onSelectReaction = { rx ->
-                      showReactionSelectorReelId = null
-                      viewModel.reactToPost(reelPost.id, rx)
-                    },
-                    onDismiss = { showReactionSelectorReelId = null }
-                  )
-                }
-              }
-            }
-
-            // Total reactions count - tappable to see breakdown of all 4 reactions
-            Row(
+            Text(
+              text = "${reelPost.totalReactionsCount}",
+              color = Color.White,
+              fontWeight = FontWeight.Bold,
+              fontSize = 12.sp,
               modifier = Modifier
                 .clickable { showBreakdownSheetReel = reelPost }
-                .padding(vertical = 2.dp),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Text(
-                text = "${reelPost.totalReactionsCount}",
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 12.sp
-              )
-              Spacer(modifier = Modifier.width(2.dp))
-              Icon(
-                imageVector = Icons.Outlined.KeyboardArrowDown,
-                contentDescription = "Breakdown",
-                tint = Color.White.copy(alpha = 0.7f),
-                modifier = Modifier.size(14.dp)
-              )
-            }
+                .padding(horizontal = 6.dp, vertical = 2.dp)
+                .testTag("reel_reaction_count_text")
+            )
           }
 
           // Comments
+          val reelCommentsCount = if (reelPost.comments.isNotEmpty()) reelPost.comments.size else reelPost.commentsCount.coerceAtLeast(0)
           Column(horizontalAlignment = Alignment.CenterHorizontally) {
             IconButton(
               onClick = {
@@ -457,7 +401,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
               Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = "Comments", tint = Color.White)
             }
             Text(
-              text = "${maxOf(reelPost.commentsCount, reelPost.comments.size)}",
+              text = "$reelCommentsCount",
               color = Color.White,
               fontWeight = FontWeight.Bold,
               fontSize = 12.sp
@@ -540,39 +484,57 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
           Column {
             Row(
               verticalAlignment = Alignment.CenterVertically,
-              modifier = Modifier.clickable { viewModel.openUserProfile(reelPost.author) }
+              modifier = Modifier.fillMaxWidth()
             ) {
-              VybeAvatar(user = reelPost.author, size = 38.dp)
-              Spacer(modifier = Modifier.width(10.dp))
-              Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                  Text(
-                    text = reelPost.author.displayName,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    fontSize = 15.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                  )
-                  Spacer(modifier = Modifier.width(4.dp))
-                  VerificationBadge(user = reelPost.author)
-                  if (reelRelativeTime.isNotBlank()) {
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                  .weight(1f, fill = false)
+                  .clickable { viewModel.openUserProfile(reelPost.author) }
+              ) {
+                VybeAvatar(user = reelPost.author, size = 38.dp)
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f, fill = false)) {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                      text = " • $reelRelativeTime",
-                      color = Color.White.copy(alpha = 0.75f),
-                      fontSize = 12.sp
+                      text = reelPost.author.displayName,
+                      fontWeight = FontWeight.Bold,
+                      color = Color.White,
+                      fontSize = 15.sp,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    VerificationBadge(user = reelPost.author)
+                    if (reelRelativeTime.isNotBlank()) {
+                      Text(
+                        text = " • $reelRelativeTime",
+                        color = Color.White.copy(alpha = 0.75f),
+                        fontSize = 12.sp
+                      )
+                    }
+                  }
+                  if (!reelPost.locationName.isNullOrBlank()) {
+                    Text(
+                      text = reelPost.locationName,
+                      color = Color.White.copy(alpha = 0.78f),
+                      fontSize = 11.sp,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
                     )
                   }
                 }
-                if (!reelPost.locationName.isNullOrBlank()) {
-                  Text(
-                    text = reelPost.locationName,
-                    color = Color.White.copy(alpha = 0.78f),
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                  )
-                }
+              }
+              if (currentUser?.id != reelPost.author.id) {
+                Spacer(modifier = Modifier.width(10.dp))
+                com.example.ui.components.VybeFollowButton(
+                  isFollowing = followingUserIds.contains(reelPost.author.id),
+                  isFollowRequested = requestedFollowUserIds.contains(reelPost.author.id) || reelPost.author.isFollowRequestedByMe,
+                  followsMe = reelPost.author.followsMe,
+                  onClick = { viewModel.toggleFollowUser(reelPost.author.id) },
+                  compact = true,
+                  modifier = Modifier.testTag("reel_follow_button_${reelPost.id}")
+                )
               }
             }
 
@@ -830,8 +792,9 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
               .navigationBarsPadding()
               .imePadding()
           ) {
+            val sheetCommentsCount = if (currentReel.comments.isNotEmpty()) currentReel.comments.size else currentReel.commentsCount.coerceAtLeast(0)
             Text(
-              text = "Comments (${maxOf(currentReel.commentsCount, currentReel.comments.size)})",
+              text = "Comments ($sheetCommentsCount)",
               style = MaterialTheme.typography.titleMedium,
               fontWeight = FontWeight.Bold
             )
@@ -863,10 +826,13 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.Top
                   ) {
-                    VybeAvatar(user = c.author, size = 32.dp)
+                    VybeAvatar(user = c.author, size = 32.dp, onClick = { viewModel.openUserProfile(c.author) })
                     Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                      Text(c.author.displayName, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                      Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(c.author.displayName, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        VerificationBadge(user = c.author, iconSize = 14.dp)
+                      }
                       Text(c.content, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
                       if (commentTime.isNotBlank()) {
                         Text(commentTime, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

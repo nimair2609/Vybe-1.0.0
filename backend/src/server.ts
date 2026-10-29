@@ -385,6 +385,7 @@ async function dispatchFcmPush(payload: PushDispatchPayload): Promise<{ successC
 
   if (fcmServerKey && tokens.length > 0) {
     try {
+      const resolvedEventKey = String(data.event_key || data.notification_id || `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
       const response = await fetch('https://fcm.googleapis.com/fcm/send', {
         method: 'POST',
         headers: {
@@ -393,14 +394,14 @@ async function dispatchFcmPush(payload: PushDispatchPayload): Promise<{ successC
         },
         body: JSON.stringify({
           registration_ids: tokens,
-          notification: {
+          // Data-only payload prevents Android OS + VybeFirebaseMessagingService from rendering duplicate notifications
+          data: {
+            ...data,
             title,
             body,
-            sound: 'default',
-            icon: 'ic_vybe_notification',
-            color: '#8A2BE2'
+            event_key: resolvedEventKey,
+            channel_id: channelId
           },
-          data: { ...data, title, body },
           priority: 'high'
         })
       });
@@ -607,7 +608,7 @@ app.get('/api/v1/admin/push-stats', requireAdmin, async (req: Request, res: Resp
 
 // Admin Official Badge Assignment & Revocation
 app.post('/api/v1/admin/badges/assign', requireAdmin, async (req: Request, res: Response): Promise<void> => {
-  const { userId, badgeCategory, isGrant } = req.body || {};
+  const { userId, badgeCategory, isGrant, vipExpiresAt, reason, requireAcceptance } = req.body || {};
   if (!userId || !badgeCategory) {
     res.status(400).json({ error: 'userId and badgeCategory are required.' });
     return;
@@ -615,6 +616,7 @@ app.post('/api/v1/admin/badges/assign', requireAdmin, async (req: Request, res: 
 
   const categoryUpper = String(badgeCategory).toUpperCase();
   const grantBool = isGrant !== false;
+  const needsAccept = Boolean(requireAcceptance) && grantBool;
 
   const updates: Record<string, any> = {
     updated_at: new Date().toISOString()
@@ -628,6 +630,7 @@ app.post('/api/v1/admin/badges/assign', requireAdmin, async (req: Request, res: 
     badgeLabel = 'VYBE Verified (Blue Tick)';
   } else if (categoryUpper === 'VIP') {
     updates.is_vip = grantBool;
+    updates.vip_expires_at = grantBool && vipExpiresAt ? vipExpiresAt : null;
     updates.badge_type = grantBool ? 'VIP' : null;
     badgeLabel = 'VYBE VIP (Gold Badge)';
   } else if (categoryUpper === 'WORKER') {
@@ -637,30 +640,33 @@ app.post('/api/v1/admin/badges/assign', requireAdmin, async (req: Request, res: 
   } else if (categoryUpper === 'SHOP') {
     updates.is_verified_business = grantBool;
     updates.badge_type = grantBool ? 'SHOP' : null;
-    badgeLabel = 'VYBE Verified Shop (Store)';
+    badgeLabel = 'VYBE Verified Shop (Gold Badge)';
   } else {
     res.status(400).json({ error: 'Invalid badgeCategory. Must be VERIFIED, VIP, WORKER, or SHOP.' });
     return;
   }
 
-  if (grantBool) {
-    updates.badge_display_status = 'ACCEPTED';
-  }
+  updates.badge_approval_status = !grantBool ? 'NONE' : (needsAccept ? 'PENDING_ACCEPTANCE' : 'ACCEPTED');
+  updates.badge_display_status = !grantBool ? 'ACCEPTED' : (needsAccept ? 'HIDDEN' : 'ACCEPTED');
 
   try {
     if (supabaseAdmin) {
       const { error } = await supabaseAdmin.from('profiles').update(updates).eq('id', userId);
       if (error) throw error;
 
-      if (grantBool) {
-        await supabaseAdmin.from('notifications').insert({
-          recipient_id: userId,
-          type: 'BADGE_APPROVAL',
-          title: '🎉 Badge Granted!',
-          message: `You have been granted the official ${badgeLabel}. You can manage its display in Settings.`,
-          target_id: userId
-        });
-      }
+      const eventKey = `badge_${categoryUpper}_${grantBool ? 'grant' : 'revoke'}_${Date.now()}`;
+      await supabaseAdmin.from('notifications').insert({
+        recipient_id: userId,
+        type: 'BUSINESS_VERIFICATION_UPDATE',
+        title: grantBool ? 'Official Badge Approved' : 'Official Badge Updated',
+        message: grantBool
+          ? (needsAccept
+              ? `Your ${badgeLabel} has been approved! Open Badges & Verification in Settings to accept and display it.`
+              : `You have been granted the official ${badgeLabel}. Manage visibility in Settings.`)
+          : `Your ${badgeLabel} status was revoked.${reason ? ` Reason: ${reason}` : ''}`,
+        target_id: userId,
+        event_key: eventKey
+      });
     }
 
     res.status(200).json({
@@ -838,6 +844,44 @@ app.post('/api/v1/user/verification/badge-display', async (req: Request, res: Re
 // Licensed Music Catalog Proxy Routes (Provider-Adapter Architecture; Private API keys stay server-side)
 app.get('/api/v1/music/catalog', handleMusicCatalogRequest);
 app.get('/api/v1/music/tracks/:trackId', handleMusicCatalogRequest);
+
+// Canonical Public Profile Landing Page for VYBE QR Codes & Share Links
+app.get(['/profile/:identifier', '/u/:identifier'], async (req: Request, res: Response): Promise<void> => {
+  const rawIdentifier = String(req.params.identifier || '').trim();
+  const uHint = String(req.query.u || req.query.username || '').replace(/^@/, '').trim();
+  const esc = (s: any) => String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] || c));
+
+  let profileRow: any = null;
+  if (supabaseAdmin && rawIdentifier) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawIdentifier);
+    const q = supabaseAdmin
+      .from('profiles')
+      .select('id,username,display_name,bio,is_private_account,followers_count,posts_count');
+    const { data } = isUuid
+      ? await q.eq('id', rawIdentifier).maybeSingle()
+      : await q.ilike('username', rawIdentifier.replace(/^@/, '')).maybeSingle();
+    profileRow = data;
+  }
+
+  if (!profileRow) {
+    res.status(404).type('html').send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Profile Unavailable • VYBE</title>
+    <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070913;color:#fff;font-family:system-ui,sans-serif;padding:24px}.card{max-width:400px;width:100%;background:#111729;border:1px solid #263252;border-radius:24px;padding:32px;text-align:center}</style></head>
+    <body><div class="card"><div style="font-size:38px;margin-bottom:12px">⚠️</div><h1 style="font-size:20px;margin:0 0 8px">Profile Unavailable</h1><p style="color:#94a3b8;font-size:14px">This VYBE profile (${esc(uHint ? '@' + uHint : rawIdentifier)}) could not be found or is no longer active.</p></div></body></html>`);
+    return;
+  }
+
+  const appDeepLink = `vybe://profile/${encodeURIComponent(profileRow.id)}?u=${encodeURIComponent(profileRow.username || '')}`;
+  const isPrivate = Boolean(profileRow.is_private_account);
+  const bioText = isPrivate ? 'This account is private. Follow in the VYBE app to see posts and reels.' : (profileRow.bio || 'Official member on VYBE.');
+  res.status(200).type('html').send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(profileRow.display_name || profileRow.username)} (@${esc(profileRow.username)}) • VYBE</title>
+  <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070913;color:#fff;font-family:system-ui,sans-serif;padding:24px}.card{max-width:420px;width:100%;background:#111729;border:1px solid #263252;border-radius:24px;padding:32px;text-align:center}.btn{display:inline-block;margin-top:20px;padding:13px 24px;border-radius:14px;background:linear-gradient(90deg,#2563eb,#7c3aed);color:#fff;text-decoration:none;font-weight:700;font-size:15px}</style></head>
+  <body><div class="card"><div style="font-size:12px;letter-spacing:2px;color:#38bdf8;font-weight:800;margin-bottom:14px">VYBE PROFILE</div>
+  <h1 style="font-size:22px;margin:0">${esc(profileRow.display_name || profileRow.username)}</h1>
+  <div style="color:#94a3b8;font-size:14px;margin-top:4px">@${esc(profileRow.username)}${isPrivate ? ' 🔒 Private' : ''}</div>
+  <p style="color:#cbd5e1;font-size:14px;line-height:1.5;margin:16px 0">${esc(bioText)}</p>
+  <div style="color:#94a3b8;font-size:12px">${Number(profileRow.followers_count || 0)} Followers • ${Number(profileRow.posts_count || 0)} Posts</div>
+  <a class="btn" href="${esc(appDeepLink)}">Open Profile in VYBE App</a></div></body></html>`);
+});
 
 // Fallback Route: Serve Web Admin index.html
 app.get('*', (req: Request, res: Response) => {

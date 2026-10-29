@@ -240,161 +240,173 @@ private fun VybeReactionGestureButtonInternal(
   modifier: Modifier = Modifier
 ) {
   val haptic = LocalHapticFeedback.current
+  val densityObj = androidx.compose.ui.platform.LocalDensity.current
+  val currentUserReaction by rememberUpdatedState(userReaction)
+  val currentOnReact by rememberUpdatedState(onReact)
+  val currentOnToggleDefault by rememberUpdatedState(onToggleDefault)
+
   var isBarVisible by remember { mutableStateOf(false) }
   var hoveredIndex by remember { mutableStateOf<Int?>(null) }
   val reactions = remember { VybeReaction.values() }
+  val buttonSize = if (isSideBar) 48.dp else 40.dp
 
-  Box(modifier = modifier) {
-    // Floating horizontal 5-reaction bar when press-and-hold is active
+  Box(
+    modifier = modifier.size(buttonSize),
+    contentAlignment = Alignment.Center
+  ) {
+    // Non-focusable Popup prevents any parent Box/Column expansion (zero layout shift on Reel rail)
     if (isBarVisible) {
-      Surface(
-        color = Color(0xFF0C1020).copy(alpha = 0.97f),
-        shape = RoundedCornerShape(28.dp),
-        border = BorderStroke(1.dp, Color(0xFF2E3856)),
-        shadowElevation = 18.dp,
-        modifier = if (isSideBar) {
-          Modifier
-            .align(Alignment.CenterEnd)
-            .offset(x = (-56).dp)
-            .zIndex(50f)
-            .testTag("${testTagPrefix}_reaction_gesture_bar")
+      val popupOffset = with(densityObj) {
+        if (isSideBar) {
+          androidx.compose.ui.unit.IntOffset(x = (-238).dp.roundToPx(), y = (-1).dp.roundToPx())
         } else {
-          Modifier
-            .align(Alignment.TopStart)
-            .offset(y = (-52).dp)
-            .zIndex(50f)
-            .testTag("${testTagPrefix}_reaction_gesture_bar")
+          androidx.compose.ui.unit.IntOffset(x = (-4).dp.roundToPx(), y = (-56).dp.roundToPx())
         }
+      }
+      androidx.compose.ui.window.Popup(
+        alignment = Alignment.TopStart,
+        offset = popupOffset,
+        properties = androidx.compose.ui.window.PopupProperties(
+          focusable = false,
+          clippingEnabled = false
+        )
       ) {
-        Row(
-          modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
-          verticalAlignment = Alignment.CenterVertically
+        Surface(
+          color = Color(0xFF0C1020).copy(alpha = 0.97f),
+          shape = RoundedCornerShape(28.dp),
+          border = BorderStroke(1.dp, Color(0xFF334155)),
+          shadowElevation = 18.dp,
+          modifier = Modifier.testTag("${testTagPrefix}_reaction_gesture_bar")
         ) {
-          reactions.forEachIndexed { index, rx ->
-            val isHovered = hoveredIndex == index
-            val isCurrent = userReaction == rx
-            val rColor = reactionColor(rx)
-            val scaleAnim by animateFloatAsState(
-              targetValue = if (isHovered) 1.35f else if (isCurrent) 1.15f else 1f,
-              animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)
-            )
-
-            Box(
-              modifier = Modifier
-                .scale(scaleAnim)
-                .size(38.dp)
-                .clip(CircleShape)
-                .background(
-                  if (isHovered) rColor.copy(alpha = 0.38f)
-                  else if (isCurrent) rColor.copy(alpha = 0.22f)
-                  else Color.Transparent
-                )
-                .clickable {
-                  onReact(rx)
-                  isBarVisible = false
-                },
-              contentAlignment = Alignment.Center
-            ) {
-              VybeReactionOutlineIcon(
-                reaction = rx,
-                size = 24.dp,
-                tint = if (isHovered || isCurrent) rColor else Color.White
+          Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            reactions.forEachIndexed { index, rx ->
+              val isHovered = hoveredIndex == index
+              val isCurrent = currentUserReaction == rx
+              val rColor = reactionColor(rx)
+              val scaleAnim by animateFloatAsState(
+                targetValue = if (isHovered) 1.38f else if (isCurrent) 1.12f else 1f,
+                animationSpec = spring(
+                  dampingRatio = Spring.DampingRatioMediumBouncy,
+                  stiffness = Spring.StiffnessMedium
+                ),
+                label = "reaction_scale_${rx.name}"
               )
+
+              Box(
+                modifier = Modifier
+                  .scale(scaleAnim)
+                  .size(38.dp)
+                  .clip(CircleShape)
+                  .background(
+                    if (isHovered) rColor.copy(alpha = 0.38f)
+                    else if (isCurrent) rColor.copy(alpha = 0.22f)
+                    else Color.Transparent
+                  )
+                  .testTag("${testTagPrefix}_reaction_option_${rx.name}"),
+                contentAlignment = Alignment.Center
+              ) {
+                VybeReactionOutlineIcon(
+                  reaction = rx,
+                  size = 24.dp,
+                  tint = if (isHovered || isCurrent) rColor else Color.White
+                )
+              }
             }
           }
         }
       }
     }
 
-    // Reaction trigger button with pointerInput gesture detector
+    // Fixed-size reaction trigger button with tap + press-hold-drag-release gesture detector
     Box(
       modifier = Modifier
-        .size(if (isSideBar) 48.dp else 40.dp)
+        .fillMaxSize()
         .clip(CircleShape)
         .background(
           if (isSideBar) Color.Black.copy(alpha = 0.5f)
           else Color.White.copy(alpha = 0.08f)
         )
-        .pointerInput(userReaction, isSideBar) {
+        .pointerInput(isSideBar) {
           awaitEachGesture {
-            val down = awaitFirstDown(requireUnconsumed = false)
-            hoveredIndex = null
+            try {
+              awaitFirstDown(requireUnconsumed = false)
+              hoveredIndex = null
 
-            // Wait for long press or quick tap up
-            val upOrCancel = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
-              waitForUpOrCancellation()
-            }
-
-            if (upOrCancel != null) {
-              // Normal tap: toggle default reaction 🫰 (Finger Heart)
-              onToggleDefault()
-            } else {
-              // Long press & hold detected!
-              isBarVisible = true
-              haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-
-              // Track dragging finger across the 5 reactions
-              while (true) {
-                val event = awaitPointerEvent()
-                val change = event.changes.firstOrNull() ?: break
-                if (!change.pressed) {
-                  // Finger lifted / released
-                  val finalIndex = hoveredIndex
-                  if (finalIndex != null && finalIndex in reactions.indices) {
-                    onReact(reactions[finalIndex])
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                  }
-                  // Cancel if released outside
-                  isBarVisible = false
-                  hoveredIndex = null
-                  change.consume()
-                  break
-                }
-
-                // Compute relative hover position based on orientation
-                val currentX = change.position.x
-                val currentY = change.position.y
-
-                if (isSideBar) {
-                  // Side bar: located to left of button [-230dp, -10dp], vertical within [-25dp, 65dp]
-                  val barStartX = -225f * density
-                  val barEndX = -10f * density
-                  val barMinY = -25f * density
-                  val barMaxY = 65f * density
-
-                  if (currentX in barStartX..barEndX && currentY in barMinY..barMaxY) {
-                    val progress = ((currentX - barStartX) / (barEndX - barStartX)).coerceIn(0f, 0.99f)
-                    val newIndex = (progress * reactions.size).toInt()
-                    if (newIndex != hoveredIndex) {
-                      hoveredIndex = newIndex
-                      haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    }
-                  } else {
-                    // Dragged outside: clear highlight
-                    hoveredIndex = null
-                  }
-                } else {
-                  // Top bar (Feed Post): located above button [-10dp, 230dp], vertical within [-70dp, 5dp]
-                  val barStartX = -10f * density
-                  val barEndX = 225f * density
-                  val barMinY = -70f * density
-                  val barMaxY = 5f * density
-
-                  if (currentX in barStartX..barEndX && currentY in barMinY..barMaxY) {
-                    val progress = ((currentX - barStartX) / (barEndX - barStartX)).coerceIn(0f, 0.99f)
-                    val newIndex = (progress * reactions.size).toInt()
-                    if (newIndex != hoveredIndex) {
-                      hoveredIndex = newIndex
-                      haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    }
-                  } else {
-                    // Dragged outside: clear highlight
-                    hoveredIndex = null
-                  }
-                }
-                change.consume()
+              val upOrCancel = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                waitForUpOrCancellation()
               }
+
+              if (upOrCancel != null) {
+                // Quick tap: toggle current/default 🫰 reaction
+                currentOnToggleDefault()
+              } else {
+                // Press & hold: open floating 5-icon bar
+                isBarVisible = true
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+
+                while (true) {
+                  val event = awaitPointerEvent()
+                  val change = event.changes.firstOrNull() ?: break
+                  if (!change.pressed) {
+                    val selectedIndex = hoveredIndex
+                    if (selectedIndex != null && selectedIndex in reactions.indices) {
+                      currentOnReact(reactions[selectedIndex])
+                      haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    }
+                    isBarVisible = false
+                    hoveredIndex = null
+                    change.consume()
+                    break
+                  }
+
+                  val currentX = change.position.x
+                  val currentY = change.position.y
+
+                  if (isSideBar) {
+                    // Reel floating bar spans [-238dp, -8dp] to the left of the 48dp button
+                    val barStartX = -238f * density
+                    val barEndX = -8f * density
+                    val barMinY = -28f * density
+                    val barMaxY = 76f * density
+
+                    if (currentX in barStartX..barEndX && currentY in barMinY..barMaxY) {
+                      val progress = ((currentX - barStartX) / (barEndX - barStartX)).coerceIn(0f, 0.999f)
+                      val newIndex = (progress * reactions.size).toInt()
+                      if (newIndex != hoveredIndex) {
+                        hoveredIndex = newIndex
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                      }
+                    } else {
+                      hoveredIndex = null
+                    }
+                  } else {
+                    // Feed Post floating bar spans [-4dp, 226dp] above the 40dp button
+                    val barStartX = -8f * density
+                    val barEndX = 230f * density
+                    val barMinY = -78f * density
+                    val barMaxY = -2f * density
+
+                    if (currentX in barStartX..barEndX && currentY in barMinY..barMaxY) {
+                      val progress = ((currentX - barStartX) / (barEndX - barStartX)).coerceIn(0f, 0.999f)
+                      val newIndex = (progress * reactions.size).toInt()
+                      if (newIndex != hoveredIndex) {
+                        hoveredIndex = newIndex
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                      }
+                    } else {
+                      hoveredIndex = null
+                    }
+                  }
+                  change.consume()
+                }
+              }
+            } finally {
+              isBarVisible = false
+              hoveredIndex = null
             }
           }
         }

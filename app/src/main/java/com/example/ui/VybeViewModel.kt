@@ -127,6 +127,9 @@ class VybeViewModel : ViewModel() {
   private val _selectedUserProfile = MutableStateFlow<User?>(null)
   val selectedUserProfile: StateFlow<User?> = _selectedUserProfile.asStateFlow()
 
+  private val _profileLookupError = MutableStateFlow<String?>(null)
+  val profileLookupError: StateFlow<String?> = _profileLookupError.asStateFlow()
+
   private val _uiBannerMessage = MutableStateFlow<String?>(null)
   val uiBannerMessage: StateFlow<String?> = _uiBannerMessage.asStateFlow()
 
@@ -208,6 +211,7 @@ class VybeViewModel : ViewModel() {
   val spiritualGratitudes = repository.spiritualGratitudes
   val spiritualIntentions = repository.spiritualIntentions
   val businessApplications = repository.businessApplications
+  val verificationRequests = repository.verificationRequests
   val allUsers = repository.allUsers
   val vybeMatches = repository.vybeMatches
   val followingUserIds = repository.followingUserIds
@@ -384,36 +388,40 @@ class VybeViewModel : ViewModel() {
       return
     }
 
-    // Canonical Profile Deep Link (`vybe://profile/{userId}` or `https://.../profile/{userId}` or `/u/{userId}`)
-    val isProfileLink = host == "profile" || path.startsWith("/profile") || path.startsWith("/u")
-    if (isProfileLink) {
-      val rawUserId = if (host == "profile") {
-        path.trim().removePrefix("/").takeIf { it.isNotBlank() } ?: uri.getQueryParameter("id") ?: uri.getQueryParameter("userId")
-      } else {
-        path.removePrefix("/profile/").removePrefix("/u/").trim().takeIf { it.isNotBlank() } ?: uri.getQueryParameter("id") ?: uri.getQueryParameter("userId")
-      }
-      val usernameQuery = uri.getQueryParameter("username")?.removePrefix("@")?.trim()
-
-      if (!rawUserId.isNullOrBlank() || !usernameQuery.isNullOrBlank()) {
-        viewModelScope.launch {
-          val matched = if (!rawUserId.isNullOrBlank()) {
-            repository.getUserProfileById(rawUserId)
-          } else {
-            repository.allUsers.value.firstOrNull { it.username.equals(usernameQuery, ignoreCase = true) }
-          }
-
-          if (matched != null) {
-            openUserProfile(matched)
-          } else {
-            _uiBannerMessage.value = "User not found or account is deactivated."
-          }
+    // Canonical Profile Deep Link (`vybe://profile/{userId}?u={username}` or `https://<canonical-host>/profile/{userId}?u={username}`)
+    val parsedProfileLink = com.example.util.QrCodeGenerator.parseProfileDeepLink(uri.toString())
+    if (parsedProfileLink != null) {
+      viewModelScope.launch {
+        _profileLookupError.value = null
+        val matched = repository.resolveProfileFromDeepLink(
+          userId = parsedProfileLink.userId,
+          username = parsedProfileLink.username
+        )
+        if (matched != null && !matched.isDeactivated) {
+          openUserProfile(matched)
+        } else {
+          _selectedUserProfile.value = null
+          _profileLookupError.value = "This VYBE profile is unavailable or no longer exists."
+          navigateTo(Screen.USER_PROFILE)
         }
       }
       return
     }
   }
 
-  // Verification & Badges
+  fun clearProfileLookupError() {
+    _profileLookupError.value = null
+  }
+
+  // Verification & Official Badges
+  fun refreshVerificationRequests() {
+    repository.refreshVerificationRequests()
+  }
+
+  fun respondToBadgeOffer(action: String, onComplete: ((Boolean, String?) -> Unit)? = null) {
+    repository.respondToBadgeOffer(action, onComplete)
+  }
+
   fun submitVerificationRequest(
     requestType: String,
     fullName: String,
@@ -429,8 +437,36 @@ class VybeViewModel : ViewModel() {
     repository.updateBadgeDisplayStatus(status)
   }
 
-  fun adminAssignBadge(userId: String, badgeCategory: String, isGrant: Boolean, onComplete: ((Boolean, String?) -> Unit)? = null) {
-    repository.adminAssignBadge(userId, badgeCategory, isGrant, onComplete)
+  fun adminAssignBadge(
+    userId: String,
+    badgeCategory: String,
+    isGrant: Boolean,
+    vipExpiresAtIso: String? = null,
+    reason: String? = null,
+    requireAcceptance: Boolean = false,
+    workerMandatory: Boolean = false,
+    onComplete: ((Boolean, String?) -> Unit)? = null
+  ) {
+    repository.adminAssignBadge(
+      userId = userId,
+      badgeCategory = badgeCategory,
+      isGrant = isGrant,
+      vipExpiresAtIso = vipExpiresAtIso,
+      reason = reason,
+      requireAcceptance = requireAcceptance,
+      workerMandatory = workerMandatory,
+      onComplete = onComplete
+    )
+  }
+
+  fun adminReviewVerificationRequest(
+    requestId: String,
+    decision: String,
+    notes: String?,
+    vipExpiresAtIso: String? = null,
+    onComplete: ((Boolean, String?) -> Unit)? = null
+  ) {
+    repository.adminReviewVerificationRequest(requestId, decision, notes, vipExpiresAtIso, onComplete)
   }
 
   /**
@@ -491,6 +527,11 @@ class VybeViewModel : ViewModel() {
         destination == "LIVE_STUDIO" -> {
           navigateTo(Screen.LIVE_STUDIO)
         }
+        // Verification & Official Badges Center
+        destination == "VERIFICATION_CENTER" || type.equals("BUSINESS_VERIFICATION_UPDATE", ignoreCase = true) || type.equals("BADGE_UPDATE", ignoreCase = true) -> {
+          repository.refreshVerificationRequests()
+          navigateTo(Screen.VERIFICATION_CENTER)
+        }
         // In-app Notifications Screen
         destination == "NOTIFICATIONS" -> {
           navigateTo(Screen.NOTIFICATIONS)
@@ -498,6 +539,7 @@ class VybeViewModel : ViewModel() {
         // User Profile
         destination == "USER_PROFILE" && !targetId.isNullOrBlank() -> {
           val targetUser = repository.allUsers.value.firstOrNull { it.id == targetId }
+            ?: repository.getUserProfileById(targetId)
           if (targetUser != null) {
             openUserProfile(targetUser)
           } else {
@@ -666,12 +708,19 @@ class VybeViewModel : ViewModel() {
   }
 
   fun openUserProfile(user: User) {
+    if (user.isDeactivated) {
+      _selectedUserProfile.value = null
+      _profileLookupError.value = "This VYBE profile is unavailable or deactivated."
+      navigateTo(Screen.USER_PROFILE)
+      return
+    }
+    _profileLookupError.value = null
     val me = repository.currentUser.value
     if (me != null && me.id == user.id) {
       // Opening own profile routes cleanly to own profile tab / latest state
       _selectedUserProfile.value = me
     } else {
-      val latest = repository.allUsers.value.firstOrNull { it.id == user.id } ?: user
+      val latest = repository.registerDiscoveredUser(user)
       _selectedUserProfile.value = latest
     }
     navigateTo(Screen.USER_PROFILE)

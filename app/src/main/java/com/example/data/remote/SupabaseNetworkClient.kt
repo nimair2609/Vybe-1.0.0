@@ -110,7 +110,18 @@ object SupabaseNetworkClient {
     restRetrofit.create(SupabaseRestApi::class.java)
   }
 
+  @Volatile
+  private var unreachableUntilMs: Long = 0L
+
+  fun isSupabaseHostCurrentlyUnreachable(): Boolean {
+    return System.currentTimeMillis() < unreachableUntilMs
+  }
+
+  fun markSupabaseHostUnreachable(cooldownMs: Long = 12_000L) {
+    unreachableUntilMs = System.currentTimeMillis() + cooldownMs
+  }
+
   fun clearDnsCooldown() {
-    // Allows immediate retry for refresh requests
+    unreachableUntilMs = 0L
   }
 }

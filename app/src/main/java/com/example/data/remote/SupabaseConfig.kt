@@ -139,12 +139,21 @@ object SupabaseConfig {
       !key.contains("placeholder")
   }
 
+  const val CANONICAL_VYBE_WEB_URL = "https://ais-pre-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app"
+
+  val vybeBackendBaseUrl: String
+    get() = CANONICAL_VYBE_WEB_URL
+
   fun getAuthBaseUrl(): String {
     return if (isConfigured()) "$supabaseUrl/auth/v1/" else "$LIVE_SUPABASE_URL/auth/v1/"
   }
 
   fun getRestBaseUrl(): String {
     return if (isConfigured()) "$supabaseUrl/rest/v1/" else "$LIVE_SUPABASE_URL/rest/v1/"
+  }
+
+  fun getFunctionsBaseUrl(): String {
+    return if (isConfigured()) "$supabaseUrl/functions/v1/" else "$LIVE_SUPABASE_URL/functions/v1/"
   }
 
   fun getRealtimeWsUrl(): String {
