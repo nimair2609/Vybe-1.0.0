@@ -7,4 +7,7 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="vybe_violet">#FF7B2CBF</color>
+    <color name="vybe_cyan">#FF00F0FF</color>
+    <color name="vybe_magenta">#FFFF007F</color>
 </resources>

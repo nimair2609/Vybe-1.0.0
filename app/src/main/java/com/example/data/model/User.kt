@@ -35,6 +35,10 @@ data class User(
   val isVip: Boolean = false, // Official VIP status badge with circular "V"
   val isVerifiedPublicFigure: Boolean = false,
   val isVerifiedBusiness: Boolean = false,
+  val isWorker: Boolean = false,
+  val badgeDisplayStatus: String = "ACCEPTED",
+  val badgeType: String? = null,
+  val isFoundingCreator: Boolean = false,
   val vipBadgeTitle: String = "",
   val role: UserRole = UserRole.USER,
   val isPrivate: Boolean = false,

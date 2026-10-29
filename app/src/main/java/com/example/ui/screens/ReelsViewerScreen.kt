@@ -234,7 +234,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
               onTap = { isPlaying = !isPlaying },
               onDoubleTap = {
                 showDoubleTapResonance = true
-                viewModel.reactToPost(reelPost.id, VybeReaction.PULSE)
+                viewModel.reactToPost(reelPost.id, VybeReaction.LOVE)
               }
             )
           }
@@ -250,7 +250,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
           onTapOverlay = { isPlaying = !isPlaying },
           onDoubleTapOverlay = {
             showDoubleTapResonance = true
-            viewModel.reactToPost(reelPost.id, VybeReaction.PULSE)
+            viewModel.reactToPost(reelPost.id, VybeReaction.LOVE)
           },
           modifier = Modifier.fillMaxSize()
         )
@@ -362,7 +362,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                   if (reelPost.userReaction != null) {
                     viewModel.reactToPost(reelPost.id, reelPost.userReaction)
                   } else {
-                    viewModel.reactToPost(reelPost.id, VybeReaction.PULSE)
+                    viewModel.reactToPost(reelPost.id, VybeReaction.LOVE)
                   }
                 },
                 modifier = Modifier
@@ -375,7 +375,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                         if (reelPost.userReaction != null) {
                           viewModel.reactToPost(reelPost.id, reelPost.userReaction)
                         } else {
-                          viewModel.reactToPost(reelPost.id, VybeReaction.PULSE)
+                          viewModel.reactToPost(reelPost.id, VybeReaction.LOVE)
                         }
                       },
                       onLongPress = {

@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Store
@@ -29,6 +31,7 @@ import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.model.LivePulseStatus
 import com.example.data.model.User
+import com.example.data.model.UserRole
 import com.example.ui.theme.*
 
 @Composable
@@ -89,11 +92,11 @@ fun VybeAvatar(
         modifier = Modifier
           .size(size * 0.35f)
           .align(Alignment.TopEnd)
-          .clip(CircleShape)
-          .background(MaterialTheme.colorScheme.surface)
-          .padding(1.dp)
-          .clip(CircleShape)
-          .background(VybeBrandMagenta),
+        .clip(CircleShape)
+        .background(MaterialTheme.colorScheme.surface)
+        .padding(1.dp)
+        .clip(CircleShape)
+        .background(VybeBrandMagenta),
         contentAlignment = Alignment.Center
       ) {
         Text("▶", fontSize = (size.value * 0.16).sp, color = Color.White)
@@ -115,8 +118,6 @@ fun VybeAvatar(
   }
 }
 
-/**
- * Official VYBE 2.0 Distinctive Circular Badges
 /**
  * Official VYBE 3-Tier Authority Badges:
  * 1. VYBE Verified (Blue Tick): Public profile authenticity.
@@ -163,8 +164,8 @@ fun VerificationBadge(user: User) {
     ) {
       Icon(
         imageVector = Icons.Default.Star,
-        contentDescription = "VYBE VIP Creator Badge",
-        tint = Color(0xFF0F121E),
+        contentDescription = "VYBE VIP Creator",
+        tint = Color(0xFF060714),
         modifier = Modifier.size(12.dp)
       )
     }
@@ -174,7 +175,7 @@ fun VerificationBadge(user: User) {
       modifier = Modifier
         .size(18.dp)
         .clip(CircleShape)
-        .background(Brush.linearGradient(listOf(Color(0xFFFFD700), Color(0xFFFF9100))))
+        .background(Brush.linearGradient(listOf(Color(0xFFFFD700), Color(0xFFFFA500))))
         .testTag("business_badge"),
       contentAlignment = Alignment.Center
     ) {

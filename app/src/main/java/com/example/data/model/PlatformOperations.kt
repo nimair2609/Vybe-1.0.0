@@ -13,7 +13,7 @@ data class CreatorStats(
 )
 
 enum class ReportTargetType {
-  POST, USER_PROFILE, SHOP_REVIEW, CROSSED_PATHS_MESSAGE
+  POST, REEL, STORY, COMMENT, ROOM, USER_PROFILE, SHOP_REVIEW, CROSSED_PATHS_MESSAGE
 }
 
 enum class ReportStatus {
@@ -66,3 +66,124 @@ data class NotificationItem(
   val isReel: Boolean = false
 )
 
+enum class AdminSubRole(val displayName: String) {
+  OWNER_ADMIN("Owner / Super Admin"),
+  TECHNICAL_ADMIN("Technical Administrator"),
+  CONTENT_MODERATOR("Content Moderator"),
+  COMPLIANCE_OFFICER("Trust & Safety Compliance"),
+  GROWTH_ANALYST("Growth & Advertising Analyst")
+}
+
+data class AdminAppSettings(
+  val appName: String = "VYBE",
+  val companyName: String = "NR Next | NR Group",
+  val isMaintenanceMode: Boolean = false,
+  val registrationMode: String = "OPEN",
+  val minAgeRequirement: Int = 13,
+  val matureContentAgeGate: Int = 18,
+  val maxDailyDmLimit: Int = 50,
+  val isMonetizationSandboxEnabled: Boolean = true
+)
+
+enum class AdCampaignPlacement(val displayName: String) {
+  FEED_NATIVE("Feed Native Card"),
+  REELS_IN_STREAM("Reels In-Stream Sponsor"),
+  EXPLORE_BANNER("Explore Zone Banner")
+}
+
+enum class AdCampaignStatus {
+  ACTIVE, PAUSED, COMPLETED, ARCHIVED
+}
+
+data class AdCampaign(
+  val id: String,
+  val advertiserName: String,
+  val campaignTitle: String,
+  val placement: AdCampaignPlacement = AdCampaignPlacement.FEED_NATIVE,
+  val creativeUrl: String = "",
+  val targetCtaUrl: String = "",
+  val ctaButtonText: String = "Learn More",
+  val dailyBudgetInr: Int = 1000,
+  val totalBudgetInr: Int = 10000,
+  val spentInr: Int = 0,
+  val impressions: Int = 0,
+  val clicks: Int = 0,
+  val status: AdCampaignStatus = AdCampaignStatus.ACTIVE,
+  val startDateIso: String = "2026-10-01",
+  val endDateIso: String = "2026-12-31"
+)
+
+enum class IntegrationHealth {
+  HEALTHY, DEGRADED, MISSING, ERROR
+}
+
+data class AdminIntegrationItem(
+  val id: String,
+  val name: String,
+  val provider: String,
+  val category: String,
+  val purpose: String,
+  val status: IntegrationHealth = IntegrationHealth.HEALTHY,
+  val maskedSecret: String = "••••••••",
+  val lastCheckedIso: String = "Live",
+  val requiredFields: List<String> = emptyList(),
+  val documentationUrl: String = "",
+  val setupInstructions: String = "",
+  val isDynamicallyToggleable: Boolean = false,
+  val isEnabled: Boolean = true
+)
+
+data class AdminAuditLog(
+  val id: String,
+  val adminEmail: String,
+  val adminRole: String,
+  val action: String,
+  val targetType: String,
+  val targetId: String,
+  val details: String,
+  val timestamp: String
+)
+
+data class AdminDashboardStats(
+  val totalUsers: Int = 148,
+  val activeUsers24h: Int = 32,
+  val activeUsers7d: Int = 96,
+  val totalPosts: Int = 24,
+  val totalReels: Int = 14,
+  val totalStories: Int = 8,
+  val totalCommunities: Int = 6,
+  val verifiedCreators: Int = 12,
+  val pendingReports: Int = 0,
+  val activeAdCampaigns: Int = 2,
+  val totalImpressionsCount: Int = 140700,
+  val totalClicksCount: Int = 6960,
+  val storageUsageMb: Float = 440.8f,
+  val apiErrorCount24h: Int = 0,
+  val backendStatus: String = "OPERATIONAL",
+  val realtimeLatencyMs: Int = 28
+)
+
+data class LicensedMusicTrack(
+  val trackId: String = "",
+  val title: String = "",
+  val artist: String = "",
+  val albumName: String = "VYBE Originals",
+  val durationSeconds: Int = 30,
+  val previewUrl: String? = null,
+  val coverArtUrl: String? = null,
+  val isTrending: Boolean = false,
+  val usageCount: Int = 1240
+) {
+  val displayLabel: String
+    get() = if (artist.isNotBlank()) "$title — $artist" else title
+
+  fun toAttachment(): MusicAttachment = MusicAttachment(
+    trackId = trackId,
+    title = title,
+    artist = artist,
+    previewUrl = previewUrl,
+    streamUrl = previewUrl,
+    durationSeconds = durationSeconds,
+    coverUrl = coverArtUrl
+  )
+}

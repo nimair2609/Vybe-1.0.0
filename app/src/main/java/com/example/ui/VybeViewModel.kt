@@ -403,7 +403,7 @@ class VybeViewModel : ViewModel() {
           }
 
           if (matched != null) {
-            viewUserProfile(matched)
+            openUserProfile(matched)
           } else {
             _uiBannerMessage.value = "User not found or account is deactivated."
           }

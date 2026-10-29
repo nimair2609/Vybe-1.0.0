@@ -80,6 +80,27 @@ data class Post(
     }
 }
 
+data class MusicAttachment(
+  val trackId: String = "",
+  val title: String = "",
+  val artist: String = "",
+  val previewUrl: String? = null,
+  val streamUrl: String? = previewUrl,
+  val durationSeconds: Int = 30,
+  val coverUrl: String? = null
+) {
+  val displayLabel: String
+    get() = if (artist.isNotBlank()) "$title — $artist" else title
+
+  fun sanitized(): MusicAttachment = copy(
+    trackId = trackId.trim(),
+    title = title.trim(),
+    artist = artist.trim(),
+    previewUrl = previewUrl?.trim()?.ifBlank { null },
+    streamUrl = (streamUrl ?: previewUrl)?.trim()?.ifBlank { null }
+  )
+}
+
 /**
  * Ensures consistent mood filtering across Feed and Mood Zones:
  * - `null` ("All") displays all posts.

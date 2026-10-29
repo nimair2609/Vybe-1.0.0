@@ -109,4 +109,8 @@ object SupabaseNetworkClient {
   val restApi: SupabaseRestApi by lazy {
     restRetrofit.create(SupabaseRestApi::class.java)
   }
+
+  fun clearDnsCooldown() {
+    // Allows immediate retry for refresh requests
+  }
 }

@@ -188,9 +188,6 @@ fun VybeReactionSelector(
 }
 
 /**
- * Interactive Reel Reaction Button with Press-and-Hold + Drag-to-Highlight Gesture.
- * - Single tap: Applies default 🫰 (Finger Heart) or toggles off active reaction.
-/**
  * Upgraded Interactive Reaction Button with Press-and-Hold + Drag-to-Highlight Gesture.
  * Supports:
  * - Single tap: Applies default 🫰 (Finger Heart) or toggles off active reaction.

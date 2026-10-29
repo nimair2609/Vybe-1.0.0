@@ -76,21 +76,21 @@ class VybeFirebaseMessagingService : FirebaseMessagingService() {
       val data = remoteMessage.data
       val notification = remoteMessage.notification
 
-      val title = notification?.title
+      val title: String = (notification?.title
         ?: data["title"]
         ?: data["header"]
-        ?: "VYBE"
+        ?: "VYBE").toString()
 
-      val body = notification?.body
+      val body: String = (notification?.body
         ?: data["body"]
         ?: data["message"]
         ?: data["content"]
-        ?: "You have a new update on VYBE."
+        ?: "You have a new update on VYBE.").toString()
 
       val session = SessionManager.getInstance(applicationContext)
       val currentUserId = session.userId
-      val recipientId = data["recipient_id"] ?: data["user_id"]
-      val actorId = data["actor_id"] ?: data["sender_id"]
+      val recipientId: String? = data["recipient_id"] ?: data["user_id"]
+      val actorId: String? = data["actor_id"] ?: data["sender_id"]
 
       // Never notify a user about their own action or another user's private payload
       if (!actorId.isNullOrBlank() && actorId == currentUserId) {
