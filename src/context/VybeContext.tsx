@@ -1,0 +1,763 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { 
+  User, Post, Story, CrossedPathEncounter, TimeCapsule, 
+  UnloadRoom, VybeShop, Community, SpiritualReflection, 
+  SpiritualIntention, Conversation, MoodType, VybeReaction, 
+  GitHubReleaseInfo 
+} from '../types';
+import { 
+  CURRENT_USER, SEED_USERS, INITIAL_POSTS, INITIAL_STORIES, 
+  INITIAL_REELS, INITIAL_CROSSED_PATHS, INITIAL_TIME_CAPSULES, 
+  INITIAL_UNLOAD_ROOMS, SPIRITUAL_REFLECTIONS, INITIAL_SHOPS, 
+  INITIAL_COMMUNITIES, INITIAL_CONVERSATIONS 
+} from '../data/mockData';
+import { 
+  DEFAULT_GITHUB_REPO, INSTALLED_VERSION, fetchGitHubUpdates, 
+  cleanRepoSlug 
+} from '../services/githubUpdater';
+
+export type MainTab = 'FEED' | 'VYBES' | 'MOOD_ZONES' | 'EXPLORE' | 'INBOX' | 'CROSSED_PATHS' | 'COMMUNITY' | 'PROFILE';
+
+export type ModalScreen = 
+  | 'CREATE_POST'
+  | 'CREATE_STORY'
+  | 'CREATE_CAPSULE'
+  | 'CREATE_CROSSED_PATH'
+  | 'SETTINGS'
+  | 'ADMIN_CONSOLE'
+  | 'SHOP_DETAIL'
+  | 'STORY_VIEWER'
+  | 'CALL_SCREEN'
+  | 'NOTIFICATIONS'
+  | 'VERIFICATION_CENTER'
+  | 'QR_CODE'
+  | 'GITHUB_UPDATES'
+  | 'MUSIC_TRACK_DETAIL'
+  | 'SPIRITUAL_MODE'
+  | 'UNLOAD_ROOM';
+
+interface CallState {
+  isActive: boolean;
+  isIncoming: boolean;
+  peerUser: User | null;
+  isVideo: boolean;
+  isMuted: boolean;
+  isSpeakerOn: boolean;
+  isCameraOff: boolean;
+  durationSeconds: number;
+}
+
+interface VybeContextType {
+  // Current user & Users
+  currentUser: User;
+  allUsers: User[];
+  setCurrentUserMood: (mood: MoodType) => void;
+  setCurrentUserPulse: (pulse: any) => void;
+
+  // Navigation
+  selectedTab: MainTab;
+  setSelectedTab: (tab: MainTab) => void;
+  activeModal: ModalScreen | null;
+  openModal: (modal: ModalScreen, data?: any) => void;
+  closeModal: () => void;
+  selectedMoodFilter: MoodType | 'ALL';
+  setSelectedMoodFilter: (mood: MoodType | 'ALL') => void;
+
+  // Posts & Reels
+  posts: Post[];
+  reels: Post[];
+  toggleLikePost: (postId: string) => void;
+  reactToPost: (postId: string, reaction: VybeReaction) => void;
+  toggleSavePost: (postId: string) => void;
+  addCommentToPost: (postId: string, text: string) => void;
+  createPost: (postData: Partial<Post>) => void;
+
+  // Stories
+  stories: Story[];
+  activeStoryAuthorId: string | null;
+  activeStoryIndex: number;
+  openStoryViewer: (authorId: string, index?: number) => void;
+  closeStoryViewer: () => void;
+  nextStory: () => void;
+  prevStory: () => void;
+  createStory: (storyData: Partial<Story>) => void;
+
+  // Crossed Paths
+  crossedPaths: CrossedPathEncounter[];
+  sendConnectionRequest: (id: string) => void;
+  createCrossedPath: (encounter: Partial<CrossedPathEncounter>) => void;
+
+  // Time Capsules
+  timeCapsules: TimeCapsule[];
+  createTimeCapsule: (capsule: Partial<TimeCapsule>) => void;
+
+  // Unload Rooms
+  unloadRooms: UnloadRoom[];
+  selectedUnloadRoom: UnloadRoom | null;
+  joinUnloadRoom: (room: UnloadRoom) => void;
+  sendUnloadMessage: (roomId: string, text: string, isAnonymous: boolean) => void;
+
+  // Spiritual Mode
+  intentions: SpiritualIntention[];
+  addIntention: (text: string) => void;
+  toggleIntention: (id: string) => void;
+  reflections: SpiritualReflection[];
+
+  // Communities
+  communities: Community[];
+  toggleJoinCommunity: (commId: string) => void;
+
+  // Shops
+  shops: VybeShop[];
+  selectedShop: VybeShop | null;
+  openShopDetail: (shop: VybeShop) => void;
+
+  // Conversations & Calls
+  conversations: Conversation[];
+  selectedConversation: Conversation | null;
+  selectConversation: (conv: Conversation | null) => void;
+  sendMessage: (convId: string, text: string) => void;
+  callState: CallState;
+  startCall: (peerUser: User, isVideo: boolean) => void;
+  acceptCall: () => void;
+  declineCall: () => void;
+  endCall: () => void;
+  toggleCallMute: () => void;
+  toggleCallCamera: () => void;
+
+  // Music Player
+  currentAudioTrack: string | null;
+  isPlayingAudio: boolean;
+  togglePlayAudio: (trackTitle: string, previewUrl?: string) => void;
+
+  // GitHub Auto Updater
+  githubRepo: string;
+  setGithubRepo: (repo: string) => void;
+  updateInfo: GitHubReleaseInfo | null;
+  isCheckingUpdates: boolean;
+  updateError: string | null;
+  hasAvailableUpdate: boolean;
+  checkForUpdates: (repoToTest?: string) => Promise<void>;
+  resetGithubRepo: () => void;
+  inAppNotificationBanner: string | null;
+  dismissBanner: () => void;
+}
+
+const VybeContext = createContext<VybeContextType | undefined>(undefined);
+
+export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [currentUser, setCurrentUser] = useState<User>(CURRENT_USER);
+  const [allUsers] = useState<User[]>(SEED_USERS);
+  const [selectedTab, setSelectedTab] = useState<MainTab>('FEED');
+  const [activeModal, setActiveModal] = useState<ModalScreen | null>(null);
+  const [selectedMoodFilter, setSelectedMoodFilter] = useState<MoodType | 'ALL'>('ALL');
+
+  // Posts & Reels
+  const [posts, setPosts] = useState<Post[]>(INITIAL_POSTS);
+  const [reels, setReels] = useState<Post[]>(INITIAL_REELS);
+
+  // Stories
+  const [stories, setStories] = useState<Story[]>(INITIAL_STORIES);
+  const [activeStoryAuthorId, setActiveStoryAuthorId] = useState<string | null>(null);
+  const [activeStoryIndex, setActiveStoryIndex] = useState<number>(0);
+
+  // Crossed Paths & Capsules
+  const [crossedPaths, setCrossedPaths] = useState<CrossedPathEncounter[]>(INITIAL_CROSSED_PATHS);
+  const [timeCapsules, setTimeCapsules] = useState<TimeCapsule[]>(INITIAL_TIME_CAPSULES);
+
+  // Unload Rooms
+  const [unloadRooms, setUnloadRooms] = useState<UnloadRoom[]>(INITIAL_UNLOAD_ROOMS);
+  const [selectedUnloadRoom, setSelectedUnloadRoom] = useState<UnloadRoom | null>(null);
+
+  // Spiritual Mode
+  const [intentions, setIntentions] = useState<SpiritualIntention[]>([
+    { id: 'int_01', text: 'Practice calm stillness before reacting today', timestamp: 'Today, 8:00 AM', isFulfilled: true },
+    { id: 'int_02', text: 'Drink 2L water & take a 15-minute sunset walk', timestamp: 'Today, 9:30 AM', isFulfilled: false }
+  ]);
+  const reflections = SPIRITUAL_REFLECTIONS;
+
+  // Communities & Shops
+  const [communities, setCommunities] = useState<Community[]>(INITIAL_COMMUNITIES);
+  const [shops] = useState<VybeShop[]>(INITIAL_SHOPS);
+  const [selectedShop, setSelectedShop] = useState<VybeShop | null>(null);
+
+  // Conversations
+  const [conversations, setConversations] = useState<Conversation[]>(INITIAL_CONVERSATIONS);
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+
+  // Calls
+  const [callState, setCallState] = useState<CallState>({
+    isActive: false,
+    isIncoming: false,
+    peerUser: null,
+    isVideo: false,
+    isMuted: false,
+    isSpeakerOn: true,
+    isCameraOff: false,
+    durationSeconds: 0
+  });
+
+  // Global Audio Controller
+  const [currentAudioTrack, setCurrentAudioTrack] = useState<string | null>(null);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+
+  // GitHub Auto-Updater State
+  const [githubRepo, setGithubRepoState] = useState<string>(() => {
+    return localStorage.getItem('vybe_github_repo') || DEFAULT_GITHUB_REPO;
+  });
+  const [updateInfo, setUpdateInfo] = useState<GitHubReleaseInfo | null>(null);
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState<boolean>(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [hasAvailableUpdate, setHasAvailableUpdate] = useState<boolean>(false);
+  const [inAppNotificationBanner, setInAppNotificationBanner] = useState<string | null>(null);
+
+  const setGithubRepo = (newRepo: string) => {
+    const cleaned = cleanRepoSlug(newRepo);
+    setGithubRepoState(cleaned);
+    localStorage.setItem('vybe_github_repo', cleaned);
+  };
+
+  const resetGithubRepo = () => {
+    setGithubRepo(DEFAULT_GITHUB_REPO);
+    setUpdateError(null);
+    setUpdateInfo(null);
+  };
+
+  const checkForUpdates = async (repoToTest?: string) => {
+    const repo = repoToTest ? cleanRepoSlug(repoToTest) : githubRepo;
+    setIsCheckingUpdates(true);
+    setUpdateError(null);
+    try {
+      const info = await fetchGitHubUpdates(repo);
+      setUpdateInfo(info);
+      if (info.isNewerThanInstalled) {
+        setHasAvailableUpdate(true);
+        setInAppNotificationBanner(`🚀 Update Available: VYBE ${info.tagName} is now ready!`);
+      } else {
+        setHasAvailableUpdate(false);
+      }
+    } catch (err: any) {
+      setUpdateError(err.message || 'Failed to check GitHub releases.');
+    } finally {
+      setIsCheckingUpdates(false);
+    }
+  };
+
+  // Run auto update check silently in background on initial load
+  useEffect(() => {
+    checkForUpdates();
+  }, []);
+
+  // Audio Handler
+  const togglePlayAudio = (trackTitle: string, previewUrl?: string) => {
+    if (isPlayingAudio && currentAudioTrack === trackTitle) {
+      audioElement?.pause();
+      setIsPlayingAudio(false);
+      setCurrentAudioTrack(null);
+      return;
+    }
+
+    if (audioElement) {
+      audioElement.pause();
+    }
+
+    const url = previewUrl || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+    const newAudio = new Audio(url);
+    newAudio.play().then(() => {
+      setIsPlayingAudio(true);
+      setCurrentAudioTrack(trackTitle);
+      setAudioElement(newAudio);
+    }).catch(() => {
+      setIsPlayingAudio(true);
+      setCurrentAudioTrack(trackTitle);
+    });
+
+    newAudio.onended = () => {
+      setIsPlayingAudio(false);
+      setCurrentAudioTrack(null);
+    };
+  };
+
+  // Call timer effect
+  useEffect(() => {
+    let timer: any;
+    if (callState.isActive && !callState.isIncoming) {
+      timer = setInterval(() => {
+        setCallState(prev => ({ ...prev, durationSeconds: prev.durationSeconds + 1 }));
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [callState.isActive, callState.isIncoming]);
+
+  const openModal = (modal: ModalScreen, data?: any) => {
+    if (modal === 'SHOP_DETAIL' && data) {
+      setSelectedShop(data);
+    }
+    if (modal === 'UNLOAD_ROOM' && data) {
+      setSelectedUnloadRoom(data);
+    }
+    setActiveModal(modal);
+  };
+
+  const closeModal = () => {
+    setActiveModal(null);
+  };
+
+  // User mood setter
+  const setCurrentUserMood = (mood: MoodType) => {
+    setCurrentUser(prev => ({ ...prev, currentMood: mood }));
+  };
+
+  const setCurrentUserPulse = (pulse: any) => {
+    setCurrentUser(prev => ({ ...prev, livePulse: pulse }));
+  };
+
+  // Post Actions
+  const toggleLikePost = (postId: string) => {
+    setPosts(prev => prev.map(p => {
+      if (p.id === postId) {
+        const isLiked = !p.isLiked;
+        return {
+          ...p,
+          isLiked,
+          likesCount: isLiked ? p.likesCount + 1 : Math.max(0, p.likesCount - 1),
+          userReaction: isLiked ? (p.userReaction || 'LOVE') : undefined
+        };
+      }
+      return p;
+    }));
+  };
+
+  const reactToPost = (postId: string, reaction: VybeReaction) => {
+    setPosts(prev => prev.map(p => {
+      if (p.id === postId) {
+        const currentReaction = p.userReaction;
+        const nextReaction = currentReaction === reaction ? undefined : reaction;
+        const newReactionsCount = { ...p.reactionsCount };
+
+        if (currentReaction) {
+          newReactionsCount[currentReaction] = Math.max(0, (newReactionsCount[currentReaction] || 1) - 1);
+        }
+        if (nextReaction) {
+          newReactionsCount[nextReaction] = (newReactionsCount[nextReaction] || 0) + 1;
+        }
+
+        return {
+          ...p,
+          userReaction: nextReaction,
+          isLiked: !!nextReaction,
+          reactionsCount: newReactionsCount,
+          likesCount: Object.values(newReactionsCount).reduce((a, b) => a + b, 0)
+        };
+      }
+      return p;
+    }));
+  };
+
+  const toggleSavePost = (postId: string) => {
+    setPosts(prev => prev.map(p => {
+      if (p.id === postId) {
+        const isSaved = !p.isSaved;
+        return {
+          ...p,
+          isSaved,
+          savesCount: isSaved ? p.savesCount + 1 : Math.max(0, p.savesCount - 1)
+        };
+      }
+      return p;
+    }));
+  };
+
+  const addCommentToPost = (postId: string, text: string) => {
+    if (!text.trim()) return;
+    const newComment = {
+      id: `c_${Date.now()}`,
+      postId,
+      author: currentUser,
+      content: text.trim(),
+      timestamp: 'Just now',
+      likesCount: 0
+    };
+    setPosts(prev => prev.map(p => {
+      if (p.id === postId) {
+        return {
+          ...p,
+          commentsCount: p.commentsCount + 1,
+          comments: [newComment, ...p.comments]
+        };
+      }
+      return p;
+    }));
+  };
+
+  const createPost = (postData: Partial<Post>) => {
+    const newPost: Post = {
+      id: `post_${Date.now()}`,
+      author: currentUser,
+      caption: postData.caption || '',
+      mediaUrls: postData.mediaUrls || [],
+      mediaType: postData.mediaType || 'TEXT',
+      timestamp: 'Just now',
+      likesCount: 0,
+      commentsCount: 0,
+      savesCount: 0,
+      sharesCount: 0,
+      viewsCount: 1,
+      isLiked: false,
+      isSaved: false,
+      tags: postData.tags || [],
+      moodZone: postData.moodZone || currentUser.currentMood || 'GENERAL',
+      comments: [],
+      locationName: postData.locationName,
+      audioTrackTitle: postData.audioTrackTitle,
+      musicAttachment: postData.musicAttachment,
+      reactionsCount: { LOVE: 0, FLAME: 0, LAUGH: 0, WOW: 0, SAD: 0 }
+    };
+
+    if (newPost.isVybesReel) {
+      setReels(prev => [newPost, ...prev]);
+    }
+    setPosts(prev => [newPost, ...prev]);
+    closeModal();
+  };
+
+  // Story Actions
+  const openStoryViewer = (authorId: string, index: number = 0) => {
+    setActiveStoryAuthorId(authorId);
+    setActiveStoryIndex(index);
+    openModal('STORY_VIEWER');
+  };
+
+  const closeStoryViewer = () => {
+    setActiveStoryAuthorId(null);
+    closeModal();
+  };
+
+  const nextStory = () => {
+    if (activeStoryIndex < stories.length - 1) {
+      setActiveStoryIndex(prev => prev + 1);
+    } else {
+      closeStoryViewer();
+    }
+  };
+
+  const prevStory = () => {
+    if (activeStoryIndex > 0) {
+      setActiveStoryIndex(prev => prev - 1);
+    }
+  };
+
+  const createStory = (storyData: Partial<Story>) => {
+    const newStory: Story = {
+      id: `st_${Date.now()}`,
+      author: currentUser,
+      mediaUrl: storyData.mediaUrl || 'https://images.unsplash.com/photo-1518241353330-0f7941c2d9b5?auto=format&fit=crop&w=800&q=80',
+      caption: storyData.caption || '',
+      mediaType: storyData.mediaType || 'PHOTO',
+      audience: storyData.audience || 'Public',
+      timestamp: 'Just now',
+      expiresHoursRemaining: 24,
+      isViewed: false,
+      reactionsCount: 0,
+      isLikedByMe: false,
+      textBackgroundColor: storyData.textBackgroundColor,
+      musicTrackTitle: storyData.musicTrackTitle
+    };
+    setStories(prev => [newStory, ...prev]);
+    closeModal();
+  };
+
+  // Crossed Paths
+  const sendConnectionRequest = (id: string) => {
+    setCrossedPaths(prev => prev.map(cp => {
+      if (cp.id === id) {
+        return { ...cp, hasSentRequest: true, requestStatus: 'PENDING' };
+      }
+      return cp;
+    }));
+  };
+
+  const createCrossedPath = (encounter: Partial<CrossedPathEncounter>) => {
+    const newEncounter: CrossedPathEncounter = {
+      id: `cp_${Date.now()}`,
+      type: encounter.type || 'MISSED_CONNECTION',
+      title: encounter.title || 'Untitled Encounter',
+      description: encounter.description || '',
+      broadLocation: encounter.broadLocation || 'Mumbai, India',
+      venueOrEventName: encounter.venueOrEventName,
+      encounterDate: 'Today, Just now',
+      poster: currentUser,
+      isAnonymous: encounter.isAnonymous ?? true,
+      expiresHoursRemaining: 72,
+      potentialMatchesCount: 1,
+      hasSentRequest: false,
+      requestStatus: 'PENDING',
+      tags: encounter.tags || []
+    };
+    setCrossedPaths(prev => [newEncounter, ...prev]);
+    closeModal();
+  };
+
+  // Time Capsules
+  const createTimeCapsule = (capsule: Partial<TimeCapsule>) => {
+    const newCap: TimeCapsule = {
+      id: `cap_${Date.now()}`,
+      title: capsule.title || 'My Future Capsule',
+      sender: currentUser,
+      recipientSummary: capsule.recipientSummary || 'To Myself',
+      sealedMessage: capsule.sealedMessage || '',
+      unlockDateFormatted: capsule.unlockDateFormatted || 'In 1 Year',
+      unlockTimestampMs: capsule.unlockTimestampMs || Date.now() + 1000 * 60 * 60 * 24 * 365,
+      isUnlocked: false,
+      createdAtFormatted: 'Today',
+      categoryTheme: capsule.categoryTheme || 'Life Reflection'
+    };
+    setTimeCapsules(prev => [newCap, ...prev]);
+    closeModal();
+  };
+
+  // Unload Rooms
+  const joinUnloadRoom = (room: UnloadRoom) => {
+    setSelectedUnloadRoom(room);
+    openModal('UNLOAD_ROOM', room);
+  };
+
+  const sendUnloadMessage = (roomId: string, text: string, isAnonymous: boolean) => {
+    if (!text.trim()) return;
+    const newMsg = {
+      id: `um_${Date.now()}`,
+      senderName: isAnonymous ? 'Anonymous Listener' : currentUser.displayName,
+      isAnonymous,
+      text: text.trim(),
+      timestamp: 'Just now',
+      isMe: true
+    };
+
+    setUnloadRooms(prev => prev.map(r => {
+      if (r.id === roomId) {
+        return {
+          ...r,
+          recentMessages: [...r.recentMessages, newMsg]
+        };
+      }
+      return r;
+    }));
+
+    if (selectedUnloadRoom?.id === roomId) {
+      setSelectedUnloadRoom(prev => prev ? {
+        ...prev,
+        recentMessages: [...prev.recentMessages, newMsg]
+      } : null);
+    }
+  };
+
+  // Spiritual Mode
+  const addIntention = (text: string) => {
+    if (!text.trim()) return;
+    const newIntention = {
+      id: `int_${Date.now()}`,
+      text: text.trim(),
+      timestamp: 'Just now',
+      isFulfilled: false
+    };
+    setIntentions(prev => [newIntention, ...prev]);
+  };
+
+  const toggleIntention = (id: string) => {
+    setIntentions(prev => prev.map(i => i.id === id ? { ...i, isFulfilled: !i.isFulfilled } : i));
+  };
+
+  // Communities
+  const toggleJoinCommunity = (commId: string) => {
+    setCommunities(prev => prev.map(c => {
+      if (c.id === commId) {
+        const isJoined = !c.isJoined;
+        return {
+          ...c,
+          isJoined,
+          membersCount: isJoined ? c.membersCount + 1 : Math.max(1, c.membersCount - 1)
+        };
+      }
+      return c;
+    }));
+  };
+
+  // Shops
+  const openShopDetail = (shop: VybeShop) => {
+    setSelectedShop(shop);
+    openModal('SHOP_DETAIL', shop);
+  };
+
+  // Chat & Messaging
+  const selectConversation = (conv: Conversation | null) => {
+    setSelectedConversation(conv);
+    if (conv) {
+      setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, unreadCount: 0 } : c));
+    }
+  };
+
+  const sendMessage = (convId: string, text: string) => {
+    if (!text.trim()) return;
+    const newMsg = {
+      id: `dm_${Date.now()}`,
+      senderId: currentUser.id,
+      text: text.trim(),
+      timestamp: 'Just now',
+      isMe: true
+    };
+
+    setConversations(prev => prev.map(c => {
+      if (c.id === convId) {
+        return {
+          ...c,
+          lastMessage: text.trim(),
+          lastMessageTimestamp: 'Just now',
+          messages: [...c.messages, newMsg]
+        };
+      }
+      return c;
+    }));
+
+    if (selectedConversation?.id === convId) {
+      setSelectedConversation(prev => prev ? {
+        ...prev,
+        lastMessage: text.trim(),
+        lastMessageTimestamp: 'Just now',
+        messages: [...prev.messages, newMsg]
+      } : null);
+    }
+  };
+
+  // Calls
+  const startCall = (peerUser: User, isVideo: boolean) => {
+    setCallState({
+      isActive: true,
+      isIncoming: false,
+      peerUser,
+      isVideo,
+      isMuted: false,
+      isSpeakerOn: true,
+      isCameraOff: false,
+      durationSeconds: 0
+    });
+    openModal('CALL_SCREEN');
+  };
+
+  const acceptCall = () => {
+    setCallState(prev => ({ ...prev, isIncoming: false }));
+  };
+
+  const declineCall = () => {
+    setCallState({
+      isActive: false,
+      isIncoming: false,
+      peerUser: null,
+      isVideo: false,
+      isMuted: false,
+      isSpeakerOn: true,
+      isCameraOff: false,
+      durationSeconds: 0
+    });
+    closeModal();
+  };
+
+  const endCall = () => {
+    declineCall();
+  };
+
+  const toggleCallMute = () => {
+    setCallState(prev => ({ ...prev, isMuted: !prev.isMuted }));
+  };
+
+  const toggleCallCamera = () => {
+    setCallState(prev => ({ ...prev, isCameraOff: !prev.isCameraOff }));
+  };
+
+  const dismissBanner = () => {
+    setInAppNotificationBanner(null);
+  };
+
+  return (
+    <VybeContext.Provider value={{
+      currentUser,
+      allUsers,
+      setCurrentUserMood,
+      setCurrentUserPulse,
+      selectedTab,
+      setSelectedTab,
+      activeModal,
+      openModal,
+      closeModal,
+      selectedMoodFilter,
+      setSelectedMoodFilter,
+      posts,
+      reels,
+      toggleLikePost,
+      reactToPost,
+      toggleSavePost,
+      addCommentToPost,
+      createPost,
+      stories,
+      activeStoryAuthorId,
+      activeStoryIndex,
+      openStoryViewer,
+      closeStoryViewer,
+      nextStory,
+      prevStory,
+      createStory,
+      crossedPaths,
+      sendConnectionRequest,
+      createCrossedPath,
+      timeCapsules,
+      createTimeCapsule,
+      unloadRooms,
+      selectedUnloadRoom,
+      joinUnloadRoom,
+      sendUnloadMessage,
+      intentions,
+      addIntention,
+      toggleIntention,
+      reflections,
+      communities,
+      toggleJoinCommunity,
+      shops,
+      selectedShop,
+      openShopDetail,
+      conversations,
+      selectedConversation,
+      selectConversation,
+      sendMessage,
+      callState,
+      startCall,
+      acceptCall,
+      declineCall,
+      endCall,
+      toggleCallMute,
+      toggleCallCamera,
+      currentAudioTrack,
+      isPlayingAudio,
+      togglePlayAudio,
+      githubRepo,
+      setGithubRepo,
+      updateInfo,
+      isCheckingUpdates,
+      updateError,
+      hasAvailableUpdate,
+      checkForUpdates,
+      resetGithubRepo,
+      inAppNotificationBanner,
+      dismissBanner
+    }}>
+      {children}
+    </VybeContext.Provider>
+  );
+};
+
+export const useVybe = () => {
+  const context = useContext(VybeContext);
+  if (!context) {
+    throw new Error('useVybe must be used within a VybeProvider');
+  }
+  return context;
+};

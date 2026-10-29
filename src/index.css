@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+:root {
+  --bg-primary: #060714;
+  --bg-surface: #101322;
+  --bg-elevated: #1A1F36;
+  --border-subtle: #262E4A;
+  --brand-cyan: #00C6FF;
+  --brand-blue: #3B82F6;
+  --brand-violet: #8B5CF6;
+  --brand-magenta: #D946EF;
+  --vybe-online: #22C55E;
+  --vybe-gold: #FFB703;
+  --vybe-danger: #EF4444;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg-primary);
+  color: #F8FAFC;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4, .brand-font {
+  font-family: 'Outfit', sans-serif;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #262E4A;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #8B5CF6;
+}
+
+/* Hide scrollbar for clean carousels */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Pulse animation */
+@keyframes breathingOrb {
+  0%, 100% {
+    transform: scale(0.85);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 1;
+    filter: drop-shadow(0 0 35px rgba(0, 198, 255, 0.7));
+  }
+}
+
+.animate-breathing {
+  animation: breathingOrb 16s ease-in-out infinite;
+}

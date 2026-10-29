@@ -176,14 +176,14 @@ object GitHubUpdater {
   }
 
   private val apiClient = OkHttpClient.Builder()
-    .dns(com.example.data.remote.SupabaseNetworkClient.resilientDns)
+    .dns(okhttp3.Dns.SYSTEM)
     .connectTimeout(12, TimeUnit.SECONDS)
     .readTimeout(15, TimeUnit.SECONDS)
     .cache(null)
     .build()
 
   private val downloadClient = OkHttpClient.Builder()
-    .dns(com.example.data.remote.SupabaseNetworkClient.resilientDns)
+    .dns(okhttp3.Dns.SYSTEM)
     .connectTimeout(20, TimeUnit.SECONDS)
     .readTimeout(90, TimeUnit.SECONDS)
     .followRedirects(true)
