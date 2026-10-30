@@ -32,7 +32,7 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [33])
 class VybeUpgradeVerificationTest {
 
   @get:Rule

@@ -21,12 +21,12 @@ enum class OfficialVybeBadge(
   VERIFIED_BLUE(
     code = "VERIFIED",
     title = "VYBE Verified",
-    shortDescription = "Authentic public profile confirmed by VYBE admin review."
+    shortDescription = "Verified authentic users, creators, influencers and public figures."
   ),
   VIP_GOLD(
     code = "VIP",
     title = "VYBE VIP",
-    shortDescription = "Official VYBE VIP creator or recognized community member."
+    shortDescription = "VIP members and premium subscribers."
   ),
   SHOP_GOLD(
     code = "SHOP",
@@ -34,9 +34,9 @@ enum class OfficialVybeBadge(
     shortDescription = "Verified business or storefront approved by VYBE."
   ),
   WORKER_GREEN(
-    code = "WORKER",
-    title = "VYBE Worker",
-    shortDescription = "Authorized VYBE staff or platform team member."
+    code = "OFFICIAL",
+    title = "VYBE Official",
+    shortDescription = "VYBE founder, owner, administrators and authorized employees."
   );
 
   val description: String

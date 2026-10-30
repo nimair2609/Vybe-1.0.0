@@ -161,76 +161,30 @@ fun VerificationBadge(
   ) {
     activeBadges.forEach { badge ->
       Spacer(modifier = Modifier.width(3.dp))
-      when (badge) {
-        com.example.data.model.OfficialVybeBadge.WORKER_GREEN -> {
-          Box(
-            modifier = Modifier
-              .size(iconSize)
-              .clip(CircleShape)
-              .background(Brush.linearGradient(listOf(Color(0xFF10B981), Color(0xFF059669))))
-              .testTag("worker_badge"),
-            contentAlignment = Alignment.Center
-          ) {
-            Icon(
-              imageVector = Icons.Default.Check,
-              contentDescription = badge.title,
-              tint = Color.White,
-              modifier = Modifier.size(glyphSize)
-            )
-          }
-        }
-        com.example.data.model.OfficialVybeBadge.VIP_GOLD -> {
-          Box(
-            modifier = Modifier
-              .size(iconSize)
-              .clip(CircleShape)
-              .background(Brush.linearGradient(listOf(Color(0xFFFBBF24), Color(0xFFD97706))))
-              .testTag("vip_badge"),
-            contentAlignment = Alignment.Center
-          ) {
-            Icon(
-              imageVector = Icons.Default.Star,
-              contentDescription = badge.title,
-              tint = Color(0xFF0B0F19),
-              modifier = Modifier.size(glyphSize)
-            )
-          }
-        }
-        com.example.data.model.OfficialVybeBadge.SHOP_GOLD -> {
-          Box(
-            modifier = Modifier
-              .size(iconSize)
-              .clip(CircleShape)
-              .background(Brush.linearGradient(listOf(Color(0xFFFBBF24), Color(0xFFD97706))))
-              .testTag("business_badge"),
-            contentAlignment = Alignment.Center
-          ) {
-            Icon(
-              imageVector = Icons.Default.Store,
-              contentDescription = badge.title,
-              tint = Color(0xFF0B0F19),
-              modifier = Modifier.size(glyphSize)
-            )
-          }
-        }
-        com.example.data.model.OfficialVybeBadge.VERIFIED_BLUE -> {
-          Box(
-            modifier = Modifier
-              .size(iconSize)
-              .clip(CircleShape)
-              .background(Brush.linearGradient(listOf(Color(0xFF38BDF8), Color(0xFF2563EB))))
-              .testTag("verified_badge"),
-            contentAlignment = Alignment.Center
-          ) {
-            Icon(
-              imageVector = Icons.Default.Check,
-              contentDescription = badge.title,
-              tint = Color.White,
-              modifier = Modifier.size(glyphSize)
-            )
-          }
-        }
+      val testTag = when (badge) {
+        com.example.data.model.OfficialVybeBadge.WORKER_GREEN -> "worker_badge"
+        com.example.data.model.OfficialVybeBadge.VIP_GOLD -> "vip_badge"
+        com.example.data.model.OfficialVybeBadge.SHOP_GOLD -> "business_badge"
+        com.example.data.model.OfficialVybeBadge.VERIFIED_BLUE -> "verified_badge"
       }
+      val drawableResId = when (badge) {
+        com.example.data.model.OfficialVybeBadge.WORKER_GREEN -> R.drawable.vybe_official
+        com.example.data.model.OfficialVybeBadge.VIP_GOLD -> R.drawable.vybe_vip
+        com.example.data.model.OfficialVybeBadge.SHOP_GOLD -> R.drawable.vybe_vip
+        com.example.data.model.OfficialVybeBadge.VERIFIED_BLUE -> R.drawable.vybe_verified
+      }
+      // For VIP, the royal crown sits gracefully above the circular emblem
+      val badgeHeight = if (badge == com.example.data.model.OfficialVybeBadge.VIP_GOLD) iconSize * 1.14f else iconSize
+
+      Image(
+        painter = painterResource(id = drawableResId),
+        contentDescription = badge.title,
+        contentScale = ContentScale.Fit,
+        modifier = Modifier
+          .width(iconSize)
+          .height(badgeHeight)
+          .testTag(testTag)
+      )
     }
   }
 

@@ -229,6 +229,28 @@ class VybeViewModel : ViewModel() {
   val adminAuditLogs = repository.adminAuditLogs
   val adminStats = repository.adminStats
 
+  // --- GitHub In-App Auto-Update Flow ---
+  private val _availableAppUpdate = MutableStateFlow<com.example.util.GitHubReleaseInfo?>(null)
+  val availableAppUpdate: StateFlow<com.example.util.GitHubReleaseInfo?> = _availableAppUpdate.asStateFlow()
+
+  fun dismissAppUpdateBanner() {
+    _availableAppUpdate.value = null
+  }
+
+  fun checkForAppUpdateInBackground(context: android.content.Context) {
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      try {
+        val repo = com.example.util.GitHubUpdater.getSavedRepo(context)
+        val result = com.example.util.GitHubUpdater.checkForUpdates(repo)
+        result.onSuccess { release ->
+          if (release.isNewerThanInstalled && release.hasValidApkAsset) {
+            _availableAppUpdate.value = release
+          }
+        }
+      } catch (_: Throwable) {}
+    }
+  }
+
   val isSupabaseConfigured: Boolean
     get() = repository.isSupabaseConfigured
 

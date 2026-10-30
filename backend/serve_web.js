@@ -369,11 +369,19 @@ const server = http.createServer(async (req, res) => {
       const isOwnerEmail = (u.email === 'renukadas083@gmail.com' || u.email === 'nrnexthq@gmail.com');
       const defaultRole = isOwnerEmail ? 'ADMIN' : (u.role || 'USER');
 
+      const isWorker = bOverride?.is_worker !== undefined ? bOverride.is_worker : Boolean(u.is_worker);
+      const isVip = bOverride?.is_vip !== undefined ? bOverride.is_vip : Boolean(u.is_vip);
+      const isVerified = bOverride?.is_verified !== undefined ? bOverride.is_verified : Boolean(u.is_verified);
+      const isVerifiedBusiness = bOverride?.is_verified_business !== undefined ? bOverride.is_verified_business : Boolean(u.is_verified_business);
+      const computedBadge = isWorker ? 'OFFICIAL' : (isVip ? 'VIP' : (isVerified ? 'VERIFIED' : (isVerifiedBusiness ? 'SHOP' : null)));
+
       return {
         ...u,
-        is_verified: bOverride?.is_verified !== undefined ? bOverride.is_verified : Boolean(u.is_verified),
-        is_vip: bOverride?.is_vip !== undefined ? bOverride.is_vip : Boolean(u.is_vip),
-        is_verified_business: bOverride?.is_verified_business !== undefined ? bOverride.is_verified_business : Boolean(u.is_verified_business),
+        is_verified: isVerified,
+        is_vip: isVip,
+        is_worker: isWorker,
+        is_verified_business: isVerifiedBusiness,
+        badge_type: computedBadge,
         role: rOverride || defaultRole,
         is_banned: sOverride?.is_banned !== undefined ? sOverride.is_banned : Boolean(u.is_banned),
         is_suspended: sOverride?.is_suspended !== undefined ? sOverride.is_suspended : Boolean(u.is_suspended),
@@ -387,12 +395,34 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 2. ASSIGN / REVOKE BADGE
+  // 2. ASSIGN / REVOKE BADGE (THREE-TIER BADGE SYSTEM)
   if (cleanUrl === '/api/v1/admin/assign-badge' && req.method === 'POST') {
     const body = await readJsonBody(req);
-    const { userId, badgeType, value, username, adminEmail } = body;
+    const { userId, badgeType, value, username, adminEmail, adminUserId } = body;
     if (!userId || !badgeType) {
       sendJson(res, 400, { error: 'userId and badgeType required' });
+      return;
+    }
+
+    const normalizedType = badgeType.toLowerCase().trim();
+
+    // Security Check 1: Self-assignment prohibition
+    const callerId = adminUserId || req.headers['x-admin-user-id'];
+    if (callerId && callerId === userId) {
+      sendJson(res, 403, { error: 'Security Policy: Self-assignment of verification badges is strictly forbidden. Another administrator must review and grant badges.' });
+      return;
+    }
+
+    // Security Check 2: Super Admin authorization required for Green Official badge
+    const isSuperAdmin = (
+      adminEmail === 'renukadas083@gmail.com' ||
+      adminEmail === 'nrnexthq@gmail.com' ||
+      req.headers['x-admin-role'] === 'SUPER_ADMIN' ||
+      req.headers['x-admin-role'] === 'OWNER_ADMIN'
+    );
+
+    if ((normalizedType === 'official' || normalizedType === 'worker') && !isSuperAdmin) {
+      sendJson(res, 403, { error: 'Security Policy: VYBE Official badges can only be assigned or revoked by the Super Admin.' });
       return;
     }
 
@@ -401,20 +431,31 @@ const server = http.createServer(async (req, res) => {
     state.badges[userId] = state.badges[userId] || {};
 
     let dbKey = 'is_verified';
-    if (badgeType === 'verified') dbKey = 'is_verified';
-    else if (badgeType === 'vip') dbKey = 'is_vip';
-    else if (badgeType === 'business') dbKey = 'is_verified_business';
+    let badgeDisplayLabel = 'VYBE Verified';
+    if (normalizedType === 'verified') {
+      dbKey = 'is_verified';
+      badgeDisplayLabel = 'VYBE Verified (Electric Blue)';
+    } else if (normalizedType === 'vip') {
+      dbKey = 'is_vip';
+      badgeDisplayLabel = 'VYBE VIP (Metallic Gold)';
+    } else if (normalizedType === 'official' || normalizedType === 'worker') {
+      dbKey = 'is_worker';
+      badgeDisplayLabel = 'VYBE Official (Emerald Green)';
+    } else if (normalizedType === 'business' || normalizedType === 'shop') {
+      dbKey = 'is_verified_business';
+      badgeDisplayLabel = 'VYBE Storefront Shop';
+    }
 
     state.badges[userId][dbKey] = Boolean(value);
 
     state.auditLogs = state.auditLogs || [];
     state.auditLogs.unshift({
       timestamp: new Date().toISOString(),
-      action: value ? `GRANT_${badgeType.toUpperCase()}` : `REVOKE_${badgeType.toUpperCase()}`,
+      action: value ? `GRANT_${normalizedType.toUpperCase()}` : `REVOKE_${normalizedType.toUpperCase()}`,
       userId,
       username: username || 'User',
-      adminEmail: adminEmail || 'Owner Admin',
-      details: { badgeType, value: Boolean(value) }
+      adminEmail: adminEmail || (isSuperAdmin ? 'Super Admin' : 'Platform Admin'),
+      details: { badgeType: normalizedType, label: badgeDisplayLabel, value: Boolean(value) }
     });
     if (state.auditLogs.length > 200) state.auditLogs.pop();
 
@@ -429,23 +470,31 @@ const server = http.createServer(async (req, res) => {
       let notifBody = '';
       const safeUser = username ? `@${username}` : 'Member';
 
-      if (badgeType === 'verified') {
+      if (normalizedType === 'verified') {
         if (value) {
           notifTitle = '🌟 Official Account Verification';
-          notifBody = `Congratulations ${safeUser}! Your VYBE profile has been officially verified by NR Next Platform Administration. Your official Blue Verification Badge is now active on your profile.`;
+          notifBody = `Congratulations ${safeUser}! Your VYBE profile has been officially verified by NR Next Platform Administration. Your Electric Blue Verification Badge is now active on your profile across all feeds, reels, and comments.`;
         } else {
           notifTitle = 'VYBE Account Update';
           notifBody = `${safeUser}, your Blue Verified status has been revised by Platform Administration.`;
         }
-      } else if (badgeType === 'vip') {
+      } else if (normalizedType === 'vip') {
         if (value) {
-          notifTitle = '★ VIP Creator Status Awarded';
-          notifBody = `Welcome to the elite VYBE Creator Circle, ${safeUser}! You have been granted the official VIP Creator Badge with priority discovery and creator privileges.`;
+          notifTitle = '👑 VIP Member Status Awarded';
+          notifBody = `Welcome to the elite VYBE VIP Circle, ${safeUser}! You have been granted the official Metallic Gold Crowned VIP Badge with priority discovery and creator privileges.`;
         } else {
           notifTitle = 'VIP Status Notification';
-          notifBody = `${safeUser}, your VIP Creator status has been updated by Platform Administration.`;
+          notifBody = `${safeUser}, your Metallic Gold VIP Creator status has been updated by Platform Administration.`;
         }
-      } else if (badgeType === 'business') {
+      } else if (normalizedType === 'official' || normalizedType === 'worker') {
+        if (value) {
+          notifTitle = '🛡️ Official Platform Badge Assigned';
+          notifBody = `Welcome ${safeUser}! You have been officially recognized with the Emerald Green VYBE Official badge by Super Admin. This emblem confirms your authorized role within VYBE / NR Next operations.`;
+        } else {
+          notifTitle = 'Official Platform Status Update';
+          notifBody = `${safeUser}, your Emerald Green Official platform badge has been revised by Super Admin.`;
+        }
+      } else if (normalizedType === 'business' || normalizedType === 'shop') {
         if (value) {
           notifTitle = '🏪 Verified Business Shop Approved';
           notifBody = `Congratulations ${safeUser}! Your commercial storefront has been verified. The official Shop badge is now live on your VYBE profile.`;

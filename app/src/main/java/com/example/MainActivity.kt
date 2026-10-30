@@ -165,7 +165,12 @@ class MainActivity : ComponentActivity() {
       val uploadStatus by viewModel.uploadStatus.collectAsState()
       val activeCall by viewModel.activeCall.collectAsState()
       val bannerMsg by viewModel.uiBannerMessage.collectAsState()
+      val availableUpdate by viewModel.availableAppUpdate.collectAsState()
       var activeRealtimeBanner by remember { mutableStateOf<RealtimeInAppBannerEvent?>(null) }
+
+      LaunchedEffect(Unit) {
+        viewModel.checkForAppUpdateInBackground(applicationContext)
+      }
 
       LaunchedEffect(Unit) {
         viewModel.inAppRealtimeBannerEvents.collect { incomingEvent ->
@@ -254,6 +259,26 @@ class MainActivity : ComponentActivity() {
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
                     .padding(top = 56.dp)
+                )
+              }
+
+              // In-App Update Notification Banner
+              if (
+                availableUpdate != null &&
+                activeCall == null &&
+                currentScreen != Screen.SPLASH &&
+                currentScreen != Screen.AUTH &&
+                currentScreen != Screen.PASSWORD_RECOVERY &&
+                currentScreen != Screen.SETTINGS
+              ) {
+                com.example.ui.components.InAppUpdateBanner(
+                  release = availableUpdate!!,
+                  onUpdateClick = { viewModel.navigateTo(Screen.SETTINGS) },
+                  onDismiss = { viewModel.dismissAppUpdateBanner() },
+                  modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 8.dp)
                 )
               }
 

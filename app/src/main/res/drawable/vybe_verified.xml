@@ -1,0 +1,133 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+
+    <!-- Dark Navy Circular Emblem Base -->
+    <path
+        android:pathData="M 50,50 m -40,0 a 40,40 0 1,0 80,0 a 40,40 0 1,0 -80,0">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:centerX="50"
+                android:centerY="45"
+                android:gradientRadius="42"
+                android:type="radial">
+                <item android:color="#FF10182E" android:offset="0.0" />
+                <item android:color="#FF090E1C" android:offset="0.7" />
+                <item android:color="#FF050812" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Electric Cyan/Blue Metallic Rim -->
+    <path
+        android:pathData="M 50,50 m -40,0 a 40,40 0 1,0 80,0 a 40,40 0 1,0 -80,0"
+        android:strokeWidth="3.2">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="10"
+                android:startY="10"
+                android:endX="90"
+                android:endY="90"
+                android:type="linear">
+                <item android:color="#FF00F0FF" android:offset="0.0" />
+                <item android:color="#FF38BDF8" android:offset="0.35" />
+                <item android:color="#FF0284C7" android:offset="0.7" />
+                <item android:color="#FF00F0FF" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Inner Bevel Accent -->
+    <path
+        android:pathData="M 50,50 m -37,0 a 37,37 0 1,0 74,0 a 37,37 0 1,0 -74,0"
+        android:strokeColor="#6600F0FF"
+        android:strokeWidth="0.8" />
+
+    <!-- Authentic Central VYBE Ribbon V: Right Arm (Fold layer) -->
+    <path
+        android:pathData="M 50.3,53.1 C 53.4,47.3 58.5,39.8 64.3,36.8 C 67.4,35.1 71.1,36.1 72.5,39.2 C 73.5,41.6 72.5,44.6 69.4,48.0 C 63.3,54.8 55.4,62.3 50.3,66.0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="50"
+                android:startY="66"
+                android:endX="73"
+                android:endY="36"
+                android:type="linear">
+                <item android:color="#FF4C1D95" android:offset="0.0" />
+                <item android:color="#FF7C3AED" android:offset="0.3" />
+                <item android:color="#FFC026D3" android:offset="0.7" />
+                <item android:color="#FFFF007F" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Authentic Central VYBE Ribbon V: Left Arm & Rounded Loop Sweep -->
+    <path
+        android:pathData="M 31.6,37.5 C 34.3,34.1 38.7,34.5 41.8,38.2 L 50.0,50.8 C 51.4,52.8 53.1,54.2 55.5,54.2 C 58.5,54.2 61.9,50.1 65.7,44.7 L 70.8,37.2 C 72.8,34.1 76.2,34.8 77.6,37.9 C 78.6,40.3 77.9,43.3 75.2,47.4 C 69.1,56.2 63.0,65.4 52.4,65.4 C 44.9,65.4 40.2,60.3 37.1,55.2 L 29.3,41.2 C 28.2,39.2 29.2,37.9 31.6,37.5 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="29"
+                android:startY="35"
+                android:endX="66"
+                android:endY="65"
+                android:type="linear">
+                <item android:color="#FF00F0FF" android:offset="0.0" />
+                <item android:color="#FF0080FF" android:offset="0.35" />
+                <item android:color="#FF6A11CB" android:offset="0.75" />
+                <item android:color="#FF7B2CBF" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Right Flange Ribbon Sweep -->
+    <path
+        android:pathData="M 50.0,53.4 C 52.4,49.7 55.4,45.3 59.9,41.2 C 63.9,37.4 68.0,35.4 71.4,35.4 C 74.2,35.4 76.2,37.1 76.2,39.8 C 76.2,42.2 74.2,45.6 70.1,51.0 C 64.7,58.2 58.5,64.6 50.7,65.0 C 49.3,60.9 49.0,56.8 50.0,53.4 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="50"
+                android:startY="65"
+                android:endX="76"
+                android:endY="35"
+                android:type="linear">
+                <item android:color="#FF7C3AED" android:offset="0.0" />
+                <item android:color="#FFC026D3" android:offset="0.5" />
+                <item android:color="#FFFF007F" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Bottom-Right Circular Attachment (Background Cutout) -->
+    <path
+        android:fillColor="#FF060913"
+        android:pathData="M 76,76 m -15,0 a 15,15 0 1,0 30,0 a 15,15 0 1,0 -30,0" />
+
+    <!-- Bottom-Right Circular Attachment (Cyan/Electric Blue Circle) -->
+    <path
+        android:pathData="M 76,76 m -13,0 a 13,13 0 1,0 26,0 a 13,13 0 1,0 -26,0"
+        android:strokeColor="#CCFFFFFF"
+        android:strokeWidth="1.2">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="63"
+                android:startY="63"
+                android:endX="89"
+                android:endY="89"
+                android:type="linear">
+                <item android:color="#FF38BDF8" android:offset="0.0" />
+                <item android:color="#FF00F0FF" android:offset="0.5" />
+                <item android:color="#FF0284C7" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Crisp White Verification Checkmark -->
+    <path
+        android:pathData="M 70.5,76.0 L 74.5,80.0 L 82.0,71.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>
