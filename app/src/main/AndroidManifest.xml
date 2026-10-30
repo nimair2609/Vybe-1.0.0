@@ -68,7 +68,15 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="vybe" android:host="profile" />
             </intent-filter>
-            <!-- Web / HTTPS Production Deep Link Callback & Canonical Profile QR Links -->
+            <!-- Canonical Shared Post Deep Link -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="vybe" android:host="post" />
+                <data android:scheme="vybe" android:host="p" />
+            </intent-filter>
+            <!-- Web / HTTPS Production Deep Link Callback & Canonical Profile / Post Links -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -77,10 +85,14 @@
                 <data android:scheme="https" android:host="ais-pre-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app" android:pathPrefix="/reset-password" />
                 <data android:scheme="https" android:host="ais-pre-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app" android:pathPrefix="/profile" />
                 <data android:scheme="https" android:host="ais-pre-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app" android:pathPrefix="/u" />
+                <data android:scheme="https" android:host="ais-pre-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app" android:pathPrefix="/post" />
+                <data android:scheme="https" android:host="ais-pre-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app" android:pathPrefix="/p" />
                 <data android:scheme="https" android:host="ais-dev-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app" android:pathPrefix="/auth/callback" />
                 <data android:scheme="https" android:host="ais-dev-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app" android:pathPrefix="/reset-password" />
                 <data android:scheme="https" android:host="ais-dev-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app" android:pathPrefix="/profile" />
                 <data android:scheme="https" android:host="ais-dev-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app" android:pathPrefix="/u" />
+                <data android:scheme="https" android:host="ais-dev-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app" android:pathPrefix="/post" />
+                <data android:scheme="https" android:host="ais-dev-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app" android:pathPrefix="/p" />
             </intent-filter>
         </activity>
 

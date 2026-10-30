@@ -85,6 +85,42 @@ object SupabaseConfig {
     return clean.count { it == '.' } == 2 && !clean.startsWith("sb_publishable_")
   }
 
+  private fun decodeJwtPayloadJson(token: String?): String? {
+    if (!isJwtAccessToken(token)) return null
+    val clean = token!!.trim().removePrefix("Bearer ").trim()
+    val parts = clean.split(".")
+    if (parts.size < 2) return null
+    val rawPart = parts[1]
+    val padded = when (rawPart.length % 4) {
+      2 -> "$rawPart=="
+      3 -> "$rawPart="
+      else -> rawPart
+    }
+    return try {
+      String(java.util.Base64.getUrlDecoder().decode(padded), Charsets.UTF_8)
+    } catch (_: Throwable) {
+      try {
+        val decodedBytes = android.util.Base64.decode(
+          rawPart,
+          android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP
+        )
+        String(decodedBytes, Charsets.UTF_8)
+      } catch (_: Throwable) {
+        null
+      }
+    }
+  }
+
+  /**
+   * Extracts the authenticated user's canonical lowercase UUID (`sub` claim) from a Supabase JWT
+   * so Storage object prefixes `<uid>/<filename>` always match `auth.uid()::text` in RLS policies.
+   */
+  fun extractJwtSubject(token: String?): String? {
+    val json = decodeJwtPayloadJson(token) ?: return null
+    val subMatch = Regex("\"sub\"\\s*:\\s*\"([^\"]+)\"").find(json) ?: return null
+    return subMatch.groupValues[1].trim().lowercase().takeIf { it.isNotBlank() }
+  }
+
   /**
    * Safely checks whether a JWT access token has expired or is within [clockSkewSeconds] of expiry,
    * resolving the "exp claim timestamp check failed" error without weakening auth security.
@@ -92,15 +128,7 @@ object SupabaseConfig {
   fun isJwtExpired(token: String?, clockSkewSeconds: Long = 60L): Boolean {
     if (!isJwtAccessToken(token)) return true
     return try {
-      val clean = token!!.trim().removePrefix("Bearer ").trim()
-      val parts = clean.split(".")
-      if (parts.size < 2) return true
-      val payload = parts[1]
-      val decodedBytes = android.util.Base64.decode(
-        payload,
-        android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP
-      )
-      val json = String(decodedBytes, Charsets.UTF_8)
+      val json = decodeJwtPayloadJson(token) ?: return false
       val expMatch = Regex("\"exp\"\\s*:\\s*(\\d+)").find(json)
       if (expMatch != null) {
         val expSeconds = expMatch.groupValues[1].toLongOrNull() ?: return false

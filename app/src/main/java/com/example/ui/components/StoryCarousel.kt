@@ -80,7 +80,7 @@ fun StoryCarousel(
   }
   val ownStories = remember(activeStories, currentUser?.id) {
     activeStories
-      .filter { currentUser != null && it.author.id == currentUser.id }
+      .filter { currentUser != null && it.author.id.equals(currentUser.id, ignoreCase = true) }
       .sortedBy { TimestampUtils.parseIsoMillis(it.createdAtIso) ?: 0L }
   }
   val userHasStory = ownStories.isNotEmpty()
@@ -90,8 +90,8 @@ fun StoryCarousel(
   // Group peer stories by author so each user has exactly ONE bubble in the carousel
   val peerStoryGroups = remember(activeStories, currentUser?.id) {
     activeStories
-      .filter { currentUser == null || it.author.id != currentUser.id }
-      .groupBy { it.author.id }
+      .filter { currentUser == null || !it.author.id.equals(currentUser.id, ignoreCase = true) }
+      .groupBy { it.author.id.lowercase() }
       .values
       .map { userStories ->
         val sorted = userStories.sortedBy { TimestampUtils.parseIsoMillis(it.createdAtIso) ?: 0L }

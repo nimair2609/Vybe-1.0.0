@@ -53,6 +53,7 @@ import com.example.ui.components.VybeReactionOutlineIcon
 import com.example.ui.components.VybeReactionSelector
 import com.example.ui.components.VybeVideoPlayer
 import com.example.ui.theme.*
+import com.example.util.QrCodeGenerator
 import com.example.util.FeedAudioController
 import com.example.util.rememberRelativeTimestamp
 import kotlinx.coroutines.delay
@@ -623,15 +624,20 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
               }
               OutlinedButton(
                 onClick = {
+                  val canonicalUrl = QrCodeGenerator.buildCanonicalPostUrl(currentReel.id)
                   val shareIntent = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
                     putExtra(Intent.EXTRA_SUBJECT, "VYBES Reel by @${currentReel.author.username}")
                     putExtra(
                       Intent.EXTRA_TEXT,
-                      "Watch @${currentReel.author.username}'s reel on VYBE:\n${currentReel.caption}\n${currentReel.mediaUrls.firstOrNull() ?: ""}"
+                      "Watch @${currentReel.author.username}'s reel on VYBE:\n${currentReel.caption}\n\n$canonicalUrl"
                     )
                   }
-                  context.startActivity(Intent.createChooser(shareIntent, "Share Reel Link"))
+                  val chooser = Intent.createChooser(shareIntent, "Share Reel Link").apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                  }
+                  context.startActivity(chooser)
+                  viewModel.incrementLocalPostShares(currentReel.id)
                   showShareInboxSheet = false
                 },
                 shape = RoundedCornerShape(12.dp),

@@ -328,19 +328,18 @@ fun FeedScreen(viewModel: VybeViewModel) {
             }
           }
 
-          // 4. User profile avatar
+          // 4. User profile avatar (single clean border via VybeAvatar, 48dp touch target)
           if (currentUser != null) {
             Box(
               modifier = Modifier
-                .padding(start = 4.dp, end = 8.dp)
-                .size(36.dp)
+                .padding(end = 6.dp)
+                .size(44.dp)
                 .clip(CircleShape)
-                .border(1.5.dp, Color(0xFF26334D), CircleShape)
                 .clickable { viewModel.selectTab(MainTab.PROFILE) }
                 .testTag("profile_avatar_top_button"),
               contentAlignment = Alignment.Center
             ) {
-              VybeAvatar(user = currentUser!!, size = 32.dp)
+              VybeAvatar(user = currentUser!!, size = 34.dp, showPulseDot = false)
             }
           }
         },
@@ -600,16 +599,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
                 onCommentClick = { viewModel.loadCommentsForPost(post.id) },
                 onAddComment = { text -> viewModel.addComment(post.id, text) },
                 onLoadComments = { viewModel.loadCommentsForPost(post.id) },
-                onShareClick = {
-                  val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(
-                      Intent.EXTRA_TEXT,
-                      "${post.author.displayName} (@${post.author.username}) on VYBE:\n${post.caption}"
-                    )
-                  }
-                  context.startActivity(Intent.createChooser(shareIntent, "Share VYBE Post"))
-                },
+                onShareClick = { viewModel.openPostShareSheet(post) },
                 onUserClick = { user -> viewModel.openUserProfile(user) },
                 onRemixClick = { viewModel.openReelViewer(post.id) },
                 onDeleteClick = { viewModel.deletePost(post.id) },

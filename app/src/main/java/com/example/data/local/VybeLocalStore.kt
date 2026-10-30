@@ -23,6 +23,7 @@ class VybeLocalStore private constructor(context: Context) {
     private const val KEY_GITHUB_REPO = "saved_github_repo"
     private const val KEY_THEME_MODE = "saved_theme_mode"
     private const val KEY_DELETED_MESSAGE_IDS = "saved_deleted_message_ids_json"
+    private const val KEY_STORIES = "saved_stories_json"
 
     private val LEGACY_SAMPLE_IDS = setOf(
       "u_me", "u_aarav", "u_priya", "u_vikram",
@@ -51,6 +52,7 @@ class VybeLocalStore private constructor(context: Context) {
       .remove(KEY_VYBE_MATCHES)
       .remove(KEY_POSTS)
       .remove(KEY_UNFILTERED)
+      .remove(KEY_STORIES)
       .apply()
   }
 
@@ -213,6 +215,42 @@ class VybeLocalStore private constructor(context: Context) {
         val c = conversationFromJson(array.getJSONObject(i))
         if (!LEGACY_SAMPLE_IDS.contains(c.id) && !LEGACY_SAMPLE_IDS.contains(c.peerUser.id)) {
           list.add(c)
+        }
+      }
+      list
+    } catch (_: Exception) {
+      emptyList()
+    }
+  }
+
+  // --- Stories Cache (Persists published & synced stories across restarts, auto-expiring after 24h) ---
+  fun saveStories(stories: List<Story>, nowMillis: Long = System.currentTimeMillis()) {
+    val array = JSONArray()
+    for (s in stories) {
+      if (LEGACY_SAMPLE_IDS.contains(s.author.id)) continue
+      val expMillis = com.example.util.TimestampUtils.parseIsoMillis(s.expiresAtIso)
+      val createdMillis = com.example.util.TimestampUtils.parseIsoMillis(s.createdAtIso)
+      val isExpired = when {
+        expMillis != null -> expMillis <= nowMillis
+        createdMillis != null -> (nowMillis - createdMillis) >= 24L * 3_600_000L
+        else -> s.expiresHoursRemaining <= 0
+      }
+      if (!isExpired) {
+        array.put(storyToJson(s))
+      }
+    }
+    prefs.edit().putString(KEY_STORIES, array.toString()).apply()
+  }
+
+  fun loadStories(nowMillis: Long = System.currentTimeMillis()): List<Story> {
+    val raw = prefs.getString(KEY_STORIES, null) ?: return emptyList()
+    return try {
+      val array = JSONArray(raw)
+      val list = mutableListOf<Story>()
+      for (i in 0 until array.length()) {
+        val s = storyFromJson(array.getJSONObject(i), nowMillis) ?: continue
+        if (!LEGACY_SAMPLE_IDS.contains(s.author.id)) {
+          list.add(s)
         }
       }
       list
@@ -650,5 +688,114 @@ class VybeLocalStore private constructor(context: Context) {
       .putInt("time_mgmt_break_minutes", breakMinutes)
       .putBoolean("time_mgmt_break_enabled", isEnabled)
       .apply()
+  }
+
+  private fun musicAttachmentToJson(m: MusicAttachment): JSONObject = JSONObject().apply {
+    put("trackId", m.trackId)
+    put("title", m.title)
+    put("artist", m.artist)
+    if (!m.previewUrl.isNullOrBlank()) put("previewUrl", m.previewUrl)
+    if (!m.streamUrl.isNullOrBlank()) put("streamUrl", m.streamUrl)
+    put("startTimeSeconds", m.startTimeSeconds)
+    put("durationSeconds", m.durationSeconds)
+    put("musicVolume", m.musicVolume.toDouble())
+    put("originalAudioVolume", m.originalAudioVolume.toDouble())
+    if (!m.coverUrl.isNullOrBlank()) put("coverUrl", m.coverUrl)
+    put("isRenderedWithMixedAudio", m.isRenderedWithMixedAudio)
+  }
+
+  private fun musicAttachmentFromJson(obj: JSONObject?): MusicAttachment? {
+    if (obj == null) return null
+    val title = obj.optString("title", "")
+    val trackId = obj.optString("trackId", "")
+    if (title.isBlank() && trackId.isBlank()) return null
+    return MusicAttachment(
+      trackId = trackId,
+      title = title,
+      artist = obj.optString("artist", ""),
+      previewUrl = obj.optString("previewUrl", "").ifBlank { null },
+      streamUrl = obj.optString("streamUrl", "").ifBlank { null },
+      startTimeSeconds = obj.optInt("startTimeSeconds", 0),
+      durationSeconds = obj.optInt("durationSeconds", 30),
+      musicVolume = obj.optDouble("musicVolume", 0.85).toFloat(),
+      originalAudioVolume = obj.optDouble("originalAudioVolume", 1.0).toFloat(),
+      coverUrl = obj.optString("coverUrl", "").ifBlank { null },
+      isRenderedWithMixedAudio = obj.optBoolean("isRenderedWithMixedAudio", false)
+    )
+  }
+
+  private fun storyToJson(s: Story): JSONObject = JSONObject().apply {
+    put("id", s.id)
+    put("author", userToJson(s.author))
+    put("mediaUrl", s.mediaUrl)
+    put("caption", s.caption)
+    put("mediaType", s.mediaType.name)
+    put("audience", s.audience.name)
+    if (!s.musicTrackTitle.isNullOrBlank()) put("musicTrackTitle", s.musicTrackTitle)
+    if (s.musicAttachment != null) put("musicAttachment", musicAttachmentToJson(s.musicAttachment))
+    put("timestamp", s.timestamp)
+    put("expiresHoursRemaining", s.expiresHoursRemaining)
+    put("isViewed", s.isViewed)
+    put("reactionsCount", s.reactionsCount)
+    put("isLikedByMe", s.isLikedByMe)
+    if (!s.location.isNullOrBlank()) put("location", s.location)
+    if (!s.textBackgroundColor.isNullOrBlank()) put("textBackgroundColor", s.textBackgroundColor)
+    if (!s.createdAtIso.isNullOrBlank()) put("createdAtIso", s.createdAtIso)
+    if (!s.expiresAtIso.isNullOrBlank()) put("expiresAtIso", s.expiresAtIso)
+    if (!s.storagePath.isNullOrBlank()) put("storagePath", s.storagePath)
+    if (!s.clientUploadId.isNullOrBlank()) put("clientUploadId", s.clientUploadId)
+  }
+
+  private fun storyFromJson(obj: JSONObject, nowMillis: Long): Story? {
+    val createdAtIso = obj.optString("createdAtIso", "").ifBlank { null }
+    val expiresAtIso = obj.optString("expiresAtIso", "").ifBlank { null }
+    val expMillis = com.example.util.TimestampUtils.parseIsoMillis(expiresAtIso)
+    val createdMillis = com.example.util.TimestampUtils.parseIsoMillis(createdAtIso)
+    if (expMillis != null && expMillis <= nowMillis) return null
+    if (expMillis == null && createdMillis != null && (nowMillis - createdMillis) >= 24L * 3_600_000L) return null
+
+    val remainingHours = when {
+      expMillis != null -> (((expMillis - nowMillis) / 3_600_000L).toInt()).coerceIn(1, 24)
+      createdMillis != null -> (((24L * 3_600_000L - (nowMillis - createdMillis)) / 3_600_000L).toInt()).coerceIn(1, 24)
+      else -> obj.optInt("expiresHoursRemaining", 24).coerceIn(1, 24)
+    }
+
+    val authorObj = obj.optJSONObject("author")
+    val author = if (authorObj != null) userFromJson(authorObj) else User(id = "u_anon", username = "vyber", displayName = "VYBE Member")
+    val mediaType = try {
+      StoryMediaType.valueOf(obj.optString("mediaType", StoryMediaType.PHOTO.name))
+    } catch (_: Exception) {
+      StoryMediaType.PHOTO
+    }
+    val audience = try {
+      StoryAudience.valueOf(obj.optString("audience", StoryAudience.EVERYONE.name))
+    } catch (_: Exception) {
+      StoryAudience.EVERYONE
+    }
+    return Story(
+      id = obj.optString("id", "s_${nowMillis}"),
+      author = author,
+      mediaUrl = obj.optString("mediaUrl", ""),
+      caption = obj.optString("caption", ""),
+      mediaType = mediaType,
+      audience = audience,
+      musicTrackTitle = obj.optString("musicTrackTitle", "").ifBlank { null },
+      musicAttachment = musicAttachmentFromJson(obj.optJSONObject("musicAttachment")),
+      timestamp = com.example.util.TimestampUtils.formatRelative(
+        iso = createdAtIso,
+        nowMillis = nowMillis,
+        fallback = obj.optString("timestamp", "Just now")
+      ),
+      expiresHoursRemaining = remainingHours,
+      isViewed = obj.optBoolean("isViewed", false),
+      reactionsCount = obj.optInt("reactionsCount", 0),
+      isLikedByMe = obj.optBoolean("isLikedByMe", false),
+      location = obj.optString("location", "").ifBlank { null },
+      textBackgroundColor = obj.optString("textBackgroundColor", "").ifBlank { null },
+      createdAtIso = createdAtIso,
+      expiresAtIso = expiresAtIso,
+      storagePath = obj.optString("storagePath", "").ifBlank { null },
+      clientUploadId = obj.optString("clientUploadId", "").ifBlank { null }
+    )
   }
 }

@@ -139,6 +139,18 @@ class VybeViewModel : ViewModel() {
   private val _targetFeedPostId = MutableStateFlow<String?>(null)
   val targetFeedPostId: StateFlow<String?> = _targetFeedPostId.asStateFlow()
 
+  private val _sharingPost = MutableStateFlow<Post?>(null)
+  val sharingPost: StateFlow<Post?> = _sharingPost.asStateFlow()
+
+  private val _openedSharedPost = MutableStateFlow<Post?>(null)
+  val openedSharedPost: StateFlow<Post?> = _openedSharedPost.asStateFlow()
+
+  private val _sharedPostLookupError = MutableStateFlow<String?>(null)
+  val sharedPostLookupError: StateFlow<String?> = _sharedPostLookupError.asStateFlow()
+
+  private val _isResolvingSharedPost = MutableStateFlow(false)
+  val isResolvingSharedPost: StateFlow<Boolean> = _isResolvingSharedPost.asStateFlow()
+
   private val _feedRefreshTrigger = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
   val feedRefreshTrigger = _feedRefreshTrigger
 
@@ -309,6 +321,17 @@ class VybeViewModel : ViewModel() {
       }
     }
 
+    viewModelScope.launch {
+      repository.posts.collect { allPosts ->
+        val currentShared = _openedSharedPost.value
+        if (currentShared != null) {
+          allPosts.firstOrNull { it.id == currentShared.id }?.let { updated ->
+            _openedSharedPost.value = updated
+          }
+        }
+      }
+    }
+
     // Keep visible stories & active Story sequence strictly scoped to privacy, expiration & activeStoryAuthorId
     viewModelScope.launch {
       kotlinx.coroutines.flow.combine(
@@ -410,6 +433,13 @@ class VybeViewModel : ViewModel() {
       return
     }
 
+    // Canonical Post Share Deep Link (`vybe://post/{postId}` or `https://<canonical-host>/post/{postId}`)
+    val parsedPostId = com.example.util.QrCodeGenerator.parsePostDeepLink(uri.toString())
+    if (!parsedPostId.isNullOrBlank()) {
+      openSharedPostById(parsedPostId)
+      return
+    }
+
     // Canonical Profile Deep Link (`vybe://profile/{userId}?u={username}` or `https://<canonical-host>/profile/{userId}?u={username}`)
     val parsedProfileLink = com.example.util.QrCodeGenerator.parseProfileDeepLink(uri.toString())
     if (parsedProfileLink != null) {
@@ -434,6 +464,51 @@ class VybeViewModel : ViewModel() {
   fun clearProfileLookupError() {
     _profileLookupError.value = null
   }
+
+  fun openPostShareSheet(post: Post) {
+    _sharingPost.value = post
+  }
+
+  fun dismissPostShareSheet() {
+    _sharingPost.value = null
+  }
+
+  fun openSharedPostById(postId: String) {
+    val cleanId = postId.trim()
+    if (cleanId.isBlank()) return
+    viewModelScope.launch {
+      _isResolvingSharedPost.value = true
+      _sharedPostLookupError.value = null
+      _openedSharedPost.value = null
+      val res = repository.resolvePostFromDeepLink(cleanId)
+      _isResolvingSharedPost.value = false
+      res.onSuccess { post ->
+        _openedSharedPost.value = post
+      }.onFailure { err ->
+        _sharedPostLookupError.value = err.message ?: "This post is unavailable or private."
+      }
+    }
+  }
+
+  fun dismissSharedPostModal() {
+    _openedSharedPost.value = null
+    _sharedPostLookupError.value = null
+    _isResolvingSharedPost.value = false
+  }
+
+  suspend fun sharePostToConversationAwait(
+    post: Post,
+    targetUser: User? = null,
+    existingConversationId: String? = null,
+    optionalNote: String = ""
+  ): Result<String> = repository.sharePostToConversationAwait(
+    post = post,
+    targetUser = targetUser,
+    existingConversationId = existingConversationId,
+    optionalNote = optionalNote
+  )
+
+  fun incrementLocalPostShares(postId: String) = repository.incrementLocalPostShares(postId)
 
   // Verification & Official Badges
   fun refreshVerificationRequests() {
@@ -898,7 +973,7 @@ class VybeViewModel : ViewModel() {
     val notExpired = if (exp != null) exp > nowMillis else s.expiresHoursRemaining > 0
     if (!notExpired) return false
 
-    if (myId.isNotBlank() && s.author.id == myId) return true
+    if (myId.isNotBlank() && s.author.id.equals(myId, ignoreCase = true)) return true
     if (s.author.isPrivate && !following.contains(s.author.id)) return false
 
     return when (s.audience) {
@@ -913,7 +988,7 @@ class VybeViewModel : ViewModel() {
     if (authorId.isBlank()) return emptyList()
     val nowMillis = System.currentTimeMillis()
     return repository.stories.value
-      .filter { s -> s.author.id == authorId && isStoryVisibleToViewer(s, nowMillis) }
+      .filter { s -> s.author.id.equals(authorId, ignoreCase = true) && isStoryVisibleToViewer(s, nowMillis) }
       .sortedBy { com.example.util.TimestampUtils.parseIsoMillis(it.createdAtIso) ?: 0L }
   }
 
@@ -1262,6 +1337,8 @@ class VybeViewModel : ViewModel() {
   fun pushLiveBroadcastFrame(jpegBytes: ByteArray) = repository.pushLiveBroadcastFrame(jpegBytes)
 
   fun createUnfilteredPost(caption: String, imageUrl: String) = repository.createUnfilteredPost(caption, imageUrl)
+  suspend fun publishUnfilteredPostAwait(caption: String, rawCameraUri: String, mood: MoodType? = null): Result<Post> =
+    repository.publishUnfilteredPostAwait(caption, rawCameraUri, mood)
   fun addUnfilteredComment(postId: String, text: String) = repository.addUnfilteredComment(postId, text)
   fun submitDoubleTakeAnswer(promptId: String, answer: String) = repository.submitDoubleTakeAnswer(promptId, answer)
   fun createDoubleTakePrompt(question: String, category: String, optA: String, optB: String, peer: User, isPublic: Boolean = false) =

@@ -104,6 +104,78 @@ object QrCodeGenerator {
   }
 
   /**
+   * Generates the official app deep link for instant post opening (`vybe://post/{postId}`).
+   */
+  fun buildPostDeepLink(postId: String): String {
+    val cleanId = sanitizeSegment(postId)
+    return if (cleanId.isBlank()) "vybe://post" else "vybe://post/$cleanId"
+  }
+
+  /**
+   * Generates the canonical HTTPS URL for sharing public VYBE posts externally and in DMs.
+   */
+  fun buildCanonicalPostUrl(postId: String): String {
+    val cleanId = sanitizeSegment(postId)
+    return if (cleanId.isBlank()) CANONICAL_WEB_BASE else "$CANONICAL_WEB_BASE/post/$cleanId"
+  }
+
+  /**
+   * Parses VYBE post deep links (`vybe://post/{postId}` and `https://<supported-host>/post/{postId}`)
+   * while rejecting unrelated hosts or auth callback URLs.
+   */
+  fun parsePostDeepLink(rawUri: String?): String? {
+    val trimmed = rawUri?.trim().orEmpty()
+    if (trimmed.isBlank()) return null
+    if (trimmed.contains("access_token=", ignoreCase = true) ||
+      trimmed.contains("refresh_token=", ignoreCase = true)
+    ) {
+      return null
+    }
+    return try {
+      val uri = java.net.URI(trimmed)
+      val scheme = uri.scheme?.lowercase().orEmpty()
+      val host = uri.host?.lowercase().orEmpty()
+      val pathSegments = (uri.path ?: "")
+        .split("/")
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+
+      when (scheme) {
+        "vybe" -> {
+          if (host != "post" && host != "p") return null
+          sanitizeSegment(pathSegments.firstOrNull().orEmpty()).ifBlank { null }
+        }
+        "https", "http" -> {
+          if (host !in SUPPORTED_WEB_HOSTS) return null
+          if (pathSegments.size < 2) return null
+          val prefix = pathSegments[0].lowercase()
+          if (prefix != "post" && prefix != "p") return null
+          val decoded = java.net.URLDecoder.decode(pathSegments[1], "UTF-8").trim()
+          sanitizeSegment(decoded).ifBlank { null }
+        }
+        else -> null
+      }
+    } catch (_: Throwable) {
+      null
+    }
+  }
+
+  /**
+   * Extracts a VYBE shared post ID from a direct message body if it contains a canonical `/post/{id}` or `vybe://post/{id}` URL.
+   */
+  fun extractPostIdFromText(text: String?): String? {
+    if (text.isNullOrBlank()) return null
+    val urlCandidates = Regex("(https?://\\S+|vybe://\\S+)", RegexOption.IGNORE_CASE)
+      .findAll(text)
+      .map { it.value.trimEnd('.', ',', ')', ']', '>', '"', '\'') }
+    for (candidate in urlCandidates) {
+      val parsed = parsePostDeepLink(candidate)
+      if (!parsed.isNullOrBlank()) return parsed
+    }
+    return null
+  }
+
+  /**
    * Parses VYBE profile deep links (`vybe://profile/{id}?u={username}` and
    * `https://<canonical-host>/profile/{id}?u={username}` or `/u/{id}`) while rejecting unrelated domains.
    */

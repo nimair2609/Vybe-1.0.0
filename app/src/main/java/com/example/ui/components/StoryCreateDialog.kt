@@ -87,6 +87,8 @@ fun StoryCreateDialog(
   val allUsers by viewModel.allUsers.collectAsState()
   val vybeMatches by viewModel.vybeMatches.collectAsState()
 
+  val uploadStatus by viewModel.uploadStatus.collectAsState()
+
   var selectedMode by remember { mutableStateOf(StoryCreateMode.CAMERA_PHOTO) }
   var selectedAudience by remember { mutableStateOf(StoryAudience.EVERYONE) }
   var captionText by remember { mutableStateOf("") }
@@ -100,6 +102,9 @@ fun StoryCreateDialog(
 
   var pickedPhotoUri by remember { mutableStateOf<Uri?>(null) }
   var pickedVideoUri by remember { mutableStateOf<Uri?>(null) }
+  var pendingCameraPhotoUri by remember { mutableStateOf<Uri?>(null) }
+  var pendingCameraVideoUri by remember { mutableStateOf<Uri?>(null) }
+  var pendingCameraMode by remember { mutableStateOf("PHOTO") }
   var detectedVideoRatio by remember { mutableStateOf(9f / 16f) }
 
   var textBackgroundKey by remember { mutableStateOf("NEON_PURPLE") }
@@ -113,18 +118,60 @@ fun StoryCreateDialog(
   ) { uri ->
     if (uri != null) {
       val localPath = MediaUtils.copyUriToLocalCache(context, uri, "story_photo")
-      pickedPhotoUri = Uri.parse(localPath)
-      validationError = null
+      val validation = MediaUtils.validateMediaUri(context, localPath, MediaUtils.MAX_STORY_POST_BYTES)
+      if (validation.isSuccess) {
+        pickedPhotoUri = Uri.parse(localPath)
+        validationError = null
+      } else {
+        validationError = validation.exceptionOrNull()?.message ?: "Unsupported photo format."
+      }
     }
   }
 
-  val cameraLauncher = rememberLauncherForActivityResult(
-    contract = ActivityResultContracts.TakePicturePreview()
-  ) { bitmap ->
-    if (bitmap != null) {
-      val savedUri = MediaUtils.saveBitmapToCache(context, bitmap, prefix = "story_camera")
-      pickedPhotoUri = savedUri
-      validationError = null
+  val cameraPhotoLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.TakePicture()
+  ) { success ->
+    val targetUri = pendingCameraPhotoUri
+    if (success && targetUri != null) {
+      val validation = MediaUtils.validateMediaUri(context, targetUri.toString(), MediaUtils.MAX_STORY_POST_BYTES)
+      if (validation.isSuccess) {
+        pickedPhotoUri = targetUri
+        validationError = null
+      } else {
+        validationError = validation.exceptionOrNull()?.message ?: "Captured photo could not be read."
+      }
+    }
+  }
+
+  val cameraVideoLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.CaptureVideo()
+  ) { success ->
+    val targetUri = pendingCameraVideoUri
+    if (success && targetUri != null) {
+      val validation = MediaUtils.validateMediaUri(context, targetUri.toString(), MediaUtils.MAX_STORY_POST_BYTES)
+      if (validation.isSuccess) {
+        pickedVideoUri = targetUri
+        detectedVideoRatio = MediaUtils.extractMediaAspectRatio(context, targetUri, isVideo = true) ?: (9f / 16f)
+        validationError = null
+      } else {
+        validationError = validation.exceptionOrNull()?.message ?: "Recorded video could not be read."
+      }
+    }
+  }
+
+  fun launchStoryCamera(mode: String) {
+    try {
+      if (mode == "VIDEO") {
+        val vidUri = MediaUtils.createTempVideoUri(context)
+        pendingCameraVideoUri = vidUri
+        cameraVideoLauncher.launch(vidUri)
+      } else {
+        val imgUri = MediaUtils.createTempImageUri(context)
+        pendingCameraPhotoUri = imgUri
+        cameraPhotoLauncher.launch(imgUri)
+      }
+    } catch (e: Exception) {
+      validationError = "Unable to open camera on this device: ${e.message ?: "check camera availability"}."
     }
   }
 
@@ -132,9 +179,9 @@ fun StoryCreateDialog(
     contract = ActivityResultContracts.RequestPermission()
   ) { granted ->
     if (granted) {
-      cameraLauncher.launch(null)
+      launchStoryCamera(pendingCameraMode)
     } else {
-      validationError = "Camera permission is required to capture a story photo."
+      validationError = "Camera permission is required to capture a story."
     }
   }
 
@@ -143,10 +190,15 @@ fun StoryCreateDialog(
   ) { uri ->
     if (uri != null) {
       val localPath = MediaUtils.copyUriToLocalCache(context, uri, "story_video")
-      val localUri = Uri.parse(localPath)
-      pickedVideoUri = localUri
-      detectedVideoRatio = MediaUtils.extractMediaAspectRatio(context, localUri, isVideo = true) ?: (9f / 16f)
-      validationError = null
+      val validation = MediaUtils.validateMediaUri(context, localPath, MediaUtils.MAX_STORY_POST_BYTES)
+      if (validation.isSuccess) {
+        val localUri = Uri.parse(localPath)
+        pickedVideoUri = localUri
+        detectedVideoRatio = MediaUtils.extractMediaAspectRatio(context, localUri, isVideo = true) ?: (9f / 16f)
+        validationError = null
+      } else {
+        validationError = validation.exceptionOrNull()?.message ?: "Unsupported or oversized video file."
+      }
     }
   }
 
@@ -156,12 +208,22 @@ fun StoryCreateDialog(
     }
     return when (selectedMode) {
       StoryCreateMode.CAMERA_PHOTO -> {
-        if (pickedPhotoUri == null) false to "Please select or capture a photo before sharing your story."
-        else true to pickedPhotoUri.toString()
+        val uri = pickedPhotoUri
+        if (uri == null) {
+          false to "Please select or capture a photo before sharing your story."
+        } else {
+          val v = MediaUtils.validateMediaUri(context, uri.toString(), MediaUtils.MAX_STORY_POST_BYTES)
+          if (v.isSuccess) true to uri.toString() else false to (v.exceptionOrNull()?.message ?: "Invalid photo file.")
+        }
       }
       StoryCreateMode.VIDEO -> {
-        if (pickedVideoUri == null) false to "Please select a video before sharing your story."
-        else true to pickedVideoUri.toString()
+        val uri = pickedVideoUri
+        if (uri == null) {
+          false to "Please select or record a video before sharing your story."
+        } else {
+          val v = MediaUtils.validateMediaUri(context, uri.toString(), MediaUtils.MAX_STORY_POST_BYTES)
+          if (v.isSuccess) true to uri.toString() else false to (v.exceptionOrNull()?.message ?: "Invalid video file.")
+        }
       }
       StoryCreateMode.TYPE_TEXT -> {
         if (captionText.trim().isEmpty()) false to "Please enter text for your Type story."
@@ -196,9 +258,9 @@ fun StoryCreateDialog(
         caption = captionText.trim(),
         mediaType = mediaType,
         audience = targetAudience,
-        musicTrackTitle = if (selectedMode == StoryCreateMode.MUSIC) selectedTrack.first else null,
+        musicTrackTitle = if (selectedMode == StoryCreateMode.MUSIC) "${selectedTrack.first} — ${selectedTrack.second}" else null,
         location = selectedLocation,
-        textBackgroundColor = if (selectedMode == StoryCreateMode.TYPE_TEXT) textBackgroundKey else null
+        textBackgroundColor = if (selectedMode == StoryCreateMode.TYPE_TEXT || (selectedMode == StoryCreateMode.MUSIC && resolvedUri.isBlank())) textBackgroundKey else null
       )
       isPublishingStory = false
       if (result.isSuccess) {
@@ -469,6 +531,43 @@ fun StoryCreateDialog(
             }
           }
 
+          if (isPublishingStory) {
+            val statusLabel = when (val st = uploadStatus) {
+              is com.example.data.repository.UploadStatus.Uploading -> "${st.label} (${st.progressPercent}%)"
+              is com.example.data.repository.UploadStatus.Processing -> st.label
+              else -> "Publishing story to VYBE..."
+            }
+            val progressVal = (uploadStatus as? com.example.data.repository.UploadStatus.Uploading)
+              ?.progressPercent
+              ?.let { (it / 100f).coerceIn(0.05f, 1f) }
+            Surface(
+              color = VybeViolet.copy(alpha = 0.14f),
+              shape = RoundedCornerShape(12.dp),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                  text = statusLabel,
+                  color = MaterialTheme.colorScheme.onSurface,
+                  fontSize = 12.sp,
+                  fontWeight = FontWeight.SemiBold
+                )
+                if (progressVal != null) {
+                  LinearProgressIndicator(
+                    progress = { progressVal },
+                    color = VybeViolet,
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
+                  )
+                } else {
+                  LinearProgressIndicator(
+                    color = VybeViolet,
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
+                  )
+                }
+              }
+            }
+          }
+
           // --- 1. Mode Switcher ---
           Text(
             text = "STORY FORMAT",
@@ -679,8 +778,9 @@ fun StoryCreateDialog(
 
               OutlinedButton(
                 onClick = {
+                  pendingCameraMode = "PHOTO"
                   val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-                  if (granted) cameraLauncher.launch(null) else cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                  if (granted) launchStoryCamera("PHOTO") else cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                 },
                 enabled = !isPublishingStory,
                 shape = RoundedCornerShape(12.dp),
@@ -691,18 +791,38 @@ fun StoryCreateDialog(
                 Text("Take Photo", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
               }
             }
-          } else if (selectedMode == StoryCreateMode.VIDEO && pickedVideoUri != null) {
-            OutlinedButton(
-              onClick = {
-                videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
-              },
-              enabled = !isPublishingStory,
-              shape = RoundedCornerShape(12.dp),
-              modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+          } else if (selectedMode == StoryCreateMode.VIDEO) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-              Icon(Icons.Default.VideoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text("Change Video", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+              OutlinedButton(
+                onClick = {
+                  videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+                },
+                enabled = !isPublishingStory,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+              ) {
+                Icon(Icons.Default.VideoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(if (pickedVideoUri != null) "Change Video" else "Gallery Video", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+              }
+
+              OutlinedButton(
+                onClick = {
+                  pendingCameraMode = "VIDEO"
+                  val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                  if (granted) launchStoryCamera("VIDEO") else cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                },
+                enabled = !isPublishingStory,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+              ) {
+                Icon(Icons.Default.Videocam, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Record Video", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+              }
             }
           }
 

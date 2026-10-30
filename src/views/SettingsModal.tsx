@@ -14,7 +14,7 @@ export const SettingsModal: React.FC = () => {
   const { 
     closeModal, currentUser, githubRepo, setGithubRepo, 
     updateInfo, isCheckingUpdates, updateError, checkForUpdates, 
-    resetGithubRepo, openModal 
+    resetGithubRepo, openModal, themeMode, setThemeMode
   } = useVybe();
 
   const [inputRepo, setInputRepo] = useState(githubRepo);
@@ -142,6 +142,37 @@ export const SettingsModal: React.FC = () => {
               </div>
             </div>
           )}
+        </div>
+
+        {/* Appearance / Theme Mode */}
+        <div className="p-4 rounded-2xl bg-[#060714] border border-[#262E4A] space-y-3">
+          <h4 className="text-xs font-bold text-gray-300 uppercase tracking-wider">Appearance</h4>
+          <div className="grid grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              onClick={() => setThemeMode('dark')}
+              className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all ${
+                themeMode === 'dark'
+                  ? 'bg-[#8B5CF6]/20 border-[#8B5CF6] text-[#00C6FF]'
+                  : 'bg-[#101322] border-[#262E4A] text-gray-400 hover:text-white'
+              }`}
+            >
+              <Moon className="w-4 h-4" />
+              <span>Dark Mode</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setThemeMode('light')}
+              className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all ${
+                themeMode === 'light'
+                  ? 'bg-[#8B5CF6]/20 border-[#8B5CF6] text-[#6D28D9]'
+                  : 'bg-[#101322] border-[#262E4A] text-gray-400 hover:text-white'
+              }`}
+            >
+              <Sun className="w-4 h-4" />
+              <span>Light Mode</span>
+            </button>
+          </div>
         </div>
 
         {/* Notification Settings */}

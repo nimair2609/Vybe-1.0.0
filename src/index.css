@@ -1,10 +1,14 @@
 @import "tailwindcss";
 
-:root {
+:root,
+:root[data-theme="dark"] {
   --bg-primary: #060714;
   --bg-surface: #101322;
   --bg-elevated: #1A1F36;
   --border-subtle: #262E4A;
+  --text-primary: #F8FAFC;
+  --text-secondary: #CBD5E1;
+  --text-muted: #94A3B8;
   --brand-cyan: #00C6FF;
   --brand-blue: #3B82F6;
   --brand-violet: #8B5CF6;
@@ -14,12 +18,78 @@
   --vybe-danger: #EF4444;
 }
 
+:root[data-theme="light"] {
+  --bg-primary: #F8FAFC;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #F1F5F9;
+  --border-subtle: #CBD5E1;
+  --text-primary: #0F172A;
+  --text-secondary: #334155;
+  --text-muted: #64748B;
+  --brand-cyan: #0284C7;
+  --brand-blue: #2563EB;
+  --brand-violet: #6D28D9;
+  --brand-magenta: #C026D3;
+  --vybe-online: #16A34A;
+  --vybe-gold: #D97706;
+  --vybe-danger: #DC2626;
+}
+
 body {
   margin: 0;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background-color: var(--bg-primary);
-  color: #F8FAFC;
+  color: var(--text-primary);
   overflow-x: hidden;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Harmonized Light Mode surface & contrast overrides across browser views */
+:root[data-theme="light"] .vybe-app-shell {
+  background-color: #F8FAFC;
+  color: #0F172A;
+}
+
+:root[data-theme="light"] .vybe-app-shell .bg-\[\#060714\],
+:root[data-theme="light"] .vybe-app-shell .bg-\[\#060714\]\/90,
+:root[data-theme="light"] .vybe-app-shell .bg-\[\#060714\]\/80 {
+  background-color: #F8FAFC !important;
+}
+
+:root[data-theme="light"] .vybe-app-shell .bg-\[\#101322\],
+:root[data-theme="light"] .vybe-app-shell .bg-\[\#101322\]\/90,
+:root[data-theme="light"] .vybe-app-shell .bg-\[\#101322\]\/95 {
+  background-color: #FFFFFF !important;
+}
+
+:root[data-theme="light"] .vybe-app-shell .bg-\[\#1A1F36\] {
+  background-color: #F1F5F9 !important;
+}
+
+:root[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\],
+:root[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\]\/80,
+:root[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\]\/60,
+:root[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\]\/50,
+:root[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\]\/40,
+:root[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\]\/30 {
+  border-color: #E2E8F0 !important;
+}
+
+:root[data-theme="light"] .vybe-app-shell .text-white:not(.keep-white) {
+  color: #0F172A !important;
+}
+
+:root[data-theme="light"] .vybe-app-shell .text-gray-100,
+:root[data-theme="light"] .vybe-app-shell .text-gray-200 {
+  color: #1E293B !important;
+}
+
+:root[data-theme="light"] .vybe-app-shell .text-gray-300 {
+  color: #334155 !important;
+}
+
+:root[data-theme="light"] .vybe-app-shell .text-gray-400 {
+  color: #64748B !important;
 }
 
 h1, h2, h3, h4, .brand-font {
@@ -35,11 +105,11 @@ h1, h2, h3, h4, .brand-font {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #262E4A;
+  background: var(--border-subtle);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #8B5CF6;
+  background: var(--brand-violet);
 }
 
 /* Hide scrollbar for clean carousels */

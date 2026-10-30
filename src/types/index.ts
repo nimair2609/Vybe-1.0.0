@@ -106,6 +106,7 @@ export interface User {
   joinedDate: string;
   location?: string;
   isFollowedByMe?: boolean;
+  isPrivate?: boolean;
 }
 
 export type VybeReaction = 'LOVE' | 'FLAME' | 'LAUGH' | 'WOW' | 'SAD';
@@ -131,6 +132,7 @@ export interface PostComment {
   author: User;
   content: string;
   timestamp: string;
+  createdAtIso?: string;
   likesCount: number;
   isLiked?: boolean;
 }
@@ -150,6 +152,7 @@ export interface Post {
   mediaUrls: string[];
   mediaType: 'TEXT' | 'IMAGE' | 'VIDEO' | 'REEL';
   timestamp: string;
+  createdAtIso?: string;
   likesCount: number;
   commentsCount: number;
   savesCount: number;
@@ -179,6 +182,8 @@ export interface Story {
   audience: 'Public' | 'Followers' | 'VYBE Matches' | 'Only Me';
   musicTrackTitle?: string;
   timestamp: string;
+  createdAtIso?: string;
+  expiresAtIso?: string;
   expiresHoursRemaining: number;
   isViewed: boolean;
   reactionsCount: number;

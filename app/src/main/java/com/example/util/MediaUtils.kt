@@ -7,6 +7,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -21,11 +22,17 @@ data class LocalMediaPayload(
 
 object MediaUtils {
 
+  const val MAX_STORY_POST_BYTES: Long = 100L * 1024L * 1024L // 100 MB (matches Supabase bucket limit)
+  const val MAX_CHAT_MEDIA_BYTES: Long = 50L * 1024L * 1024L // 50 MB
+
+  private val ALLOWED_IMAGE_MIMES = setOf("image/jpeg", "image/png", "image/webp")
+  private val ALLOWED_VIDEO_MIMES = setOf("video/mp4", "video/webm", "video/quicktime")
+
   fun saveBitmapToCache(context: Context, bitmap: Bitmap, prefix: String = "vybe_img"): Uri {
     val dir = File(context.cacheDir, "camera_media").apply { mkdirs() }
     val file = File(dir, "${prefix}_${System.currentTimeMillis()}.jpg")
     FileOutputStream(file).use { out ->
-      bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
+      bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
     }
     return try {
       val authority = "${context.packageName}.fileprovider"
@@ -35,15 +42,24 @@ object MediaUtils {
     }
   }
 
-  fun createTempImageUri(context: Context): Uri {
+  /**
+   * Creates a full-resolution camera output File + FileProvider Uripair so `TakePicture`
+   * writes original camera hardware bytes directly without Binder thumbnail downscaling.
+   */
+  fun createTempCameraCaptureFile(context: Context, prefix: String = "capture"): Pair<File, Uri> {
     val dir = File(context.cacheDir, "camera_media").apply { mkdirs() }
-    val file = File(dir, "capture_${System.currentTimeMillis()}.jpg")
+    val file = File(dir, "${prefix}_${System.currentTimeMillis()}.jpg")
     val authority = "${context.packageName}.fileprovider"
-    return try {
+    val uri = try {
       FileProvider.getUriForFile(context, authority, file)
     } catch (e: Exception) {
       Uri.fromFile(file)
     }
+    return file to uri
+  }
+
+  fun createTempImageUri(context: Context): Uri {
+    return createTempCameraCaptureFile(context, "capture").second
   }
 
   fun createTempVideoUri(context: Context): Uri {
@@ -63,15 +79,20 @@ object MediaUtils {
     } catch (_: Exception) {
       null
     }
-    if (!resolverMime.isNullOrBlank()) return resolverMime
+    if (!resolverMime.isNullOrBlank() && !resolverMime.equals("application/octet-stream", ignoreCase = true)) {
+      return resolverMime.lowercase()
+    }
 
     val lower = uri.toString().lowercase()
     return when {
       lower.endsWith(".mp4") || lower.contains("vid_") || lower.contains("/video") -> "video/mp4"
       lower.endsWith(".webm") -> "video/webm"
-      lower.endsWith(".mov") -> "video/quicktime"
+      lower.endsWith(".mov") || lower.endsWith(".qt") -> "video/quicktime"
+      lower.endsWith(".3gp") || lower.endsWith(".mkv") || lower.endsWith(".m4v") -> "video/mp4"
       lower.endsWith(".png") -> "image/png"
       lower.endsWith(".webp") -> "image/webp"
+      lower.endsWith(".heic") -> "image/heic"
+      lower.endsWith(".heif") -> "image/heif"
       else -> "image/jpeg"
     }
   }
@@ -83,6 +104,8 @@ object MediaUtils {
       lower.endsWith(".webm") ||
       lower.endsWith(".mov") ||
       lower.endsWith(".mkv") ||
+      lower.endsWith(".3gp") ||
+      lower.endsWith(".m4v") ||
       lower.contains(".mp4?") ||
       lower.contains(".webm?") ||
       lower.contains(".mov?") ||
@@ -99,22 +122,29 @@ object MediaUtils {
 
   private fun extensionForMime(mimeType: String, uriString: String): String {
     val lower = uriString.lowercase()
-    val fromMap = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
-    if (!fromMap.isNullOrBlank()) return fromMap
-    return when {
-      mimeType.startsWith("video/webm") || lower.endsWith(".webm") -> "webm"
-      mimeType.startsWith("video/quicktime") || lower.endsWith(".mov") -> "mov"
-      mimeType.startsWith("video/") || lower.endsWith(".mp4") -> "mp4"
-      mimeType == "image/png" || lower.endsWith(".png") -> "png"
-      mimeType == "image/webp" || lower.endsWith(".webp") -> "webp"
-      else -> "jpg"
+    return when (mimeType.lowercase()) {
+      "image/jpeg", "image/jpg" -> "jpg"
+      "image/png" -> "png"
+      "image/webp" -> "webp"
+      "video/webm" -> "webm"
+      "video/quicktime" -> "mov"
+      "video/mp4" -> "mp4"
+      else -> {
+        val fromMap = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
+        when {
+          !fromMap.isNullOrBlank() -> fromMap
+          mimeType.startsWith("video/") || lower.endsWith(".mp4") -> "mp4"
+          lower.endsWith(".png") -> "png"
+          lower.endsWith(".webp") -> "webp"
+          else -> "jpg"
+        }
+      }
     }
   }
 
   /**
    * Copies selected photo or video URI to app-private staging storage while preserving
    * the true media extension (.mp4, .png, .jpg, etc.) so local previews and uploads never break.
-   * Original file is preserved until publishing succeeds.
    */
   fun copyUriToLocalCache(context: Context, uri: Uri, prefix: String = "vybe_media"): String {
     return try {
@@ -138,17 +168,46 @@ object MediaUtils {
   }
 
   /**
-   * Reads bytes, MIME type, and natural aspect ratio (width / height) for local URIs (`content://` or `file://`).
+   * Validates media readability, non-zero byte length, and size limit prior to upload.
    */
-  fun readMediaPayload(context: Context, uriString: String): LocalMediaPayload? {
+  fun validateMediaUri(
+    context: Context,
+    uriString: String,
+    maxBytes: Long = MAX_STORY_POST_BYTES,
+    preserveRawBytes: Boolean = false
+  ): Result<LocalMediaPayload> {
+    if (uriString.isBlank()) {
+      return Result.failure(IllegalArgumentException("No media file selected."))
+    }
+    val payload = readMediaPayload(context, uriString, preserveRawBytes = preserveRawBytes)
+      ?: return Result.failure(IllegalArgumentException("Selected media file could not be read or is empty."))
+    if (payload.bytes.isEmpty()) {
+      return Result.failure(IllegalArgumentException("Selected media file is empty (0 bytes)."))
+    }
+    if (payload.bytes.size.toLong() > maxBytes) {
+      val maxMb = maxBytes / (1024L * 1024L)
+      return Result.failure(IllegalArgumentException("Media file exceeds the ${maxMb}MB upload limit."))
+    }
+    return Result.success(payload)
+  }
+
+  /**
+   * Reads bytes, normalizes MIME type for Supabase Storage compatibility, and computes natural aspect ratio.
+   *
+   * When [preserveRawBytes] is `true` (used by UNFILTERED camera capture), the exact captured camera bytes
+   * are returned untouched with zero decoding, resizing, or JPEG re-compression.
+   */
+  fun readMediaPayload(
+    context: Context,
+    uriString: String,
+    preserveRawBytes: Boolean = false
+  ): LocalMediaPayload? {
     return try {
       val uri = Uri.parse(uriString)
-      val mimeType = detectMimeType(context, uri)
-      val isVideo = mimeType.startsWith("video/", ignoreCase = true) || isVideoUri(context, uriString)
-      val resolvedMime = if (isVideo && !mimeType.startsWith("video/")) "video/mp4" else mimeType
-      val ext = extensionForMime(resolvedMime, uriString)
+      val rawMime = detectMimeType(context, uri).lowercase()
+      val isVideo = rawMime.startsWith("video/", ignoreCase = true) || isVideoUri(context, uriString)
 
-      val bytes: ByteArray? = when (uri.scheme?.lowercase()) {
+      val rawBytes: ByteArray? = when (uri.scheme?.lowercase()) {
         "file" -> {
           val file = File(uri.path ?: return null)
           if (file.exists()) FileInputStream(file).use { it.readBytes() } else null
@@ -162,12 +221,63 @@ object MediaUtils {
         }
       }
 
-      if (bytes == null || bytes.isEmpty()) return null
-      val aspectRatio = computeAspectRatio(context, uri, bytes, isVideo)
+      if (rawBytes == null || rawBytes.isEmpty()) return null
+
+      if (preserveRawBytes) {
+        // UNFILTERED path: preserve 100% original camera bytes without any re-encoding or compression
+        val normalizedHeaderMime = when {
+          isVideo && rawMime in ALLOWED_VIDEO_MIMES -> rawMime
+          isVideo -> "video/mp4"
+          rawMime == "image/png" -> "image/png"
+          rawMime == "image/webp" -> "image/webp"
+          else -> "image/jpeg"
+        }
+        val ext = extensionForMime(normalizedHeaderMime, uriString)
+        val aspectRatio = computeAspectRatio(context, uri, rawBytes, isVideo)
+        return LocalMediaPayload(
+          bytes = rawBytes,
+          mimeType = normalizedHeaderMime,
+          extension = ext,
+          isVideo = isVideo,
+          aspectRatio = aspectRatio
+        )
+      }
+
+      // Normalize MIME types for Supabase Storage buckets (stories, posts, chat-media)
+      var finalBytes = rawBytes
+      val finalMime: String = if (isVideo) {
+        when {
+          rawMime in ALLOWED_VIDEO_MIMES -> rawMime
+          rawMime.contains("webm") -> "video/webm"
+          rawMime.contains("quicktime") || rawMime.contains("mov") -> "video/quicktime"
+          else -> "video/mp4"
+        }
+      } else {
+        when {
+          rawMime == "image/jpg" || rawMime == "image/jpeg" -> "image/jpeg"
+          rawMime in ALLOWED_IMAGE_MIMES -> rawMime
+          else -> {
+            // Transcode HEIC / HEIF / AVIF / BMP to high-fidelity JPEG so Supabase Storage accepts it
+            val decoded = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size)
+            if (decoded != null) {
+              val out = ByteArrayOutputStream()
+              decoded.compress(Bitmap.CompressFormat.JPEG, 95, out)
+              val converted = out.toByteArray()
+              if (converted.isNotEmpty()) {
+                finalBytes = converted
+              }
+            }
+            "image/jpeg"
+          }
+        }
+      }
+
+      val ext = extensionForMime(finalMime, uriString)
+      val aspectRatio = computeAspectRatio(context, uri, finalBytes, isVideo)
 
       LocalMediaPayload(
-        bytes = bytes,
-        mimeType = resolvedMime,
+        bytes = finalBytes,
+        mimeType = finalMime,
         extension = ext,
         isVideo = isVideo,
         aspectRatio = aspectRatio

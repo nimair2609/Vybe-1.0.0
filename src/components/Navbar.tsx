@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Sparkles, Bell, Shield, Volume2, VolumeX, 
-  ChevronDown, Moon, RefreshCw, Feather
+  ChevronDown, Moon, Sun, RefreshCw, Feather
 } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
 import { MOOD_DEFINITIONS, MoodType } from '../types';
@@ -10,7 +10,7 @@ export const Navbar: React.FC = () => {
   const { 
     currentUser, setCurrentUserMood, openModal, 
     hasAvailableUpdate, isPlayingAudio, currentAudioTrack, 
-    togglePlayAudio
+    togglePlayAudio, themeMode, toggleThemeMode
   } = useVybe();
 
   const [showMoodMenu, setShowMoodMenu] = useState(false);
@@ -23,23 +23,19 @@ export const Navbar: React.FC = () => {
         
         {/* Brand & Logo */}
         <div className="flex items-center gap-2.5">
-          <div className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-[#00C6FF] via-[#8B5CF6] to-[#D946EF] p-[1.5px] shadow-lg shadow-[#00C6FF]/20 group cursor-pointer">
-            <div className="w-full h-full bg-[#060714] rounded-[10px] flex items-center justify-center overflow-hidden">
-              <img 
-                src="/brand/vybe_v_mark.png" 
-                alt="VYBE Mark" 
-                className="w-5 h-5 object-contain"
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
-                }}
-              />
-              <span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-[#00C6FF] to-[#D946EF] text-sm">
-                V
-              </span>
-            </div>
+          <div className="relative flex items-center justify-center w-9 h-9 rounded-xl overflow-hidden shadow-md shadow-[#00C6FF]/15 shrink-0">
+            <img 
+              src="/brand/vybe_app_icon_clean.png" 
+              alt="VYBE Logo" 
+              className="w-full h-full object-cover"
+            />
           </div>
           <div className="flex flex-col">
-            <span className="text-xl font-black tracking-wider brand-font bg-gradient-to-r from-white via-slate-100 to-[#00C6FF] bg-clip-text text-transparent">
+            <span className={`text-xl font-black tracking-wider brand-font bg-clip-text text-transparent ${
+              themeMode === 'light'
+                ? 'bg-gradient-to-r from-[#0F172A] via-[#6D28D9] to-[#0284C7]'
+                : 'bg-gradient-to-r from-white via-slate-100 to-[#00C6FF]'
+            }`}>
               VYBE
             </span>
             <span className="text-[9px] uppercase tracking-widest text-[#8B5CF6] font-semibold -mt-1">
@@ -113,6 +109,15 @@ export const Navbar: React.FC = () => {
               )}
             </button>
           )}
+
+          {/* Dark / Light Mode Toggle */}
+          <button
+            onClick={toggleThemeMode}
+            title={themeMode === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            className="p-2 rounded-xl bg-[#101322] border border-[#262E4A] text-gray-300 hover:text-[#00C6FF] hover:border-[#00C6FF]/50 transition-colors"
+          >
+            {themeMode === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
 
           {/* Spiritual Mode Shortcut */}
           <button

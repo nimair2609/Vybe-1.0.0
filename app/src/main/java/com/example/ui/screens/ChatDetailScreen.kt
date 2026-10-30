@@ -48,6 +48,7 @@ import com.example.ui.components.VybeAvatar
 import com.example.ui.components.VybeVideoPlayer
 import com.example.ui.theme.*
 import com.example.util.MediaUtils
+import com.example.util.QrCodeGenerator
 import com.example.util.TimestampUtils
 import com.example.util.rememberMessageTimestamp
 import kotlinx.coroutines.delay
@@ -100,7 +101,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
     viewModel.markConversationAsRead(activeId)
     while (true) {
       viewModel.syncMessagesForConversation(activeId)
-      delay(8000L)
+      delay(4000L)
     }
   }
 
@@ -779,6 +780,56 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                     fontSize = 14.sp,
                     fontStyle = if (msg.isDeletedForEveryone) FontStyle.Italic else FontStyle.Normal
                   )
+
+                  val sharedPostId = if (!msg.isDeletedForEveryone) {
+                    QrCodeGenerator.extractPostIdFromText(msg.text)
+                  } else {
+                    null
+                  }
+                  if (!sharedPostId.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Surface(
+                      color = if (isMe) Color.White.copy(alpha = 0.16f) else VybeViolet.copy(alpha = 0.14f),
+                      shape = RoundedCornerShape(10.dp),
+                      border = BorderStroke(
+                        1.dp,
+                        if (isMe) Color.White.copy(alpha = 0.3f) else VybeViolet.copy(alpha = 0.4f)
+                      ),
+                      modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { viewModel.openSharedPostById(sharedPostId) }
+                        .testTag("open_shared_post_chip_${msg.id}")
+                    ) {
+                      Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                      ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                          Icon(
+                            imageVector = Icons.Outlined.OpenInNew,
+                            contentDescription = "Open shared post",
+                            tint = if (isMe) Color.White else VybeViolet,
+                            modifier = Modifier.size(15.dp)
+                          )
+                          Spacer(modifier = Modifier.width(6.dp))
+                          Text(
+                            text = "Open Shared Post",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isMe) Color.White else VybeViolet
+                          )
+                        }
+                        Icon(
+                          imageVector = Icons.Default.ChevronRight,
+                          contentDescription = null,
+                          tint = if (isMe) Color.White else VybeViolet,
+                          modifier = Modifier.size(16.dp)
+                        )
+                      }
+                    }
+                  }
                 }
 
                 Row(

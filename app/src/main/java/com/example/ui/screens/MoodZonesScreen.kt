@@ -279,13 +279,7 @@ fun MoodZonesScreen(viewModel: VybeViewModel) {
             onCommentClick = { viewModel.loadCommentsForPost(post.id) },
             onAddComment = { text -> viewModel.addComment(post.id, text) },
             onLoadComments = { viewModel.loadCommentsForPost(post.id) },
-            onShareClick = {
-              val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_TEXT, "${post.author.displayName}: ${post.caption}")
-              }
-              context.startActivity(Intent.createChooser(shareIntent, "Share Post"))
-            },
+            onShareClick = { viewModel.openPostShareSheet(post) },
             onUserClick = { u -> viewModel.openUserProfile(u) },
             onRemixClick = { viewModel.openReelViewer(post.id) },
             onDeleteClick = { viewModel.deletePost(post.id) },

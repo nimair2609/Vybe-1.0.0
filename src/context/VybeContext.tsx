@@ -71,6 +71,16 @@ interface VybeContextType {
   toggleSavePost: (postId: string) => void;
   addCommentToPost: (postId: string, text: string) => void;
   createPost: (postData: Partial<Post>) => void;
+  sharePostToConversation: (post: Post, convId: string, note?: string) => void;
+  incrementPostShareCount: (postId: string) => void;
+  sharedPostModalId: string | null;
+  openSharedPostModal: (postId: string) => void;
+  closeSharedPostModal: () => void;
+
+  // Theme
+  themeMode: 'dark' | 'light';
+  setThemeMode: (mode: 'dark' | 'light') => void;
+  toggleThemeMode: () => void;
 
   // Stories
   stories: Story[];
@@ -152,12 +162,105 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [activeModal, setActiveModal] = useState<ModalScreen | null>(null);
   const [selectedMoodFilter, setSelectedMoodFilter] = useState<MoodType | 'ALL'>('ALL');
 
+  // Theme Mode (persisted in localStorage & applied to documentElement)
+  const [themeMode, setThemeModeState] = useState<'dark' | 'light'>(() => {
+    const saved = localStorage.getItem('vybe_theme_mode');
+    return saved === 'light' ? 'light' : 'dark';
+  });
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = themeMode;
+    localStorage.setItem('vybe_theme_mode', themeMode);
+  }, [themeMode]);
+
+  const setThemeMode = (mode: 'dark' | 'light') => setThemeModeState(mode);
+  const toggleThemeMode = () => setThemeModeState(prev => (prev === 'dark' ? 'light' : 'dark'));
+
+  // Shared Post Deep Link / Preview state
+  const [sharedPostModalId, setSharedPostModalId] = useState<string | null>(() => {
+    const pathMatch = window.location.pathname.match(/^\/(?:post|p)\/([^/?#]+)/i);
+    if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1]);
+    const hashMatch = window.location.hash.match(/^#post_(.+)$/i);
+    if (hashMatch?.[1]) return decodeURIComponent(hashMatch[1]);
+    return null;
+  });
+
+  useEffect(() => {
+    const handleHashOrPop = () => {
+      const pathMatch = window.location.pathname.match(/^\/(?:post|p)\/([^/?#]+)/i);
+      if (pathMatch?.[1]) {
+        setSharedPostModalId(decodeURIComponent(pathMatch[1]));
+        return;
+      }
+      const hashMatch = window.location.hash.match(/^#post_(.+)$/i);
+      if (hashMatch?.[1]) {
+        setSharedPostModalId(decodeURIComponent(hashMatch[1]));
+      }
+    };
+    window.addEventListener('hashchange', handleHashOrPop);
+    window.addEventListener('popstate', handleHashOrPop);
+    return () => {
+      window.removeEventListener('hashchange', handleHashOrPop);
+      window.removeEventListener('popstate', handleHashOrPop);
+    };
+  }, []);
+
+  const openSharedPostModal = (postId: string) => setSharedPostModalId(postId);
+  const closeSharedPostModal = () => {
+    setSharedPostModalId(null);
+    if (window.location.hash.startsWith('#post_')) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    } else if (/^\/(?:post|p)\//i.test(window.location.pathname)) {
+      window.history.replaceState(null, '', '/');
+    }
+  };
+
   // Posts & Reels
   const [posts, setPosts] = useState<Post[]>(INITIAL_POSTS);
   const [reels, setReels] = useState<Post[]>(INITIAL_REELS);
 
-  // Stories
-  const [stories, setStories] = useState<Story[]>(INITIAL_STORIES);
+  // Stories (persisted across refresh with automatic 24-hour expiry pruning)
+  const [stories, setStories] = useState<Story[]>(() => {
+    try {
+      const raw = localStorage.getItem('vybe_persisted_stories_v2');
+      if (raw) {
+        const parsed = JSON.parse(raw) as Story[];
+        const now = Date.now();
+        const validUserStories = parsed.filter(s => {
+          if (s.expiresAtIso) {
+            const exp = Date.parse(s.expiresAtIso);
+            if (!Number.isNaN(exp)) return exp > now;
+          }
+          return (s.expiresHoursRemaining ?? 24) > 0;
+        });
+        if (validUserStories.length > 0) {
+          const existingIds = new Set(validUserStories.map(s => s.id));
+          return [...validUserStories, ...INITIAL_STORIES.filter(s => !existingIds.has(s.id))];
+        }
+      }
+    } catch {
+      // ignore corrupted storage
+    }
+    return INITIAL_STORIES;
+  });
+
+  useEffect(() => {
+    try {
+      const now = Date.now();
+      const userCreated = stories.filter(s => {
+        if (!s.id.startsWith('st_')) return false;
+        if (s.expiresAtIso) {
+          const exp = Date.parse(s.expiresAtIso);
+          if (!Number.isNaN(exp) && exp <= now) return false;
+        }
+        return true;
+      });
+      localStorage.setItem('vybe_persisted_stories_v2', JSON.stringify(userCreated));
+    } catch {
+      // ignore quota exceeded for large data URLs
+    }
+  }, [stories]);
+
   const [activeStoryAuthorId, setActiveStoryAuthorId] = useState<string | null>(null);
   const [activeStoryIndex, setActiveStoryIndex] = useState<number>(0);
 
@@ -371,12 +474,14 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addCommentToPost = (postId: string, text: string) => {
     if (!text.trim()) return;
+    const nowIso = new Date().toISOString();
     const newComment = {
       id: `c_${Date.now()}`,
       postId,
       author: currentUser,
       content: text.trim(),
       timestamp: 'Just now',
+      createdAtIso: nowIso,
       likesCount: 0
     };
     setPosts(prev => prev.map(p => {
@@ -391,7 +496,24 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }));
   };
 
+  const incrementPostShareCount = (postId: string) => {
+    setPosts(prev => prev.map(p => p.id === postId ? { ...p, sharesCount: (p.sharesCount || 0) + 1 } : p));
+  };
+
+  const sharePostToConversation = (post: Post, convId: string, note?: string) => {
+    const shareUrl = `${window.location.origin}/post/${encodeURIComponent(post.id)}`;
+    const bodyLines = [
+      ...(note?.trim() ? [note.trim()] : []),
+      `Shared post from @${post.author.username}${post.caption ? `: ${post.caption.slice(0, 140)}` : ''}`,
+      shareUrl
+    ];
+    sendMessage(convId, bodyLines.join('\n'));
+    incrementPostShareCount(post.id);
+    setInAppNotificationBanner('Post shared via Direct Message');
+  };
+
   const createPost = (postData: Partial<Post>) => {
+    const nowIso = new Date().toISOString();
     const newPost: Post = {
       id: `post_${Date.now()}`,
       author: currentUser,
@@ -399,6 +521,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       mediaUrls: postData.mediaUrls || [],
       mediaType: postData.mediaType || 'TEXT',
       timestamp: 'Just now',
+      createdAtIso: nowIso,
       likesCount: 0,
       commentsCount: 0,
       savesCount: 0,
@@ -449,22 +572,29 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const createStory = (storyData: Partial<Story>) => {
+    const nowMs = Date.now();
+    const nowIso = new Date(nowMs).toISOString();
+    const expIso = new Date(nowMs + 24 * 60 * 60 * 1000).toISOString();
+    const resolvedType = storyData.mediaType || (storyData.mediaUrl ? 'PHOTO' : 'TEXT');
     const newStory: Story = {
-      id: `st_${Date.now()}`,
+      id: `st_${nowMs}`,
       author: currentUser,
-      mediaUrl: storyData.mediaUrl || 'https://images.unsplash.com/photo-1518241353330-0f7941c2d9b5?auto=format&fit=crop&w=800&q=80',
+      mediaUrl: storyData.mediaUrl || '',
       caption: storyData.caption || '',
-      mediaType: storyData.mediaType || 'PHOTO',
+      mediaType: resolvedType,
       audience: storyData.audience || 'Public',
       timestamp: 'Just now',
+      createdAtIso: nowIso,
+      expiresAtIso: expIso,
       expiresHoursRemaining: 24,
       isViewed: false,
       reactionsCount: 0,
       isLikedByMe: false,
-      textBackgroundColor: storyData.textBackgroundColor,
+      textBackgroundColor: storyData.textBackgroundColor || (resolvedType === 'TEXT' ? 'from-[#6366F1] to-[#EC4899]' : undefined),
       musicTrackTitle: storyData.musicTrackTitle
     };
     setStories(prev => [newStory, ...prev]);
+    setInAppNotificationBanner('Story published! Visible for 24 hours.');
     closeModal();
   };
 
@@ -698,6 +828,14 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       toggleSavePost,
       addCommentToPost,
       createPost,
+      sharePostToConversation,
+      incrementPostShareCount,
+      sharedPostModalId,
+      openSharedPostModal,
+      closeSharedPostModal,
+      themeMode,
+      setThemeMode,
+      toggleThemeMode,
       stories,
       activeStoryAuthorId,
       activeStoryIndex,

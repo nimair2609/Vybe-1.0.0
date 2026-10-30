@@ -99,11 +99,14 @@ class SupabaseRepository {
     }
 
     if (sm == null) {
-      return if (!cleanExplicit.isNullOrBlank() && SupabaseConfig.isJwtAccessToken(cleanExplicit)) cleanExplicit else null
+      return if (
+        !cleanExplicit.isNullOrBlank() &&
+        SupabaseConfig.isJwtAccessToken(cleanExplicit) &&
+        !SupabaseConfig.isJwtExpired(cleanExplicit)
+      ) cleanExplicit else null
     }
 
     val currentToken = sm.accessToken
-    val refreshToken = sm.refreshToken
     val expiresAt = sm.expiresAtMs
 
     val isCurrentValid = !currentToken.isNullOrBlank() &&
@@ -116,26 +119,44 @@ class SupabaseRepository {
     }
 
     // 2. Proactively refresh token when expired or near expiry to eliminate 'exp claim timestamp check failed'
-    if (!refreshToken.isNullOrBlank()) {
-      try {
-        val resp = SupabaseNetworkClient.authApi.refreshSession(
-          apiKey = SupabaseConfig.supabaseAnonKey,
-          request = SupabaseRefreshTokenRequest(refreshToken = refreshToken)
-        )
-        if (resp.isSuccessful && resp.body()?.accessToken != null) {
-          val body = resp.body()!!
-          val freshAccess = body.accessToken!!
-          val freshRefresh = body.refreshToken ?: refreshToken
-          val expiresIn = body.expiresIn ?: 3600L
-          sm.updateTokens(freshAccess, freshRefresh, expiresIn)
-          return freshAccess
-        }
-      } catch (e: Exception) {
-        Log.w(TAG, "Token refresh warning: ${e.message}")
-      }
+    val refreshed = forceRefreshSessionToken()
+    if (!refreshed.isNullOrBlank()) {
+      return refreshed
     }
 
-    return if (!currentToken.isNullOrBlank() && SupabaseConfig.isJwtAccessToken(currentToken)) currentToken else cleanExplicit
+    return when {
+      !currentToken.isNullOrBlank() &&
+        SupabaseConfig.isJwtAccessToken(currentToken) &&
+        !SupabaseConfig.isJwtExpired(currentToken, clockSkewSeconds = 0L) -> currentToken
+      !cleanExplicit.isNullOrBlank() &&
+        SupabaseConfig.isJwtAccessToken(cleanExplicit) &&
+        !SupabaseConfig.isJwtExpired(cleanExplicit, clockSkewSeconds = 0L) -> cleanExplicit
+      else -> null
+    }
+  }
+
+  suspend fun forceRefreshSessionToken(): String? {
+    val sm = SessionManager.get() ?: return null
+    val refreshToken = sm.refreshToken?.takeIf { it.isNotBlank() } ?: return null
+    return try {
+      val resp = SupabaseNetworkClient.authApi.refreshSession(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        request = SupabaseRefreshTokenRequest(refreshToken = refreshToken)
+      )
+      if (resp.isSuccessful && !resp.body()?.accessToken.isNullOrBlank()) {
+        val body = resp.body()!!
+        val freshAccess = body.accessToken!!
+        val freshRefresh = body.refreshToken ?: refreshToken
+        val expiresIn = body.expiresIn ?: 3600L
+        sm.updateTokens(freshAccess, freshRefresh, expiresIn)
+        freshAccess
+      } else {
+        null
+      }
+    } catch (e: Exception) {
+      Log.w(TAG, "Token refresh warning: ${e.message}")
+      null
+    }
   }
 
   private suspend fun authHeaderFor(explicitToken: String? = null): String? {
@@ -1436,39 +1457,62 @@ class SupabaseRepository {
     if (!isConfigured) {
       return@withContext Result.failure(IllegalStateException("Supabase backend not configured."))
     }
-    val validJwt = resolveValidAccessToken(accessToken)
+    var activeJwt = resolveValidAccessToken(accessToken)
       ?: return@withContext Result.failure(IllegalStateException("Please sign in again before uploading media."))
 
     try {
       val cleanBucket = bucket.trim()
       val cleanLeaf = fileName.trim().removePrefix("/")
-      val objectPath = if (cleanLeaf.startsWith("$userId/")) cleanLeaf else "$userId/$cleanLeaf"
-      val uploadUrl = "${SupabaseConfig.supabaseUrl}/storage/v1/object/$cleanBucket/$objectPath"
+      val cleanContentType = mimeType.trim().lowercase().ifBlank { "application/octet-stream" }
 
-      val body = ProgressRequestBody(
-        bytes = bytes,
-        contentType = mimeType.toMediaTypeOrNull(),
-        onProgress = onProgress
-      )
+      fun buildObjectPathForJwt(jwt: String): String {
+        val canonicalOwnerId = SupabaseConfig.extractJwtSubject(jwt)
+          ?: userId.trim().lowercase().ifBlank { "shared" }
+        val leafOnly = if (cleanLeaf.contains('/')) cleanLeaf.substringAfterLast('/') else cleanLeaf
+        return "$canonicalOwnerId/$leafOnly"
+      }
 
-      val request = Request.Builder()
-        .url(uploadUrl)
-        .addHeader("apikey", SupabaseConfig.supabaseAnonKey)
-        .addHeader("Authorization", "Bearer $validJwt")
-        .addHeader("Content-Type", mimeType)
-        .addHeader("x-upsert", "true")
-        .post(body)
-        .build()
+      fun executeUploadCall(jwt: String, objectPath: String): Pair<Int, String> {
+        val uploadUrl = "${SupabaseConfig.supabaseUrl}/storage/v1/object/$cleanBucket/$objectPath"
+        val body = ProgressRequestBody(
+          bytes = bytes,
+          contentType = cleanContentType.toMediaTypeOrNull(),
+          onProgress = onProgress
+        )
+        val request = Request.Builder()
+          .url(uploadUrl)
+          .addHeader("apikey", SupabaseConfig.supabaseAnonKey)
+          .addHeader("Authorization", "Bearer $jwt")
+          .addHeader("Content-Type", cleanContentType)
+          .addHeader("x-upsert", "true")
+          .post(body)
+          .build()
 
-      SupabaseNetworkClient.storageHttpClient.newCall(request).execute().use { response ->
-        if (!response.isSuccessful) {
-          val errText = response.body?.string().orEmpty()
-          val parsed = parseErrorMessage(errText, "Media upload failed (HTTP ${response.code}).")
-          return@withContext Result.failure(Exception(parsed))
+        return SupabaseNetworkClient.storageHttpClient.newCall(request).execute().use { response ->
+          response.code to response.body?.string().orEmpty()
         }
       }
 
-      val resolvedUrl = resolveAccessibleMediaUrl(cleanBucket, objectPath, validJwt)
+      var objectPath = buildObjectPathForJwt(activeJwt)
+      var (statusCode, respBody) = executeUploadCall(activeJwt, objectPath)
+
+      if (statusCode in listOf(401, 403)) {
+        val refreshed = forceRefreshSessionToken()
+        if (!refreshed.isNullOrBlank() && refreshed != activeJwt) {
+          activeJwt = refreshed
+          objectPath = buildObjectPathForJwt(activeJwt)
+          val retryOutcome = executeUploadCall(activeJwt, objectPath)
+          statusCode = retryOutcome.first
+          respBody = retryOutcome.second
+        }
+      }
+
+      if (statusCode !in 200..299) {
+        val parsed = parseErrorMessage(respBody, "Media upload failed (HTTP $statusCode).")
+        return@withContext Result.failure(Exception(parsed))
+      }
+
+      val resolvedUrl = resolveAccessibleMediaUrl(cleanBucket, objectPath, activeJwt)
       Result.success(UploadedStorageMedia(url = resolvedUrl, storagePath = "$cleanBucket/$objectPath"))
     } catch (e: Exception) {
       Log.e(TAG, "Storage upload failed: ${e.message}", e)
@@ -1814,6 +1858,68 @@ class SupabaseRepository {
       userReaction = myReaction,
       reactionsCount = resolvedReactionsCount
     )
+  }
+
+  /**
+   * Fetches a single post by UUID for shared `/post/{postId}` deep links, enforcing RLS & archived rules.
+   * Returns `Result.success(null)` if the post was deleted, archived, or belongs to a private account
+   * that the viewer is not authorized to view.
+   */
+  suspend fun fetchPostById(
+    postId: String,
+    currentUserId: String? = null,
+    accessToken: String = ""
+  ): Result<Post?> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(null)
+    val cleanId = postId.trim()
+    if (cleanId.isBlank()) return@withContext Result.success(null)
+    try {
+      val authHeader = authHeaderFor(accessToken)
+      var resp = SupabaseNetworkClient.restApi.getPostsByIds(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        idsInFilter = "eq.$cleanId",
+        select = "*,profiles:author_id(*),post_media(*)"
+      )
+      if (!resp.isSuccessful) {
+        resp = SupabaseNetworkClient.restApi.getPostsByIds(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          idsInFilter = "eq.$cleanId",
+          select = "*,post_media(*)"
+        )
+      }
+      if (!resp.isSuccessful) {
+        val err = parseErrorMessage(resp.errorBody()?.string().orEmpty(), "Unable to load shared post.")
+        return@withContext Result.failure(Exception(err))
+      }
+      val dto = resp.body()?.firstOrNull() ?: return@withContext Result.success(null)
+      if (dto.isArchived == true) {
+        return@withContext Result.success(null)
+      }
+      val myReactions = mutableMapOf<String, VybeReaction>()
+      val breakdown = mutableMapOf<VybeReaction, Int>()
+      try {
+        val rResp = SupabaseNetworkClient.restApi.getReactionsForPosts(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          postIdsInFilter = "in.($cleanId)"
+        )
+        if (rResp.isSuccessful) {
+          rResp.body().orEmpty().forEach { rDto ->
+            val rx = VybeReaction.fromWire(rDto.reactionType)
+            breakdown[rx] = (breakdown[rx] ?: 0) + 1
+            if (!currentUserId.isNullOrBlank() && rDto.userId == currentUserId) {
+              myReactions[cleanId] = rx
+            }
+          }
+        }
+      } catch (_: Exception) {}
+      val mapped = mapPostDtoToModel(dto, myReactions, breakdown, emptySet(), accessToken)
+      Result.success(mapped)
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Unable to open shared post.")))
+    }
   }
 
   /**
@@ -2283,14 +2389,19 @@ class SupabaseRepository {
       ?: return@withContext Result.failure(IllegalStateException("Please sign in again to share a story."))
 
     try {
+      val canonicalAuthorId = SupabaseConfig.extractJwtSubject(
+        resolveValidAccessToken(accessToken)
+      ) ?: story.author.id
       val expiresIso = formatIsoUtc(System.currentTimeMillis() + 24L * 3_600_000L)
       val audienceStr = when (story.audience) {
         StoryAudience.VYBE_MATCHES, StoryAudience.CLOSE_FRIENDS -> "VYBE_MATCHES"
+        StoryAudience.FOLLOWERS -> "FOLLOWERS"
+        StoryAudience.ONLY_ME -> "ONLY_ME"
         else -> "EVERYONE"
       }
 
       val dto = SupabaseStoryInsertDto(
-        authorId = story.author.id,
+        authorId = canonicalAuthorId,
         mediaUrl = story.mediaUrl.ifBlank { "text://story" },
         mediaType = story.mediaType.name,
         caption = story.caption,
@@ -2303,17 +2414,30 @@ class SupabaseRepository {
         expiresAt = expiresIso
       )
 
+      var activeAuthHeader = authHeader
       var resp = SupabaseNetworkClient.restApi.insertStory(
         apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = authHeader,
+        authHeader = activeAuthHeader,
         story = dto
       )
+      if (!resp.isSuccessful && resp.code() in listOf(401, 403)) {
+        val refreshed = forceRefreshSessionToken()
+        val refreshedHeader = SupabaseConfig.buildAuthHeader(refreshed)
+        if (!refreshedHeader.isNullOrBlank() && refreshedHeader != activeAuthHeader) {
+          activeAuthHeader = refreshedHeader
+          resp = SupabaseNetworkClient.restApi.insertStory(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = activeAuthHeader,
+            story = dto.copy(authorId = SupabaseConfig.extractJwtSubject(refreshed) ?: canonicalAuthorId)
+          )
+        }
+      }
       if (!resp.isSuccessful && resp.code() == 400) {
         resp = SupabaseNetworkClient.restApi.insertStoryLegacy(
           apiKey = SupabaseConfig.supabaseAnonKey,
-          authHeader = authHeader,
+          authHeader = activeAuthHeader,
           story = SupabaseStoryLegacyInsertDto(
-            authorId = story.author.id,
+            authorId = canonicalAuthorId,
             mediaUrl = story.mediaUrl.ifBlank { "text://story" },
             storyType = story.mediaType.name,
             caption = story.caption,
@@ -3571,30 +3695,11 @@ class SupabaseRepository {
   }
 
   private fun parseIsoMillis(iso: String?): Long? {
-    if (iso.isNullOrBlank()) return null
-    val clean = iso.trim()
-      .replace(Regex("\\.\\d+"), "")
-      .replace("+00:00", "Z")
-      .replace("+00", "Z")
-    return try {
-      val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
-      sdf.timeZone = TimeZone.getTimeZone("UTC")
-      sdf.parse(clean)?.time
-    } catch (_: Exception) {
-      null
-    }
+    return TimestampUtils.parseIsoMillis(iso)
   }
 
   private fun formatRelativeTimestamp(iso: String?): String {
-    val millis = parseIsoMillis(iso) ?: return iso?.take(10) ?: "Recently"
-    val diffSec = ((System.currentTimeMillis() - millis) / 1000L).coerceAtLeast(0L)
-    return when {
-      diffSec < 60L -> "Just now"
-      diffSec < 3600L -> "${diffSec / 60L}m ago"
-      diffSec < 86_400L -> "${diffSec / 3600L}h ago"
-      diffSec < 604_800L -> "${diffSec / 86_400L}d ago"
-      else -> iso?.take(10) ?: "Recently"
-    }
+    return TimestampUtils.formatRelative(iso, fallback = iso?.take(10) ?: "Recently")
   }
 
   private fun formatShortClock(iso: String?): String {

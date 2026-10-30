@@ -192,13 +192,14 @@ class VybeMasterAuditTest {
   fun `relative timestamps and joined month year format authoritative ISO dates without substituting current time`() {
     val baseNow = com.example.util.TimestampUtils.parseIsoMillis("2026-10-24T12:00:00Z")!!
 
-    assertEquals("Just now", com.example.util.TimestampUtils.formatRelative("2026-10-24T11:59:35Z", baseNow))
-    assertEquals("2m", com.example.util.TimestampUtils.formatRelative("2026-10-24T11:58:00Z", baseNow))
-    assertEquals("45m", com.example.util.TimestampUtils.formatRelative("2026-10-24T11:15:00Z", baseNow))
-    assertEquals("3h", com.example.util.TimestampUtils.formatRelative("2026-10-24T09:00:00Z", baseNow))
-    assertEquals("2d", com.example.util.TimestampUtils.formatRelative("2026-10-22T12:00:00Z", baseNow))
-    assertEquals("2w", com.example.util.TimestampUtils.formatRelative("2026-10-10T12:00:00Z", baseNow))
-    assertEquals("", com.example.util.TimestampUtils.formatRelative(null, baseNow))
+    val utc = java.util.TimeZone.getTimeZone("UTC")
+    assertEquals("Just now", com.example.util.TimestampUtils.formatRelative("2026-10-24T11:59:35Z", baseNow, timeZone = utc))
+    assertEquals("2 minutes ago", com.example.util.TimestampUtils.formatRelative("2026-10-24T11:58:00Z", baseNow, timeZone = utc))
+    assertEquals("45 minutes ago", com.example.util.TimestampUtils.formatRelative("2026-10-24T11:15:00Z", baseNow, timeZone = utc))
+    assertEquals("3 hours ago", com.example.util.TimestampUtils.formatRelative("2026-10-24T09:00:00Z", baseNow, timeZone = utc))
+    assertEquals("2 days ago", com.example.util.TimestampUtils.formatRelative("2026-10-22T12:00:00Z", baseNow, timeZone = utc))
+    assertEquals("Oct 10", com.example.util.TimestampUtils.formatRelative("2026-10-10T12:00:00Z", baseNow, timeZone = utc))
+    assertEquals("", com.example.util.TimestampUtils.formatRelative(null, baseNow, timeZone = utc))
 
     val joined = com.example.util.TimestampUtils.formatJoinedMonthYear("2026-10-15T08:30:00Z")
     assertTrue("Joined date must start with Joined and include year 2026", joined.startsWith("Joined ") && joined.contains("2026"))

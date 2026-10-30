@@ -123,7 +123,10 @@ class VybeRepository private constructor() {
   val uploadStatus: StateFlow<UploadStatus> = _uploadStatus.asStateFlow()
 
   private var lastFailedUpload: PendingUploadOperation? = null
-  private var isUploadInFlight = false
+  private val isPostUploadInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
+  private val isStoryUploadInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
+  private val isUploadInFlight: Boolean
+    get() = isPostUploadInFlight.get() || isStoryUploadInFlight.get()
 
   // --- Password Recovery & Dual OTP Verification State ---
   private val _passwordRecoveryState = MutableStateFlow<PasswordRecoveryState>(PasswordRecoveryState.Inactive)
@@ -448,6 +451,7 @@ class VybeRepository private constructor() {
         deletedMessageIdsCache.addAll(localStore.loadDeletedMessageIds())
         _posts.value = localStore.loadPosts()
         _unfilteredPosts.value = localStore.loadUnfilteredPosts()
+        _stories.value = localStore.loadStories()
         _conversations.value = dedupeConversationCallLogs(localStore.loadConversations())
         _notifications.value = enrichNotificationsWithLocalContext(localStore.loadNotifications())
         _followingUserIds.value = localStore.loadFollowing()
@@ -562,7 +566,9 @@ class VybeRepository private constructor() {
           accessToken = validToken
         )
         if (convRes.isSuccess) {
-          val remoteConvs = dedupeConversationCallLogs(convRes.getOrThrow())
+          val remoteConvs = mergeRemoteConversationsPreservingInFlight(
+            dedupeConversationCallLogs(convRes.getOrThrow())
+          )
           _conversations.value = remoteConvs
           VybeLocalStore.get()?.saveConversations(remoteConvs)
         }
@@ -730,20 +736,47 @@ class VybeRepository private constructor() {
       val localViewed = if (myUserId.isNotBlank()) VybeLocalStore.get()?.loadViewedStoryIds(myUserId).orEmpty() else emptySet()
       viewedStoryIdsLocal = viewedStoryIdsLocal + localViewed
 
-      val filteredAndSorted = res.getOrThrow()
+      val nowMs = System.currentTimeMillis()
+      val remoteStories = res.getOrThrow()
+      val remoteIds = remoteStories.map { it.id }.toSet()
+      val remoteClientUploadIds = remoteStories.mapNotNull { it.clientUploadId?.takeIf { c -> c.isNotBlank() } }.toSet()
+
+      // Preserve recently published stories (< 2 minutes old) if read-replica lag hasn't returned them yet
+      val recentOptimisticStories = _stories.value.filter { local ->
+        val createdMs = TimestampUtils.parseIsoMillis(local.createdAtIso) ?: 0L
+        val expMs = TimestampUtils.parseIsoMillis(local.expiresAtIso)
+        val notExpired = expMs == null || expMs > nowMs
+        notExpired &&
+          (nowMs - createdMs) in 0L..120_000L &&
+          !remoteIds.contains(local.id) &&
+          (local.clientUploadId.isNullOrBlank() || !remoteClientUploadIds.contains(local.clientUploadId))
+      }
+
+      val filteredAndSorted = (remoteStories + recentOptimisticStories)
         .distinctBy { it.id }
         .map { s ->
           val fullAuthor = usersMap[s.author.id]?.let { decorateUserRelationshipFlags(it) } ?: s.author
           val viewed = s.isViewed || viewedStoryIdsLocal.contains(s.id)
-          s.copy(author = fullAuthor, isViewed = viewed)
+          s.copy(
+            author = fullAuthor,
+            isViewed = viewed,
+            timestamp = TimestampUtils.formatRelative(iso = s.createdAtIso, nowMillis = nowMs, fallback = s.timestamp)
+          )
         }
         .filter { s ->
-          if (myUserId.isNotBlank() && s.author.id == myUserId) {
+          val expMs = TimestampUtils.parseIsoMillis(s.expiresAtIso)
+          if (expMs != null && expMs <= nowMs) {
+            false
+          } else if (myUserId.isNotBlank() && s.author.id == myUserId) {
             true
+          } else if (s.audience == StoryAudience.ONLY_ME) {
+            false
           } else if (_blockedUserIds.value.contains(s.author.id)) {
             false
           } else if (s.audience == StoryAudience.VYBE_MATCHES || s.audience == StoryAudience.CLOSE_FRIENDS) {
             myUserId.isNotBlank() && (s.author.id == myUserId || vybeMatchIdsCache.contains(s.author.id) || _followerUserIds.value.contains(s.author.id))
+          } else if (s.audience == StoryAudience.FOLLOWERS) {
+            myUserId.isNotBlank() && (_followingUserIds.value.contains(s.author.id) || _followerUserIds.value.contains(s.author.id))
           } else if (s.author.isPrivate && !_followingUserIds.value.contains(s.author.id) && !_followerUserIds.value.contains(s.author.id)) {
             false
           } else {
@@ -757,6 +790,7 @@ class VybeRepository private constructor() {
         )
 
       _stories.value = filteredAndSorted
+      VybeLocalStore.get()?.saveStories(filteredAndSorted, nowMs)
       if (myUserId.isNotBlank()) {
         val allMarkedViewed = filteredAndSorted.filter { it.isViewed }.map { it.id }.toSet()
         if (allMarkedViewed.isNotEmpty()) {
@@ -928,8 +962,8 @@ class VybeRepository private constructor() {
     preferredAspectRatio: Float? = null,
     musicAttachment: MusicAttachment? = null
   ): Result<Post> {
-    if (isUploadInFlight) {
-      return Result.failure(IllegalStateException("An upload is already in progress."))
+    if (isPostUploadInFlight.get()) {
+      return Result.failure(IllegalStateException("A post upload is already in progress."))
     }
     val sanitizedMusic = musicAttachment?.sanitized()
     val job = PendingUploadOperation.PostUpload(
@@ -950,6 +984,29 @@ class VybeRepository private constructor() {
     return executePostUpload(job)
   }
 
+  /**
+   * Publishes an authentic, full-resolution camera-captured UNFILTERED post without resizing,
+   * re-encoding, or gallery compression, returning only after Storage & DB persistence succeed.
+   */
+  suspend fun publishUnfilteredPostAwait(
+    caption: String,
+    rawCameraUri: String,
+    mood: MoodType? = null
+  ): Result<Post> {
+    if (rawCameraUri.isBlank()) {
+      return Result.failure(IllegalArgumentException("Capture a live camera photo first."))
+    }
+    return publishPostAwait(
+      caption = caption.trim(),
+      mood = mood,
+      mediaType = MediaType.IMAGE,
+      imageUrl = rawCameraUri,
+      isVybes = false,
+      isUnfiltered = true,
+      preferredAspectRatio = null
+    )
+  }
+
   fun createPost(
     caption: String,
     mood: MoodType?,
@@ -963,7 +1020,7 @@ class VybeRepository private constructor() {
     preferredAspectRatio: Float? = null,
     musicAttachment: MusicAttachment? = null
   ) {
-    if (isUploadInFlight) return
+    if (isPostUploadInFlight.get()) return
     val sanitizedMusic = musicAttachment?.sanitized()
     val job = PendingUploadOperation.PostUpload(
       clientUploadId = UUID.randomUUID().toString(),
@@ -1001,7 +1058,9 @@ class VybeRepository private constructor() {
       return Result.failure(IllegalStateException(msg))
     }
 
-    isUploadInFlight = true
+    if (!isPostUploadInFlight.compareAndSet(false, true)) {
+      return Result.failure(IllegalStateException("A post upload is already in progress."))
+    }
     var renderedMixedUriToCleanup: String? = null
     return try {
       val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
@@ -1021,9 +1080,13 @@ class VybeRepository private constructor() {
             resolvedMediaType = if (op.isVybes) MediaType.REEL else MediaType.VIDEO
           }
         } else if (ctx != null) {
-          _uploadStatus.value = UploadStatus.Uploading("Reading media file...", 5)
-          val initialPayload = MediaUtils.readMediaPayload(ctx, rawUri)
-            ?: throw IllegalStateException("Could not read selected media file. Please re-select the photo or video.")
+          _uploadStatus.value = UploadStatus.Uploading("Validating media file...", 5)
+          MediaUtils.validateMediaUri(ctx, rawUri, MediaUtils.MAX_STORY_POST_BYTES).getOrElse { throw it }
+          val initialPayload = MediaUtils.readMediaPayload(
+            context = ctx,
+            uriString = rawUri,
+            preserveRawBytes = op.isUnfiltered
+          ) ?: throw IllegalStateException("Could not read selected media file. Please re-select the photo or video.")
 
           if (detectedAspectRatio == null && initialPayload.aspectRatio != null) {
             detectedAspectRatio = initialPayload.aspectRatio
@@ -1177,7 +1240,7 @@ class VybeRepository private constructor() {
       if (ctx != null && !renderedMixedUriToCleanup.isNullOrBlank()) {
         MediaUtils.cleanupStagedFileIfOwned(ctx, renderedMixedUriToCleanup)
       }
-      isUploadInFlight = false
+      isPostUploadInFlight.set(false)
     }
   }
 
@@ -1198,16 +1261,23 @@ class VybeRepository private constructor() {
     textBackgroundColor: String? = null,
     musicAttachment: MusicAttachment? = null
   ): Result<Story> {
-    if (isUploadInFlight) {
-      return Result.failure(IllegalStateException("Another upload is currently in progress."))
+    if (isStoryUploadInFlight.get()) {
+      return Result.failure(IllegalStateException("A story upload is currently in progress."))
     }
     if ((audience == StoryAudience.VYBE_MATCHES || audience == StoryAudience.CLOSE_FRIENDS) && _vybeMatches.value.isEmpty()) {
       val msg = "No VYBE Matches selected. Add at least one person to VYBE Matches before sharing a restricted story."
       _uploadStatus.value = UploadStatus.Failed(msg, canRetry = false)
       return Result.failure(IllegalArgumentException(msg))
     }
-    if (mediaType != StoryMediaType.TEXT && mediaUrl.isBlank()) {
+    val sanitizedMusic = musicAttachment?.sanitized()
+    val effectiveTrackTitle = musicTrackTitle?.takeIf { it.isNotBlank() } ?: sanitizedMusic?.displayLabel
+    if (mediaType != StoryMediaType.TEXT && mediaType != StoryMediaType.MUSIC && mediaUrl.isBlank()) {
       val msg = "Select a photo or video before publishing your story."
+      _uploadStatus.value = UploadStatus.Failed(msg, canRetry = false)
+      return Result.failure(IllegalArgumentException(msg))
+    }
+    if (mediaType == StoryMediaType.MUSIC && mediaUrl.isBlank() && effectiveTrackTitle.isNullOrBlank()) {
+      val msg = "Select a music track before publishing a music story."
       _uploadStatus.value = UploadStatus.Failed(msg, canRetry = false)
       return Result.failure(IllegalArgumentException(msg))
     }
@@ -1217,16 +1287,26 @@ class VybeRepository private constructor() {
       return Result.failure(IllegalArgumentException(msg))
     }
 
-    val sanitizedMusic = musicAttachment?.sanitized()
+    val effectiveMediaUri = if (mediaType == StoryMediaType.MUSIC && mediaUrl.isBlank()) {
+      "text://music_story"
+    } else {
+      mediaUrl
+    }
+    val effectiveBg = if (mediaType == StoryMediaType.MUSIC && mediaUrl.isBlank() && textBackgroundColor.isNullOrBlank()) {
+      "vybe_aurora"
+    } else {
+      textBackgroundColor
+    }
+
     val op = PendingUploadOperation.StoryUpload(
       clientUploadId = UUID.randomUUID().toString(),
-      localOrRemoteMediaUri = mediaUrl,
+      localOrRemoteMediaUri = effectiveMediaUri,
       caption = caption.trim(),
       mediaType = mediaType,
       audience = audience,
-      musicTrackTitle = musicTrackTitle?.takeIf { it.isNotBlank() } ?: sanitizedMusic?.displayLabel,
+      musicTrackTitle = effectiveTrackTitle,
       location = location?.takeIf { it.isNotBlank() },
-      textBackgroundColor = textBackgroundColor,
+      textBackgroundColor = effectiveBg,
       musicAttachment = sanitizedMusic
     )
     return executeStoryUpload(op)
@@ -1283,10 +1363,15 @@ class VybeRepository private constructor() {
       return Result.failure(IllegalStateException(msg))
     }
 
-    isUploadInFlight = true
+    if (!isStoryUploadInFlight.compareAndSet(false, true)) {
+      return Result.failure(IllegalStateException("A story upload is currently in progress."))
+    }
     var renderedStoryUriToCleanup: String? = null
     return try {
       val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+      if (supabaseRepo.isConfigured && token.isBlank()) {
+        throw IllegalStateException("Your session has expired. Please sign in again to publish your story.")
+      }
       var resolvedUrl = op.localOrRemoteMediaUri
       var resolvedStoragePath: String? = null
       var resolvedMediaType = op.mediaType
@@ -1299,7 +1384,10 @@ class VybeRepository private constructor() {
         !op.localOrRemoteMediaUri.startsWith("text://", true)
 
       if (needsBinaryUpload && ctx != null) {
-        _uploadStatus.value = UploadStatus.Uploading("Preparing story media...", 5)
+        _uploadStatus.value = UploadStatus.Uploading("Validating story media...", 5)
+        MediaUtils.validateMediaUri(ctx, op.localOrRemoteMediaUri, MediaUtils.MAX_STORY_POST_BYTES)
+          .getOrElse { throw it }
+
         val initialPayload = MediaUtils.readMediaPayload(ctx, op.localOrRemoteMediaUri)
           ?: throw IllegalStateException("Unable to read story media file. Please select it again.")
 
@@ -1391,14 +1479,26 @@ class VybeRepository private constructor() {
         draftStory
       }
 
-      val nextStories = (listOf(publishedStory) + _stories.value.filterNot {
-        it.id == publishedStory.id || (!it.clientUploadId.isNullOrBlank() && it.clientUploadId == op.clientUploadId)
+      val nowMs = System.currentTimeMillis()
+      val withDefaultExpiry = if (publishedStory.expiresAtIso.isNullOrBlank()) {
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).apply {
+          timeZone = java.util.TimeZone.getTimeZone("UTC")
+        }
+        publishedStory.copy(expiresAtIso = sdf.format(java.util.Date(nowMs + 24L * 3_600_000L)))
+      } else {
+        publishedStory
+      }
+
+      val nextStories = (listOf(withDefaultExpiry) + _stories.value.filterNot {
+        it.id == withDefaultExpiry.id || (!it.clientUploadId.isNullOrBlank() && it.clientUploadId == op.clientUploadId)
       }).distinctBy { it.id }
         .sortedWith(
           compareBy<Story> { it.isViewed && it.author.id != user.id }
             .thenByDescending { it.author.id == user.id }
+            .thenByDescending { TimestampUtils.parseIsoMillis(it.createdAtIso) ?: 0L }
         )
       _stories.value = nextStories
+      VybeLocalStore.get()?.saveStories(nextStories, nowMs)
 
       lastFailedUpload = null
       if (ctx != null && needsBinaryUpload && supabaseRepo.isConfigured) {
@@ -1409,7 +1509,7 @@ class VybeRepository private constructor() {
       if (supabaseRepo.isConfigured) {
         syncStoriesFromSupabase(user.id, token)
       }
-      Result.success(publishedStory)
+      Result.success(withDefaultExpiry)
     } catch (e: Exception) {
       lastFailedUpload = op
       val errMsg = e.message ?: "Story upload failed. Tap Retry."
@@ -1422,7 +1522,7 @@ class VybeRepository private constructor() {
       if (ctx != null && !renderedStoryUriToCleanup.isNullOrBlank()) {
         MediaUtils.cleanupStagedFileIfOwned(ctx, renderedStoryUriToCleanup)
       }
-      isUploadInFlight = false
+      isStoryUploadInFlight.set(false)
     }
   }
 
@@ -1907,6 +2007,7 @@ class VybeRepository private constructor() {
     _stories.value = _stories.value
       .map { if (it.id == storyId) it.copy(isViewed = true) else it }
       .sortedWith(compareBy<Story> { it.isViewed }.thenByDescending { it.author.id == myId })
+    VybeLocalStore.get()?.saveStories(_stories.value)
 
     if (supabaseRepo.isConfigured && myId.isNotBlank()) {
       ioScope.launch {
@@ -1929,6 +2030,7 @@ class VybeRepository private constructor() {
         )
       } else it
     }
+    VybeLocalStore.get()?.saveStories(_stories.value)
   }
 
   fun deleteStory(storyId: String) {
@@ -1937,6 +2039,7 @@ class VybeRepository private constructor() {
     if (target.author.id != me.id) return
 
     _stories.value = _stories.value.filter { it.id != storyId }
+    VybeLocalStore.get()?.saveStories(_stories.value)
     if (supabaseRepo.isConfigured) {
       ioScope.launch {
         supabaseRepo.deleteStoryOnSupabase(
@@ -2420,6 +2523,93 @@ class VybeRepository private constructor() {
     return Result.success(getOrCreateConversation(peerUser))
   }
 
+  /**
+   * Merges remote conversations while preserving any newly opened local `conv_` threads and
+   * in-flight/failed optimistic messages so background sync never drops active user messages.
+   */
+  private fun mergeRemoteConversationsPreservingInFlight(remoteConvs: List<Conversation>): List<Conversation> {
+    val currentLocal = _conversations.value
+    if (currentLocal.isEmpty()) return remoteConvs
+
+    val remotePeers = remoteConvs.filter { !it.isGroup }.map { it.peerUser.id }.toSet()
+    val mergedRemote = remoteConvs.map { remote ->
+      val localMatch = currentLocal.firstOrNull { local ->
+        local.id == remote.id || (!local.isGroup && !remote.isGroup && local.peerUser.id == remote.peerUser.id)
+      }
+      if (localMatch == null) {
+        remote
+      } else {
+        val remoteIds = remote.messages.map { it.id }.toSet()
+        val pendingLocal = localMatch.messages.filter { msg ->
+          (msg.status == MessageStatus.SENDING || msg.status == MessageStatus.FAILED) &&
+            !remoteIds.contains(msg.id) &&
+            !deletedMessageIdsCache.contains(msg.id)
+        }
+        if (pendingLocal.isEmpty()) remote else remote.copy(messages = remote.messages + pendingLocal)
+      }
+    }
+    val pendingNewThreads = currentLocal.filter { local ->
+      local.id.startsWith("conv_") && !local.isGroup && !remotePeers.contains(local.peerUser.id)
+    }
+    return pendingNewThreads + mergedRemote
+  }
+
+  private fun findConversationIndex(list: List<Conversation>, conversationId: String, fallbackPeerId: String? = null): Int {
+    val exact = list.indexOfFirst { it.id == conversationId }
+    if (exact != -1) return exact
+    val extractedPeer = fallbackPeerId ?: if (conversationId.startsWith("conv_")) {
+      // conv_<timestamp>_<peerUserId>
+      val parts = conversationId.split("_", limit = 3)
+      parts.getOrNull(2)?.takeIf { it.isNotBlank() }
+    } else null
+    if (!extractedPeer.isNullOrBlank()) {
+      return list.indexOfFirst { !it.isGroup && it.peerUser.id == extractedPeer }
+    }
+    return -1
+  }
+
+  private suspend fun uploadChatAttachmentWithFallback(
+    ctx: Context,
+    rawMediaUri: String,
+    userId: String,
+    token: String
+  ): Result<String> {
+    MediaUtils.validateMediaUri(ctx, rawMediaUri, MediaUtils.MAX_CHAT_MEDIA_BYTES).getOrElse {
+      return Result.failure(it)
+    }
+    val payload = MediaUtils.readMediaPayload(ctx, rawMediaUri)
+      ?: return Result.failure(IllegalStateException("Could not read selected attachment."))
+    if (payload.bytes.isEmpty()) {
+      return Result.failure(IllegalStateException("Selected attachment is empty."))
+    }
+    val leafName = "msg_${System.currentTimeMillis()}_${(100..999).random()}.${payload.extension}"
+    val primary = supabaseRepo.uploadMediaWithProgress(
+      bucket = "chat-media",
+      userId = userId,
+      fileName = leafName,
+      bytes = payload.bytes,
+      mimeType = payload.mimeType,
+      accessToken = token
+    )
+    if (primary.isSuccess) {
+      return Result.success(primary.getOrThrow().url)
+    }
+    // Fallback to `posts` bucket if `chat-media` bucket has stricter MIME config on older environments
+    val fallback = supabaseRepo.uploadMediaWithProgress(
+      bucket = "posts",
+      userId = userId,
+      fileName = "chat_$leafName",
+      bytes = payload.bytes,
+      mimeType = payload.mimeType,
+      accessToken = token
+    )
+    return if (fallback.isSuccess) {
+      Result.success(fallback.getOrThrow().url)
+    } else {
+      Result.failure(primary.exceptionOrNull() ?: fallback.exceptionOrNull() ?: Exception("Attachment upload failed."))
+    }
+  }
+
   fun getOrCreateConversation(peerUser: User): Conversation {
     val existing = _conversations.value.firstOrNull { !it.isGroup && it.peerUser.id == peerUser.id }
     if (existing != null) return existing
@@ -2434,11 +2624,11 @@ class VybeRepository private constructor() {
     )
     _conversations.value = listOf(placeholderConv) + _conversations.value
 
-    // Resolve real Supabase conversation UUID asynchronously
+    // Resolve real Supabase conversation UUID asynchronously using a validated/refreshed token
     val me = _currentUser.value
     if (supabaseRepo.isConfigured && me != null) {
       ioScope.launch {
-        val token = SessionManager.get()?.accessToken.orEmpty()
+        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
         val res = supabaseRepo.getOrCreateDirectConversation(me.id, peerUser.id, token)
         if (res.isSuccess) {
           val realId = res.getOrThrow()
@@ -2475,12 +2665,15 @@ class VybeRepository private constructor() {
     if (!inFlightMessageClientIds.add(clientId)) return
 
     val current = _conversations.value.toMutableList()
-    val index = current.indexOfFirst { it.id == conversationId }
+    val index = findConversationIndex(current, conversationId)
     if (index == -1) {
       inFlightMessageClientIds.remove(clientId)
       return
     }
     val conv = current[index]
+    val effectiveInitialConvId = conv.id
+    val peerIdForLookup = if (!conv.isGroup) conv.peerUser.id else null
+
     if (conv.isBlocked || _blockedUserIds.value.contains(conv.peerUser.id)) {
       inFlightMessageClientIds.remove(clientId)
       return
@@ -2515,58 +2708,70 @@ class VybeRepository private constructor() {
       try {
         val ctx = appContext
         if (supabaseRepo.isConfigured && ctx != null && !NetworkMonitor.checkCurrentlyOnline(ctx)) {
-          markMessageFailed(conversationId, clientId)
+          markMessageFailed(effectiveInitialConvId, clientId, peerIdForLookup)
           return@launch
         }
 
         if (supabaseRepo.isConfigured) {
           val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+          if (token.isBlank()) {
+            markMessageFailed(effectiveInitialConvId, clientId, peerIdForLookup)
+            return@launch
+          }
 
-          // Ensure conversation exists in Supabase if it still has a temporary `conv_` ID
-          var resolvedConvId = conversationId
-          if (conversationId.startsWith("conv_")) {
+          // Re-check latest conversation ID in case async `getOrCreateConversation` already resolved `conv_` -> UUID
+          val latestSnap = _conversations.value
+          val latestIdx = findConversationIndex(latestSnap, effectiveInitialConvId, peerIdForLookup)
+          var resolvedConvId = if (latestIdx != -1) latestSnap[latestIdx].id else effectiveInitialConvId
+
+          if (resolvedConvId.startsWith("conv_")) {
             val createRes = supabaseRepo.getOrCreateDirectConversation(user.id, conv.peerUser.id, token)
             if (createRes.isSuccess) {
               resolvedConvId = createRes.getOrThrow()
               _conversations.value = _conversations.value.map {
-                if (it.id == conversationId) it.copy(id = resolvedConvId) else it
+                if (it.id == effectiveInitialConvId || (!it.isGroup && it.peerUser.id == conv.peerUser.id && it.id.startsWith("conv_"))) {
+                  it.copy(id = resolvedConvId)
+                } else it
               }
             } else {
-              markMessageFailed(conversationId, clientId)
+              markMessageFailed(effectiveInitialConvId, clientId, peerIdForLookup)
               return@launch
             }
           }
 
-          // Upload local chat media if present (skipping http(s) URLs and vybe:// call-log metadata URIs)
+          // Upload local chat media if present; NEVER insert raw `content://` or `file://` URIs into Supabase!
           var resolvedMediaUrl = mediaUrl
-          if (ctx != null && !mediaUrl.isNullOrBlank() && !mediaUrl.startsWith("http", true) && !mediaUrl.startsWith("vybe://", true)) {
-            val payload = MediaUtils.readMediaPayload(ctx, mediaUrl)
-            if (payload != null) {
-              val uploadRes = supabaseRepo.uploadMediaWithProgress(
-                bucket = "chat-media",
-                userId = user.id,
-                fileName = "msg_${System.currentTimeMillis()}.${payload.extension}",
-                bytes = payload.bytes,
-                mimeType = payload.mimeType,
-                accessToken = token
-              )
-              if (uploadRes.isSuccess) {
-                resolvedMediaUrl = uploadRes.getOrThrow().url
-              }
+          val isLocalAttachment = !mediaUrl.isNullOrBlank() &&
+            !mediaUrl.startsWith("http://", true) &&
+            !mediaUrl.startsWith("https://", true) &&
+            !mediaUrl.startsWith("vybe://", true)
+
+          if (isLocalAttachment) {
+            if (ctx == null) {
+              markMessageFailed(resolvedConvId, clientId, peerIdForLookup)
+              return@launch
+            }
+            val uploadRes = uploadChatAttachmentWithFallback(ctx, mediaUrl!!, user.id, token)
+            if (uploadRes.isSuccess) {
+              resolvedMediaUrl = uploadRes.getOrThrow()
+            } else {
+              markMessageFailed(resolvedConvId, clientId, peerIdForLookup)
+              return@launch
             }
           }
 
+          val canonicalSenderId = SupabaseConfig.extractJwtSubject(token) ?: user.id
           val res = supabaseRepo.sendMessage(
             conversationId = resolvedConvId,
-            senderId = user.id,
+            senderId = canonicalSenderId,
             content = cleanText.ifBlank { resolvedMediaUrl ?: "[Attachment]" },
             mediaUrl = resolvedMediaUrl,
             mediaType = mediaType,
-            replyToId = replyToId?.takeIf { !it.startsWith("c_") },
+            replyToId = replyToId?.takeIf { !it.startsWith("c_") && !it.startsWith("m_") },
             accessToken = token
           )
           val updatedList = _conversations.value.toMutableList()
-          val convIdx = updatedList.indexOfFirst { it.id == resolvedConvId }
+          val convIdx = findConversationIndex(updatedList, resolvedConvId, peerIdForLookup)
           if (convIdx != -1) {
             val c = updatedList[convIdx]
             if (res.isSuccess) {
@@ -2577,11 +2782,12 @@ class VybeRepository private constructor() {
                     id = serverMsg.id ?: clientId,
                     mediaUrl = resolvedMediaUrl ?: m.mediaUrl,
                     status = MessageStatus.SENT,
-                    timestamp = "Just now"
+                    timestamp = TimestampUtils.formatMessageTime(serverMsg.createdAt, "Just now"),
+                    createdAtIso = serverMsg.createdAt
                   )
                 } else m
               }
-              updatedList[convIdx] = c.copy(messages = reconciled)
+              updatedList[convIdx] = c.copy(id = resolvedConvId, messages = reconciled)
               _conversations.value = updatedList
               VybeLocalStore.get()?.saveConversations(updatedList)
 
@@ -2660,12 +2866,12 @@ class VybeRepository private constructor() {
                 }
               }
             } else {
-              markMessageFailed(resolvedConvId, clientId)
+              markMessageFailed(resolvedConvId, clientId, peerIdForLookup)
             }
           }
         } else {
           val updatedList = _conversations.value.toMutableList()
-          val convIdx = updatedList.indexOfFirst { it.id == conversationId }
+          val convIdx = findConversationIndex(updatedList, effectiveInitialConvId, peerIdForLookup)
           if (convIdx != -1) {
             val c = updatedList[convIdx]
             updatedList[convIdx] = c.copy(
@@ -2682,9 +2888,9 @@ class VybeRepository private constructor() {
     }
   }
 
-  private fun markMessageFailed(conversationId: String, clientId: String) {
+  private fun markMessageFailed(conversationId: String, clientId: String, fallbackPeerId: String? = null) {
     val updatedList = _conversations.value.toMutableList()
-    val convIdx = updatedList.indexOfFirst { it.id == conversationId }
+    val convIdx = findConversationIndex(updatedList, conversationId, fallbackPeerId)
     if (convIdx != -1) {
       val c = updatedList[convIdx]
       updatedList[convIdx] = c.copy(
@@ -2693,6 +2899,7 @@ class VybeRepository private constructor() {
         }
       )
       _conversations.value = updatedList
+      VybeLocalStore.get()?.saveConversations(updatedList)
     }
   }
 
@@ -2707,9 +2914,10 @@ class VybeRepository private constructor() {
   fun retrySendMessage(conversationId: String, messageIdOrClientId: String) {
     val user = _currentUser.value ?: return
     val current = _conversations.value.toMutableList()
-    val convIdx = current.indexOfFirst { it.id == conversationId }
+    val convIdx = findConversationIndex(current, conversationId)
     if (convIdx == -1) return
     val conv = current[convIdx]
+    val peerIdForLookup = if (!conv.isGroup) conv.peerUser.id else null
     val target = conv.messages.firstOrNull { it.id == messageIdOrClientId || it.clientId == messageIdOrClientId } ?: return
 
     val clientId = target.clientId ?: target.id
@@ -2726,23 +2934,70 @@ class VybeRepository private constructor() {
       try {
         if (supabaseRepo.isConfigured) {
           val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+          if (token.isBlank()) {
+            markMessageFailed(conv.id, clientId, peerIdForLookup)
+            return@launch
+          }
+          var resolvedConvId = conv.id
+          if (resolvedConvId.startsWith("conv_")) {
+            val createRes = supabaseRepo.getOrCreateDirectConversation(user.id, conv.peerUser.id, token)
+            if (createRes.isSuccess) {
+              resolvedConvId = createRes.getOrThrow()
+              _conversations.value = _conversations.value.map {
+                if (it.id == conv.id) it.copy(id = resolvedConvId) else it
+              }
+            } else {
+              markMessageFailed(conv.id, clientId, peerIdForLookup)
+              return@launch
+            }
+          }
+
+          var resolvedMediaUrl = target.mediaUrl
+          val isLocalAttachment = !resolvedMediaUrl.isNullOrBlank() &&
+            !resolvedMediaUrl.startsWith("http://", true) &&
+            !resolvedMediaUrl.startsWith("https://", true) &&
+            !resolvedMediaUrl.startsWith("vybe://", true)
+          if (isLocalAttachment) {
+            val ctx = appContext
+            if (ctx == null) {
+              markMessageFailed(resolvedConvId, clientId, peerIdForLookup)
+              return@launch
+            }
+            val uploadRes = uploadChatAttachmentWithFallback(ctx, resolvedMediaUrl!!, user.id, token)
+            if (uploadRes.isSuccess) {
+              resolvedMediaUrl = uploadRes.getOrThrow()
+            } else {
+              markMessageFailed(resolvedConvId, clientId, peerIdForLookup)
+              return@launch
+            }
+          }
+
+          val canonicalSenderId = SupabaseConfig.extractJwtSubject(token) ?: user.id
           val res = supabaseRepo.sendMessage(
-            conversationId = conversationId,
-            senderId = user.id,
-            content = target.text.ifBlank { target.mediaUrl ?: "[Media]" },
-            mediaUrl = target.mediaUrl,
+            conversationId = resolvedConvId,
+            senderId = canonicalSenderId,
+            content = target.text.ifBlank { resolvedMediaUrl ?: "[Media]" },
+            mediaUrl = resolvedMediaUrl,
             mediaType = target.mediaType,
-            replyToId = target.replyToId,
+            replyToId = target.replyToId?.takeIf { !it.startsWith("c_") && !it.startsWith("m_") },
             accessToken = token
           )
           if (res.isSuccess) {
-            val serverId = res.getOrThrow().id ?: target.id
+            val serverMsg = res.getOrThrow()
+            val serverId = serverMsg.id ?: target.id
             _conversations.value = _conversations.value.map { c ->
-              if (c.id == conversationId) {
+              if (c.id == resolvedConvId || (!c.isGroup && peerIdForLookup != null && c.peerUser.id == peerIdForLookup)) {
                 c.copy(
+                  id = resolvedConvId,
                   messages = c.messages.map { m ->
                     if (m.id == target.id || m.clientId == clientId) {
-                      m.copy(id = serverId, status = MessageStatus.SENT, timestamp = "Just now")
+                      m.copy(
+                        id = serverId,
+                        mediaUrl = resolvedMediaUrl ?: m.mediaUrl,
+                        status = MessageStatus.SENT,
+                        timestamp = TimestampUtils.formatMessageTime(serverMsg.createdAt, "Just now"),
+                        createdAtIso = serverMsg.createdAt
+                      )
                     } else m
                   }
                 )
@@ -2750,13 +3005,175 @@ class VybeRepository private constructor() {
             }
             VybeLocalStore.get()?.saveConversations(_conversations.value)
           } else {
-            markMessageFailed(conversationId, clientId)
+            markMessageFailed(resolvedConvId, clientId, peerIdForLookup)
           }
         }
       } finally {
         inFlightMessageClientIds.remove(clientId)
       }
     }
+  }
+
+  /**
+   * Shares a post directly to another VYBE user or existing conversation, enforcing private-account
+   * rules, creating/resolving the remote conversation atomically, and confirming DB insertion.
+   */
+  suspend fun sharePostToConversationAwait(
+    post: Post,
+    targetUser: User? = null,
+    existingConversationId: String? = null,
+    optionalNote: String = ""
+  ): Result<String> {
+    val me = _currentUser.value ?: return Result.failure(IllegalStateException("Please sign in to share posts."))
+    if (post.isArchived) {
+      return Result.failure(IllegalStateException("Archived posts cannot be shared."))
+    }
+    if (post.author.isPrivate && post.author.id != me.id && targetUser != null && targetUser.id != post.author.id) {
+      return Result.failure(IllegalStateException("Posts from private accounts cannot be reshared to other users."))
+    }
+
+    val targetConv: Conversation = when {
+      !existingConversationId.isNullOrBlank() -> {
+        val found = _conversations.value.firstOrNull { it.id == existingConversationId }
+          ?: return Result.failure(IllegalStateException("Conversation not found."))
+        if (found.id.startsWith("conv_") && !found.isGroup) {
+          openOrCreateRemoteConversation(found.peerUser).getOrElse { return Result.failure(it) }
+        } else {
+          found
+        }
+      }
+      targetUser != null -> {
+        openOrCreateRemoteConversation(targetUser).getOrElse { return Result.failure(it) }
+      }
+      else -> return Result.failure(IllegalArgumentException("Select a recipient to share this post."))
+    }
+
+    val shareUrl = com.example.util.QrCodeGenerator.buildCanonicalPostUrl(post.id)
+    val snippet = post.caption.trim().take(100)
+    val noteLine = optionalNote.trim()
+    val bodyBuilder = buildString {
+      if (noteLine.isNotBlank()) {
+        append(noteLine)
+        append("\n\n")
+      }
+      append("Shared a post by @${post.author.username}")
+      if (snippet.isNotBlank()) {
+        append(": \"$snippet\"")
+      }
+      append("\n")
+      append(shareUrl)
+    }
+
+    val previewMediaUrl = post.mediaUrls.firstOrNull()?.takeIf {
+      it.startsWith("http://", true) || it.startsWith("https://", true)
+    }
+    val msgMediaType = when {
+      previewMediaUrl == null -> "TEXT"
+      post.mediaType == MediaType.VIDEO || post.mediaType == MediaType.REEL -> "VIDEO"
+      else -> "IMAGE"
+    }
+
+    if (supabaseRepo.isConfigured) {
+      val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+      if (token.isBlank()) {
+        return Result.failure(IllegalStateException("Session expired. Please sign in again."))
+      }
+      val canonicalSenderId = SupabaseConfig.extractJwtSubject(token) ?: me.id
+      val sendRes = supabaseRepo.sendMessage(
+        conversationId = targetConv.id,
+        senderId = canonicalSenderId,
+        content = bodyBuilder,
+        mediaUrl = previewMediaUrl,
+        mediaType = msgMediaType,
+        accessToken = token
+      )
+      val createdDto = sendRes.getOrElse { return Result.failure(it) }
+      val deliveredMsg = DirectMessage(
+        id = createdDto.id ?: "m_${System.currentTimeMillis()}",
+        senderId = me.id,
+        text = bodyBuilder,
+        timestamp = TimestampUtils.formatMessageTime(createdDto.createdAt, "Just now"),
+        createdAtIso = createdDto.createdAt,
+        isMe = true,
+        mediaUrl = previewMediaUrl,
+        mediaType = msgMediaType,
+        isRead = true,
+        status = MessageStatus.SENT
+      )
+      _conversations.value = _conversations.value.map { c ->
+        if (c.id == targetConv.id) {
+          c.copy(
+            lastMessage = noteLine.ifBlank { "Shared a post by @${post.author.username}" },
+            lastMessageTimestamp = "Just now",
+            messages = (c.messages + deliveredMsg).distinctBy { it.id }
+          )
+        } else c
+      }
+      VybeLocalStore.get()?.saveConversations(_conversations.value)
+      incrementLocalPostShares(post.id)
+      return Result.success(targetConv.id)
+    } else {
+      sendExtendedDirectMessage(
+        conversationId = targetConv.id,
+        text = bodyBuilder,
+        mediaUrl = previewMediaUrl,
+        mediaType = msgMediaType
+      )
+      incrementLocalPostShares(post.id)
+      return Result.success(targetConv.id)
+    }
+  }
+
+  fun incrementLocalPostShares(postId: String) {
+    _posts.value = _posts.value.map {
+      if (it.id == postId) it.copy(sharesCount = it.sharesCount + 1) else it
+    }
+    VybeLocalStore.get()?.savePosts(_posts.value)
+  }
+
+  /**
+   * Resolves a shared `/post/{postId}` deep link safely across local state and Supabase,
+   * blocking archived, deleted, blocked, or unauthorized private-account posts cleanly.
+   */
+  suspend fun resolvePostFromDeepLink(postId: String): Result<Post> {
+    val cleanId = postId.trim()
+    if (cleanId.isBlank()) {
+      return Result.failure(IllegalArgumentException("Invalid post link."))
+    }
+
+    val inMemory = (_posts.value + _unfilteredPosts.value).firstOrNull { it.id == cleanId }
+    if (inMemory != null) {
+      if (inMemory.isArchived) {
+        return Result.failure(IllegalStateException("This post has been archived by the author."))
+      }
+      if (!canViewUserContent(inMemory.author)) {
+        return Result.failure(IllegalStateException("This post belongs to a private account. Follow @${inMemory.author.username} to view their posts."))
+      }
+      return Result.success(inMemory)
+    }
+
+    if (!supabaseRepo.isConfigured) {
+      return Result.failure(IllegalStateException("This post is unavailable or has been removed."))
+    }
+
+    val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+    val myId = _currentUser.value?.id
+    val remoteRes = supabaseRepo.fetchPostById(cleanId, myId, token)
+    val fetched = remoteRes.getOrElse { return Result.failure(it) }
+      ?: return Result.failure(IllegalStateException("This post is unavailable, private, or has been deleted."))
+
+    val fullAuthor = _allUsers.value.firstOrNull { it.id == fetched.author.id }
+      ?.let { decorateUserRelationshipFlags(it) }
+      ?: fetched.author
+    val enriched = fetched.copy(author = fullAuthor)
+
+    if (enriched.isArchived) {
+      return Result.failure(IllegalStateException("This post has been archived by the author."))
+    }
+    if (!canViewUserContent(enriched.author)) {
+      return Result.failure(IllegalStateException("This post belongs to a private account. Follow @${enriched.author.username} to view their posts."))
+    }
+    return Result.success(enriched)
   }
 
   fun syncMessagesForConversation(conversationId: String) {
@@ -2774,7 +3191,9 @@ class VybeRepository private constructor() {
           accessToken = token
         )
         if (convRes.isSuccess) {
-          val remoteConvs = dedupeConversationCallLogs(convRes.getOrThrow())
+          val remoteConvs = mergeRemoteConversationsPreservingInFlight(
+            dedupeConversationCallLogs(convRes.getOrThrow())
+          )
           _conversations.value = remoteConvs
           VybeLocalStore.get()?.saveConversations(remoteConvs)
         }
@@ -3959,7 +4378,9 @@ class VybeRepository private constructor() {
                 accessToken = token.orEmpty()
               )
               if (convRes.isSuccess) {
-                val remoteConvs = dedupeConversationCallLogs(convRes.getOrThrow())
+                val remoteConvs = mergeRemoteConversationsPreservingInFlight(
+                  dedupeConversationCallLogs(convRes.getOrThrow())
+                )
                 _conversations.value = remoteConvs
                 VybeLocalStore.get()?.saveConversations(remoteConvs)
               }

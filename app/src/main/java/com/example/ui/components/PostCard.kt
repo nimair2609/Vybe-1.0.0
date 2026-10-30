@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -24,12 +25,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -149,43 +156,45 @@ fun PostCard(
     }
   }
 
+  val isDark = LocalIsDarkTheme.current
+  val cardBg = if (isDark) Color(0xFF0A0E1A) else Color.White
+  val cardBorder = if (isDark) Color(0xFF1B2338) else Color(0xFFE2E8F0)
+  val primaryText = if (isDark) Color.White else Color(0xFF0F172A)
+  val secondaryText = if (isDark) Color.White.copy(alpha = 0.86f) else Color(0xFF334155)
+  val mutedText = if (isDark) Color.White.copy(alpha = 0.58f) else Color(0xFF64748B)
+  val followPillActiveBg = if (isDark) Color(0xFF161F33) else Color(0xFFF1F5F9)
+  val followPillActiveBorder = if (isDark) Color(0xFF26334D) else Color(0xFFCBD5E1)
+  val followPillInactiveBorder = if (isDark) Color(0xFF475569) else Color(0xFF94A3B8)
+  val musicPillBg = if (isDark) Color(0xFF141A2E) else Color(0xFFF8FAFC)
+  val musicPillBorder = if (isDark) Color(0xFF222C46) else Color(0xFFE2E8F0)
+  val mediaPlaceholderBg = if (isDark) Color(0xFF101524) else Color(0xFFF1F5F9)
+  val accentCyan = if (isDark) VybeBrandCyan else Color(0xFF0284C7)
+  val linkAccent = if (isDark) Color(0xFF818CF8) else VybeVioletDark
+
   Card(
     modifier = modifier
       .fillMaxWidth()
       .padding(horizontal = 14.dp, vertical = 7.dp)
       .testTag("post_card_${post.id}"),
-    colors = CardDefaults.cardColors(containerColor = Color(0xFF0A0E1A)),
+    colors = CardDefaults.cardColors(containerColor = cardBg),
     shape = RoundedCornerShape(18.dp),
     border = BorderStroke(
       width = if (isHighlighted) 1.8.dp else 1.dp,
-      color = if (isHighlighted) VybeViolet else Color(0xFF1B2338)
+      color = if (isHighlighted) VybeViolet else cardBorder
     )
   ) {
     Column(modifier = Modifier.padding(14.dp)) {
-      // Header: Author + Verified + Relative Timestamp • Privacy Globe + Follow Button + 3-dot Menu
+      // Header: Single-border Author Avatar + Verified + Relative Timestamp • Privacy + Follow + 3-dot Menu
       Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
       ) {
-        // Avatar with signature cyan-to-violet gradient ring
-        Box(
-          modifier = Modifier
-            .size(46.dp)
-            .clip(CircleShape)
-            .background(
-              Brush.sweepGradient(
-                listOf(VybeBrandCyan, VybeBrandViolet, VybeBrandMagenta, VybeBrandCyan)
-              )
-            )
-            .padding(2.dp)
-            .clip(CircleShape)
-            .background(Color(0xFF0A0E1A))
-            .padding(1.5.dp)
-            .clip(CircleShape),
-          contentAlignment = Alignment.Center
-        ) {
-          VybeAvatar(user = post.author, size = 39.dp, onClick = { onUserClick(post.author) })
-        }
+        VybeAvatar(
+          user = post.author,
+          size = 42.dp,
+          showPulseDot = false,
+          onClick = { onUserClick(post.author) }
+        )
 
         Spacer(modifier = Modifier.width(10.dp))
 
@@ -199,7 +208,7 @@ fun PostCard(
               text = if (post.author.username.isNotBlank()) "@${post.author.username}" else post.author.displayName,
               fontSize = 15.sp,
               fontWeight = FontWeight.Bold,
-              color = Color.White,
+              color = primaryText,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis
             )
@@ -211,12 +220,13 @@ fun PostCard(
             Text(
               text = if (relativeTimestamp.isNotBlank()) "$relativeTimestamp • " else "",
               fontSize = 12.sp,
-              color = Color.White.copy(alpha = 0.55f)
+              color = mutedText,
+              modifier = Modifier.testTag("post_timestamp_${post.id}")
             )
             Icon(
-              imageVector = Icons.Outlined.Public,
-              contentDescription = "Public",
-              tint = Color.White.copy(alpha = 0.55f),
+              imageVector = if (post.author.isPrivate) Icons.Outlined.Lock else Icons.Outlined.Public,
+              contentDescription = if (post.author.isPrivate) "Private" else "Public",
+              tint = mutedText,
               modifier = Modifier.size(12.dp)
             )
             if (!post.locationName.isNullOrBlank()) {
@@ -224,7 +234,7 @@ fun PostCard(
               Text(
                 text = "• ${post.locationName}",
                 fontSize = 11.sp,
-                color = VybeBrandCyan,
+                color = accentCyan,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
               )
@@ -232,12 +242,12 @@ fun PostCard(
           }
         }
 
-        // Sleek Pill Follow Button (matching reference image)
+        // Sleek Pill Follow Button
         if (!isAuthor && onFollowClick != null) {
           Surface(
-            color = if (isFollowing) Color(0xFF161F33) else Color.Transparent,
+            color = if (isFollowing) followPillActiveBg else Color.Transparent,
             shape = RoundedCornerShape(20.dp),
-            border = BorderStroke(1.dp, if (isFollowing) Color(0xFF26334D) else Color(0xFF475569)),
+            border = BorderStroke(1.dp, if (isFollowing) followPillActiveBorder else followPillInactiveBorder),
             modifier = Modifier
               .clip(RoundedCornerShape(20.dp))
               .clickable { onFollowClick.invoke() }
@@ -247,7 +257,7 @@ fun PostCard(
               text = if (isFollowing) "Following" else if (isFollowRequested) "Requested" else "Follow",
               fontSize = 12.sp,
               fontWeight = FontWeight.SemiBold,
-              color = Color.White,
+              color = primaryText,
               modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
             )
           }
@@ -259,13 +269,13 @@ fun PostCard(
           IconButton(
             onClick = { showOptionsMenu = true },
             modifier = Modifier
-              .size(36.dp)
+              .size(44.dp)
               .testTag("post_options_${post.id}")
           ) {
             Icon(
               imageVector = Icons.Default.MoreVert,
               contentDescription = "Post options",
-              tint = Color.White.copy(alpha = 0.7f),
+              tint = mutedText,
               modifier = Modifier.size(20.dp)
             )
           }
@@ -274,6 +284,14 @@ fun PostCard(
             expanded = showOptionsMenu,
             onDismissRequest = { showOptionsMenu = false }
           ) {
+            DropdownMenuItem(
+              text = { Text("Share Post") },
+              onClick = {
+                showOptionsMenu = false
+                onShareClick()
+              },
+              leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
+            )
             if (isAuthor) {
               DropdownMenuItem(
                 text = { Text("Post Insights") },
@@ -291,25 +309,15 @@ fun PostCard(
                 },
                 leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = VybeDanger) }
               )
-            } else {
+            } else if (onReportPost != null) {
               DropdownMenuItem(
-                text = { Text("Share Post") },
+                text = { Text("Report Post", color = VybeDanger) },
                 onClick = {
                   showOptionsMenu = false
-                  onShareClick()
+                  showReportDialog = true
                 },
-                leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
+                leadingIcon = { Icon(Icons.Default.Flag, contentDescription = null, tint = VybeDanger) }
               )
-              if (onReportPost != null) {
-                DropdownMenuItem(
-                  text = { Text("Report Post", color = VybeDanger) },
-                  onClick = {
-                    showOptionsMenu = false
-                    showReportDialog = true
-                  },
-                  leadingIcon = { Icon(Icons.Default.Flag, contentDescription = null, tint = VybeDanger) }
-                )
-              }
             }
           }
         }
@@ -321,7 +329,7 @@ fun PostCard(
         Text(
           text = post.caption,
           fontSize = 14.sp,
-          color = Color.White,
+          color = primaryText,
           lineHeight = 20.sp
         )
       }
@@ -335,9 +343,9 @@ fun PostCard(
           horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
           Surface(
-            color = if (shouldPlayAudio) VybeViolet.copy(alpha = 0.16f) else Color(0xFF141A2E),
+            color = if (shouldPlayAudio) VybeViolet.copy(alpha = 0.16f) else musicPillBg,
             shape = RoundedCornerShape(10.dp),
-            border = if (shouldPlayAudio) BorderStroke(1.dp, VybeViolet.copy(alpha = 0.5f)) else BorderStroke(1.dp, Color(0xFF222C46)),
+            border = if (shouldPlayAudio) BorderStroke(1.dp, VybeViolet.copy(alpha = 0.5f)) else BorderStroke(1.dp, musicPillBorder),
             modifier = Modifier
               .weight(1f, fill = false)
               .clip(RoundedCornerShape(10.dp))
@@ -359,7 +367,7 @@ fun PostCard(
                 text = effectiveTrackLabel,
                 fontSize = 11.sp,
                 fontWeight = if (shouldPlayAudio) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (shouldPlayAudio) Color.White else Color.White.copy(alpha = 0.7f),
+                color = if (shouldPlayAudio) primaryText else secondaryText,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false)
@@ -368,7 +376,7 @@ fun PostCard(
               Icon(
                 imageVector = if (isAudioEnabled) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
                 contentDescription = if (isAudioEnabled) "Mute feed music" else "Enable feed music",
-                tint = if (isAudioEnabled) VybeViolet else Color.White.copy(alpha = 0.6f),
+                tint = if (isAudioEnabled) VybeViolet else mutedText,
                 modifier = Modifier.size(15.dp)
               )
             }
@@ -386,12 +394,12 @@ fun PostCard(
                 text = "Track",
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
-                color = VybeBrandCyan
+                color = accentCyan
               )
               Icon(
                 imageVector = Icons.Default.ChevronRight,
                 contentDescription = "Open music track page",
-                tint = VybeBrandCyan,
+                tint = accentCyan,
                 modifier = Modifier.size(14.dp)
               )
             }
@@ -460,7 +468,7 @@ fun PostCard(
                 Box(
                   modifier = Modifier
                     .fillMaxSize()
-                    .background(Color(0xFF101524))
+                    .background(mediaPlaceholderBg)
                 ) {
                   AsyncImage(
                     model = mediaUrl,
@@ -535,7 +543,7 @@ fun PostCard(
               Box(
                 modifier = Modifier
                   .fillMaxSize()
-                  .background(Color(0xFF101524))
+                  .background(mediaPlaceholderBg)
               ) {
                 AsyncImage(
                   model = mediaUrl,
@@ -604,25 +612,29 @@ fun PostCard(
         }
       }
 
-      // Action Bar: Restored Clean Outline Icons (Like/Heart, Comment, Share, Bookmark)
-      Spacer(modifier = Modifier.height(12.dp))
+      // Action Bar: Optically aligned Like, Comment, Share, and Bookmark buttons
+      Spacer(modifier = Modifier.height(10.dp))
       val displayedCommentsCount = if (post.comments.isNotEmpty()) post.comments.size else post.commentsCount.coerceAtLeast(0)
       val isLiked = post.isLiked || post.userReaction != null
 
       Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+          .fillMaxWidth()
+          .heightIn(min = 44.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
-        // Left Action Group: Like / Heart, Comment, Share
+        // Left Action Group: Like, Comment, Share — identical 44dp height, 24dp icon frame, uniform spacing
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(16.dp)
+          horizontalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-          // 1. Like / Heart (White outline unliked, filled accent red when liked; transparent background, zero container/border)
+          // 1. Like / Heart
           Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
+              .defaultMinSize(minHeight = 44.dp)
+              .clip(RoundedCornerShape(10.dp))
               .clickable {
                 if (isLiked) {
                   if (post.userReaction != null && onReact != null) {
@@ -634,94 +646,115 @@ fun PostCard(
                   if (onReact != null) onReact(VybeReaction.LOVE) else onLikeClick()
                 }
               }
+              .padding(horizontal = 2.dp, vertical = 6.dp)
               .testTag("like_button_${post.id}")
           ) {
-            Icon(
-              imageVector = if (isLiked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-              contentDescription = if (isLiked) "Unlike post" else "Like post",
-              tint = if (isLiked) Color(0xFFEF4444) else Color.White,
-              modifier = Modifier.size(24.dp)
-            )
+            Box(
+              modifier = Modifier.size(24.dp),
+              contentAlignment = Alignment.Center
+            ) {
+              Icon(
+                imageVector = if (isLiked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                contentDescription = if (isLiked) "Unlike post" else "Like post",
+                tint = if (isLiked) Color(0xFFEF4444) else primaryText,
+                modifier = Modifier.size(23.dp)
+              )
+            }
             if (post.likesCount > 0) {
               Spacer(modifier = Modifier.width(6.dp))
               Text(
                 text = "${post.likesCount}",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = Color.White
+                color = primaryText
               )
             }
           }
 
-          // 2. Comment (White outline, transparent background)
+          // 2. Comment
           Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
+              .defaultMinSize(minHeight = 44.dp)
+              .clip(RoundedCornerShape(10.dp))
               .clickable { showCommentDialog = true }
+              .padding(horizontal = 2.dp, vertical = 6.dp)
               .testTag("comment_button_${post.id}")
           ) {
-            Icon(
-              imageVector = Icons.Outlined.ChatBubbleOutline,
-              contentDescription = "Comments",
-              tint = Color.White,
-              modifier = Modifier.size(23.dp)
-            )
+            Box(
+              modifier = Modifier.size(24.dp),
+              contentAlignment = Alignment.Center
+            ) {
+              Icon(
+                imageVector = Icons.Outlined.ChatBubbleOutline,
+                contentDescription = "Comments",
+                tint = primaryText,
+                modifier = Modifier.size(22.dp)
+              )
+            }
             if (displayedCommentsCount > 0) {
               Spacer(modifier = Modifier.width(6.dp))
               Text(
                 text = "$displayedCommentsCount",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = Color.White
+                color = primaryText
               )
             }
           }
 
-          // 3. Share (White outline send icon, transparent background)
+          // 3. Share — optically centered 24dp frame matching Like, Comment & Bookmark
           Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
+              .defaultMinSize(minHeight = 44.dp)
+              .clip(RoundedCornerShape(10.dp))
               .clickable { onShareClick() }
+              .padding(horizontal = 2.dp, vertical = 6.dp)
               .testTag("share_button_${post.id}")
           ) {
-            Icon(
-              imageVector = Icons.AutoMirrored.Outlined.Send,
-              contentDescription = "Share",
-              tint = Color.White,
-              modifier = Modifier
-                .size(22.dp)
-                .graphicsLayer(rotationZ = -28f)
-            )
+            Box(
+              modifier = Modifier.size(24.dp),
+              contentAlignment = Alignment.Center
+            ) {
+              VybeCenteredShareIcon(
+                tint = primaryText,
+                size = 22.dp,
+                contentDescriptionText = "Share"
+              )
+            }
             if (post.sharesCount > 0) {
               Spacer(modifier = Modifier.width(6.dp))
               Text(
                 text = "${post.sharesCount}",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = Color.White
+                color = primaryText
               )
             }
           }
         }
 
-        // Right Action: Bookmark / Save (White outline unsaved, filled cyan when saved; transparent background)
-        IconButton(
-          onClick = { onSaveClick() },
+        // Right Action: Bookmark / Save — aligned on identical 44dp vertical center
+        Box(
           modifier = Modifier
-            .size(36.dp)
-            .testTag("save_button_${post.id}")
+            .size(44.dp)
+            .clip(CircleShape)
+            .clickable { onSaveClick() }
+            .testTag("save_button_${post.id}"),
+          contentAlignment = Alignment.Center
         ) {
           Icon(
             imageVector = if (post.isSaved) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
             contentDescription = if (post.isSaved) "Remove from saved" else "Save post",
-            tint = if (post.isSaved) VybeBrandCyan else Color.White,
-            modifier = Modifier.size(24.dp)
+            tint = if (post.isSaved) accentCyan else primaryText,
+            modifier = Modifier.size(23.dp)
           )
         }
       }
 
-      // Comments Preview Section: real top comment or clean empty state
-      Spacer(modifier = Modifier.height(10.dp))
+      // Comments Preview Section
+      Spacer(modifier = Modifier.height(8.dp))
       val topComment = post.comments.firstOrNull()
 
       if (topComment != null) {
@@ -739,7 +772,7 @@ fun PostCard(
               modifier = Modifier
                 .size(22.dp)
                 .clip(CircleShape)
-                .background(Color(0xFF1E2638)),
+                .background(followPillActiveBg),
               contentAlignment = Alignment.Center
             ) {
               if (previewAvatar.isNotBlank()) {
@@ -754,7 +787,7 @@ fun PostCard(
                   text = previewAuthor.take(1).uppercase(),
                   fontSize = 10.sp,
                   fontWeight = FontWeight.Bold,
-                  color = Color.White
+                  color = primaryText
                 )
               }
             }
@@ -768,14 +801,14 @@ fun PostCard(
                   text = previewAuthor,
                   fontSize = 12.sp,
                   fontWeight = FontWeight.Bold,
-                  color = Color.White
+                  color = primaryText
                 )
                 VerificationBadge(user = topComment.author, iconSize = 14.dp)
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                   text = previewContent,
                   fontSize = 12.sp,
-                  color = Color.White.copy(alpha = 0.88f),
+                  color = secondaryText,
                   maxLines = 1,
                   overflow = TextOverflow.Ellipsis,
                   modifier = Modifier.weight(1f, fill = false)
@@ -784,7 +817,7 @@ fun PostCard(
                 Icon(
                   imageVector = Icons.Outlined.FavoriteBorder,
                   contentDescription = "Like comment",
-                  tint = Color.White.copy(alpha = 0.45f),
+                  tint = mutedText,
                   modifier = Modifier.size(13.dp)
                 )
               }
@@ -794,7 +827,7 @@ fun PostCard(
                   Text(
                     text = previewTime,
                     fontSize = 10.sp,
-                    color = Color.White.copy(alpha = 0.5f)
+                    color = mutedText
                   )
                   Spacer(modifier = Modifier.width(10.dp))
                 }
@@ -802,7 +835,7 @@ fun PostCard(
                   text = "Reply",
                   fontSize = 10.sp,
                   fontWeight = FontWeight.Medium,
-                  color = Color.White.copy(alpha = 0.65f),
+                  color = secondaryText,
                   modifier = Modifier.clickable { showCommentDialog = true }
                 )
               }
@@ -815,7 +848,7 @@ fun PostCard(
               text = "View all $displayedCommentsCount comments >",
               fontSize = 12.sp,
               fontWeight = FontWeight.Medium,
-              color = Color(0xFF818CF8),
+              color = linkAccent,
               modifier = Modifier
                 .clickable { showCommentDialog = true }
                 .testTag("view_all_comments_${post.id}")
@@ -823,7 +856,6 @@ fun PostCard(
           }
         }
       } else {
-        // Clean empty state with zero fake comments
         Row(
           modifier = Modifier
             .fillMaxWidth()
@@ -835,7 +867,7 @@ fun PostCard(
           Text(
             text = if (displayedCommentsCount > 0) "View all $displayedCommentsCount comments >" else "Add a comment...",
             fontSize = 12.sp,
-            color = if (displayedCommentsCount > 0) Color(0xFF818CF8) else Color.White.copy(alpha = 0.45f),
+            color = if (displayedCommentsCount > 0) linkAccent else mutedText,
             fontWeight = if (displayedCommentsCount > 0) FontWeight.Medium else FontWeight.Normal
           )
         }
@@ -1256,3 +1288,48 @@ private fun AnalyticsMetricCard(
     }
   }
 }
+
+@Composable
+fun VybeCenteredShareIcon(
+  tint: Color,
+  size: Dp = 22.dp,
+  contentDescriptionText: String? = "Share"
+) {
+  Canvas(
+    modifier = Modifier
+      .size(size)
+      .then(
+        if (contentDescriptionText != null) {
+          Modifier.semantics { contentDescription = contentDescriptionText }
+        } else {
+          Modifier
+        }
+      )
+  ) {
+    val w = this.size.width
+    val h = this.size.height
+    val strokePx = (w * 0.085f).coerceAtLeast(1.8f)
+
+    // Optically centered paper-plane outline in a 24x24 normalized grid (visual centroid at 12,12)
+    val outer = Path().apply {
+      moveTo(w * 0.875f, h * 0.145f)
+      lineTo(w * 0.125f, h * 0.455f)
+      lineTo(w * 0.435f, h * 0.565f)
+      lineTo(w * 0.545f, h * 0.875f)
+      close()
+    }
+    drawPath(
+      path = outer,
+      color = tint,
+      style = Stroke(width = strokePx, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    )
+    drawLine(
+      color = tint,
+      start = androidx.compose.ui.geometry.Offset(w * 0.875f, h * 0.145f),
+      end = androidx.compose.ui.geometry.Offset(w * 0.435f, h * 0.565f),
+      strokeWidth = strokePx,
+      cap = StrokeCap.Round
+    )
+  }
+}
+

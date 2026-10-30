@@ -43,7 +43,9 @@ import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.components.IncomingCallBanner
 import com.example.ui.components.OfflineStatusBanner
+import com.example.ui.components.PostShareBottomSheet
 import com.example.ui.components.RealtimeNotificationBanner
+import com.example.ui.components.SharedPostDetailDialog
 import com.example.ui.components.UploadStatusBanner
 import com.example.ui.screens.*
 import com.example.ui.theme.VybeTheme
@@ -166,6 +168,7 @@ class MainActivity : ComponentActivity() {
       val activeCall by viewModel.activeCall.collectAsState()
       val bannerMsg by viewModel.uiBannerMessage.collectAsState()
       val availableUpdate by viewModel.availableAppUpdate.collectAsState()
+      val sharingPost by viewModel.sharingPost.collectAsState()
       var activeRealtimeBanner by remember { mutableStateOf<RealtimeInAppBannerEvent?>(null) }
 
       LaunchedEffect(Unit) {
@@ -338,6 +341,18 @@ class MainActivity : ComponentActivity() {
                     }
                   }
                 }
+              }
+
+              // Global Shared Post Deep-Link / DM Preview Modal
+              SharedPostDetailDialog(viewModel = viewModel)
+
+              // Global Post Share Bottom Sheet (DM + Copy Link + External Chooser)
+              if (sharingPost != null) {
+                PostShareBottomSheet(
+                  post = sharingPost!!,
+                  viewModel = viewModel,
+                  onDismiss = { viewModel.dismissPostShareSheet() }
+                )
               }
             }
           }

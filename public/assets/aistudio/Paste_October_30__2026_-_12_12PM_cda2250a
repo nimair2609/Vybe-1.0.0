@@ -1,0 +1,675 @@
+VYBE — COMPLETE PRODUCTION READINESS, BUG FIXING & ADMIN CONSOLE MASTER PROMPT
+
+1. YOUR ROLE
+
+Act as a senior Android engineer, full-stack developer, backend architect, database security engineer, UI/UX designer, QA engineer, DevOps engineer, and application security specialist.
+
+Your task is to transform my EXISTING VYBE project into a stable, secure, fully functional, production-ready social networking application with a professional Admin Console.
+
+This is an existing application, not a new project.
+
+Do not create a replacement application, rebuild everything from scratch, or remove existing functionality unnecessarily.
+
+Work directly with the available source code, existing architecture, database schema, configurations, and deployment workflows.
+
+2. PRIMARY OBJECTIVE
+
+Deliver a working application in which:
+
+- Users can register, verify their accounts, log in, and manage their profiles.
+- All implemented social features work with real backend data.
+- User data synchronizes across devices.
+- Authentication and authorization are secure.
+- Push notifications work correctly.
+- The Admin Console manages real application data.
+- The application builds successfully.
+- Production integrations are properly configured.
+- No important feature is represented by mock data, a fake success message, or a nonfunctional button.
+- Existing users, database records, package identifiers, and application signing identity are preserved wherever applicable.
+
+Do not claim the application is production-ready until the relevant checks have passed.
+
+3. MANDATORY FIRST STEP: AUDIT THE EXISTING PROJECT
+
+Before modifying code:
+
+1. Inspect the complete repository structure.
+2. Identify the Android application, web application, backend, Supabase integration, Firebase integration, database migrations, and CI/CD workflows.
+3. Trace the complete authentication flow.
+4. Trace the API requests made by the login screen.
+5. Identify the root cause of the API error currently appearing after the login button is pressed.
+6. Check API base URLs, environment variables, request payloads, response parsing, authentication tokens, network configuration, and server logs where available.
+7. Inspect existing database tables, foreign keys, indexes, Row-Level Security policies, and migrations.
+8. Identify mock data, hardcoded users, placeholder implementations, incomplete features, and duplicate notification flows.
+9. Inspect the existing Admin Console and its connection to the backend.
+10. Identify security vulnerabilities before introducing additional functionality.
+
+Produce a concise internal implementation checklist, then begin fixing the project.
+
+Do not stop after producing an audit report.
+
+4. PRESERVE THE EXISTING APPLICATION
+
+Maintain the existing application identity and architecture unless a demonstrable technical issue requires a change.
+
+Requirements:
+
+- Preserve the Android application ID.
+- Preserve the existing signing key and certificate.
+- Preserve existing user data and database records.
+- Preserve existing working features.
+- Preserve the established VYBE branding and original UI identity.
+- Do not replace the interface with generic AI-generated-looking designs.
+- Do not downgrade dependencies unnecessarily.
+- Do not overwrite working implementations with mock versions.
+- Do not introduce a second database or an unnecessary alternative backend.
+- Do not change production configuration simply to make a local test pass.
+- Do not delete database tables, storage buckets, or user accounts.
+- Do not reset the database without explicit authorization.
+
+If an architectural change is necessary, explain the reason and migrate safely.
+
+5. AUTHENTICATION AND ACCOUNT MANAGEMENT
+
+Implement and verify:
+
+- Email and phone-based registration where supported by the configured authentication provider.
+- Secure password authentication.
+- Mandatory email or phone verification according to the selected signup method.
+- Username, email, and phone login where supported by the existing authentication architecture.
+- Forgot-password and password-reset flows.
+- Correct OTP verification and resend behavior.
+- Proper loading indicators and disabled buttons during requests.
+- Clear validation messages.
+- Session persistence and secure logout.
+- Account deactivation and account deletion.
+- Session and device management where implemented.
+- Correct handling of expired sessions and invalid tokens.
+
+Never bypass authentication to make login succeed.
+
+Never return a successful login response when authentication fails.
+
+Do not expose password-reset tokens, access tokens, refresh tokens, or sensitive authentication data in logs.
+
+For the current API issue, identify and fix the actual failing request instead of hiding the error.
+
+6. DATABASE AND BACKEND ARCHITECTURE
+
+Use the existing Supabase project as the authoritative backend wherever the current architecture supports it.
+
+All important user-generated content must be persisted on the server.
+
+This includes:
+
+- User profiles.
+- Posts and media metadata.
+- Stories.
+- Reels.
+- Comments.
+- Reactions.
+- Follow relationships.
+- Notifications.
+- Conversations and messages.
+- Live-room metadata.
+- Time Capsule records.
+- Vybe Matches.
+- Badges and verification status.
+- Reports and moderation records.
+- User privacy settings.
+
+Requirements:
+
+1. Implement reliable database reads and writes.
+2. Eliminate unintended local-only persistence of shared social content.
+3. Use local storage only for appropriate preferences, secure session handling, or temporary caching.
+4. Synchronize server data across multiple devices.
+5. Handle loading, empty, offline, and error states.
+6. Implement pagination and efficient queries where appropriate.
+7. Prevent duplicate records and repeated submissions.
+8. Add appropriate indexes and constraints.
+9. Use transactions or safe server-side operations when multiple changes must remain consistent.
+10. Ensure all database migrations are versioned, repeatable where possible, and safe for existing production data.
+
+Do not assume that creating a database table automatically implements the corresponding feature.
+
+7. DATABASE SECURITY AND AUTHORIZATION
+
+Audit every relevant Supabase table, view, function, storage bucket, and privileged backend endpoint.
+
+Implement least-privilege access.
+
+Requirements:
+
+- Enable and configure RLS where appropriate.
+- Allow authenticated users to modify only the records they are authorized to modify.
+- Prevent users from impersonating other users.
+- Prevent unauthorized profile, message, notification, and media access.
+- Enforce account privacy and relationship rules on the server.
+- Validate file ownership before uploads, downloads, updates, and deletion.
+- Protect administrative operations with server-verified authorization.
+- Prevent users from granting themselves admin or moderator privileges.
+- Keep service-role keys and private API credentials server-side.
+- Never use a client-provided role or arbitrary request header as proof of administrator status.
+- Fail closed if authentication or privileged authorization cannot be verified.
+- Log security-relevant events without exposing secrets.
+
+Specifically inspect and remove any existing authentication bypass involving the header:
+
+x-vybe-owner-console
+
+Do not replace it with another hardcoded bypass.
+
+Verify administrator identity and permissions using trusted server-side authorization.
+
+8. VYBE USER FEATURES
+
+Audit, repair, and integrate all existing features without removing their established behavior.
+
+A. Home Feed
+
+- Load real posts from the backend.
+- Support image and video posts.
+- Display the correct author, timestamp, caption, and media.
+- Implement comments and the established reaction behavior.
+- Implement the follow button correctly.
+- Remove all sample posts and sample comments.
+- Prevent duplicate posts and incorrect timestamps.
+- Ensure content is available to authorized users across devices.
+
+B. Stories
+
+- Support image and video uploads.
+- Display each user's stories separately.
+- Show the correct story owner.
+- Implement story audience permissions.
+- Record views accurately.
+- Implement the intended story expiration behavior.
+- Ensure followed users' stories appear on other devices.
+- Remove placeholder video screens and fake story content.
+
+C. Reels
+
+- Implement reliable video playback.
+- Handle aspect ratio, playback state, volume, and buffering.
+- Implement reactions, comments, and sharing according to existing product rules.
+- Ensure playback state does not behave incorrectly when navigating between videos.
+- Remove broken or placeholder interactions.
+
+D. Profiles and Follow System
+
+- Display the correct username, profile picture, banner, bio, and joined date.
+- Keep follower, following, and post counts accurate.
+- Implement follow and unfollow operations.
+- Implement follow requests for private accounts.
+- Ensure public and private profile visibility follows the intended privacy rules.
+- Do not show profile-edit controls when viewing another user.
+- Correct online status and last-active information.
+
+Treat privacy and follow-relationship rules as explicit server-side authorization requirements, not just UI conditions.
+
+E. Chat and Messaging
+
+- Support real-time conversations.
+- Support message delivery and correct conversation ordering.
+- Implement the intended delete-for-me and delete-for-everyone behavior.
+- Synchronize deletions across devices.
+- Implement unread counts and read status.
+- Handle offline messages and reconnects appropriately.
+- Remove sample conversations and sample messages.
+- Restrict conversations according to the application's existing messaging and privacy rules.
+
+F. Voice and Video Calls
+
+- Implement signaling, call state, and connection handling.
+- Verify microphone and camera permissions.
+- Implement correct incoming-call and outgoing-call flows.
+- Handle call rejection, timeout, disconnection, and cleanup.
+- Validate TURN/STUN configuration.
+- Use secure, appropriately scoped credentials.
+- Never claim calling works if only the call screen is implemented.
+
+G. Vybe Unload and Live Features
+
+- Support the existing text, voice, and combined room modes.
+- Persist room metadata.
+- Display active rooms accurately.
+- Allow authorized users to join and leave rooms.
+- Implement room moderation and participant state.
+- Verify actual audio streaming or real-time communication.
+- Remove nonfunctional live controls and misleading status indicators.
+
+H. Time Capsule, Double Take, What Next, Crossed, Nearby, Spiritual Mode, Explore Zone, and Vybe Matches
+
+Inspect each feature's current implementation.
+
+For every feature:
+
+1. Verify the intended user flow.
+2. Verify backend persistence.
+3. Implement the required authorization.
+4. Fix broken UI interactions.
+5. Remove placeholder results.
+6. Add appropriate loading, empty, and error states.
+7. Verify cross-device behavior.
+8. Preserve the existing product design and business rules.
+
+Do not invent new behavior that conflicts with the established VYBE product requirements.
+
+9. VYBE REACTIONS AND BADGES
+
+Preserve the established distinction between feed reactions and Reel reactions.
+
+Requirements:
+
+- Implement the existing custom reaction interactions.
+- Prevent accidental duplicate reactions.
+- Support the intended add/remove behavior.
+- Keep reaction totals accurate.
+- Ensure reactions persist across devices.
+
+Badge System
+
+Implement a proper badge management system.
+
+Support the existing badge categories where applicable, including:
+
+- Verified badges.
+- Trusted-user badges.
+- Creator badges.
+- Other approved VYBE badges.
+
+The Admin Console must allow authorized administrators to assign, update, and revoke badges.
+
+Define eligibility criteria for each badge.
+
+Requirements:
+
+- Store badge assignments in the database.
+- Associate badges with the correct user.
+- Display assigned badges consistently across profiles and relevant UI surfaces.
+- Prevent unauthorized users from assigning badges to themselves.
+- Record administrator actions in an audit log.
+- Support automatic eligibility checks only where reliable criteria and data are available.
+- Do not grant a badge merely because an arbitrary client request asks for it.
+
+10. PUSH NOTIFICATIONS
+
+Audit the existing Firebase Cloud Messaging implementation.
+
+Fix:
+
+- Duplicate notifications.
+- Missing notifications.
+- Incorrect notification formats.
+- Notifications that fail when the app is backgrounded.
+- Notification taps that open the wrong screen.
+- Notification records missing from the in-app notification page.
+- Incorrect unread counts.
+- Duplicate event processing.
+
+Requirements:
+
+1. Use a consistent notification event model.
+2. Persist notification records in the backend.
+3. Implement authorized device-token registration and token refresh.
+4. Send privileged push notifications from a trusted server environment.
+5. Prevent duplicate delivery paths where possible.
+6. Implement correct Android notification channels and permissions.
+7. Support navigation to the relevant post, profile, conversation, or event.
+8. Handle expired or invalid device tokens.
+9. Never expose Firebase service-account private keys in the Android application.
+10. Test foreground, background, and terminated-app behavior.
+
+Do not promise immediate delivery in every situation because Android restrictions, device settings, network conditions, and FCM delivery behavior can affect timing.
+
+11. ADMIN CONSOLE — COMPLETE MANAGEMENT SYSTEM
+
+Upgrade the existing Admin Console instead of creating a disconnected demo dashboard.
+
+The console must have a professional, modern, responsive interface that fits the VYBE brand.
+
+A. Admin Authentication
+
+- Dedicated administrator access.
+- Server-verified authentication.
+- Role-based authorization.
+- Separate permissions for owner, administrator, moderator, and other supported roles.
+- Secure session handling.
+- Audit logging.
+- No hardcoded administrator bypass.
+- No publicly accessible privileged endpoints.
+
+B. Overview Dashboard
+
+Display real, permission-appropriate metrics, including:
+
+- Total registered users.
+- Verified users.
+- Active users, using a clearly defined measurement period.
+- New registrations.
+- Posts, stories, and Reels.
+- Reports awaiting review.
+- Notification delivery metrics where available.
+- Storage usage where supported.
+- Payment status and revenue only when a real payment integration exists.
+
+Every metric must be derived from real data or explicitly identified as unavailable.
+
+Do not display fabricated analytics.
+
+C. User Management
+
+Authorized administrators must be able to:
+
+- Search and inspect user accounts.
+- View account status and relevant activity.
+- Review verification status.
+- Assign and revoke approved badges.
+- Apply and remove permitted restrictions.
+- Suspend and restore accounts.
+- Process account deletion requests according to policy.
+
+Every privileged action must be authorized, validated, and logged.
+
+D. Content Moderation
+
+Implement:
+
+- User reports.
+- Report categories and evidence.
+- Report review queues.
+- Content inspection.
+- Appropriate content-removal actions.
+- User warnings and suspensions.
+- Moderation notes.
+- Resolution status.
+- Audit history.
+
+Only authorized personnel may access restricted content or moderation information.
+
+E. Advertisement Management
+
+Prepare a real advertisement-management interface that supports the configured advertising model.
+
+Where implemented, provide:
+
+- Campaign creation.
+- Campaign status.
+- Placement selection.
+- Start and end dates.
+- Budget or billing fields where supported.
+- Creative previews.
+- Campaign performance metrics.
+- Enable/disable controls.
+
+Do not fabricate ad impressions, clicks, revenue, or campaign performance.
+
+If an external advertising provider is required, implement the integration only after its credentials and account configuration are available.
+
+F. Payments and Subscriptions
+
+Where payment functionality is part of the existing application:
+
+- Integrate the configured payment provider.
+- Verify payment status server-side.
+- Validate signed webhooks.
+- Prevent duplicate transaction processing.
+- Track payment and subscription status.
+- Provide appropriate transaction history and administrative views.
+- Protect payment credentials and sensitive customer information.
+
+Never mark a payment successful solely because the client reports success.
+
+If credentials or merchant configuration are missing, show the integration as pending rather than simulating a successful payment.
+
+G. Configuration and Integrations
+
+Provide authorized configuration management for supported features, such as:
+
+- Feature flags.
+- Maintenance mode.
+- Approved notification templates.
+- Moderation settings.
+- Advertisement settings.
+- Supported integration status.
+- Operational health information.
+
+Never expose secret API keys in browser responses.
+
+Secrets must be stored and managed through an appropriate server-side secret-management mechanism.
+
+H. Admin Audit Logs
+
+Record:
+
+- Administrator identity.
+- Action performed.
+- Target resource.
+- Timestamp.
+- Result.
+- Relevant non-sensitive metadata.
+
+Protect audit logs against unauthorized modification.
+
+12. PRIVACY AND DATA PROTECTION
+
+Implement privacy controls appropriate to the actual application and its target markets.
+
+Requirements:
+
+- Data minimization.
+- Appropriate access restrictions.
+- Clear privacy and consent flows.
+- Secure account deletion.
+- Appropriate retention and deletion policies.
+- Safe media access.
+- Secure authentication and session management.
+- Restricted access to sensitive administrative data.
+- Appropriate incident logging.
+- Privacy-preserving analytics.
+- Clear handling of user reports and moderation records.
+
+Review applicable Indian data-protection requirements, including the Digital Personal Data Protection framework and applicable rules, as well as other laws relevant to the deployment.
+
+Do not claim legal compliance based solely on code changes. Identify outstanding legal, policy, and operational requirements.
+
+Do not expose private messages or personal data to administrators without a documented, authorized operational need and appropriate safeguards.
+
+13. UI/UX AND PRODUCT QUALITY
+
+Preserve VYBE's existing visual identity.
+
+Improve:
+
+- Screen consistency.
+- Navigation.
+- Loading states.
+- Error messages.
+- Empty states.
+- Form validation.
+- Accessibility.
+- Responsiveness.
+- Performance.
+- Media loading.
+- Touch interactions.
+- Keyboard handling.
+- Dark mode.
+- Appropriate confirmation dialogs.
+
+Remove:
+
+- Sample users.
+- Sample posts.
+- Fake notifications.
+- Demo comments.
+- Fake metrics.
+- Misleading success messages.
+- Broken navigation.
+- Buttons that do nothing.
+- Placeholder implementations presented as completed features.
+
+Do not remove legitimate user content to achieve a clean interface.
+
+14. API AND ERROR HANDLING
+
+Audit all network operations.
+
+Requirements:
+
+- Correct endpoint configuration.
+- Correct HTTP methods and payloads.
+- Correct authorization headers.
+- Safe timeout and retry behavior.
+- Correct response parsing.
+- Proper handling of HTTP 4xx and 5xx responses.
+- Clear user-facing errors.
+- Useful, privacy-safe diagnostic logging.
+- No secrets in logs.
+- No false-success fallbacks.
+
+When an API fails, preserve the actual error information for debugging.
+
+Never suppress a backend failure merely to make the UI look functional.
+
+15. AUTOMATED BUILD AND RELEASE
+
+Inspect the existing GitHub Actions workflows.
+
+Requirements:
+
+- Preserve the correct Android application ID.
+- Preserve the established signing certificate.
+- Use a persistent signing key stored securely.
+- Never generate a different production signing key on every build.
+- Never commit private signing keys or passwords.
+- Build a signed release APK or Android App Bundle as appropriate.
+- Run relevant build and test checks.
+- Publish release artifacts only after successful verification.
+- Use clear versioning.
+- Verify update compatibility.
+- Protect release credentials.
+- Fail the workflow if mandatory checks fail.
+
+Do not replace the production signing key or change the package ID as a workaround for build failures.
+
+Document any signing configuration that requires action from the project owner.
+
+16. TESTING REQUIREMENTS
+
+Create and run relevant tests for:
+
+- Registration and verification.
+- Login and logout.
+- Password reset.
+- Session expiration.
+- Profile updates.
+- Follow requests.
+- Private-profile authorization.
+- Post creation and retrieval.
+- Story and Reel behavior.
+- Messaging and deletion.
+- Notifications.
+- Badge assignment.
+- Admin authorization.
+- RLS and unauthorized access.
+- Database migrations.
+- File uploads and access.
+- API error handling.
+- Build and release workflows.
+
+Test at least two different user accounts and, where possible, two different devices.
+
+Verify that data created by one account is visible only to the users authorized to access it.
+
+Verify that unauthorized users cannot perform administrative operations.
+
+Do not test destructive actions against production data without explicit approval and a recovery plan.
+
+17. REQUIRED IMPLEMENTATION WORKFLOW
+
+Follow this order:
+
+PHASE 1: Audit and identify the login API error.
+
+PHASE 2: Fix authentication and environment configuration.
+
+PHASE 3: Fix database architecture, RLS, authorization, and cross-device synchronization.
+
+PHASE 4: Fix feed, profiles, stories, Reels, messaging, calls, and other existing features.
+
+PHASE 5: Fix Firebase push notifications.
+
+PHASE 6: Repair and integrate the Admin Console.
+
+PHASE 7: Resolve security vulnerabilities.
+
+PHASE 8: Fix build configuration, signing, and automated releases.
+
+PHASE 9: Run regression tests and production-readiness checks.
+
+PHASE 10: Deliver the final updated project and implementation report.
+
+You may reorder tasks when dependencies require it, but do not skip security or testing.
+
+18. STRICT EXECUTION RULES
+
+- Do not stop after explaining what needs to be done.
+- Implement actual code changes wherever the available tools and project environment permit.
+- Inspect existing implementations before replacing them.
+- Do not provide repeated tiny patch suggestions when a coordinated implementation is possible.
+- Group related changes into coherent, reviewable updates.
+- Do not claim tests passed unless they were actually run and passed.
+- Do not invent API credentials.
+- Do not hardcode fake credentials or administrator passwords.
+- Do not expose secrets.
+- Do not reset the database.
+- Do not remove existing working features.
+- Do not replace production logic with mock data.
+- Do not hide errors.
+- Do not bypass authentication or RLS.
+- Do not claim integrations are live when configuration is missing.
+- Request owner action only when credentials, permissions, external accounts, or irreversible decisions genuinely require it.
+- When blocked, explain the exact blocker and the smallest action needed to proceed.
+
+19. FINAL DELIVERABLES
+
+Deliver the following:
+
+1. Updated project source code.
+2. Fixed login and authentication flow.
+3. Updated database migrations where required.
+4. Secure backend and authorization implementation.
+5. Fixed and integrated existing application features.
+6. Working Admin Console connected to real data.
+7. Correct Firebase notification implementation.
+8. Secure environment-variable documentation.
+9. Updated GitHub Actions build and release workflow.
+10. Automated test results.
+11. A list of required external credentials and configuration steps.
+12. A list of remaining issues, if any.
+13. A clear build and deployment guide.
+14. A final production-readiness report.
+15. A signed installable build, if the build environment and required signing credentials are available.
+
+For every feature, identify its status as one of:
+
+- IMPLEMENTED AND TESTED
+- IMPLEMENTED BUT NOT FULLY TESTED
+- CONFIGURATION REQUIRED
+- BLOCKED
+- NOT IMPLEMENTED
+
+Do not mark a feature as complete merely because its screen or database table exists.
+
+FINAL INSTRUCTION
+
+Begin by auditing the existing project and tracing the login API failure.
+
+Then continue implementing the changes required to achieve the complete VYBE application and secure Admin Console described above.
+
+Preserve existing project identity and user data.
+
+Prioritize security, data integrity, reliable functionality, and maintainability over cosmetic changes.
+
+The goal is a genuinely usable, testable, production-ready VYBE application—not a visual prototype, mock dashboard, or collection of disconnected features.

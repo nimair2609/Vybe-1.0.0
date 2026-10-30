@@ -14,24 +14,32 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.MainTab
+import com.example.ui.Screen
 import com.example.ui.VybeViewModel
+import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.VybeBrandCyan
 import com.example.ui.theme.VybeBrandMagenta
 import com.example.ui.theme.VybeBrandViolet
-import com.example.ui.theme.VybeMagenta
-import com.example.ui.theme.VybeViolet
+import com.example.ui.theme.VybeVioletDark
 
 @Composable
 fun MainScreen(viewModel: VybeViewModel) {
   val selectedTab by viewModel.selectedTab.collectAsState()
-  val conversations by viewModel.conversations.collectAsState()
-  val unreadTotal = remember(conversations) { conversations.sumOf { it.unreadCount } }
+  val isDark = LocalIsDarkTheme.current
+
+  val navSurfaceColor = if (isDark) Color(0xFF070B14).copy(alpha = 0.96f) else Color.White.copy(alpha = 0.97f)
+  val navBorderColor = if (isDark) Color(0xFF161F33) else Color(0xFFE2E8F0)
+  val activeTint = if (isDark) VybeBrandCyan else VybeVioletDark
+  val inactiveTint = if (isDark) Color(0xFF8E9BAE) else Color(0xFF64748B)
+  val createCenterBg = if (isDark) Color(0xFF070B14) else Color.White
+  val createIconTint = if (isDark) Color.White else VybeVioletDark
 
   // Gracefully handle back press to return to Feed tab from any secondary tab
   androidx.activity.compose.BackHandler(enabled = selectedTab != MainTab.FEED) {
@@ -39,13 +47,13 @@ fun MainScreen(viewModel: VybeViewModel) {
   }
 
   Scaffold(
+    containerColor = MaterialTheme.colorScheme.background,
     contentWindowInsets = WindowInsets(0.dp),
     bottomBar = {
-      // Fixed translucent dark panel respecting system navigation insets
       Surface(
-        color = Color(0xFF070B14).copy(alpha = 0.96f),
-        tonalElevation = 8.dp,
-        border = BorderStroke(0.6.dp, Color(0xFF161F33)),
+        color = navSurfaceColor,
+        tonalElevation = if (isDark) 8.dp else 3.dp,
+        border = BorderStroke(0.6.dp, navBorderColor),
         modifier = Modifier
           .fillMaxWidth()
           .testTag("main_bottom_nav")
@@ -62,8 +70,10 @@ fun MainScreen(viewModel: VybeViewModel) {
           val isHomeSelected = selectedTab == MainTab.FEED
           Column(
             horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
             modifier = Modifier
               .weight(1f)
+              .defaultMinSize(minHeight = 48.dp)
               .clip(RoundedCornerShape(12.dp))
               .clickable { viewModel.selectTab(MainTab.FEED) }
               .padding(vertical = 4.dp)
@@ -72,7 +82,7 @@ fun MainScreen(viewModel: VybeViewModel) {
             Icon(
               imageVector = if (isHomeSelected) Icons.Filled.Home else Icons.Outlined.Home,
               contentDescription = "Home",
-              tint = if (isHomeSelected) VybeBrandCyan else Color(0xFF8E9BAE),
+              tint = if (isHomeSelected) activeTint else inactiveTint,
               modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.height(2.dp))
@@ -80,7 +90,7 @@ fun MainScreen(viewModel: VybeViewModel) {
               text = "Home",
               fontSize = 11.sp,
               fontWeight = if (isHomeSelected) FontWeight.Bold else FontWeight.Medium,
-              color = if (isHomeSelected) VybeBrandCyan else Color(0xFF8E9BAE)
+              color = if (isHomeSelected) activeTint else inactiveTint
             )
           }
 
@@ -88,8 +98,10 @@ fun MainScreen(viewModel: VybeViewModel) {
           val isExploreSelected = selectedTab == MainTab.EXPLORE
           Column(
             horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
             modifier = Modifier
               .weight(1f)
+              .defaultMinSize(minHeight = 48.dp)
               .clip(RoundedCornerShape(12.dp))
               .clickable { viewModel.selectTab(MainTab.EXPLORE) }
               .padding(vertical = 4.dp)
@@ -98,7 +110,7 @@ fun MainScreen(viewModel: VybeViewModel) {
             Icon(
               imageVector = if (isExploreSelected) Icons.Filled.Explore else Icons.Outlined.Explore,
               contentDescription = "Explore",
-              tint = if (isExploreSelected) VybeBrandCyan else Color(0xFF8E9BAE),
+              tint = if (isExploreSelected) activeTint else inactiveTint,
               modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.height(2.dp))
@@ -106,47 +118,50 @@ fun MainScreen(viewModel: VybeViewModel) {
               text = "Explore",
               fontSize = 11.sp,
               fontWeight = if (isExploreSelected) FontWeight.Bold else FontWeight.Medium,
-              color = if (isExploreSelected) VybeBrandCyan else Color(0xFF8E9BAE)
+              color = if (isExploreSelected) activeTint else inactiveTint
             )
           }
 
           // 3. Create (+) - Centered elevated action with signature gradient border
           Box(
             modifier = Modifier
-              .weight(1f),
+              .weight(1f)
+              .defaultMinSize(minHeight = 48.dp),
             contentAlignment = Alignment.Center
           ) {
             Box(
               modifier = Modifier
-                .size(46.dp)
+                .size(48.dp)
                 .clip(CircleShape)
                 .background(
-                  androidx.compose.ui.graphics.Brush.sweepGradient(
+                  Brush.sweepGradient(
                     listOf(VybeBrandCyan, VybeBrandViolet, VybeBrandMagenta, VybeBrandCyan)
                   )
                 )
                 .padding(2.dp)
                 .clip(CircleShape)
-                .background(Color(0xFF070B14))
-                .clickable { viewModel.navigateTo(com.example.ui.Screen.CREATE_POST) }
+                .background(createCenterBg)
+                .clickable { viewModel.navigateTo(Screen.CREATE_POST) }
                 .testTag("nav_tab_create"),
               contentAlignment = Alignment.Center
             ) {
               Icon(
                 imageVector = Icons.Default.Add,
                 contentDescription = "Create Post",
-                tint = Color.White,
+                tint = createIconTint,
                 modifier = Modifier.size(26.dp)
               )
             }
           }
 
-          // 4. Vybe (renamed from Reels per Section 10)
+          // 4. Vybe
           val isVybeSelected = selectedTab == MainTab.VYBES
           Column(
             horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
             modifier = Modifier
               .weight(1f)
+              .defaultMinSize(minHeight = 48.dp)
               .clip(RoundedCornerShape(12.dp))
               .clickable { viewModel.selectTab(MainTab.VYBES) }
               .padding(vertical = 4.dp)
@@ -155,7 +170,7 @@ fun MainScreen(viewModel: VybeViewModel) {
             Icon(
               imageVector = if (isVybeSelected) Icons.Filled.SmartDisplay else Icons.Outlined.SmartDisplay,
               contentDescription = "Vybe",
-              tint = if (isVybeSelected) VybeBrandCyan else Color(0xFF8E9BAE),
+              tint = if (isVybeSelected) activeTint else inactiveTint,
               modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.height(2.dp))
@@ -163,7 +178,7 @@ fun MainScreen(viewModel: VybeViewModel) {
               text = "Vybe",
               fontSize = 11.sp,
               fontWeight = if (isVybeSelected) FontWeight.Bold else FontWeight.Medium,
-              color = if (isVybeSelected) VybeBrandCyan else Color(0xFF8E9BAE)
+              color = if (isVybeSelected) activeTint else inactiveTint
             )
           }
 
@@ -171,8 +186,10 @@ fun MainScreen(viewModel: VybeViewModel) {
           val isProfileSelected = selectedTab == MainTab.PROFILE
           Column(
             horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
             modifier = Modifier
               .weight(1f)
+              .defaultMinSize(minHeight = 48.dp)
               .clip(RoundedCornerShape(12.dp))
               .clickable { viewModel.selectTab(MainTab.PROFILE) }
               .padding(vertical = 4.dp)
@@ -181,7 +198,7 @@ fun MainScreen(viewModel: VybeViewModel) {
             Icon(
               imageVector = if (isProfileSelected) Icons.Filled.Person else Icons.Outlined.Person,
               contentDescription = "Profile",
-              tint = if (isProfileSelected) VybeBrandCyan else Color(0xFF8E9BAE),
+              tint = if (isProfileSelected) activeTint else inactiveTint,
               modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.height(2.dp))
@@ -189,7 +206,7 @@ fun MainScreen(viewModel: VybeViewModel) {
               text = "Profile",
               fontSize = 11.sp,
               fontWeight = if (isProfileSelected) FontWeight.Bold else FontWeight.Medium,
-              color = if (isProfileSelected) VybeBrandCyan else Color(0xFF8E9BAE)
+              color = if (isProfileSelected) activeTint else inactiveTint
             )
           }
         }
