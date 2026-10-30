@@ -368,9 +368,24 @@ class VybeViewModel : ViewModel() {
         return@launch
       }
       if (repository.isLoggedIn.value) {
-        val verifiedRole = repository.refreshCurrentUserRole()
+        val cachedRole = repository.currentUser.value?.role ?: UserRole.USER
         if (!isHandlingRecoveryDeepLink && _currentScreen.value != Screen.PASSWORD_RECOVERY) {
-          _currentScreen.value = if (verifiedRole == UserRole.ADMIN) Screen.ADMIN_CONSOLE else Screen.MAIN
+          _currentScreen.value = if (cachedRole == UserRole.ADMIN) Screen.ADMIN_CONSOLE else Screen.MAIN
+        }
+        // Verify role asynchronously without blocking UI startup on slow/cold emulator networks
+        launch {
+          val verifiedRole = kotlinx.coroutines.withTimeoutOrNull(6_000L) {
+            repository.refreshCurrentUserRole()
+          }
+          if (
+            verifiedRole != null &&
+            !isHandlingRecoveryDeepLink &&
+            _currentScreen.value != Screen.PASSWORD_RECOVERY &&
+            verifiedRole == UserRole.ADMIN &&
+            _currentScreen.value == Screen.MAIN
+          ) {
+            _currentScreen.value = Screen.ADMIN_CONSOLE
+          }
         }
       } else {
         _currentScreen.value = Screen.AUTH

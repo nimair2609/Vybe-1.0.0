@@ -1381,6 +1381,54 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Canonical Shared Post Fallback Page (/post/:id or /p/:id)
+  if ((cleanUrl.startsWith('/post/') || cleanUrl.startsWith('/p/')) && req.method === 'GET') {
+    const postId = decodeURIComponent(cleanUrl.replace(/^\/(post|p)\//, '').split('/')[0] || '').trim();
+    const esc = (s) => String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    let postRow = null;
+    try {
+      if (postId) {
+        const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/posts?id=eq.${encodeURIComponent(postId)}&select=id,caption,media_urls,media_type,likes_count,comments_count,is_archived,profiles:author_id(username,display_name,is_private_account)&limit=1`, {
+          headers: { 'apikey': SUPABASE_ANON_KEY }
+        });
+        if (resp.ok) {
+          const rows = await resp.json();
+          postRow = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+        }
+      }
+    } catch {}
+
+    const isPrivateOrArchived = postRow && (Boolean(postRow.is_archived) || Boolean(postRow.profiles && postRow.profiles.is_private_account));
+    if (!postRow || isPrivateOrArchived) {
+      res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Post Unavailable • VYBE</title>
+      <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070913;color:#fff;font-family:system-ui,-apple-system,sans-serif;padding:24px}.card{max-width:400px;width:100%;background:#111729;border:1px solid #263252;border-radius:24px;padding:32px;text-align:center}</style></head>
+      <body><div class="card"><div style="font-size:38px;margin-bottom:12px">🔒</div><h1 style="font-size:20px;margin:0 0 8px">Post Unavailable</h1><p style="color:#94a3b8;font-size:14px;line-height:1.5">This VYBE post is private, archived, or no longer available.</p></div></body></html>`);
+      return;
+    }
+
+    const author = postRow.profiles || {};
+    const appDeepLink = `vybe://post/${encodeURIComponent(postRow.id)}`;
+    const firstMedia = Array.isArray(postRow.media_urls) && postRow.media_urls.length > 0 ? postRow.media_urls[0] : '';
+    const isVideo = String(postRow.media_type || '').toUpperCase().includes('VIDEO') || String(postRow.media_type || '').toUpperCase().includes('REEL') || /\.(mp4|webm|mov)(\?|$)/i.test(firstMedia);
+    const mediaHtml = firstMedia
+      ? (isVideo
+          ? `<video src="${esc(firstMedia)}" controls playsinline style="width:100%;max-height:360px;border-radius:16px;margin-top:14px;background:#000"></video>`
+          : `<img src="${esc(firstMedia)}" alt="VYBE Post" style="width:100%;max-height:360px;object-fit:cover;border-radius:16px;margin-top:14px;background:#000" />`)
+      : '';
+
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Post by @${esc(author.username || 'vybe')} • VYBE</title>
+    <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070913;color:#fff;font-family:system-ui,-apple-system,sans-serif;padding:24px}.card{max-width:440px;width:100%;background:#111729;border:1px solid #263252;border-radius:24px;padding:28px;text-align:left}.btn{display:block;text-align:center;margin-top:20px;padding:13px 24px;border-radius:14px;background:linear-gradient(90deg,#2563eb,#7c3aed);color:#fff;text-decoration:none;font-weight:700;font-size:15px}</style></head>
+    <body><div class="card"><div style="font-size:11px;letter-spacing:2px;color:#38bdf8;font-weight:800;margin-bottom:10px">SHARED ON VYBE</div>
+    <div style="font-weight:700;font-size:16px">${esc(author.display_name || author.username || 'VYBE Creator')} <span style="color:#94a3b8;font-weight:500;font-size:13px">@${esc(author.username || 'vybe')}</span></div>
+    ${postRow.caption ? `<p style="color:#e2e8f0;font-size:14px;line-height:1.5;margin:12px 0 0">${esc(postRow.caption)}</p>` : ''}
+    ${mediaHtml}
+    <div style="color:#94a3b8;font-size:12px;margin-top:14px">🫰 ${Number(postRow.likes_count || 0)} • 💬 ${Number(postRow.comments_count || 0)}</div>
+    <a class="btn" href="${esc(appDeepLink)}">Open Post in VYBE App</a></div></body></html>`);
+    return;
+  }
+
   let safePath = cleanUrl === '/' || cleanUrl === '' ? '/index.html' : cleanUrl;
   const filePath = path.join(WEB_DIR, safePath);
 

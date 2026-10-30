@@ -61,14 +61,26 @@ class MainActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    coil.Coil.setImageLoader(
-      coil.ImageLoader.Builder(applicationContext)
-        .okHttpClient(com.example.data.remote.SupabaseNetworkClient.okHttpClient)
-        .crossfade(true)
-        .build()
-    )
-    VybeRepository.getInstance().initSession(applicationContext)
-    VybeNotificationHelper.initNotificationChannels(this)
+    try {
+      coil.Coil.setImageLoader(
+        coil.ImageLoader.Builder(applicationContext)
+          .okHttpClient(com.example.data.remote.SupabaseNetworkClient.okHttpClient)
+          .crossfade(true)
+          .build()
+      )
+    } catch (e: Throwable) {
+      Log.w("MainActivity", "Coil initialization notice: ${e.message}")
+    }
+    try {
+      VybeRepository.getInstance().initSession(applicationContext)
+    } catch (e: Throwable) {
+      Log.e("MainActivity", "Session initialization recovery: ${e.message}", e)
+    }
+    try {
+      VybeNotificationHelper.initNotificationChannels(this)
+    } catch (e: Throwable) {
+      Log.w("MainActivity", "Notification channel initialization notice: ${e.message}")
+    }
 
     intent?.data?.let { uri ->
       Log.i("MainActivity", "Initial deep link URI: $uri")
