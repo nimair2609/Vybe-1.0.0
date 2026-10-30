@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -50,6 +52,10 @@ fun ExploreScreen(viewModel: VybeViewModel) {
   val requestedFollowUserIds by viewModel.requestedFollowUserIds.collectAsState()
   val adminReports by viewModel.adminReports.collectAsState()
   val communities by viewModel.communities.collectAsState()
+  val unfilteredPosts by viewModel.unfilteredPosts.collectAsState()
+  val timeCapsules by viewModel.timeCapsules.collectAsState()
+  val doubleTakePrompts by viewModel.doubleTakePrompts.collectAsState()
+  val crossedPaths by viewModel.crossedPaths.collectAsState()
   val coroutineScope = rememberCoroutineScope()
 
   LaunchedEffect(Unit) {
@@ -502,16 +508,16 @@ fun ExploreScreen(viewModel: VybeViewModel) {
           }
         }
       } else {
-        // Core VYBE Experiences Header
+        // EXPLORE VYBES Mobile Discovery Feed Header
         item {
-          Spacer(modifier = Modifier.height(8.dp))
+          Spacer(modifier = Modifier.height(10.dp))
           Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
             shape = RoundedCornerShape(20.dp),
             modifier = Modifier
               .fillMaxWidth()
               .padding(horizontal = 16.dp),
-            border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.4f))
+            border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.35f))
           ) {
             Column(modifier = Modifier.padding(16.dp)) {
               Row(
@@ -520,151 +526,621 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                 verticalAlignment = Alignment.CenterVertically
               ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                  Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(18.dp))
-                  Spacer(modifier = Modifier.width(6.dp))
+                  Box(
+                    modifier = Modifier
+                      .size(28.dp)
+                      .clip(CircleShape)
+                      .background(
+                        androidx.compose.ui.graphics.Brush.linearGradient(
+                          listOf(VybeBrandCyan, VybeViolet)
+                        )
+                      ),
+                    contentAlignment = Alignment.Center
+                  ) {
+                    Icon(
+                      Icons.Default.Explore,
+                      contentDescription = null,
+                      tint = Color.White,
+                      modifier = Modifier.size(16.dp)
+                    )
+                  }
+                  Spacer(modifier = Modifier.width(10.dp))
                   Text(
-                    text = "CORE VYBE EXPERIENCES",
+                    text = "EXPLORE VYBES",
                     fontWeight = FontWeight.ExtraBold,
-                    fontSize = 13.sp,
-                    letterSpacing = 0.8.sp,
-                    color = VybeBrandCyan
+                    fontSize = 17.sp,
+                    letterSpacing = 1.sp,
+                    color = Color.White
                   )
                 }
                 Surface(
                   color = VybeViolet.copy(alpha = 0.22f),
-                  shape = RoundedCornerShape(8.dp)
+                  shape = RoundedCornerShape(8.dp),
+                  border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.45f))
                 ) {
                   Text(
-                    text = "SIGNATURE",
+                    text = "6 SIGNATURE ZONES",
                     fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = VybeViolet,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = VybeBrandCyan,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                   )
                 }
               }
-              Spacer(modifier = Modifier.height(4.dp))
+              Spacer(modifier = Modifier.height(6.dp))
               Text(
-                text = "Six intentional ways to connect beyond algorithms and vanity metrics.",
+                text = "Find your vibe. Enter your zone.",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = VybeBrandCyan
+              )
+              Spacer(modifier = Modifier.height(2.dp))
+              Text(
+                text = "Six intentional ways to connect beyond algorithms, filters, and vanity metrics.",
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = 15.sp
               )
             }
           }
-          Spacer(modifier = Modifier.height(12.dp))
-        }
-
-        // Pair 1: UNLOAD & UNFILTERED
-        item {
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-          ) {
-            ExploreExperienceCard(
-              title = "UNLOAD",
-              subtitle = "24/7 Live Listening",
-              description = "Zero audio recordings. Ephemeral voice & chat sanctuary.",
-              cta = "Enter Sanctuary",
-              accent = VybeViolet,
-              icon = Icons.Default.GraphicEq,
-              showLiveDot = true,
-              onClick = { viewModel.navigateTo(Screen.UNLOAD_VIEW) },
-              modifier = Modifier
-                .weight(1f)
-                .testTag("explore_unload_card")
-            )
-
-            ExploreExperienceCard(
-              title = "UNFILTERED",
-              subtitle = "Raw & Real Moments",
-              description = "Authentic snapshots without heavy filters or edits.",
-              cta = "Post Unfiltered",
-              accent = VybeOnlineGreen,
-              icon = Icons.Default.CameraEnhance,
-              onClick = { viewModel.navigateTo(Screen.UNFILTERED_VIEW) },
-              modifier = Modifier
-                .weight(1f)
-                .testTag("explore_unfiltered_card")
-            )
-          }
           Spacer(modifier = Modifier.height(10.dp))
         }
 
-        // Pair 2: WHAT NEXT & TIME CAPSULE
+        // Zone 1: UNLOAD
         item {
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+          val activeRooms = unloadRooms.filter { it.isActive }
+          ExploreExperienceFeedCard(
+            title = "UNLOAD",
+            tagline = "24/7 Ephemeral Voice & Listening Sanctuary",
+            description = "Zero audio recordings. Ephemeral voice and chat sanctuary to share what's heavy on your mind in a judgment-free space.",
+            badgeText = "LIVE SANCTUARY",
+            activityText = if (activeRooms.isNotEmpty()) "${activeRooms.size} voice lounges active" else "Sanctuary standing by",
+            accent = VybeViolet,
+            icon = Icons.Default.GraphicEq,
+            ctaText = "Enter Sanctuary",
+            testTag = "explore_unload_feed_card",
+            onEnter = { viewModel.navigateTo(Screen.UNLOAD_VIEW) }
           ) {
-            ExploreExperienceCard(
-              title = "WHAT NEXT",
-              subtitle = "Culture Pulse Polls",
-              description = "Vote on community dilemmas and predictions.",
-              cta = "Vote Now",
-              accent = VybeBrandCyan,
-              icon = Icons.Default.Poll,
-              onClick = { viewModel.navigateTo(Screen.WHAT_NEXT_VIEW) },
-              modifier = Modifier
-                .weight(1f)
-                .testTag("explore_what_next_card")
-            )
-
-            ExploreExperienceCard(
-              title = "TIME CAPSULE",
-              subtitle = "Sealed Vaults",
-              description = "Lock memories for future dates with trusted friends.",
-              cta = "Seal Memory",
-              accent = VybeVerifiedGold,
-              icon = Icons.Default.Schedule,
-              onClick = { viewModel.navigateTo(Screen.TIME_CAPSULES_VIEW) },
-              modifier = Modifier
-                .weight(1f)
-                .testTag("explore_time_capsule_card")
-            )
+            val featuredRoom = activeRooms.firstOrNull()
+            Surface(
+              color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+              shape = RoundedCornerShape(14.dp),
+              border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.3f)),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Column(modifier = Modifier.padding(12.dp)) {
+                if (featuredRoom != null) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                      Box(
+                        modifier = Modifier
+                          .size(8.dp)
+                          .clip(CircleShape)
+                          .background(VybeOnlineGreen)
+                      )
+                      Spacer(modifier = Modifier.width(6.dp))
+                      Text(
+                        text = "LIVE VOICE LOUNGE",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = VybeOnlineGreen
+                      )
+                    }
+                    Surface(
+                      color = VybeViolet.copy(alpha = 0.2f),
+                      shape = RoundedCornerShape(6.dp)
+                    ) {
+                      Text(
+                        text = "#${featuredRoom.topicTag}",
+                        fontSize = 9.sp,
+                        color = VybeViolet,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                      )
+                    }
+                  }
+                  Spacer(modifier = Modifier.height(6.dp))
+                  Text(
+                    text = featuredRoom.title,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = Color.White
+                  )
+                  Spacer(modifier = Modifier.height(2.dp))
+                  Text(
+                    text = "${featuredRoom.activeListenersCount} listeners • Hosted by ${featuredRoom.hostName}",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                } else {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                      Icons.Default.Shield,
+                      contentDescription = null,
+                      tint = VybeViolet,
+                      modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                      text = "Zero audio stored • 100% ephemeral • Open 24/7",
+                      fontSize = 11.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                  }
+                }
+              }
+            }
           }
-          Spacer(modifier = Modifier.height(10.dp))
+          Spacer(modifier = Modifier.height(6.dp))
         }
 
-        // Pair 3: DOUBLE TAKE & CROSSED PATHS
+        // Zone 2: UNFILTERED
         item {
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+          ExploreExperienceFeedCard(
+            title = "UNFILTERED",
+            tagline = "Raw & Real Moments, Zero Filters",
+            description = "Spontaneous snapshots captured directly without vanity metrics, beauty filters, or curated perfection.",
+            badgeText = "RAW & REAL",
+            activityText = "${unfilteredPosts.size} genuine snapshots",
+            accent = VybeOnlineGreen,
+            icon = Icons.Default.CameraAlt,
+            ctaText = "Enter Unfiltered",
+            testTag = "explore_unfiltered_feed_card",
+            onEnter = { viewModel.navigateTo(Screen.UNFILTERED_VIEW) }
           ) {
-            ExploreExperienceCard(
-              title = "DOUBLE TAKE",
-              subtitle = "Two-Sided Prompts",
-              description = "Connect over thoughtful public and peer perspectives.",
-              cta = "Sync Perspectives",
-              accent = VybeHeartbreakRed,
-              icon = Icons.Default.CompareArrows,
-              onClick = { viewModel.navigateTo(Screen.DOUBLE_TAKE_VIEW) },
-              modifier = Modifier
-                .weight(1f)
-                .testTag("explore_double_take_card")
-            )
-
-            ExploreExperienceCard(
-              title = "CROSSED PATHS",
-              subtitle = "Real-World Spark",
-              description = "Consent-first encounters by venue and Google Maps.",
-              cta = "Open Crossed Paths",
-              accent = VybeBrandCyan,
-              icon = Icons.Default.Place,
-              onClick = { viewModel.navigateTo(Screen.CREATE_CROSSED_PATH) },
-              modifier = Modifier
-                .weight(1f)
-                .testTag("explore_crossed_card")
-            )
+            val latestUnfiltered = unfilteredPosts.firstOrNull()
+            Surface(
+              color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+              shape = RoundedCornerShape(14.dp),
+              border = BorderStroke(1.dp, VybeOnlineGreen.copy(alpha = 0.3f)),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Column(modifier = Modifier.padding(12.dp)) {
+                if (latestUnfiltered != null) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                  ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                      VybeAvatar(user = latestUnfiltered.author, size = 32.dp)
+                      Spacer(modifier = Modifier.width(8.dp))
+                      Column {
+                        Text(
+                          text = latestUnfiltered.author.displayName,
+                          fontWeight = FontWeight.Bold,
+                          fontSize = 12.sp,
+                          color = Color.White
+                        )
+                        Text(
+                          text = "@${latestUnfiltered.author.username} • ${latestUnfiltered.timestamp}",
+                          fontSize = 10.sp,
+                          color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                      }
+                    }
+                    if (latestUnfiltered.mediaUrls.isNotEmpty()) {
+                      AsyncImage(
+                        model = latestUnfiltered.mediaUrls.first(),
+                        contentDescription = "Unfiltered preview",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                          .size(38.dp)
+                          .clip(RoundedCornerShape(8.dp))
+                          .border(1.dp, VybeOnlineGreen.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                      )
+                    }
+                  }
+                  if (latestUnfiltered.caption.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                      text = latestUnfiltered.caption,
+                      fontSize = 11.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      maxLines = 2
+                    )
+                  }
+                } else {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                      Icons.Default.CameraEnhance,
+                      contentDescription = null,
+                      tint = VybeOnlineGreen,
+                      modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                      text = "Dual-cam snapshot • No drafts, no retakes • 100% genuine",
+                      fontSize = 11.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                  }
+                }
+              }
+            }
           }
-          Spacer(modifier = Modifier.height(12.dp))
+          Spacer(modifier = Modifier.height(6.dp))
+        }
+
+        // Zone 3: WHAT NEXT
+        item {
+          ExploreExperienceFeedCard(
+            title = "WHAT NEXT",
+            tagline = "Culture Pulse & Decision Dilemmas",
+            description = "Community dilemmas and predictions. Vote on cultural questions and see live consensus before time runs out.",
+            badgeText = "CULTURE PULSE",
+            activityText = "${predictions.size} active dilemma polls",
+            accent = VybeBrandCyan,
+            icon = Icons.Default.Poll,
+            ctaText = "Vote Now",
+            testTag = "explore_what_next_feed_card",
+            onEnter = { viewModel.navigateTo(Screen.WHAT_NEXT_VIEW) }
+          ) {
+            val topPrediction = predictions.firstOrNull()
+            Surface(
+              color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+              shape = RoundedCornerShape(14.dp),
+              border = BorderStroke(1.dp, VybeBrandCyan.copy(alpha = 0.3f)),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Column(modifier = Modifier.padding(12.dp)) {
+                if (topPrediction != null) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Surface(
+                      color = VybeBrandCyan.copy(alpha = 0.18f),
+                      shape = RoundedCornerShape(6.dp)
+                    ) {
+                      Text(
+                        text = topPrediction.category.uppercase(),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = VybeBrandCyan,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                      )
+                    }
+                    Text(
+                      text = "Closes in ${topPrediction.closingTimeText}",
+                      fontSize = 10.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                  }
+                  Spacer(modifier = Modifier.height(6.dp))
+                  Text(
+                    text = topPrediction.title,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = Color.White
+                  )
+                  if (topPrediction.options.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                      topPrediction.options.take(2).forEach { opt ->
+                        Surface(
+                          color = MaterialTheme.colorScheme.surfaceVariant,
+                          shape = RoundedCornerShape(8.dp),
+                          border = BorderStroke(1.dp, VybeBrandCyan.copy(alpha = 0.25f)),
+                          modifier = Modifier.weight(1f)
+                        ) {
+                          Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                          ) {
+                            Text(
+                              text = opt.text,
+                              fontSize = 11.sp,
+                              fontWeight = FontWeight.SemiBold,
+                              maxLines = 1,
+                              modifier = Modifier.weight(1f, fill = false)
+                            )
+                            Text(
+                              text = "${opt.percentage}%",
+                              fontSize = 10.sp,
+                              fontWeight = FontWeight.Bold,
+                              color = VybeBrandCyan
+                            )
+                          }
+                        }
+                      }
+                    }
+                  }
+                } else {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                      Icons.Default.HowToVote,
+                      contentDescription = null,
+                      tint = VybeBrandCyan,
+                      modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                      text = "Vote on active polls • Launch predictions • Live consensus",
+                      fontSize = 11.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                  }
+                }
+              }
+            }
+          }
+          Spacer(modifier = Modifier.height(6.dp))
+        }
+
+        // Zone 4: TIME CAPSULE
+        item {
+          ExploreExperienceFeedCard(
+            title = "TIME CAPSULE",
+            tagline = "Cryptographically Sealed Memory Vaults",
+            description = "Lock messages, photos, and letters for future dates. Sealed cryptographically until target unlock moment.",
+            badgeText = "FUTURE VAULT",
+            activityText = "${timeCapsules.size} sealed memory capsules",
+            accent = VybeVerifiedGold,
+            icon = Icons.Default.Schedule,
+            ctaText = "Enter Vaults",
+            testTag = "explore_time_capsule_feed_card",
+            onEnter = { viewModel.navigateTo(Screen.TIME_CAPSULES_VIEW) }
+          ) {
+            val latestCapsule = timeCapsules.firstOrNull()
+            Surface(
+              color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+              shape = RoundedCornerShape(14.dp),
+              border = BorderStroke(1.dp, VybeVerifiedGold.copy(alpha = 0.3f)),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Column(modifier = Modifier.padding(12.dp)) {
+                if (latestCapsule != null) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                      Icon(
+                        Icons.Default.Lock,
+                        contentDescription = null,
+                        tint = VybeVerifiedGold,
+                        modifier = Modifier.size(14.dp)
+                      )
+                      Spacer(modifier = Modifier.width(4.dp))
+                      Text(
+                        text = "SEALED VAULT",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = VybeVerifiedGold
+                      )
+                    }
+                    Text(
+                      text = "Unlocks ${latestCapsule.unlockDateFormatted}",
+                      fontSize = 10.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                  }
+                  Spacer(modifier = Modifier.height(6.dp))
+                  Text(
+                    text = latestCapsule.title,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = Color.White
+                  )
+                  Spacer(modifier = Modifier.height(2.dp))
+                  Text(
+                    text = "Recipient: ${latestCapsule.recipientSummary} • Theme: ${latestCapsule.categoryTheme}",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                } else {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                      Icons.Default.LockClock,
+                      contentDescription = null,
+                      tint = VybeVerifiedGold,
+                      modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                      text = "Lock memories today • Choose future date • Unlocks automatically",
+                      fontSize = 11.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                  }
+                }
+              }
+            }
+          }
+          Spacer(modifier = Modifier.height(6.dp))
+        }
+
+        // Zone 5: DOUBLE TAKE
+        item {
+          ExploreExperienceFeedCard(
+            title = "DOUBLE TAKE",
+            tagline = "Two Sides, Opposing Perspectives",
+            description = "Thought-provoking daily prompts. Cast your stance and unlock chats with peers who think like you or opposite.",
+            badgeText = "DUAL TAKE",
+            activityText = "${doubleTakePrompts.size} active dilemmas",
+            accent = VybeHeartbreakRed,
+            icon = Icons.Default.CompareArrows,
+            ctaText = "Sync Perspectives",
+            testTag = "explore_double_take_feed_card",
+            onEnter = { viewModel.navigateTo(Screen.DOUBLE_TAKE_VIEW) }
+          ) {
+            val topPrompt = doubleTakePrompts.firstOrNull()
+            Surface(
+              color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+              shape = RoundedCornerShape(14.dp),
+              border = BorderStroke(1.dp, VybeHeartbreakRed.copy(alpha = 0.3f)),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Column(modifier = Modifier.padding(12.dp)) {
+                if (topPrompt != null) {
+                  Surface(
+                    color = VybeHeartbreakRed.copy(alpha = 0.18f),
+                    shape = RoundedCornerShape(6.dp)
+                  ) {
+                    Text(
+                      text = topPrompt.category.uppercase(),
+                      fontSize = 9.sp,
+                      fontWeight = FontWeight.Bold,
+                      color = VybeHeartbreakRed,
+                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                  }
+                  Spacer(modifier = Modifier.height(6.dp))
+                  Text(
+                    text = topPrompt.promptQuestion,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = Color.White
+                  )
+                  Spacer(modifier = Modifier.height(8.dp))
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                  ) {
+                    Surface(
+                      color = MaterialTheme.colorScheme.surfaceVariant,
+                      shape = RoundedCornerShape(8.dp),
+                      border = BorderStroke(1.dp, VybeHeartbreakRed.copy(alpha = 0.25f)),
+                      modifier = Modifier.weight(1f)
+                    ) {
+                      Text(
+                        text = "A: ${topPrompt.optionA}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                      )
+                    }
+                    Surface(
+                      color = MaterialTheme.colorScheme.surfaceVariant,
+                      shape = RoundedCornerShape(8.dp),
+                      border = BorderStroke(1.dp, VybeHeartbreakRed.copy(alpha = 0.25f)),
+                      modifier = Modifier.weight(1f)
+                    ) {
+                      Text(
+                        text = "B: ${topPrompt.optionB}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                      )
+                    }
+                  }
+                } else {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                      Icons.Default.QuestionAnswer,
+                      contentDescription = null,
+                      tint = VybeHeartbreakRed,
+                      modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                      text = "Two sides • Daily prompt • Discover who matches your perspective",
+                      fontSize = 11.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                  }
+                }
+              }
+            }
+          }
+          Spacer(modifier = Modifier.height(6.dp))
+        }
+
+        // Zone 6: CROSSED PATHS
+        item {
+          ExploreExperienceFeedCard(
+            title = "CROSSED PATHS",
+            tagline = "Hyperlocal Proximity Radar & Encounters",
+            description = "Consent-first real-world missed connections and venue encounters powered by privacy-safe proximity radar.",
+            badgeText = "PROXIMITY RADAR",
+            activityText = "${crossedPaths.size} proximity signals",
+            accent = VybeBrandBlue,
+            icon = Icons.Default.NearMe,
+            ctaText = "Open Crossed Paths",
+            testTag = "explore_crossed_feed_card",
+            onEnter = { viewModel.navigateTo(Screen.CREATE_CROSSED_PATH) }
+          ) {
+            val topEncounter = crossedPaths.firstOrNull()
+            Surface(
+              color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+              shape = RoundedCornerShape(14.dp),
+              border = BorderStroke(1.dp, VybeBrandBlue.copy(alpha = 0.3f)),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Column(modifier = Modifier.padding(12.dp)) {
+                if (topEncounter != null) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                      Icon(
+                        Icons.Default.LocationOn,
+                        contentDescription = null,
+                        tint = VybeBrandBlue,
+                        modifier = Modifier.size(14.dp)
+                      )
+                      Spacer(modifier = Modifier.width(4.dp))
+                      Text(
+                        text = topEncounter.venueOrEventName ?: "Proximity Encounter",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = VybeBrandBlue
+                      )
+                    }
+                    Text(
+                      text = topEncounter.encounterDate,
+                      fontSize = 10.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                  }
+                  Spacer(modifier = Modifier.height(6.dp))
+                  Text(
+                    text = topEncounter.title,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = Color.White
+                  )
+                  Spacer(modifier = Modifier.height(2.dp))
+                  Text(
+                    text = "Area: ${topEncounter.broadLocation} • ${topEncounter.expiresHoursRemaining}h remaining",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                } else {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                      Icons.Default.Explore,
+                      contentDescription = null,
+                      tint = VybeBrandBlue,
+                      modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                      text = "Radar active • Safe venue connections • Zero exact coordinates shared",
+                      fontSize = 11.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                  }
+                }
+              }
+            }
+          }
+          Spacer(modifier = Modifier.height(10.dp))
         }
 
         // Community Zone (Synchronized via Supabase with RLS permissions)
@@ -1321,6 +1797,146 @@ private fun ExploreExperienceCard(
         fontWeight = FontWeight.Bold,
         color = accent
       )
+    }
+  }
+}
+
+@Composable
+private fun ExploreExperienceFeedCard(
+  title: String,
+  tagline: String,
+  description: String,
+  badgeText: String,
+  activityText: String,
+  accent: Color,
+  icon: androidx.compose.ui.graphics.vector.ImageVector,
+  ctaText: String,
+  testTag: String,
+  onEnter: () -> Unit,
+  previewContent: @Composable () -> Unit
+) {
+  Card(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 16.dp)
+      .clip(RoundedCornerShape(20.dp))
+      .clickable { onEnter() }
+      .testTag(testTag),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    shape = RoundedCornerShape(20.dp),
+    border = BorderStroke(1.2.dp, accent.copy(alpha = 0.45f))
+  ) {
+    Column(modifier = Modifier.padding(16.dp)) {
+      // Header row: Icon + Title & Tagline + Badge
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top
+      ) {
+        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+          Box(
+            modifier = Modifier
+              .size(44.dp)
+              .clip(RoundedCornerShape(14.dp))
+              .background(accent.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center
+          ) {
+            Icon(
+              imageVector = icon,
+              contentDescription = null,
+              tint = accent,
+              modifier = Modifier.size(24.dp)
+            )
+          }
+          Spacer(modifier = Modifier.width(12.dp))
+          Column {
+            Text(
+              text = title,
+              fontWeight = FontWeight.Black,
+              fontSize = 16.sp,
+              letterSpacing = 0.8.sp,
+              color = Color.White
+            )
+            Text(
+              text = tagline,
+              fontSize = 11.sp,
+              fontWeight = FontWeight.SemiBold,
+              color = accent
+            )
+          }
+        }
+        Surface(
+          color = accent.copy(alpha = 0.15f),
+          shape = RoundedCornerShape(8.dp),
+          border = BorderStroke(1.dp, accent.copy(alpha = 0.35f))
+        ) {
+          Text(
+            text = badgeText,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            color = accent,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+          )
+        }
+      }
+
+      Spacer(modifier = Modifier.height(10.dp))
+      Text(
+        text = description,
+        fontSize = 12.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        lineHeight = 16.sp
+      )
+
+      Spacer(modifier = Modifier.height(12.dp))
+      // Real preview slot
+      previewContent()
+
+      Spacer(modifier = Modifier.height(12.dp))
+      // Bottom Action Bar: Activity indicator on left, Enter Zone Button on right
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Box(
+            modifier = Modifier
+              .size(7.dp)
+              .clip(CircleShape)
+              .background(accent)
+          )
+          Spacer(modifier = Modifier.width(6.dp))
+          Text(
+            text = activityText,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+          )
+        }
+
+        Button(
+          onClick = onEnter,
+          colors = ButtonDefaults.buttonColors(containerColor = accent),
+          shape = RoundedCornerShape(12.dp),
+          contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+          modifier = Modifier.testTag("${testTag}_cta")
+        ) {
+          Text(
+            text = ctaText,
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold
+          )
+          Spacer(modifier = Modifier.width(4.dp))
+          Icon(
+            Icons.AutoMirrored.Filled.ArrowForward,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(14.dp)
+          )
+        }
+      }
     }
   }
 }

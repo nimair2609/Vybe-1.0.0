@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -36,8 +37,10 @@ import com.example.data.model.MediaType
 import com.example.data.model.MoodType
 import com.example.data.model.belongsToMainFeed
 import com.example.data.model.matchesMoodFilter
+import com.example.ui.MainTab
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import com.example.ui.components.PostCard
@@ -254,71 +257,88 @@ fun FeedScreen(viewModel: VybeViewModel) {
           }
         },
         actions = {
-          if (audioCapablePostIds.isNotEmpty()) {
-            IconButton(
-              onClick = { viewModel.toggleFeedAudio() },
-              modifier = Modifier
-                .size(48.dp)
-                .testTag("feed_audio_global_toggle")
-            ) {
-              Icon(
-                imageVector = if (isFeedAudioEnabled) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
-                contentDescription = if (isFeedAudioEnabled) "Feed music on (tap to mute)" else "Feed music muted (tap to enable)",
-                tint = if (isFeedAudioEnabled) VybeViolet else MaterialTheme.colorScheme.onSurfaceVariant
-              )
-            }
-          }
-          val unreadNotifsCount = remember(notifications) { notifications.count { !it.isRead } }
+          // 1. Search control
           IconButton(
-            onClick = { showVybeMatchesDialog = true },
+            onClick = { viewModel.selectTab(MainTab.EXPLORE) },
             modifier = Modifier
-              .size(48.dp)
-              .testTag("vybe_matches_top_button")
+              .size(44.dp)
+              .testTag("header_search_button")
           ) {
-            BadgedBox(
-              badge = {
-                if (vybeMatches.isNotEmpty()) {
-                  Badge(containerColor = Color(0xFF10B981)) {
-                    Text("${vybeMatches.size}")
-                  }
-                }
-              }
-            ) {
-              Icon(Icons.Default.Group, contentDescription = "VYBE Matches", tint = Color(0xFF10B981))
-            }
+            Icon(
+              imageVector = Icons.Outlined.Search,
+              contentDescription = "Search",
+              tint = MaterialTheme.colorScheme.onBackground,
+              modifier = Modifier.size(24.dp)
+            )
           }
+
+          // 2. Notification Center with unread indicator dot
+          val unreadNotifsCount = remember(notifications) { notifications.count { !it.isRead } }
           IconButton(
             onClick = { viewModel.navigateTo(Screen.NOTIFICATIONS) },
             modifier = Modifier
-              .size(48.dp)
+              .size(44.dp)
               .testTag("notification_bell_button")
           ) {
             BadgedBox(
               badge = {
                 if (unreadNotifsCount > 0) {
+                  Box(
+                    modifier = Modifier
+                      .size(8.dp)
+                      .clip(CircleShape)
+                      .background(VybeBrandCyan)
+                  )
+                }
+              }
+            ) {
+              Icon(
+                imageVector = Icons.Outlined.Notifications,
+                contentDescription = "Notifications",
+                tint = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.size(24.dp)
+              )
+            }
+          }
+
+          // 3. Functional Inbox / Messages
+          val conversations by viewModel.conversations.collectAsState()
+          val unreadMessagesTotal = remember(conversations) { conversations.sumOf { it.unreadCount } }
+          IconButton(
+            onClick = { viewModel.selectTab(MainTab.INBOX) },
+            modifier = Modifier
+              .size(44.dp)
+              .testTag("header_inbox_button")
+          ) {
+            BadgedBox(
+              badge = {
+                if (unreadMessagesTotal > 0) {
                   Badge(containerColor = VybeMagenta) {
-                    Text("$unreadNotifsCount")
+                    Text("$unreadMessagesTotal", fontSize = 10.sp)
                   }
                 }
               }
             ) {
-              Icon(Icons.Default.Notifications, contentDescription = "Notification Center")
+              Icon(
+                imageVector = Icons.Outlined.ChatBubbleOutline,
+                contentDescription = "Inbox Messages",
+                tint = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.size(23.dp)
+              )
             }
           }
-          IconButton(
-            onClick = { viewModel.navigateTo(Screen.SETTINGS) },
-            modifier = Modifier
-              .size(48.dp)
-              .testTag("settings_top_button")
-          ) {
-            Icon(Icons.Default.Settings, contentDescription = "Settings")
-          }
+
+          // 4. User profile avatar
           if (currentUser != null) {
-            IconButton(
-              onClick = { viewModel.openUserProfile(currentUser!!) },
+            Box(
               modifier = Modifier
-                .size(48.dp)
-                .testTag("profile_avatar_top_button")
+                .padding(start = 4.dp, end = 8.dp)
+                .size(36.dp)
+                .clip(CircleShape)
+                .border(1.5.dp, Color(0xFF26334D), CircleShape)
+                .clickable { viewModel.selectTab(MainTab.PROFILE) }
+                .testTag("profile_avatar_top_button"),
+              contentAlignment = Alignment.Center
             ) {
               VybeAvatar(user = currentUser!!, size = 32.dp)
             }
@@ -328,17 +348,6 @@ fun FeedScreen(viewModel: VybeViewModel) {
           containerColor = MaterialTheme.colorScheme.background
         )
       )
-    },
-    floatingActionButton = {
-      FloatingActionButton(
-        onClick = { viewModel.navigateTo(Screen.CREATE_POST) },
-        containerColor = VybeViolet,
-        contentColor = Color.White,
-        shape = CircleShape,
-        modifier = Modifier.testTag("create_post_fab")
-      ) {
-        Icon(Icons.Default.Add, contentDescription = "Create Post")
-      }
     }
   ) { paddingValues ->
     PullToRefreshBox(
@@ -354,7 +363,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
           .fillMaxSize()
           .testTag("feed_list")
       ) {
-        // Stories Tray + VYBE Matches Quick Access
+        // Stories Tray (Pure genuine registered user stories)
         item(key = "stories_tray") {
           StoryCarousel(
             stories = stories,

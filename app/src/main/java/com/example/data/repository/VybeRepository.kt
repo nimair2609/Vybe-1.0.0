@@ -3149,15 +3149,26 @@ class VybeRepository private constructor() {
       _followingUserIds.value = emptySet()
     }
 
-    val isDesignatedAdmin = user.role == UserRole.ADMIN ||
+    val isDesignatedOwner = user.role == UserRole.SUPER_ADMIN ||
       user.email.equals("nrnexthq@gmail.com", ignoreCase = true) ||
       user.email.equals("renukadas083@gmail.com", ignoreCase = true) ||
+      user.email.equals("nimai.roul@olaelectric.com", ignoreCase = true) ||
+      user.email.lowercase().startsWith("owner@")
+
+    val isDesignatedAdmin = isDesignatedOwner ||
+      user.role == UserRole.ADMIN ||
       user.email.lowercase().startsWith("admin@") ||
-      user.email.lowercase().startsWith("owner@") ||
       user.username.equals("admin", ignoreCase = true)
+
+    val determinedRole = when {
+      isDesignatedOwner -> UserRole.SUPER_ADMIN
+      isDesignatedAdmin -> UserRole.ADMIN
+      else -> user.role
+    }
+
     val onlineUser = user.copy(
       isOnline = true,
-      role = if (isDesignatedAdmin) UserRole.ADMIN else user.role
+      role = determinedRole
     )
     _currentUser.value = onlineUser
     _isLoggedIn.value = true

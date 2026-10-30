@@ -1,8 +1,11 @@
 package com.example.data.model
 
 enum class UserRole {
-  USER, CREATOR, BUSINESS_OWNER, VERIFIED_PUBLIC_FIGURE, MODERATOR, ADMIN
+  USER, CREATOR, BUSINESS_OWNER, VERIFIED_PUBLIC_FIGURE, MODERATOR, ADMIN, SUPER_ADMIN
 }
+
+val UserRole.isAdminAccess: Boolean get() = this == UserRole.ADMIN || this == UserRole.SUPER_ADMIN
+val UserRole.isOwnerAccess: Boolean get() = this == UserRole.SUPER_ADMIN
 
 enum class LivePulseStatus(val label: String, val icon: String) {
   OPEN_TO_CHAT("Open to chatting", "💬"),

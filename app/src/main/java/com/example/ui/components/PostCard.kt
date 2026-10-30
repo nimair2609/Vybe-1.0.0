@@ -8,10 +8,13 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -164,7 +167,25 @@ fun PostCard(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
       ) {
-        VybeAvatar(user = post.author, size = 40.dp, onClick = { onUserClick(post.author) })
+        // Avatar with signature cyan-to-violet gradient ring
+        Box(
+          modifier = Modifier
+            .size(46.dp)
+            .clip(CircleShape)
+            .background(
+              Brush.sweepGradient(
+                listOf(VybeBrandCyan, VybeBrandViolet, VybeBrandMagenta, VybeBrandCyan)
+              )
+            )
+            .padding(2.dp)
+            .clip(CircleShape)
+            .background(Color(0xFF0A0E1A))
+            .padding(1.5.dp)
+            .clip(CircleShape),
+          contentAlignment = Alignment.Center
+        ) {
+          VybeAvatar(user = post.author, size = 39.dp, onClick = { onUserClick(post.author) })
+        }
 
         Spacer(modifier = Modifier.width(10.dp))
 
@@ -175,7 +196,7 @@ fun PostCard(
         ) {
           Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-              text = post.author.displayName.ifBlank { post.author.username },
+              text = if (post.author.username.isNotBlank()) "@${post.author.username}" else post.author.displayName,
               fontSize = 15.sp,
               fontWeight = FontWeight.Bold,
               color = Color.White,
@@ -211,16 +232,25 @@ fun PostCard(
           }
         }
 
-        // Premium Filled Follow Button (if not author)
+        // Sleek Pill Follow Button (matching reference image)
         if (!isAuthor && onFollowClick != null) {
-          VybeFollowButton(
-            isFollowing = isFollowing,
-            isFollowRequested = isFollowRequested,
-            followsMe = followsMe,
-            onClick = { onFollowClick.invoke() },
-            compact = true,
-            testTag = "follow_button_${post.id}"
-          )
+          Surface(
+            color = if (isFollowing) Color(0xFF161F33) else Color.Transparent,
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.dp, if (isFollowing) Color(0xFF26334D) else Color(0xFF475569)),
+            modifier = Modifier
+              .clip(RoundedCornerShape(20.dp))
+              .clickable { onFollowClick.invoke() }
+              .testTag("follow_button_${post.id}")
+          ) {
+            Text(
+              text = if (isFollowing) "Following" else if (isFollowRequested) "Requested" else "Follow",
+              fontSize = 12.sp,
+              fontWeight = FontWeight.SemiBold,
+              color = Color.White,
+              modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+            )
+          }
           Spacer(modifier = Modifier.width(6.dp))
         }
 
@@ -369,16 +399,8 @@ fun PostCard(
         }
       }
 
-      // Media Container (Supports 1:1, 4:5, and 16:9 cleanly without stretching or side black bars)
+      // Media Container with multi-photo HorizontalPager & dynamic counter
       if (post.mediaUrls.isNotEmpty()) {
-        val mediaUrl = post.mediaUrls.first()
-        val isVideo = post.mediaType == MediaType.VIDEO ||
-          post.mediaType == MediaType.REEL ||
-          post.isVybesReel ||
-          mediaUrl.contains(".mp4", ignoreCase = true) ||
-          mediaUrl.contains(".mov", ignoreCase = true) ||
-          mediaUrl.contains(".webm", ignoreCase = true)
-
         val containerRatio = resolveFeedContainerAspectRatio(
           rawRatio = detectedMediaRatio ?: post.mediaAspectRatio,
           isReel = false
@@ -403,96 +425,159 @@ fun PostCard(
               )
             }
         ) {
-          if (isVideo) {
-            VybeVideoPlayer(
-              videoUrl = mediaUrl,
-              autoPlay = shouldAutoPlay,
-              isLooping = true,
-              initialMuted = !shouldPlayAudio,
-              isPausedExternal = !shouldAutoPlay || anySheetOpen,
-              respectReducedMotion = true,
-              fitMode = VideoFitMode.COVER_PROPORTIONAL,
-              feedAudioOwnerId = post.id,
-              onAspectRatioDetected = { ratio ->
-                detectedMediaRatio = ratio
-              },
-              onDoubleTapOverlay = {
-                showDoubleTapResonance = true
-                if (onReact != null) {
-                  onReact(VybeReaction.LOVE)
-                } else {
-                  onLikeClick()
-                }
-              },
-              onMuteToggled = { muted ->
-                onToggleAudio?.invoke(!muted)
-              },
+          if (post.mediaUrls.size > 1) {
+            val pagerState = rememberPagerState(pageCount = { post.mediaUrls.size })
+            HorizontalPager(
+              state = pagerState,
               modifier = Modifier.fillMaxSize()
-            )
-          } else {
+            ) { pageIndex ->
+              val mediaUrl = post.mediaUrls[pageIndex]
+              val isVideo = mediaUrl.contains(".mp4", ignoreCase = true) ||
+                mediaUrl.contains(".mov", ignoreCase = true) ||
+                mediaUrl.contains(".webm", ignoreCase = true)
+
+              if (isVideo) {
+                VybeVideoPlayer(
+                  videoUrl = mediaUrl,
+                  autoPlay = shouldAutoPlay && (pagerState.currentPage == pageIndex),
+                  isLooping = true,
+                  initialMuted = !shouldPlayAudio,
+                  isPausedExternal = !shouldAutoPlay || anySheetOpen || (pagerState.currentPage != pageIndex),
+                  respectReducedMotion = true,
+                  fitMode = VideoFitMode.COVER_PROPORTIONAL,
+                  feedAudioOwnerId = post.id,
+                  onAspectRatioDetected = { ratio ->
+                    detectedMediaRatio = ratio
+                  },
+                  onDoubleTapOverlay = {
+                    showDoubleTapResonance = true
+                    if (onReact != null) onReact(VybeReaction.LOVE) else onLikeClick()
+                  },
+                  onMuteToggled = { muted -> onToggleAudio?.invoke(!muted) },
+                  modifier = Modifier.fillMaxSize()
+                )
+              } else {
+                Box(
+                  modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF101524))
+                ) {
+                  AsyncImage(
+                    model = mediaUrl,
+                    contentDescription = "Post media ${pageIndex + 1} by ${post.author.displayName}",
+                    contentScale = ContentScale.Crop,
+                    onSuccess = { state ->
+                      if (post.mediaAspectRatio == null) {
+                        val d = state.result.drawable
+                        if (d.intrinsicWidth > 0 && d.intrinsicHeight > 0) {
+                          detectedMediaRatio = d.intrinsicWidth.toFloat() / d.intrinsicHeight.toFloat()
+                        }
+                      }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                  )
+                }
+              }
+            }
+
+            // Dynamic Photo Counter Pill (e.g. 1/5, 2/5)
             Box(
               modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFF101524))
+                .align(Alignment.BottomEnd)
+                .padding(12.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.Black.copy(alpha = 0.65f))
+                .padding(horizontal = 9.dp, vertical = 3.5.dp)
             ) {
-              AsyncImage(
-                model = mediaUrl,
-                contentDescription = "Post media by ${post.author.displayName}",
-                contentScale = ContentScale.Crop,
-                onSuccess = { state ->
-                  if (post.mediaAspectRatio == null) {
-                    val d = state.result.drawable
-                    if (d.intrinsicWidth > 0 && d.intrinsicHeight > 0) {
-                      detectedMediaRatio = d.intrinsicWidth.toFloat() / d.intrinsicHeight.toFloat()
-                    }
+              Text(
+                text = "${pagerState.currentPage + 1}/${post.mediaUrls.size}",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+              )
+            }
+          } else {
+            val mediaUrl = post.mediaUrls.first()
+            val isVideo = post.mediaType == MediaType.VIDEO ||
+              post.mediaType == MediaType.REEL ||
+              post.isVybesReel ||
+              mediaUrl.contains(".mp4", ignoreCase = true) ||
+              mediaUrl.contains(".mov", ignoreCase = true) ||
+              mediaUrl.contains(".webm", ignoreCase = true)
+
+            if (isVideo) {
+              VybeVideoPlayer(
+                videoUrl = mediaUrl,
+                autoPlay = shouldAutoPlay,
+                isLooping = true,
+                initialMuted = !shouldPlayAudio,
+                isPausedExternal = !shouldAutoPlay || anySheetOpen,
+                respectReducedMotion = true,
+                fitMode = VideoFitMode.COVER_PROPORTIONAL,
+                feedAudioOwnerId = post.id,
+                onAspectRatioDetected = { ratio ->
+                  detectedMediaRatio = ratio
+                },
+                onDoubleTapOverlay = {
+                  showDoubleTapResonance = true
+                  if (onReact != null) {
+                    onReact(VybeReaction.LOVE)
+                  } else {
+                    onLikeClick()
                   }
+                },
+                onMuteToggled = { muted ->
+                  onToggleAudio?.invoke(!muted)
                 },
                 modifier = Modifier.fillMaxSize()
               )
-              if (!post.audioTrackTitle.isNullOrBlank() && onToggleAudio != null) {
-                IconButton(
-                  onClick = { onToggleAudio(!isAudioEnabled) },
-                  modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(8.dp)
-                    .size(44.dp)
-                    .testTag("photo_music_mute_toggle_${post.id}")
-                ) {
-                  Box(
+            } else {
+              Box(
+                modifier = Modifier
+                  .fillMaxSize()
+                  .background(Color(0xFF101524))
+              ) {
+                AsyncImage(
+                  model = mediaUrl,
+                  contentDescription = "Post media by ${post.author.displayName}",
+                  contentScale = ContentScale.Crop,
+                  onSuccess = { state ->
+                    if (post.mediaAspectRatio == null) {
+                      val d = state.result.drawable
+                      if (d.intrinsicWidth > 0 && d.intrinsicHeight > 0) {
+                        detectedMediaRatio = d.intrinsicWidth.toFloat() / d.intrinsicHeight.toFloat()
+                      }
+                    }
+                  },
+                  modifier = Modifier.fillMaxSize()
+                )
+                if (!post.audioTrackTitle.isNullOrBlank() && onToggleAudio != null) {
+                  IconButton(
+                    onClick = { onToggleAudio(!isAudioEnabled) },
                     modifier = Modifier
-                      .size(32.dp)
-                      .clip(CircleShape)
-                      .background(Color.Black.copy(alpha = 0.55f)),
-                    contentAlignment = Alignment.Center
+                      .align(Alignment.BottomStart)
+                      .padding(8.dp)
+                      .size(44.dp)
+                      .testTag("photo_music_mute_toggle_${post.id}")
                   ) {
-                    Icon(
-                      imageVector = if (isAudioEnabled) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
-                      contentDescription = if (isAudioEnabled) "Mute feed music" else "Enable feed music",
-                      tint = Color.White,
-                      modifier = Modifier.size(16.dp)
-                    )
+                    Box(
+                      modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.55f)),
+                      contentAlignment = Alignment.Center
+                    ) {
+                      Icon(
+                        imageVector = if (isAudioEnabled) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
+                        contentDescription = if (isAudioEnabled) "Mute feed music" else "Enable feed music",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                      )
+                    }
                   }
                 }
               }
             }
-          }
-
-          // Carousel page indicator pill (e.g. 1/5)
-          val totalMediaCount = maxOf(post.mediaUrls.size, 1)
-          Box(
-            modifier = Modifier
-              .align(Alignment.BottomEnd)
-              .padding(10.dp)
-              .clip(RoundedCornerShape(12.dp))
-              .background(Color.Black.copy(alpha = 0.65f))
-              .padding(horizontal = 9.dp, vertical = 3.5.dp)
-          ) {
-            Text(
-              text = "1/$totalMediaCount",
-              fontSize = 11.sp,
-              fontWeight = FontWeight.Bold,
-              color = Color.White
-            )
           }
 
           // Double-Tap Animated Resonance Feedback
@@ -519,89 +604,118 @@ fun PostCard(
         }
       }
 
-      // Action Bar: Signature 🫰 Reaction with count, Comment with count, Share with count
-      Spacer(modifier = Modifier.height(14.dp))
+      // Action Bar: Restored Clean Outline Icons (Like/Heart, Comment, Share, Bookmark)
+      Spacer(modifier = Modifier.height(12.dp))
       val displayedCommentsCount = if (post.comments.isNotEmpty()) post.comments.size else post.commentsCount.coerceAtLeast(0)
+      val isLiked = post.isLiked || post.userReaction != null
 
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
-        // Left: Signature 5-Reaction Gesture Button (Normal tap toggles 🫰 Finger Heart, press-and-hold + drag reveals 5 reactions)
-        Row(
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          PostReactionGestureButton(
-            userReaction = post.userReaction,
-            onReact = { rx ->
-              if (onReact != null) {
-                onReact(rx)
-              } else {
-                onLikeClick()
-              }
-            },
-            onToggleDefault = {
-              if (post.userReaction != null) {
-                if (onReact != null) onReact(post.userReaction!!) else onLikeClick()
-              } else {
-                if (onReact != null) onReact(VybeReaction.LOVE) else onLikeClick()
-              }
-            }
-          )
-
-          Spacer(modifier = Modifier.width(8.dp))
-          Text(
-            text = "${post.likesCount}",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = Color.White
-          )
-        }
-
-        // Center: Minimalist Comment Outline + Count
+        // Left Action Group: Like / Heart, Comment, Share
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          modifier = Modifier
-            .clickable { showCommentDialog = true }
-            .testTag("comment_button_${post.id}")
+          horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-          Icon(
-            imageVector = Icons.Outlined.ChatBubbleOutline,
-            contentDescription = "Comments",
-            tint = Color.White,
-            modifier = Modifier.size(20.dp)
-          )
-          Spacer(modifier = Modifier.width(7.dp))
-          Text(
-            text = "$displayedCommentsCount",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = Color.White
-          )
-        }
-
-        // Right: Minimalist Share Curved Arrow + Count
-        Row(
-          verticalAlignment = Alignment.CenterVertically,
-          modifier = Modifier
-            .clickable { onShareClick() }
-            .testTag("share_button_${post.id}")
-        ) {
-          Icon(
-            imageVector = Icons.Outlined.Reply,
-            contentDescription = "Share",
-            tint = Color.White,
+          // 1. Like / Heart (White outline unliked, filled accent red when liked; transparent background, zero container/border)
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
-              .size(21.dp)
-              .graphicsLayer(scaleX = -1f)
-          )
-          Spacer(modifier = Modifier.width(6.dp))
-          Text(
-            text = "${post.sharesCount}",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = Color.White
+              .clickable {
+                if (isLiked) {
+                  if (post.userReaction != null && onReact != null) {
+                    onReact(post.userReaction!!)
+                  } else {
+                    onLikeClick()
+                  }
+                } else {
+                  if (onReact != null) onReact(VybeReaction.LOVE) else onLikeClick()
+                }
+              }
+              .testTag("like_button_${post.id}")
+          ) {
+            Icon(
+              imageVector = if (isLiked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+              contentDescription = if (isLiked) "Unlike post" else "Like post",
+              tint = if (isLiked) Color(0xFFEF4444) else Color.White,
+              modifier = Modifier.size(24.dp)
+            )
+            if (post.likesCount > 0) {
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(
+                text = "${post.likesCount}",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+              )
+            }
+          }
+
+          // 2. Comment (White outline, transparent background)
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+              .clickable { showCommentDialog = true }
+              .testTag("comment_button_${post.id}")
+          ) {
+            Icon(
+              imageVector = Icons.Outlined.ChatBubbleOutline,
+              contentDescription = "Comments",
+              tint = Color.White,
+              modifier = Modifier.size(23.dp)
+            )
+            if (displayedCommentsCount > 0) {
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(
+                text = "$displayedCommentsCount",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+              )
+            }
+          }
+
+          // 3. Share (White outline send icon, transparent background)
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+              .clickable { onShareClick() }
+              .testTag("share_button_${post.id}")
+          ) {
+            Icon(
+              imageVector = Icons.AutoMirrored.Outlined.Send,
+              contentDescription = "Share",
+              tint = Color.White,
+              modifier = Modifier
+                .size(22.dp)
+                .graphicsLayer(rotationZ = -28f)
+            )
+            if (post.sharesCount > 0) {
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(
+                text = "${post.sharesCount}",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+              )
+            }
+          }
+        }
+
+        // Right Action: Bookmark / Save (White outline unsaved, filled cyan when saved; transparent background)
+        IconButton(
+          onClick = { onSaveClick() },
+          modifier = Modifier
+            .size(36.dp)
+            .testTag("save_button_${post.id}")
+        ) {
+          Icon(
+            imageVector = if (post.isSaved) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+            contentDescription = if (post.isSaved) "Remove from saved" else "Save post",
+            tint = if (post.isSaved) VybeBrandCyan else Color.White,
+            modifier = Modifier.size(24.dp)
           )
         }
       }
@@ -646,7 +760,10 @@ fun PostCard(
             }
             Spacer(modifier = Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f)) {
-              Row(verticalAlignment = Alignment.CenterVertically) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
                 Text(
                   text = previewAuthor,
                   fontSize = 12.sp,
@@ -660,7 +777,15 @@ fun PostCard(
                   fontSize = 12.sp,
                   color = Color.White.copy(alpha = 0.88f),
                   maxLines = 1,
-                  overflow = TextOverflow.Ellipsis
+                  overflow = TextOverflow.Ellipsis,
+                  modifier = Modifier.weight(1f, fill = false)
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Icon(
+                  imageVector = Icons.Outlined.FavoriteBorder,
+                  contentDescription = "Like comment",
+                  tint = Color.White.copy(alpha = 0.45f),
+                  modifier = Modifier.size(13.dp)
                 )
               }
               Spacer(modifier = Modifier.height(2.dp))

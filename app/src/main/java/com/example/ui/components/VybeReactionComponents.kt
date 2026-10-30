@@ -6,6 +6,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -326,10 +327,7 @@ private fun VybeReactionGestureButtonInternal(
       modifier = Modifier
         .fillMaxSize()
         .clip(CircleShape)
-        .background(
-          if (isSideBar) Color.Black.copy(alpha = 0.5f)
-          else Color.White.copy(alpha = 0.08f)
-        )
+        .background(if (isSideBar) Color.Black.copy(alpha = 0.45f) else Color.Transparent)
         .pointerInput(isSideBar) {
           awaitEachGesture {
             try {

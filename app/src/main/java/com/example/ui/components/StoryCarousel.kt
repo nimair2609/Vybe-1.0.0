@@ -229,11 +229,7 @@ fun StoryCarousel(
 
             Spacer(modifier = Modifier.height(5.dp))
             Text(
-              text = if (userHasStory) {
-                if (ownStories.size > 1) "My Story (${ownStories.size})" else "My Story"
-              } else {
-                "My Story"
-              },
+              text = "Your Story",
               style = MaterialTheme.typography.labelSmall,
               color = if (userHasStory) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
               fontWeight = if (userHasStory) FontWeight.SemiBold else FontWeight.Normal,
