@@ -31,6 +31,7 @@ function isSuperAdmin(req, adminEmail) {
     email === 'renukadas083@gmail.com' ||
     email === 'nrnexthq@gmail.com' ||
     email === 'nimai.roul@olaelectric.com' ||
+    email === 'roulnimai95@gmail.com' ||
     email.startsWith('owner@') ||
     role === 'SUPER_ADMIN' ||
     role === 'OWNER_ADMIN'

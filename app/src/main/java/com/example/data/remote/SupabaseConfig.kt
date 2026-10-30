@@ -17,10 +17,19 @@ object SupabaseConfig {
   const val LIVE_SUPABASE_URL = "https://cppwadedazpbevkfrchg.supabase.co"
   const val LIVE_SUPABASE_ANON_KEY = "sb_publishable_MI-UdOqfccHVZIHjQq9vrw_IjEzeR7H"
 
+  private fun isEffectiveKey(raw: String?): Boolean {
+    if (raw.isNullOrBlank()) return false
+    val trimmed = raw.trim().lowercase()
+    return !trimmed.contains("placeholder") &&
+      !trimmed.contains("default") &&
+      !trimmed.contains("example") &&
+      !trimmed.startsWith("your_")
+  }
+
   val supabaseUrl: String
     get() = try {
       val url = BuildConfig.SUPABASE_URL.trim().removeSuffix("/")
-      if (url.isNotBlank() && url.startsWith("https://") && !url.contains("placeholder")) url else LIVE_SUPABASE_URL
+      if (url.isNotBlank() && url.startsWith("https://") && isEffectiveKey(url)) url else LIVE_SUPABASE_URL
     } catch (e: Throwable) {
       LIVE_SUPABASE_URL
     }
@@ -28,7 +37,7 @@ object SupabaseConfig {
   val supabaseAnonKey: String
     get() = try {
       val key = BuildConfig.SUPABASE_ANON_KEY.trim()
-      if (key.isNotBlank() && !key.contains("placeholder")) key else LIVE_SUPABASE_ANON_KEY
+      if (isEffectiveKey(key)) key else LIVE_SUPABASE_ANON_KEY
     } catch (e: Throwable) {
       LIVE_SUPABASE_ANON_KEY
     }
@@ -167,7 +176,7 @@ object SupabaseConfig {
       !key.contains("placeholder")
   }
 
-  const val CANONICAL_VYBE_WEB_URL = "https://ais-pre-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app"
+  const val CANONICAL_VYBE_WEB_URL = "https://ais-pre-of6bxbjd5wujogdyorbmow-552256630561.asia-northeast1.run.app"
 
   val vybeBackendBaseUrl: String
     get() = CANONICAL_VYBE_WEB_URL
