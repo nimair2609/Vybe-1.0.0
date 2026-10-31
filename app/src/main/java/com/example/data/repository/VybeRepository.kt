@@ -3927,6 +3927,14 @@ class VybeRepository private constructor() {
     }
   }
 
+  fun refreshFromCloud() {
+    ioScope.launch {
+      try {
+        syncAllFromSupabase()
+      } catch (_: Exception) {}
+    }
+  }
+
   fun completeOnboarding() {
     val user = _currentUser.value ?: return
     _currentUser.value = user.copy(isOnboardingCompleted = true)

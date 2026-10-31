@@ -73,6 +73,15 @@ class VybeFirebaseMessagingService : FirebaseMessagingService() {
     super.onMessageReceived(remoteMessage)
     Log.d(TAG, "FCM message received from: ${remoteMessage.from}")
 
+    val powerManager = applicationContext.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
+    val wakeLock = powerManager?.newWakeLock(
+      android.os.PowerManager.PARTIAL_WAKE_LOCK,
+      "vybe:fcm_wake_lock"
+    )?.apply {
+      setReferenceCounted(false)
+      try { acquire(10_000L) } catch (_: Exception) {}
+    }
+
     try {
       VybeNotificationHelper.initNotificationChannels(applicationContext)
       val data = remoteMessage.data
@@ -128,6 +137,20 @@ class VybeFirebaseMessagingService : FirebaseMessagingService() {
         }
       }
 
+      // If an administrative update arrived (badge, role, warning, moderation), immediately refresh all profiles
+      if (
+        channelType.contains("BADGE", ignoreCase = true) ||
+        channelType.contains("ROLE", ignoreCase = true) ||
+        channelType.contains("STATUS", ignoreCase = true) ||
+        channelType.contains("ACCOUNT", ignoreCase = true) ||
+        channelType.contains("MODERATION", ignoreCase = true) ||
+        channelType.contains("VERIFICATION", ignoreCase = true)
+      ) {
+        try {
+          repo?.refreshFromCloud()
+        } catch (_: Exception) {}
+      }
+
       val hasSystemNotificationBlock = notification != null
       val isBackground = !VybeNotificationHelper.isAppInForeground
 
@@ -148,6 +171,7 @@ class VybeFirebaseMessagingService : FirebaseMessagingService() {
       if (hasSystemNotificationBlock && isBackground) {
         VybeNotificationHelper.markEventAsNotified(applicationContext, dedupeKey, aliasKeys)
         Log.d(TAG, "OS displayed legacy notification in background. Deduplicated key=$dedupeKey")
+        try { repo?.refreshNotifications() } catch (_: Exception) {}
         return
       }
 
@@ -216,6 +240,12 @@ class VybeFirebaseMessagingService : FirebaseMessagingService() {
       )
     } catch (e: Exception) {
       Log.w(TAG, "Incoming FCM message warning: ${e.message}")
+    } finally {
+      try {
+        if (wakeLock?.isHeld == true) {
+          wakeLock.release()
+        }
+      } catch (_: Exception) {}
     }
   }
 }

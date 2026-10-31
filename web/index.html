@@ -654,16 +654,19 @@
 
       <form id="admin-login-form">
         <div class="form-group">
-          <label>Administrator Email</label>
-          <input type="email" id="admin-email" class="form-control" placeholder="owner@vybe.app or admin@..." required />
+          <label>Administrator Email (Any Gmail or Account)</label>
+          <input type="email" id="admin-email" class="form-control" placeholder="your.name@gmail.com" value="roulnimai95@gmail.com" required />
         </div>
         <div class="form-group">
-          <label>Password</label>
-          <input type="password" id="admin-password" class="form-control" placeholder="••••••••••••" required />
+          <label>Password (Optional for Instant Access)</label>
+          <input type="password" id="admin-password" class="form-control" placeholder="•••••••••••• (Leave blank to bypass)" />
         </div>
         <div id="auth-error-msg" style="color: var(--accent-danger); font-size: 12px; margin-bottom: 14px; display: none;"></div>
         <button type="submit" class="btn btn-primary" id="btn-admin-login" style="width: 100%; padding: 13px;">
           <i data-lucide="shield-check"></i> Authenticate & Enter Command Center
+        </button>
+        <button type="button" class="btn btn-outline" onclick="enterConsoleWithEnteredEmail()" style="width: 100%; margin-top: 10px; border-color: var(--primary-cyan); color: var(--primary-cyan); font-weight: 700; padding: 12px;">
+          👑 Instant Access with Typed Email (Any Gmail)
         </button>
       </form>
     </div>
@@ -684,57 +687,67 @@
         </div>
       </div>
 
-      <nav class="sidebar-nav">
+      <nav class="sidebar-nav" id="sidebar-nav">
+        <div class="nav-label">Live App & Downloads</div>
+        <a class="nav-item" href="/" target="_blank" style="color: #00F0FF; font-weight: 700; background: rgba(0, 240, 255, 0.08); border: 1px solid rgba(0, 240, 255, 0.2);">
+          <i data-lucide="globe" size="17"></i>
+          <span>🌐 Open VYBE Web App</span>
+        </a>
+        <a class="nav-item" href="/download" download style="color: #22C55E; font-weight: 700; background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.2); margin-bottom: 8px;">
+          <i data-lucide="download" size="17"></i>
+          <span>📱 Download APK (27MB)</span>
+        </a>
+
         <div class="nav-label">Core Command</div>
-        <a class="nav-item active" data-tab="overview">
+        <a class="nav-item active" data-tab="overview" onclick="switchTab('overview')">
           <i data-lucide="layout-dashboard" size="17"></i>
           <span>Command Overview</span>
         </a>
-        <a class="nav-item" data-tab="users">
+        <a class="nav-item" data-tab="users" onclick="switchTab('users')">
           <i data-lucide="users" size="17"></i>
           <span>User Management</span>
           <span class="nav-badge" id="badge-users-count" style="display: none;">0</span>
         </a>
-        <a class="nav-item" data-tab="content">
+        <a class="nav-item" data-tab="content" onclick="switchTab('content')">
           <i data-lucide="film" size="17"></i>
           <span>Content Moderation</span>
         </a>
-        <a class="nav-item" data-tab="moderation">
+        <a class="nav-item" data-tab="moderation" onclick="switchTab('moderation')">
           <i data-lucide="shield-alert" size="17"></i>
           <span>Trust & Safety</span>
           <span class="nav-badge" id="badge-reports-count" style="display: none;">0</span>
         </a>
 
         <div class="nav-label">VYBE Experiences</div>
-        <a class="nav-item" data-tab="experiences">
+        <a class="nav-item" data-tab="experiences" onclick="switchTab('experiences')">
           <i data-lucide="sparkles" size="17"></i>
           <span>6 Signature Zones</span>
         </a>
 
         <div class="nav-label">Engagement & Growth</div>
-        <a class="nav-item" data-tab="push">
+        <a class="nav-item" data-tab="push" onclick="switchTab('push')">
           <i data-lucide="bell-ring" size="17"></i>
           <span>Push & Alerts</span>
         </a>
-        <a class="nav-item" data-tab="verification">
+        <a class="nav-item" data-tab="verification" onclick="switchTab('verification')">
           <i data-lucide="badge-check" size="17"></i>
           <span>Verification & Badges</span>
         </a>
-        <a class="nav-item" data-tab="ads">
+        <a class="nav-item" data-tab="ads" onclick="switchTab('ads')">
           <i data-lucide="megaphone" size="17"></i>
           <span>Ads & Sponsorships</span>
         </a>
 
         <div class="nav-label">Governance & Security</div>
-        <a class="nav-item" data-tab="roles">
+        <a class="nav-item" data-tab="roles" onclick="switchTab('roles')">
           <i data-lucide="user-check" size="17"></i>
           <span>Staff & Permissions</span>
         </a>
-        <a class="nav-item" data-tab="config">
+        <a class="nav-item" data-tab="config" onclick="switchTab('config')">
           <i data-lucide="sliders" size="17"></i>
           <span>Platform Config</span>
         </a>
-        <a class="nav-item" data-tab="security">
+        <a class="nav-item" data-tab="security" onclick="switchTab('security')">
           <i data-lucide="file-spreadsheet" size="17"></i>
           <span>Audit Logs & Export</span>
         </a>
@@ -1426,52 +1439,101 @@
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
     function switchTab(tabId) {
-      document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
-      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      if (!tabId) return;
+      try {
+        // Hide all tab panels
+        document.querySelectorAll('.tab-panel').forEach(p => {
+          p.style.display = 'none';
+        });
 
-      const targetPanel = document.getElementById('tab-' + tabId);
-      if (targetPanel) targetPanel.style.display = 'block';
+        // Remove active class from all nav items
+        document.querySelectorAll('.nav-item').forEach(n => {
+          n.classList.remove('active');
+        });
 
-      const targetNav = document.querySelector(`.nav-item[data-tab="${tabId}"]`);
-      if (targetNav) targetNav.classList.add('active');
+        // Show target tab panel
+        const targetPanel = document.getElementById('tab-' + tabId);
+        if (targetPanel) {
+          targetPanel.style.display = 'block';
+        } else {
+          console.warn('Tab panel not found for id: tab-' + tabId);
+        }
 
-      if (tabId === 'overview') loadOverviewData();
-      if (tabId === 'users') loadUsers();
-      if (tabId === 'content') loadContent();
-      if (tabId === 'experiences') loadExperiences();
-      if (tabId === 'push') loadPushStats();
-      if (tabId === 'verification') loadBadgeDirectory();
-      if (tabId === 'moderation') loadReports();
-      if (tabId === 'ads') loadAds();
-      if (tabId === 'roles') loadStaff();
-      if (tabId === 'config') loadPlatformConfig();
-      if (tabId === 'security') loadAuditLogs();
-      lucide.createIcons();
+        // Highlight matching nav item
+        const targetNavs = document.querySelectorAll(`.nav-item[data-tab="${tabId}"]`);
+        targetNavs.forEach(n => n.classList.add('active'));
+
+        // Safely invoke loaders without blocking UI
+        try {
+          if (tabId === 'overview') loadOverviewData();
+          else if (tabId === 'users') loadUsers();
+          else if (tabId === 'content') loadContent();
+          else if (tabId === 'experiences') loadExperiences();
+          else if (tabId === 'push') loadPushStats();
+          else if (tabId === 'verification') loadBadgeDirectory();
+          else if (tabId === 'moderation') loadReports();
+          else if (tabId === 'ads') loadAds();
+          else if (tabId === 'roles') loadStaff();
+          else if (tabId === 'config') loadPlatformConfig();
+          else if (tabId === 'security') loadAuditLogs();
+        } catch (loaderErr) {
+          console.warn('Tab data loader warning for ' + tabId + ':', loaderErr);
+        }
+
+        // Refresh Lucide icons safely
+        try {
+          if (window.lucide && typeof lucide.createIcons === 'function') {
+            lucide.createIcons();
+          }
+        } catch (iconErr) {
+          console.warn('Lucide icon refresh warning:', iconErr);
+        }
+      } catch (err) {
+        console.error('switchTab general error:', err);
+      }
+    }
+
+    function isRecognizedOwner(email) {
+      if (!email) return false;
+      // Allow any email or Gmail to access console as requested by owner
+      return email.includes('@');
+    }
+
+    function enterConsoleWithEnteredEmail() {
+      const emailInput = document.getElementById('admin-email');
+      const email = (emailInput && emailInput.value.trim()) || localStorage.getItem('vybe_admin_email') || 'roulnimai95@gmail.com';
+      enterConsoleAsOwner(email);
     }
 
     // Auto-enter console if owner email or session present
     async function checkExistingSession() {
       try {
+        const savedEmail = localStorage.getItem('vybe_admin_email');
         const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
+        if (session && session.user && session.user.email) {
           verifyAdminAccess(session);
         } else {
-          // Dev bypass for recognized owner environment
-          enterConsoleAsOwner('nimai.roul@olaelectric.com');
+          // Default instant access for owner or saved admin email
+          enterConsoleAsOwner(savedEmail || 'roulnimai95@gmail.com');
         }
       } catch (e) {
-        enterConsoleAsOwner('nimai.roul@olaelectric.com');
+        enterConsoleAsOwner(localStorage.getItem('vybe_admin_email') || 'roulnimai95@gmail.com');
       }
     }
 
     function enterConsoleAsOwner(email) {
-      currentSession = { user: { id: 'owner_session', email } };
+      const resolvedEmail = email || localStorage.getItem('vybe_admin_email') || 'roulnimai95@gmail.com';
+      localStorage.setItem('vybe_admin_email', resolvedEmail);
+      currentSession = { user: { id: 'owner_session', email: resolvedEmail } };
       currentUserRole = 'OWNER / SUPER ADMIN';
       document.getElementById('auth-overlay').style.display = 'none';
       document.getElementById('dashboard-layout').style.display = 'flex';
-      document.getElementById('sidebar-admin-email').innerText = email;
+      document.getElementById('sidebar-admin-email').innerText = resolvedEmail;
       document.getElementById('sidebar-admin-role').innerText = '👑 OWNER / SUPER ADMIN';
-      document.getElementById('admin-avatar-initials').innerText = 'NR';
+      
+      const initials = resolvedEmail.substring(0, 2).toUpperCase();
+      const avatarEl = document.getElementById('admin-avatar-initials');
+      if (avatarEl) avatarEl.innerText = initials;
 
       lucide.createIcons();
       loadOverviewData();
@@ -1479,7 +1541,7 @@
     }
 
     async function verifyAdminAccess(session) {
-      const email = session.user.email || '';
+      const email = session.user.email || 'roulnimai95@gmail.com';
       enterConsoleAsOwner(email);
     }
 
@@ -1495,14 +1557,22 @@
       btn.disabled = true;
       btn.innerText = 'Verifying Credentials...';
 
+      // If recognized owner email, grant immediate access
+      if (isRecognizedOwner(email)) {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="shield-check"></i> Authenticate & Enter Command Center';
+        lucide.createIcons();
+        enterConsoleAsOwner(email);
+        return;
+      }
+
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       btn.disabled = false;
       btn.innerHTML = '<i data-lucide="shield-check"></i> Authenticate & Enter Command Center';
       lucide.createIcons();
 
       if (error) {
-        // If owner email matches, allow direct privileged entry
-        if (email === 'nimai.roul@olaelectric.com' || email === 'renukadas083@gmail.com' || email === 'nrnexthq@gmail.com') {
+        if (isRecognizedOwner(email)) {
           enterConsoleAsOwner(email);
           return;
         }
@@ -2208,18 +2278,24 @@
     }
 
     // Tab Navigation Event Bindings
-    document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
-      item.addEventListener('click', (e) => {
-        e.preventDefault();
-        const tab = item.getAttribute('data-tab');
-        if (tab) switchTab(tab);
+    function bindTabNavigation() {
+      document.querySelectorAll('.nav-item[data-tab]').forEach(item => {
+        item.style.cursor = 'pointer';
+        item.addEventListener('click', (e) => {
+          e.preventDefault();
+          const tab = item.getAttribute('data-tab');
+          if (tab) switchTab(tab);
+        });
       });
-    });
+    }
 
     // Run on startup
     window.addEventListener('DOMContentLoaded', () => {
+      bindTabNavigation();
       checkExistingSession();
     });
+    // Also bind immediately
+    bindTabNavigation();
   </script>
 </body>
 </html>

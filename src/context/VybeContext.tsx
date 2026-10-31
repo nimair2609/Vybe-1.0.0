@@ -15,6 +15,14 @@ import {
   DEFAULT_GITHUB_REPO, INSTALLED_VERSION, fetchGitHubUpdates, 
   cleanRepoSlug 
 } from '../services/githubUpdater';
+import {
+  fetchLiveProfiles,
+  fetchLivePosts,
+  fetchLiveStories,
+  createLivePost,
+  createLiveStory,
+  submitLiveComment
+} from '../services/supabaseService';
 
 export type MainTab = 'FEED' | 'VYBES' | 'MOOD_ZONES' | 'EXPLORE' | 'INBOX' | 'CROSSED_PATHS' | 'COMMUNITY' | 'PROFILE';
 
@@ -151,13 +159,18 @@ interface VybeContextType {
   resetGithubRepo: () => void;
   inAppNotificationBanner: string | null;
   dismissBanner: () => void;
+
+  // Real Database Status & Live Sync
+  isDbConnected: boolean;
+  refreshFromDatabase: () => Promise<void>;
 }
 
 const VybeContext = createContext<VybeContextType | undefined>(undefined);
 
 export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User>(CURRENT_USER);
-  const [allUsers] = useState<User[]>(SEED_USERS);
+  const [allUsers, setAllUsers] = useState<User[]>(SEED_USERS);
+  const [isDbConnected, setIsDbConnected] = useState<boolean>(false);
   const [selectedTab, setSelectedTab] = useState<MainTab>('FEED');
   const [activeModal, setActiveModal] = useState<ModalScreen | null>(null);
   const [selectedMoodFilter, setSelectedMoodFilter] = useState<MoodType | 'ALL'>('ALL');
@@ -352,6 +365,56 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     checkForUpdates();
   }, []);
 
+  // Synchronize state with real Supabase database
+  const syncDatabase = async () => {
+    try {
+      const liveProfiles = await fetchLiveProfiles();
+      const userMap = new Map<string, User>();
+      if (liveProfiles && liveProfiles.length > 0) {
+        liveProfiles.forEach(u => userMap.set(u.id, u));
+        setAllUsers(liveProfiles);
+
+        // Pick user matching recognized admin or first profile
+        const savedEmail = (localStorage.getItem('vybe_admin_email') || '').toLowerCase();
+        const preferredUser = liveProfiles.find(u => 
+          (savedEmail && (u.username.toLowerCase().includes('nimai') || u.displayName.toLowerCase().includes('nimai'))) ||
+          u.username === 'test_user' ||
+          u.username === 'nimair' ||
+          u.id === '47650a36-4842-4ce7-a3c6-e706926a71d3'
+        );
+        if (preferredUser) {
+          setCurrentUser(preferredUser);
+        } else if (liveProfiles[0]) {
+          setCurrentUser(liveProfiles[0]);
+        }
+      }
+
+      const livePosts = await fetchLivePosts(userMap);
+      if (livePosts && livePosts.length > 0) {
+        setPosts(livePosts);
+        const liveReels = livePosts.filter(p => p.isVybesReel || p.mediaType === 'REEL');
+        if (liveReels.length > 0) {
+          setReels(liveReels);
+        }
+      }
+
+      const liveStories = await fetchLiveStories(userMap);
+      if (liveStories && liveStories.length > 0) {
+        setStories(liveStories);
+      }
+
+      setIsDbConnected(true);
+    } catch (err) {
+      console.warn('[VybeContext] Supabase live sync notice:', err);
+    }
+  };
+
+  useEffect(() => {
+    syncDatabase();
+    const timer = setInterval(syncDatabase, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Audio Handler
   const togglePlayAudio = (trackTitle: string, previewUrl?: string) => {
     if (isPlayingAudio && currentAudioTrack === trackTitle) {
@@ -494,6 +557,11 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       return p;
     }));
+
+    // Persist live comment to Supabase
+    submitLiveComment(postId, currentUser.id, text.trim()).catch(err => {
+      console.warn('[Supabase] Comment write notice:', err);
+    });
   };
 
   const incrementPostShareCount = (postId: string) => {
@@ -543,6 +611,22 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     setPosts(prev => [newPost, ...prev]);
     closeModal();
+
+    // Persist live post to Supabase database
+    createLivePost({
+      authorId: currentUser.id,
+      caption: newPost.caption,
+      mediaUrls: newPost.mediaUrls,
+      mediaType: newPost.mediaType,
+      isVybesReel: newPost.isVybesReel,
+      moodZone: newPost.moodZone
+    }).then(created => {
+      if (created && created.id) {
+        setPosts(prev => prev.map(p => p.id === newPost.id ? { ...p, id: created.id } : p));
+      }
+    }).catch(err => {
+      console.warn('[Supabase] Post creation persistence notice:', err);
+    });
   };
 
   // Story Actions
@@ -596,6 +680,16 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setStories(prev => [newStory, ...prev]);
     setInAppNotificationBanner('Story published! Visible for 24 hours.');
     closeModal();
+
+    // Persist live story to Supabase
+    createLiveStory({
+      authorId: currentUser.id,
+      mediaUrl: newStory.mediaUrl,
+      caption: newStory.caption,
+      mediaType: newStory.mediaType
+    }).catch(err => {
+      console.warn('[Supabase] Story creation persistence notice:', err);
+    });
   };
 
   // Crossed Paths
@@ -885,7 +979,9 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       checkForUpdates,
       resetGithubRepo,
       inAppNotificationBanner,
-      dismissBanner
+      dismissBanner,
+      isDbConnected,
+      refreshFromDatabase: syncDatabase
     }}>
       {children}
     </VybeContext.Provider>

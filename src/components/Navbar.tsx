@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Sparkles, Bell, Shield, Volume2, VolumeX, 
-  ChevronDown, Moon, Sun, RefreshCw, Feather
+  ChevronDown, Moon, Sun, RefreshCw, Feather, Database
 } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
 import { MOOD_DEFINITIONS, MoodType } from '../types';
@@ -10,9 +10,11 @@ export const Navbar: React.FC = () => {
   const { 
     currentUser, setCurrentUserMood, openModal, 
     hasAvailableUpdate, isPlayingAudio, currentAudioTrack, 
-    togglePlayAudio, themeMode, toggleThemeMode
+    togglePlayAudio, themeMode, toggleThemeMode,
+    isDbConnected, refreshFromDatabase
   } = useVybe();
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [showMoodMenu, setShowMoodMenu] = useState(false);
 
   const currentMoodConfig = currentUser.currentMood ? MOOD_DEFINITIONS[currentUser.currentMood] : null;
@@ -91,6 +93,25 @@ export const Navbar: React.FC = () => {
 
         {/* Right Action Icons */}
         <div className="flex items-center gap-2">
+
+          {/* Real Supabase Database Status */}
+          <button
+            onClick={async () => {
+              setIsRefreshing(true);
+              await refreshFromDatabase();
+              setTimeout(() => setIsRefreshing(false), 800);
+            }}
+            title={isDbConnected ? "Connected to Supabase live database. Click to sync." : "Connecting to database..."}
+            className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border text-xs font-semibold transition-all ${
+              isDbConnected 
+                ? 'bg-[#22C55E]/10 border-[#22C55E]/40 text-[#22C55E] hover:bg-[#22C55E]/20' 
+                : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${isDbConnected ? 'bg-[#22C55E]' : 'bg-amber-400'} ${isRefreshing ? 'animate-ping' : ''}`} />
+            <span>{isRefreshing ? 'Syncing...' : (isDbConnected ? 'Live Supabase' : 'Connecting')}</span>
+            <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+          </button>
           
           {/* Audio Player Button */}
           {currentAudioTrack && (

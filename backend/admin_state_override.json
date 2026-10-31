@@ -1,0 +1,131 @@
+{
+  "badges": {},
+  "roles": {},
+  "statuses": {},
+  "warnings": {},
+  "restrictions": {},
+  "contentModeration": {},
+  "reports": {},
+  "featureFlags": {
+    "unload": true,
+    "unfiltered": true,
+    "what_next": true,
+    "time_capsule": true,
+    "double_take": true,
+    "crossed_paths": true,
+    "live_stream": true,
+    "voice_calls": true
+  },
+  "platformConfig": {
+    "maintenanceMode": false,
+    "maintenanceMessage": "VYBE is undergoing scheduled performance upgrades. We'll be back shortly!",
+    "announcementBanner": "Welcome to VYBE 3.0 — Six intentional ways to connect.",
+    "announcementActive": false,
+    "announcementLink": "",
+    "communityGuidelinesUrl": "https://vybe.app/community-guidelines"
+  },
+  "ads": [
+    {
+      "id": "ad_launch_01",
+      "name": "VYBE 2027 Genesis Showcase",
+      "brand": "NR Next Originals",
+      "placement": "FEED_SPONSORED_POST",
+      "headline": "Experience the next-generation creator soundscape & live resonance.",
+      "mediaUrl": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80",
+      "ctaText": "Explore Sounds",
+      "ctaUrl": "https://vybe.nrnext.com",
+      "impressions": 48200,
+      "targetImpressions": 100000,
+      "budget": "₹25,000",
+      "status": "ACTIVE",
+      "createdAt": "2026-10-30T16:43:04.656Z"
+    },
+    {
+      "id": "ad_launch_02",
+      "name": "Creator VIP Pass Enrollment",
+      "brand": "VYBE Studio Pro",
+      "placement": "REEL_SPONSORED_VIDEO",
+      "headline": "Get official verification, 4K reel uploads, and priority audio tools.",
+      "mediaUrl": "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&q=80",
+      "ctaText": "Claim Creator Pass",
+      "ctaUrl": "https://vybe.nrnext.com/vip",
+      "impressions": 19400,
+      "targetImpressions": 50000,
+      "budget": "₹15,000",
+      "status": "ACTIVE",
+      "createdAt": "2026-10-30T16:43:04.656Z"
+    }
+  ],
+  "customDilemmas": [],
+  "activeUnloadRooms": [
+    {
+      "id": "room_genesis_01",
+      "title": "Late Night Creative Vent & Lo-Fi Lounge",
+      "topicTag": "CreativeBurnout",
+      "hostName": "Rohan",
+      "hostId": "u_rohan",
+      "listenersCount": 14,
+      "isActive": true,
+      "startedAt": "2026-10-30T16:08:04.656Z",
+      "zeroRecordingGuaranteed": true
+    },
+    {
+      "id": "room_genesis_02",
+      "title": "Silent Co-Working & Deep Focus Sanctuary",
+      "topicTag": "FocusZone",
+      "hostName": "Priya",
+      "hostId": "u_priya",
+      "listenersCount": 22,
+      "isActive": true,
+      "startedAt": "2026-10-30T15:28:04.656Z",
+      "zeroRecordingGuaranteed": true
+    }
+  ],
+  "activePolls": [
+    {
+      "id": "poll_01",
+      "title": "Will AI-generated music ever produce a genuine Billboard #1 global hit?",
+      "category": "Tech & Sound",
+      "closingTime": "In 18 hours",
+      "totalVotes": 3420,
+      "options": [
+        {
+          "id": 1,
+          "text": "Yes, definitely",
+          "votes": 2180,
+          "percentage": 64
+        },
+        {
+          "id": 2,
+          "text": "No, human soul only",
+          "votes": 1240,
+          "percentage": 36
+        }
+      ],
+      "status": "ACTIVE"
+    },
+    {
+      "id": "poll_02",
+      "title": "Is ephemeral social media better for mental health than permanent feeds?",
+      "category": "Culture Pulse",
+      "closingTime": "In 6 hours",
+      "totalVotes": 5190,
+      "options": [
+        {
+          "id": 1,
+          "text": "100% ephemeral",
+          "votes": 4200,
+          "percentage": 81
+        },
+        {
+          "id": 2,
+          "text": "Prefer permanent memories",
+          "votes": 990,
+          "percentage": 19
+        }
+      ],
+      "status": "ACTIVE"
+    }
+  ],
+  "auditLogs": []
+}

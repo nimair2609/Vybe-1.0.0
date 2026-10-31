@@ -39,13 +39,24 @@ export const ReelsView: React.FC = () => {
   return (
     <div className="relative w-full h-[calc(100vh-120px)] max-w-md mx-auto bg-black rounded-3xl overflow-hidden shadow-2xl border border-[#262E4A]/60 my-2">
       
-      {/* Reel Media / Background simulated player */}
+      {/* Reel Media / Background player */}
       <div className="absolute inset-0">
-        <img 
-          src={currentReel.mediaUrls[0] || 'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=800&q=80'} 
-          alt="Reel content" 
-          className="w-full h-full object-cover"
-        />
+        {(currentReel.mediaUrls[0] && (currentReel.mediaUrls[0].includes('.mp4') || currentReel.mediaUrls[0].includes('.webm') || currentReel.mediaType === 'VIDEO' || currentReel.mediaType === 'REEL')) ? (
+          <video 
+            src={currentReel.mediaUrls[0]} 
+            autoPlay 
+            loop 
+            playsInline 
+            muted={isMuted} 
+            className="w-full h-full object-cover" 
+          />
+        ) : (
+          <img 
+            src={currentReel.mediaUrls[0] || 'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=800&q=80'} 
+            alt="Reel content" 
+            className="w-full h-full object-cover"
+          />
+        )}
         <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/90 pointer-events-none" />
       </div>
 
