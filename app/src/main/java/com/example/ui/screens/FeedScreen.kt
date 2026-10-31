@@ -76,7 +76,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
   val coroutineScope = rememberCoroutineScope()
 
   var feedTab by remember { mutableStateOf("For You") }
-  val feedTabs = listOf("For You", "Following", "Discover")
+  val feedTabs = listOf("For You", "LINKED", "Discover")
 
   var isRefreshing by remember { mutableStateOf(false) }
   var showStoryCreateSheet by remember { mutableStateOf(false) }
@@ -87,7 +87,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
   val filteredPosts = remember(posts, selectedMood, feedTab, followingUserIds, currentUser?.id) {
     var list = posts.filter { it.belongsToMainFeed() && it.matchesMoodFilter(selectedMood) }
     when (feedTab) {
-      "Following" -> list = list.filter { followingUserIds.contains(it.author.id) || it.author.id == currentUser?.id }
+      "LINKED", "Following" -> list = list.filter { followingUserIds.contains(it.author.id) || it.author.id == currentUser?.id }
       "Discover" -> list = list.sortedByDescending { it.likesCount + it.commentsCount + it.viewsCount }
     }
     list
@@ -556,7 +556,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
                   Spacer(modifier = Modifier.height(14.dp))
                   Text(
                     text = when {
-                      feedTab == "Following" -> "No posts from followed accounts yet"
+                      feedTab == "LINKED" || feedTab == "Following" -> "No posts from linked creators yet"
                       selectedMood != null -> "No posts in ${selectedMood?.title} yet"
                       else -> "Welcome to VYBE"
                     },
@@ -567,7 +567,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
                   Spacer(modifier = Modifier.height(6.dp))
                   Text(
                     text = when {
-                      feedTab == "Following" -> "Follow creators in Explore to see their latest posts and stories here."
+                      feedTab == "LINKED" || feedTab == "Following" -> "LINK UP with creators in Explore to see their latest posts and stories here."
                       selectedMood != null -> "Be the first to share a moment in the ${selectedMood?.title} zone."
                       else -> "Your feed is ready. Share a post, video, or story with the community."
                     },

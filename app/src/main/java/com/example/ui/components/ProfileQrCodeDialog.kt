@@ -176,7 +176,7 @@ fun ProfileQrCodeDialog(
           Spacer(modifier = Modifier.height(12.dp))
 
           Text(
-            text = "Scan with any camera or QR scanner to view and follow @${user.username} on VYBE",
+            text = "Scan with any camera or QR scanner to view and LINK UP with @${user.username} on VYBE",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,

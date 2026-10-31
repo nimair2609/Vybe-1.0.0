@@ -251,27 +251,29 @@ fun VerificationBadge(
 }
 
 /**
- * Filled VYBE Brand Follow Button for Feed, Reels, Search, and User Profiles.
+ * Official VYBE Brand LINK UP Button for Feed, Reels, Search, and User Profiles.
  * Readable and high-contrast in both Dark and Light themes with distinct states:
- * - Follow / Follow Back: Filled VYBE brand blue-purple gradient with crisp white text
- * - Following: Neutral secondary container surface with outline border
- * - Requested: Amber-accented pending request surface with outline border
+ * - Not connected: Filled VYBE brand blue-purple gradient with crisp white "+ LINK UP" text
+ * - Linked: Neutral container surface with crisp outline and checkmark "LINKED", offering UNLINK confirmation
+ * - Requested: Amber-accented pending request surface with outline border "LINKUP Requested"
  */
 @Composable
 fun VybeFollowButton(
   isFollowing: Boolean,
   isFollowRequested: Boolean = false,
   followsMe: Boolean = false,
+  targetUsername: String? = null,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
   compact: Boolean = false,
   testTag: String? = null
 ) {
+  var showUnlinkConfirm by remember { mutableStateOf(false) }
+
   val label = when {
-    isFollowing -> "Following"
-    isFollowRequested -> "Requested"
-    followsMe -> "Follow Back"
-    else -> "Follow"
+    isFollowing -> "LINKED"
+    isFollowRequested -> "LINKUP Requested"
+    else -> "+ LINK UP"
   }
   val shape = RoundedCornerShape(if (compact) 14.dp else 12.dp)
 
@@ -284,20 +286,28 @@ fun VybeFollowButton(
         modifier = modifier
           .minimumInteractiveComponentSize()
           .clip(shape)
-          .clickable { onClick() }
+          .clickable { showUnlinkConfirm = true }
           .testTag(testTag ?: "follow_button_following")
       ) {
-        Box(
-          contentAlignment = Alignment.Center,
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.Center,
           modifier = Modifier.padding(
-            horizontal = if (compact) 14.dp else 20.dp,
-            vertical = if (compact) 7.dp else 11.dp
+            horizontal = if (compact) 12.dp else 18.dp,
+            vertical = if (compact) 6.dp else 10.dp
           )
         ) {
+          Icon(
+            imageVector = Icons.Default.Check,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.size(if (compact) 13.dp else 15.dp)
+          )
+          Spacer(modifier = Modifier.width(4.dp))
           Text(
             text = label,
-            fontSize = if (compact) 12.sp else 14.sp,
-            fontWeight = FontWeight.SemiBold,
+            fontSize = if (compact) 12.sp else 13.sp,
+            fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSecondaryContainer,
             maxLines = 1
           )
@@ -318,13 +328,13 @@ fun VybeFollowButton(
         Box(
           contentAlignment = Alignment.Center,
           modifier = Modifier.padding(
-            horizontal = if (compact) 14.dp else 20.dp,
-            vertical = if (compact) 7.dp else 11.dp
+            horizontal = if (compact) 12.dp else 16.dp,
+            vertical = if (compact) 6.dp else 10.dp
           )
         ) {
           Text(
             text = label,
-            fontSize = if (compact) 12.sp else 14.sp,
+            fontSize = if (compact) 11.sp else 13.sp,
             fontWeight = FontWeight.SemiBold,
             color = Color(0xFFD97706),
             maxLines = 1
@@ -359,6 +369,33 @@ fun VybeFollowButton(
         )
       }
     }
+  }
+
+  if (showUnlinkConfirm) {
+    AlertDialog(
+      onDismissRequest = { showUnlinkConfirm = false },
+      title = { Text("UNLINK", fontWeight = FontWeight.Bold) },
+      text = {
+        val target = if (!targetUsername.isNullOrBlank()) "@$targetUsername" else "this user"
+        Text("Are you sure you want to UNLINK $target? You will no longer see their posts and stories in your LINKED feed.")
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            showUnlinkConfirm = false
+            onClick()
+          },
+          colors = ButtonDefaults.buttonColors(containerColor = VybeDanger)
+        ) {
+          Text("UNLINK", color = Color.White, fontWeight = FontWeight.Bold)
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showUnlinkConfirm = false }) {
+          Text("Cancel")
+        }
+      }
+    )
   }
 }
 

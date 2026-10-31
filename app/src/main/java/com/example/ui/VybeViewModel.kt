@@ -919,6 +919,7 @@ class VybeViewModel : ViewModel() {
   fun setMessagePrivacy(privacy: String) = repository.setMessagePrivacy(privacy)
   fun toggleFollowUser(targetUserId: String): Boolean = repository.toggleFollowUser(targetUserId)
   fun respondToFollowRequest(requesterUserId: String, approve: Boolean) = repository.respondToFollowRequest(requesterUserId, approve)
+  fun removeFollowerUser(followerUserId: String): Boolean = repository.removeFollowerUser(followerUserId)
 
   // --- VYBE Matches ---
   fun addVybeMatch(user: User) = repository.addVybeMatch(user)

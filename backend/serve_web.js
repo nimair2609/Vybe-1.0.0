@@ -1549,7 +1549,7 @@ const server = http.createServer(async (req, res) => {
 
     const appDeepLink = `vybe://profile/${encodeURIComponent(profileRow.id)}?u=${encodeURIComponent(profileRow.username || '')}`;
     const isPrivate = Boolean(profileRow.is_private_account);
-    const bioText = isPrivate ? 'This account is private. Follow in the VYBE app to see their posts and reels.' : (profileRow.bio || 'Official member on VYBE.');
+    const bioText = isPrivate ? 'This account is private. LINK UP in the VYBE app to see their posts and reels.' : (profileRow.bio || 'Official member on VYBE.');
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(profileRow.display_name || profileRow.username)} (@${esc(profileRow.username)}) • VYBE</title>
     <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070913;color:#fff;font-family:system-ui,-apple-system,sans-serif;padding:24px}.card{max-width:420px;width:100%;background:#111729;border:1px solid #263252;border-radius:24px;padding:32px;text-align:center}.btn{display:inline-block;margin-top:20px;padding:13px 24px;border-radius:14px;background:linear-gradient(90deg,#2563eb,#7c3aed);color:#fff;text-decoration:none;font-weight:700;font-size:15px}</style></head>
@@ -1557,7 +1557,7 @@ const server = http.createServer(async (req, res) => {
     <h1 style="font-size:22px;margin:0">${esc(profileRow.display_name || profileRow.username)}</h1>
     <div style="color:#94a3b8;font-size:14px;margin-top:4px">@${esc(profileRow.username)}${isPrivate ? ' 🔒 Private' : ''}</div>
     <p style="color:#cbd5e1;font-size:14px;line-height:1.5;margin:16px 0">${esc(bioText)}</p>
-    <div style="color:#94a3b8;font-size:12px">${Number(profileRow.followers_count || 0)} Followers • ${Number(profileRow.posts_count || 0)} Posts</div>
+    <div style="color:#94a3b8;font-size:12px">${Number(profileRow.followers_count || 0)} LINKUPS • ${Number(profileRow.posts_count || 0)} Posts</div>
     <a class="btn" href="${esc(appDeepLink)}">Open Profile in VYBE App</a></div></body></html>`);
     return;
   }

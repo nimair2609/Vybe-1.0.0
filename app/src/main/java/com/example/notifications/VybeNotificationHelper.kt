@@ -140,7 +140,7 @@ object VybeNotificationHelper {
       val primaryChannel = buildHighChannel(
         id = CHANNEL_ID_PRIMARY,
         name = "VYBE Direct & Activity",
-        desc = "Instagram-style direct messages, likes, comments, follows, and mentions",
+        desc = "Direct messages, finger hearts, comments, LINKUPS, and mentions",
         color = 0xFF8A2BE2.toInt()
       )
 
@@ -865,14 +865,14 @@ object VybeNotificationHelper {
         Triple(who, body, "Comments")
       }
       "FOLLOW" -> {
-        val who = actorDisplayName.ifBlank { handle }.ifBlank { "New Follower" }
-        val body = if (handle.startsWith("@")) "$handle started following you." else rawBody
-        Triple(who, body, "Followers")
+        val who = actorDisplayName.ifBlank { handle }.ifBlank { "New LINKUP" }
+        val body = if (handle.startsWith("@")) "$handle sent you a new LINKUP." else "Someone sent you a new LINKUP."
+        Triple(who, body, "LINKUPS")
       }
       "FOLLOW_REQUEST" -> {
-        val who = actorDisplayName.ifBlank { handle }.ifBlank { "Follow Request" }
-        val body = if (handle.startsWith("@")) "$handle requested to follow you." else rawBody
-        Triple(who, body, "Follow Request")
+        val who = actorDisplayName.ifBlank { handle }.ifBlank { "LINKUP Request" }
+        val body = if (handle.startsWith("@")) "$handle sent you a LINKUP Request." else "Someone sent you a LINKUP Request."
+        Triple(who, body, "LINKUP Request")
       }
       "INCOMING_CALL", "CALL" -> {
         Triple(rawTitle.ifBlank { "Incoming VYBE Call" }, rawBody, "Live Call")

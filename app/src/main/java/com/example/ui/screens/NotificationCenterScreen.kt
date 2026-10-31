@@ -187,7 +187,7 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-              text = "Likes, comments, follows, and message alerts from real interactions will appear here.",
+              text = "Likes, comments, LINKUPS, and message alerts from real interactions will appear here.",
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
               textAlign = TextAlign.Center
@@ -203,7 +203,7 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
           if (pendingFollowRequesters.isNotEmpty()) {
             item {
               Text(
-                text = "Follow Requests (${pendingFollowRequesters.size})",
+                text = "LINKUP Requests (${pendingFollowRequesters.size})",
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
                 color = VybeViolet,
@@ -238,7 +238,7 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
                   ) {
                     Text(requester.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     Text(
-                      "@${requester.username} requested to follow you",
+                      "@${requester.username} sent you a LINKUP Request",
                       fontSize = 11.sp,
                       color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -251,7 +251,7 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.heightIn(min = 38.dp)
                   ) {
-                    Text("Approve", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("Accept LINKUP", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
                   }
                   Spacer(modifier = Modifier.width(6.dp))
                   OutlinedButton(
@@ -397,15 +397,30 @@ fun NotificationCard(
   }
 
   val actionDescription = remember(item.type, item.message, resolvedIsReel) {
-    if (item.type == NotificationType.LIKE) {
-      val contentKind = if (resolvedIsReel) "Reel" else "post"
-      if (item.message.contains("Reel", ignoreCase = true) || item.message.contains("post", ignoreCase = true) || item.message.contains("story", ignoreCase = true)) {
-        item.message
-      } else {
-        "Sent a Finger Heart 🫰 on your $contentKind"
+    when (item.type) {
+      NotificationType.LIKE -> {
+        val contentKind = if (resolvedIsReel) "Reel" else "post"
+        if (item.message.contains("Reel", ignoreCase = true) || item.message.contains("post", ignoreCase = true) || item.message.contains("story", ignoreCase = true)) {
+          item.message
+        } else {
+          "Sent a Finger Heart 🫰 on your $contentKind"
+        }
       }
-    } else {
-      item.message
+      NotificationType.FOLLOW -> {
+        if (item.message.contains("request", ignoreCase = true)) {
+          "Sent you a LINKUP Request"
+        } else if (item.message.contains("accept", ignoreCase = true)) {
+          "Accepted your LINKUP"
+        } else {
+          "Sent you a new LINKUP"
+        }
+      }
+      else -> {
+        item.message
+          .replace("started following you", "sent you a new LINKUP")
+          .replace("requested to follow you", "sent you a LINKUP Request")
+          .replace("accepted your follow request", "accepted your LINKUP")
+      }
     }
   }
 

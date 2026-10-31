@@ -987,7 +987,7 @@ fun StoryCreateDialog(
                 Column {
                   Text("Your Story", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                   Text(
-                    text = if (currentUser?.isPrivate == true) "Approved followers" else "Followers & public",
+                    text = if (currentUser?.isPrivate == true) "Approved LINKUPS" else "LINKUPS & public",
                     fontSize = 10.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                   )

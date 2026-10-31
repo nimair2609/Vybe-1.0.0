@@ -667,7 +667,7 @@ fun UserProfileScreen(
                 shape = RoundedCornerShape(6.dp)
               ) {
                 Text(
-                  text = "Follows you",
+                  text = "Linked with you",
                   fontSize = 10.sp,
                   fontWeight = FontWeight.Medium,
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -818,29 +818,29 @@ fun UserProfileScreen(
               horizontalAlignment = Alignment.CenterHorizontally,
               modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
-                .clickable(enabled = canViewContent) { showFollowListModal = "Followers" }
+                .clickable(enabled = canViewContent) { showFollowListModal = "LINKUPS" }
                 .padding(horizontal = 12.dp, vertical = 4.dp)
                 .testTag("profile_followers_stat")
             ) {
               Text("$displayedFollowersCount", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-              Text("Followers", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              Text("LINKUPS", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Column(
               horizontalAlignment = Alignment.CenterHorizontally,
               modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
-                .clickable(enabled = canViewContent) { showFollowListModal = "Following" }
+                .clickable(enabled = canViewContent) { showFollowListModal = "LINKED" }
                 .padding(horizontal = 12.dp, vertical = 4.dp)
                 .testTag("profile_following_stat")
             ) {
               Text("$displayedFollowingCount", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-              Text("Following", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              Text("LINKED", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
           }
 
           Spacer(modifier = Modifier.height(16.dp))
 
-          // Incoming Follow Request Approval Banner
+          // Incoming LINKUP Request Approval Banner
           if (!isMe && hasIncomingRequestFromUser) {
             Card(
               colors = CardDefaults.cardColors(containerColor = VybeViolet.copy(alpha = 0.12f)),
@@ -853,7 +853,7 @@ fun UserProfileScreen(
             ) {
               Column(modifier = Modifier.padding(12.dp)) {
                 Text(
-                  text = "@${user.username} wants to follow you",
+                  text = "@${user.username} sent you a LINKUP Request",
                   fontWeight = FontWeight.Bold,
                   fontSize = 13.sp
                 )
@@ -871,7 +871,7 @@ fun UserProfileScreen(
                       .heightIn(min = 44.dp)
                       .testTag("approve_follow_request_button")
                   ) {
-                    Text("Approve", fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("Accept LINKUP", fontWeight = FontWeight.Bold, color = Color.White)
                   }
                   OutlinedButton(
                     onClick = { viewModel.respondToFollowRequest(user.id, approve = false) },
@@ -920,6 +920,7 @@ fun UserProfileScreen(
                     isFollowing = isFollowed,
                     isFollowRequested = isFollowRequested,
                     followsMe = followsMe,
+                    targetUsername = user.username,
                     onClick = { viewModel.toggleFollowUser(user.id) },
                     compact = false,
                     modifier = Modifier
@@ -1169,9 +1170,9 @@ fun UserProfileScreen(
               Spacer(modifier = Modifier.height(6.dp))
               Text(
                 text = if (isFollowRequested) {
-                  "Your follow request to @${user.username} is pending approval."
+                  "Your LINKUP request to @${user.username} is pending approval."
                 } else {
-                  "Follow @${user.username} to view their posts, reels, and stories."
+                  "LINK UP with @${user.username} to view their posts, reels, and stories."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1583,7 +1584,7 @@ fun UserProfileScreen(
               )
               Text(
                 text = if (editIsPrivate) {
-                  "Only approved followers can view your posts, reels, and stories."
+                  "Only approved LINKUPS can view your posts, reels, and stories."
                 } else {
                   "Anyone on VYBE can view your public posts, reels, and stories."
                 },
@@ -1672,18 +1673,23 @@ fun UserProfileScreen(
     )
   }
 
-  // Followers & Following List Dialog
+  // LINKUPS & LINKED List Dialog
   if (showFollowListModal != null && canViewContent) {
-    val title = showFollowListModal!!
-    val listUsers = remember(title, isMe, allUsers, followingUserIds, followerUserIds, currentUser, user) {
+    val modalType = showFollowListModal!!
+    val isLinkedTab = modalType.equals("LINKED", ignoreCase = true) || modalType.equals("Following", ignoreCase = true)
+    val dialogTitle = if (isLinkedTab) "LINKED" else "LINKUPS"
+
+    var userToRemoveFollower by remember { mutableStateOf<User?>(null) }
+
+    val listUsers = remember(dialogTitle, isMe, allUsers, followingUserIds, followerUserIds, currentUser, user) {
       if (isMe) {
-        if (title == "Following") {
+        if (isLinkedTab) {
           allUsers.filter { followingUserIds.contains(it.id) }
         } else {
           allUsers.filter { followerUserIds.contains(it.id) || it.followsMe }
         }
       } else {
-        if (title == "Followers") {
+        if (!isLinkedTab) {
           buildList {
             if (isFollowed && currentUser != null) add(currentUser!!)
           }
@@ -1697,7 +1703,7 @@ fun UserProfileScreen(
 
     AlertDialog(
       onDismissRequest = { showFollowListModal = null },
-      title = { Text(title, fontWeight = FontWeight.Bold) },
+      title = { Text(dialogTitle, fontWeight = FontWeight.Bold) },
       text = {
         if (listUsers.isEmpty()) {
           Box(
@@ -1707,7 +1713,7 @@ fun UserProfileScreen(
             contentAlignment = Alignment.Center
           ) {
             Text(
-              text = if (title == "Followers") "No followers to display yet." else "Not following anyone yet.",
+              text = if (!isLinkedTab) "No LINKUPS to display yet." else "No active LINKED connections yet.",
               color = MaterialTheme.colorScheme.onSurfaceVariant,
               fontSize = 13.sp,
               textAlign = TextAlign.Center
@@ -1717,7 +1723,7 @@ fun UserProfileScreen(
           LazyColumn(
             modifier = Modifier
               .fillMaxWidth()
-              .heightIn(max = 320.dp)
+              .heightIn(max = 340.dp)
           ) {
             items(listUsers, key = { it.id }) { u ->
               Row(
@@ -1741,15 +1747,34 @@ fun UserProfileScreen(
                   Text("@${u.username}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (u.id != currentUser?.id) {
-                  val isUFollowed = followingUserIds.contains(u.id)
-                  val isURequested = requestedFollowUserIds.contains(u.id) || u.isFollowRequestedByMe
-                  com.example.ui.components.VybeFollowButton(
-                    isFollowing = isUFollowed,
-                    isFollowRequested = isURequested,
-                    followsMe = u.followsMe,
-                    onClick = { viewModel.toggleFollowUser(u.id) },
-                    compact = true
-                  )
+                  if (isMe && !isLinkedTab) {
+                    OutlinedButton(
+                      onClick = { userToRemoveFollower = u },
+                      contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                      shape = RoundedCornerShape(10.dp),
+                      modifier = Modifier
+                        .heightIn(min = 34.dp)
+                        .testTag("remove_linkup_${u.id}")
+                    ) {
+                      Text(
+                        "Remove LINKUP",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.error
+                      )
+                    }
+                  } else {
+                    val isUFollowed = followingUserIds.contains(u.id)
+                    val isURequested = requestedFollowUserIds.contains(u.id) || u.isFollowRequestedByMe
+                    com.example.ui.components.VybeFollowButton(
+                      isFollowing = isUFollowed,
+                      isFollowRequested = isURequested,
+                      followsMe = u.followsMe,
+                      targetUsername = u.username,
+                      onClick = { viewModel.toggleFollowUser(u.id) },
+                      compact = true
+                    )
+                  }
                 }
               }
             }
@@ -1760,6 +1785,31 @@ fun UserProfileScreen(
         TextButton(onClick = { showFollowListModal = null }) { Text("Close") }
       }
     )
+
+    if (userToRemoveFollower != null) {
+      val target = userToRemoveFollower!!
+      AlertDialog(
+        onDismissRequest = { userToRemoveFollower = null },
+        title = { Text("Remove LINKUP?", fontWeight = FontWeight.Bold) },
+        text = {
+          Text("Are you sure you want to remove @${target.username} from your LINKUPS? VYBE won't tell them they were removed.")
+        },
+        confirmButton = {
+          Button(
+            onClick = {
+              viewModel.removeFollowerUser(target.id)
+              userToRemoveFollower = null
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = VybeDanger)
+          ) {
+            Text("Remove LINKUP", color = Color.White, fontWeight = FontWeight.Bold)
+          }
+        },
+        dismissButton = {
+          TextButton(onClick = { userToRemoveFollower = null }) { Text("Cancel") }
+        }
+      )
+    }
   }
 
   if (showQrDialog) {

@@ -187,7 +187,7 @@ fun CreatorStudioScreen(viewModel: VybeViewModel) {
             border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
           ) {
             Column(modifier = Modifier.padding(14.dp)) {
-              Text("Net Follower Gain", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              Text("Net LINKUP Gain", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
               Spacer(modifier = Modifier.height(4.dp))
               Text("+${stats.netFollowersGain30d}", fontWeight = FontWeight.Bold, fontSize = 20.sp)
               Text("Verified real users", fontSize = 10.sp, color = VybeCyan)

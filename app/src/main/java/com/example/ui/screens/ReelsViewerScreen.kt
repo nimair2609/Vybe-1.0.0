@@ -780,7 +780,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                     Column(modifier = Modifier.weight(1f)) {
                       Text(targetUser.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                       Text(
-                        text = if (canMessage) "@${targetUser.username}" else "Requires mutual follow to message",
+                        text = if (canMessage) "@${targetUser.username}" else "Requires mutual LINKUP to message",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                       )

@@ -282,11 +282,11 @@ fun PostCard(
               .testTag("follow_button_${post.id}")
           ) {
             Text(
-              text = if (isFollowing) "Following" else if (isFollowRequested) "Requested" else "Follow",
+              text = if (isFollowing) "LINKED" else if (isFollowRequested) "LINKUP Requested" else "LINK UP",
               fontSize = 12.sp,
               fontWeight = FontWeight.SemiBold,
               color = primaryText,
-              modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
             )
           }
           Spacer(modifier = Modifier.width(6.dp))

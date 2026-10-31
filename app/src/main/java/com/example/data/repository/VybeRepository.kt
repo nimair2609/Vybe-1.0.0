@@ -2436,7 +2436,7 @@ class VybeRepository private constructor() {
               actorId = me.id,
               type = "FOLLOW_REQUEST",
               title = "${me.displayName} (@${me.username})",
-              message = "@${me.username} requested to follow you.",
+              message = "@${me.username} sent you a LINKUP Request.",
               targetId = me.id,
               actorUsername = me.username,
               actorDisplayName = me.displayName,
@@ -2483,7 +2483,7 @@ class VybeRepository private constructor() {
               actorId = me.id,
               type = "FOLLOW",
               title = "${me.displayName} (@${me.username})",
-              message = "@${me.username} started following you.",
+              message = "@${me.username} sent you a new LINKUP.",
               targetId = me.id,
               actorUsername = me.username,
               actorDisplayName = me.displayName,
@@ -2532,14 +2532,46 @@ class VybeRepository private constructor() {
 
     if (supabaseRepo.isConfigured) {
       ioScope.launch {
+        val token = SessionManager.get()?.accessToken.orEmpty()
         supabaseRepo.respondToFollowRequest(
           requesterId = requesterUserId,
           myUserId = me.id,
           approve = approve,
-          accessToken = SessionManager.get()?.accessToken.orEmpty()
+          accessToken = token
         )
+        if (approve) {
+          supabaseRepo.createInteractionNotificationIfNeeded(
+            recipientId = requesterUserId,
+            actorId = me.id,
+            type = "FOLLOW",
+            title = "${me.displayName} (@${me.username})",
+            message = "@${me.username} accepted your LINKUP.",
+            targetId = me.id,
+            actorUsername = me.username,
+            actorDisplayName = me.displayName,
+            actorAvatarUrl = me.avatarUrl,
+            accessToken = token
+          )
+        }
       }
     }
+  }
+
+  fun removeFollowerUser(followerUserId: String): Boolean {
+    val me = _currentUser.value ?: return false
+    _followerUserIds.value = _followerUserIds.value - followerUserId
+    val updatedMe = me.copy(followersCount = (me.followersCount - 1).coerceAtLeast(0))
+    _currentUser.value = updatedMe
+    SessionManager.get()?.updateCurrentUser(updatedMe)
+    _allUsers.value = _allUsers.value.map { decorateUserRelationshipFlags(it) }
+    syncAuthorSnapshotsAcrossContent()
+
+    if (supabaseRepo.isConfigured) {
+      ioScope.launch {
+        supabaseRepo.unfollowUser(followerUserId, me.id, SessionManager.get()?.accessToken.orEmpty())
+      }
+    }
+    return true
   }
 
   // =========================================================================
@@ -2561,13 +2593,13 @@ class VybeRepository private constructor() {
       "NONE" -> MessagingEligibility.Denied("${latestPeer.displayName} has disabled direct messages.")
       "MUTUAL_FOLLOWS" -> {
         if (iFollowPeer && peerFollowsMe) MessagingEligibility.Allowed
-        else MessagingEligibility.Denied("Both you and ${latestPeer.displayName} must follow each other to start a chat.")
+        else MessagingEligibility.Denied("Both you and ${latestPeer.displayName} must be LINKED with each other to start a chat.")
       }
       else -> {
         // Private profiles require approved follow or mutual follow unless conversation already exists
         val hasExistingConv = _conversations.value.any { !it.isGroup && it.peerUser.id == latestPeer.id }
         if (latestPeer.isPrivate && !iFollowPeer && !peerFollowsMe && !hasExistingConv) {
-          MessagingEligibility.Denied("Follow @${latestPeer.username} and wait for approval to message this private account.")
+          MessagingEligibility.Denied("LINK UP with @${latestPeer.username} and wait for approval to message this private account.")
         } else {
           MessagingEligibility.Allowed
         }
@@ -3239,7 +3271,7 @@ class VybeRepository private constructor() {
         return Result.failure(IllegalStateException("This post has been archived by the author."))
       }
       if (!canViewUserContent(inMemory.author)) {
-        return Result.failure(IllegalStateException("This post belongs to a private account. Follow @${inMemory.author.username} to view their posts."))
+        return Result.failure(IllegalStateException("This post belongs to a private account. LINK UP with @${inMemory.author.username} to view their posts."))
       }
       return Result.success(inMemory)
     }
@@ -3263,7 +3295,7 @@ class VybeRepository private constructor() {
       return Result.failure(IllegalStateException("This post has been archived by the author."))
     }
     if (!canViewUserContent(enriched.author)) {
-      return Result.failure(IllegalStateException("This post belongs to a private account. Follow @${enriched.author.username} to view their posts."))
+      return Result.failure(IllegalStateException("This post belongs to a private account. LINK UP with @${enriched.author.username} to view their posts."))
     }
     return Result.success(enriched)
   }

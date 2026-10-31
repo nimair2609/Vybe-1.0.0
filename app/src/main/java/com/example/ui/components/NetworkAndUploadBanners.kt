@@ -501,7 +501,7 @@ fun VybeMatchesManagerDialog(
             contentAlignment = Alignment.Center
           ) {
             Text(
-              text = if (filterQuery.isBlank()) "Follow or search people on VYBE to add them to your VYBE Matches."
+              text = if (filterQuery.isBlank()) "LINK UP or search people on VYBE to add them to your VYBE Matches."
               else "No matching accounts found.",
               style = MaterialTheme.typography.bodyMedium,
               color = MaterialTheme.colorScheme.onSurfaceVariant

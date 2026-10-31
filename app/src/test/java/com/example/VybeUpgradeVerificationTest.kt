@@ -144,7 +144,7 @@ class VybeUpgradeVerificationTest {
     }
     composeTestRule.onNodeWithTag("follow_button_active")
       .assertIsDisplayed()
-      .assertTextContains("Follow")
+      .assertTextContains("+ LINK UP")
       .performClick()
     assertEquals(1, clickedCount)
 
