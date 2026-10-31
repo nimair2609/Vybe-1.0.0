@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.Spa
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -128,6 +129,56 @@ fun MoodZonesScreen(viewModel: VybeViewModel) {
                 }
               }
             }
+          }
+        }
+      }
+
+      // Spiritual Sanctuary & Zen Breathwork Card
+      item {
+        Card(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .clickable { viewModel.navigateTo(Screen.SPIRITUAL_MODE) }
+            .testTag("enter_spiritual_mode_card"),
+          colors = CardDefaults.cardColors(containerColor = Color(0xFF6B8E78).copy(alpha = 0.16f)),
+          shape = RoundedCornerShape(18.dp),
+          border = BorderStroke(1.2.dp, Color(0xFF6B8E78).copy(alpha = 0.5f))
+        ) {
+          Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Box(
+              modifier = Modifier
+                .size(46.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF6B8E78).copy(alpha = 0.25f)),
+              contentAlignment = Alignment.Center
+            ) {
+              Icon(
+                imageVector = Icons.Outlined.Spa,
+                contentDescription = null,
+                tint = Color(0xFF6B8E78),
+                modifier = Modifier.size(26.dp)
+              )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+              Text(
+                text = "Spiritual Sanctuary & Breathwork",
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = Color.White
+              )
+              Text(
+                text = "Deep breathing, gratitude logs & sacred reflections",
+                fontSize = 11.sp,
+                color = Color(0xFF6B8E78)
+              )
+            }
+            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = Color(0xFF6B8E78))
           }
         }
       }

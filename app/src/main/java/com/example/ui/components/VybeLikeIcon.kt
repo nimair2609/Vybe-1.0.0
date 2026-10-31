@@ -84,71 +84,151 @@ fun VybeLikeIcon(
   ) {
     val w = this.size.width
     val h = this.size.height
-    val strokeW = (w * 0.088f).coerceAtLeast(1.8f)
+    val strokeW = (w * 0.082f).coerceIn(1.8f, 3.2f)
 
-    // Outer V-Prism Resonance Wings
-    val wingPath = Path().apply {
-      moveTo(w * 0.14f, h * 0.28f)
-      lineTo(w * 0.34f, h * 0.22f)
-      lineTo(w * 0.50f, h * 0.60f)
-      lineTo(w * 0.66f, h * 0.22f)
-      lineTo(w * 0.86f, h * 0.28f)
-      lineTo(w * 0.50f, h * 0.90f)
+    // 1. Two-finger crossed hand outline (index finger & thumb forming the heart gesture)
+    val handPath = Path().apply {
+      // Start at lower left wrist
+      moveTo(w * 0.32f, h * 0.92f)
+      // Left edge of fist (curled pinky and ring fingers)
+      cubicTo(w * 0.20f, h * 0.82f, w * 0.18f, h * 0.65f, w * 0.24f, h * 0.54f)
+      // Curled middle finger knuckle
+      cubicTo(w * 0.28f, h * 0.46f, w * 0.36f, h * 0.44f, w * 0.42f, h * 0.46f)
+      // Thumb crossing over toward right
+      cubicTo(w * 0.42f, h * 0.38f, w * 0.44f, h * 0.32f, w * 0.48f, h * 0.30f)
+      // Index finger extending upwards to tip
+      cubicTo(w * 0.52f, h * 0.24f, w * 0.58f, h * 0.24f, w * 0.62f, h * 0.30f)
+      // Down index finger outer edge
+      cubicTo(w * 0.68f, h * 0.40f, w * 0.76f, h * 0.46f, w * 0.80f, h * 0.56f)
+      // Right edge of hand / wrist
+      cubicTo(w * 0.84f, h * 0.68f, w * 0.80f, h * 0.84f, w * 0.68f, h * 0.92f)
       close()
     }
 
-    // Crown Resonance Spark Diamond nestled above the V valley
-    val sparkPath = Path().apply {
-      moveTo(w * 0.50f, h * 0.07f)
-      lineTo(w * 0.59f, h * 0.22f)
-      lineTo(w * 0.50f, h * 0.37f)
-      lineTo(w * 0.41f, h * 0.22f)
+    // Folded finger crease lines
+    val crease1 = Path().apply {
+      moveTo(w * 0.28f, h * 0.64f)
+      cubicTo(w * 0.36f, h * 0.66f, w * 0.44f, h * 0.66f, w * 0.50f, h * 0.62f)
+    }
+    val crease2 = Path().apply {
+      moveTo(w * 0.24f, h * 0.74f)
+      cubicTo(w * 0.34f, h * 0.76f, w * 0.42f, h * 0.75f, w * 0.48f, h * 0.71f)
+    }
+
+    // Thumb-index cross definition line
+    val thumbCrossLine = Path().apply {
+      moveTo(w * 0.46f, h * 0.34f)
+      cubicTo(w * 0.54f, h * 0.36f, w * 0.58f, h * 0.42f, w * 0.58f, h * 0.50f)
+    }
+
+    // 2. Mini Heart formed at fingertips (hovering at top)
+    val heartPath = Path().apply {
+      // Bottom tip of heart
+      moveTo(w * 0.55f, h * 0.24f)
+      // Left lobe
+      cubicTo(w * 0.45f, h * 0.17f, w * 0.40f, h * 0.08f, w * 0.48f, h * 0.05f)
+      cubicTo(w * 0.52f, h * 0.03f, w * 0.55f, h * 0.09f, w * 0.55f, h * 0.12f)
+      // Right lobe
+      cubicTo(w * 0.55f, h * 0.09f, w * 0.58f, h * 0.03f, w * 0.62f, h * 0.05f)
+      cubicTo(w * 0.70f, h * 0.08f, w * 0.65f, h * 0.17f, w * 0.55f, h * 0.24f)
       close()
     }
+
+    val outlineColor = if (inactiveTint != Color.Unspecified) inactiveTint else Color.White
 
     if (isLiked) {
-      val activeBrush = if (activeTintOverride != null) {
+      val heartBrush = if (activeTintOverride != null) {
         Brush.linearGradient(listOf(activeTintOverride, activeTintOverride))
       } else {
         Brush.linearGradient(
           colors = listOf(
-            Color(0xFF00E5FF), // Electric Cyan
+            Color(0xFFFF2A85), // Vivid VYBE Magenta
             Color(0xFF9D4EDD), // Neon Violet
-            Color(0xFFFF2A85)  // Vivid VYBE Magenta
+            Color(0xFF00E5FF)  // Electric Cyan
           ),
           start = Offset(0f, 0f),
           end = Offset(w, h)
         )
       }
 
-      // Subtle radiant pulse arcs on active state
+      // Sparkle rays around mini heart when liked
       drawLine(
-        color = Color(0xFF00E5FF).copy(alpha = 0.85f),
-        start = Offset(w * 0.10f, h * 0.54f),
-        end = Offset(w * 0.21f, h * 0.59f),
-        strokeWidth = strokeW * 0.72f,
+        color = Color(0xFF00E5FF),
+        start = Offset(w * 0.38f, h * 0.08f),
+        end = Offset(w * 0.32f, h * 0.05f),
+        strokeWidth = strokeW * 0.85f,
         cap = StrokeCap.Round
       )
       drawLine(
-        color = Color(0xFFFF2A85).copy(alpha = 0.85f),
-        start = Offset(w * 0.90f, h * 0.54f),
-        end = Offset(w * 0.79f, h * 0.59f),
-        strokeWidth = strokeW * 0.72f,
+        color = Color(0xFFFF2A85),
+        start = Offset(w * 0.72f, h * 0.08f),
+        end = Offset(w * 0.78f, h * 0.05f),
+        strokeWidth = strokeW * 0.85f,
+        cap = StrokeCap.Round
+      )
+      drawLine(
+        color = Color(0xFF9D4EDD),
+        start = Offset(w * 0.55f, h * 0.01f),
+        end = Offset(w * 0.55f, h * -0.04f),
+        strokeWidth = strokeW * 0.85f,
         cap = StrokeCap.Round
       )
 
-      drawPath(path = wingPath, brush = activeBrush)
-      drawPath(path = sparkPath, color = Color(0xFF00E5FF))
-    } else {
+      // Filled luminous mini heart
+      drawPath(path = heartPath, brush = heartBrush)
       drawPath(
-        path = wingPath,
-        color = resolvedInactive,
+        path = heartPath,
+        color = Color.White.copy(alpha = 0.9f),
+        style = Stroke(width = strokeW * 0.6f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+      )
+
+      // Hand gesture outline with vibrant highlight
+      drawPath(
+        path = handPath,
+        color = Color(0xFFFF2A85),
         style = Stroke(width = strokeW, cap = StrokeCap.Round, join = StrokeJoin.Round)
       )
       drawPath(
-        path = sparkPath,
-        color = resolvedInactive,
-        style = Stroke(width = strokeW * 0.82f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        path = crease1,
+        color = Color(0xFFFF2A85).copy(alpha = 0.75f),
+        style = Stroke(width = strokeW * 0.8f, cap = StrokeCap.Round)
+      )
+      drawPath(
+        path = crease2,
+        color = Color(0xFFFF2A85).copy(alpha = 0.75f),
+        style = Stroke(width = strokeW * 0.8f, cap = StrokeCap.Round)
+      )
+      drawPath(
+        path = thumbCrossLine,
+        color = Color(0xFFFF2A85).copy(alpha = 0.75f),
+        style = Stroke(width = strokeW * 0.8f, cap = StrokeCap.Round)
+      )
+    } else {
+      // Default / inactive: Clean white border outline with blank body fill
+      drawPath(
+        path = heartPath,
+        color = outlineColor,
+        style = Stroke(width = strokeW, cap = StrokeCap.Round, join = StrokeJoin.Round)
+      )
+      drawPath(
+        path = handPath,
+        color = outlineColor,
+        style = Stroke(width = strokeW, cap = StrokeCap.Round, join = StrokeJoin.Round)
+      )
+      drawPath(
+        path = crease1,
+        color = outlineColor.copy(alpha = 0.85f),
+        style = Stroke(width = strokeW * 0.8f, cap = StrokeCap.Round)
+      )
+      drawPath(
+        path = crease2,
+        color = outlineColor.copy(alpha = 0.85f),
+        style = Stroke(width = strokeW * 0.8f, cap = StrokeCap.Round)
+      )
+      drawPath(
+        path = thumbCrossLine,
+        color = outlineColor.copy(alpha = 0.85f),
+        style = Stroke(width = strokeW * 0.8f, cap = StrokeCap.Round)
       )
     }
   }

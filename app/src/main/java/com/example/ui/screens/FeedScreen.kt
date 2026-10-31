@@ -257,6 +257,21 @@ fun FeedScreen(viewModel: VybeViewModel) {
           }
         },
         actions = {
+          // 0. Spiritual Mode Sanctuary shortcut
+          IconButton(
+            onClick = { viewModel.navigateTo(Screen.SPIRITUAL_MODE) },
+            modifier = Modifier
+              .size(44.dp)
+              .testTag("header_spiritual_mode_button")
+          ) {
+            Icon(
+              imageVector = Icons.Outlined.Spa,
+              contentDescription = "Spiritual Sanctuary & Breathwork",
+              tint = Color(0xFF6B8E78),
+              modifier = Modifier.size(24.dp)
+            )
+          }
+
           // 1. Search control
           IconButton(
             onClick = { viewModel.selectTab(MainTab.EXPLORE) },

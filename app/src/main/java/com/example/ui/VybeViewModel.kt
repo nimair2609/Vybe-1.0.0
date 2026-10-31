@@ -782,6 +782,10 @@ class VybeViewModel : ViewModel() {
   }
 
   fun navigateBack(): Boolean {
+    if (_currentScreen.value == Screen.USER_PROFILE) {
+      _selectedUserProfile.value = null
+      _profileLookupError.value = null
+    }
     if (_currentScreen.value == Screen.PASSWORD_RECOVERY) {
       exitPasswordRecoveryToLogin()
       return true
@@ -792,8 +796,24 @@ class VybeViewModel : ViewModel() {
     } else if (_currentScreen.value != Screen.MAIN && _currentScreen.value != Screen.AUTH) {
       _currentScreen.value = if (repository.isLoggedIn.value) Screen.MAIN else Screen.AUTH
       return true
+    } else if (_currentScreen.value == Screen.MAIN && _selectedTab.value != MainTab.FEED) {
+      _selectedTab.value = MainTab.FEED
+      return true
     }
     return false
+  }
+
+  fun closeUserProfileOrBack(): Boolean {
+    _selectedUserProfile.value = null
+    _profileLookupError.value = null
+    if (_currentScreen.value == Screen.USER_PROFILE) {
+      return navigateBack()
+    }
+    if (_currentScreen.value == Screen.MAIN && _selectedTab.value == MainTab.PROFILE) {
+      _selectedTab.value = MainTab.FEED
+      return true
+    }
+    return navigateBack()
   }
 
   fun selectTab(tab: MainTab) {
@@ -802,6 +822,9 @@ class VybeViewModel : ViewModel() {
     }
     if (tab == MainTab.INBOX || tab == MainTab.EXPLORE || tab == MainTab.PROFILE) {
       refreshAllData()
+    }
+    if (tab == MainTab.PROFILE) {
+      _selectedUserProfile.value = null
     }
     _selectedTab.value = tab
     if (_currentScreen.value != Screen.MAIN) {

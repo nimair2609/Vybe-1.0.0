@@ -507,13 +507,6 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     VerificationBadge(user = reelPost.author)
-                    if (reelRelativeTime.isNotBlank()) {
-                      Text(
-                        text = " • $reelRelativeTime",
-                        color = Color.White.copy(alpha = 0.75f),
-                        fontSize = 12.sp
-                      )
-                    }
                   }
                   if (!reelPost.locationName.isNullOrBlank()) {
                     Text(

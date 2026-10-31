@@ -375,19 +375,21 @@ fun StoryCreateDialog(
           color = MaterialTheme.colorScheme.surface,
           shadowElevation = 10.dp,
           tonalElevation = 4.dp,
-          modifier = Modifier.fillMaxWidth()
+          modifier = Modifier
+            .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.navigationBars)
         ) {
           Box(
             modifier = Modifier
               .fillMaxWidth()
-              .padding(horizontal = 16.dp, vertical = 12.dp),
+              .padding(horizontal = 12.dp, vertical = 8.dp),
             contentAlignment = Alignment.Center
           ) {
             Row(
               modifier = Modifier
                 .widthIn(max = 600.dp)
                 .fillMaxWidth(),
-              horizontalArrangement = Arrangement.spacedBy(10.dp),
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
               verticalAlignment = Alignment.CenterVertically
             ) {
               // 1. VYBE Matches Button
@@ -406,25 +408,25 @@ fun StoryCreateDialog(
                 },
                 enabled = !isPublishingStory,
                 border = BorderStroke(1.5.dp, Color(0xFF10B981)),
-                shape = RoundedCornerShape(24.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                shape = RoundedCornerShape(20.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                 modifier = Modifier
                   .weight(1f)
-                  .heightIn(min = 48.dp)
+                  .heightIn(min = 44.dp)
                   .testTag("publish_vybe_matches_button")
               ) {
                 Icon(
                   Icons.Default.Star,
                   contentDescription = null,
                   tint = Color(0xFF10B981),
-                  modifier = Modifier.size(16.dp)
+                  modifier = Modifier.size(15.dp)
                 )
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                  text = "VYBE Matches (${vybeMatches.size})",
+                  text = "Matches (${vybeMatches.size})",
                   color = Color(0xFF10B981),
                   fontWeight = FontWeight.Bold,
-                  fontSize = 12.sp,
+                  fontSize = 11.sp,
                   maxLines = 1,
                   overflow = TextOverflow.Ellipsis
                 )
@@ -450,42 +452,43 @@ fun StoryCreateDialog(
                 },
                 enabled = !isPublishingStory,
                 colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-                shape = RoundedCornerShape(24.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                shape = RoundedCornerShape(20.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                 modifier = Modifier
                   .weight(1f)
-                  .heightIn(min = 48.dp)
+                  .heightIn(min = 44.dp)
                   .testTag("publish_your_story_button")
               ) {
                 if (isPublishingStory) {
                   CircularProgressIndicator(
                     color = Color.White,
                     strokeWidth = 2.dp,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(14.dp)
                   )
-                  Spacer(modifier = Modifier.width(8.dp))
-                  Text("Sharing Story...", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text("Sharing...", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                 } else {
                   Icon(
                     Icons.Default.Upload,
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(16.dp)
-                  )
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text(
-                    text = "Share to Story",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    maxLines = 1
+                    modifier = Modifier.size(15.dp)
                   )
                   Spacer(modifier = Modifier.width(4.dp))
+                  Text(
+                    text = "Share Story",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                  )
+                  Spacer(modifier = Modifier.width(3.dp))
                   Icon(
                     Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(15.dp)
+                    modifier = Modifier.size(14.dp)
                   )
                 }
               }

@@ -333,10 +333,8 @@ fun VybeFollowButton(
       }
     }
     else -> {
-      Surface(
-        color = Color.Transparent,
-        shape = shape,
-        shadowElevation = if (compact) 2.dp else 4.dp,
+      Box(
+        contentAlignment = Alignment.Center,
         modifier = modifier
           .minimumInteractiveComponentSize()
           .clip(shape)
@@ -346,23 +344,19 @@ fun VybeFollowButton(
             )
           )
           .clickable { onClick() }
-          .testTag(testTag ?: "follow_button_active")
-      ) {
-        Box(
-          contentAlignment = Alignment.Center,
-          modifier = Modifier.padding(
+          .padding(
             horizontal = if (compact) 14.dp else 20.dp,
             vertical = if (compact) 7.dp else 11.dp
           )
-        ) {
-          Text(
-            text = label,
-            fontSize = if (compact) 12.sp else 14.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-            maxLines = 1
-          )
-        }
+          .testTag(testTag ?: "follow_button_active")
+      ) {
+        Text(
+          text = label,
+          fontSize = if (compact) 12.sp else 14.sp,
+          fontWeight = FontWeight.Bold,
+          color = Color.White,
+          maxLines = 1
+        )
       }
     }
   }

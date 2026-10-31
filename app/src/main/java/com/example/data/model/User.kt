@@ -182,4 +182,8 @@ data class User(
         }
       }
     }
+
+  companion object {
+    val EMPTY = User(id = "", username = "guest", displayName = "Guest")
+  }
 }

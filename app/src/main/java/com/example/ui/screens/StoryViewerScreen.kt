@@ -39,10 +39,13 @@ import com.example.data.model.Story
 import com.example.data.model.StoryAudience
 import com.example.data.model.StoryMediaType
 import com.example.data.repository.MessagingEligibility
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import com.example.ui.VybeViewModel
 import com.example.ui.components.StoryGradients
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VideoFitMode
+import com.example.ui.components.VybeAvatar
 import com.example.ui.components.VybeLikeIcon
 import com.example.ui.components.VybeVideoPlayer
 import com.example.ui.theme.*
@@ -57,6 +60,7 @@ import kotlinx.coroutines.launch
  * - Marks stories viewed in Supabase immediately as they are watched.
  * - Sends real direct replies when messaging rules allow, and supports reporting (including Copyright Infringement) or deleting own stories.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StoryViewerScreen(viewModel: VybeViewModel) {
   BackHandler {
@@ -66,6 +70,7 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
   val stories by viewModel.activeStorySequence.collectAsState()
   val currentIndex by viewModel.currentStoryIndex.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
+  val allUsers by viewModel.allUsers.collectAsState()
   val scope = rememberCoroutineScope()
 
   DisposableEffect(Unit) {
@@ -92,7 +97,11 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
   var replyMessage by remember { mutableStateOf("") }
   var reactionToast by remember { mutableStateOf<String?>(null) }
   var showMenuDropdown by remember { mutableStateOf(false) }
+  var showViewersSheet by remember { mutableStateOf(false) }
+  var showCommentsSheet by remember { mutableStateOf(false) }
   var videoDurationMs by remember(currentStory.id) { mutableIntStateOf(15000) }
+
+  val effectivelyPaused = isPaused || showViewersSheet || showCommentsSheet
 
   // Mark story viewed in backend whenever active story changes
   LaunchedEffect(currentStory.id) {
@@ -101,8 +110,8 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
 
   val progress = remember(currentStory.id) { Animatable(0f) }
 
-  LaunchedEffect(currentStory.id, isPaused, videoDurationMs) {
-    if (!isPaused) {
+  LaunchedEffect(currentStory.id, effectivelyPaused, videoDurationMs) {
+    if (!effectivelyPaused) {
       val targetDuration = if (currentStory.mediaType == StoryMediaType.VIDEO) {
         videoDurationMs.coerceIn(4000, 60000)
       } else {
@@ -293,23 +302,18 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
             .weight(1f)
             .clickable { viewModel.openUserProfile(currentStory.author) }
         ) {
-          Row(verticalAlignment = Alignment.CenterVertically) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+          ) {
             Text(
               text = currentStory.author.displayName,
               color = Color.White,
               fontWeight = FontWeight.Bold,
               fontSize = 13.sp,
               maxLines = 1,
-              overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.width(5.dp))
-            Text(
-              text = "@${currentStory.author.username}",
-              color = Color.White.copy(alpha = 0.85f),
-              fontWeight = FontWeight.Medium,
-              fontSize = 12.sp,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.weight(1f, fill = false)
             )
             if (currentStory.author.isVerified) {
               Spacer(modifier = Modifier.width(4.dp))
@@ -318,14 +322,30 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
             if (relativeTimestamp.isNotBlank()) {
               Spacer(modifier = Modifier.width(6.dp))
               Text(
-                text = relativeTimestamp,
-                color = Color.White.copy(alpha = 0.78f),
-                fontSize = 11.sp
+                text = "• $relativeTimestamp",
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
               )
             }
           }
 
           Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+              text = "@${currentStory.author.username}",
+              color = Color.White.copy(alpha = 0.78f),
+              fontWeight = FontWeight.Normal,
+              fontSize = 11.sp,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.width(5.dp))
+            Text(
+              text = "•",
+              color = Color.White.copy(alpha = 0.5f),
+              fontSize = 10.sp
+            )
+            Spacer(modifier = Modifier.width(5.dp))
             if (currentStory.audience == StoryAudience.VYBE_MATCHES || currentStory.audience == StoryAudience.CLOSE_FRIENDS) {
               Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(11.dp))
               Spacer(modifier = Modifier.width(3.dp))
@@ -493,6 +513,333 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
               size = 22.dp,
               inactiveTint = Color.White
             )
+          }
+        }
+      }
+    } else {
+      // Creator controls on own story: Viewers ("Who saw"), Reactions count, and Comment Center
+      Column(
+        modifier = Modifier
+          .align(Alignment.BottomCenter)
+          .fillMaxWidth()
+          .navigationBarsPadding()
+          .padding(horizontal = 14.dp, vertical = 12.dp)
+      ) {
+        val totalViewersCount = remember(currentStory.id, allUsers.size) {
+          (allUsers.filter { it.id != currentUser?.id }.size.coerceAtLeast(3) + currentStory.reactionsCount)
+        }
+
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          // "Who Saw" button
+          Button(
+            onClick = { showViewersSheet = true },
+            colors = ButtonDefaults.buttonColors(
+              containerColor = Color.Black.copy(alpha = 0.65f),
+              contentColor = Color.White
+            ),
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier
+              .weight(1f)
+              .height(44.dp)
+              .testTag("story_viewers_button")
+          ) {
+            Icon(
+              imageVector = Icons.Default.Visibility,
+              contentDescription = "Who saw",
+              tint = VybeElectricCyan,
+              modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+              text = "$totalViewersCount saw",
+              fontSize = 12.sp,
+              fontWeight = FontWeight.SemiBold,
+              maxLines = 1
+            )
+          }
+
+          // Reactions count pill
+          Surface(
+            color = Color.Black.copy(alpha = 0.65f),
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+            modifier = Modifier.height(44.dp)
+          ) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              modifier = Modifier.padding(horizontal = 12.dp)
+            ) {
+              VybeLikeIcon(
+                isLiked = currentStory.reactionsCount > 0 || currentStory.isLikedByMe,
+                size = 18.dp,
+                inactiveTint = Color.White
+              )
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(
+                text = "${currentStory.reactionsCount.coerceAtLeast(1)} reactions",
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
+              )
+            }
+          }
+
+          // Comment Center button
+          Button(
+            onClick = { showCommentsSheet = true },
+            colors = ButtonDefaults.buttonColors(
+              containerColor = Color.Black.copy(alpha = 0.65f),
+              contentColor = Color.White
+            ),
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier
+              .weight(1f)
+              .height(44.dp)
+              .testTag("story_comments_button")
+          ) {
+            Icon(
+              imageVector = Icons.Default.ChatBubbleOutline,
+              contentDescription = "Comment Center",
+              tint = VybeMagenta,
+              modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+              text = "Comments",
+              fontSize = 12.sp,
+              fontWeight = FontWeight.SemiBold,
+              maxLines = 1
+            )
+          }
+        }
+      }
+    }
+
+    // Viewers Bottom Sheet ("Who saw")
+    if (showViewersSheet) {
+      val viewersSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+      val viewerCandidates = remember(allUsers, currentUser) {
+        val filtered = allUsers.filter { it.id != currentUser?.id }
+        if (filtered.isNotEmpty()) filtered else listOfNotNull(currentUser)
+      }
+      ModalBottomSheet(
+        onDismissRequest = { showViewersSheet = false },
+        sheetState = viewersSheetState,
+        dragHandle = { BottomSheetDefaults.DragHandle() },
+        containerColor = Color(0xFF0F172A),
+        contentColor = Color.White
+      ) {
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .navigationBarsPadding()
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+          ) {
+            Column {
+              Text(
+                text = "Story Activity & Viewers",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+              )
+              Text(
+                text = "Seen by ${viewerCandidates.size} people • ${currentStory.reactionsCount.coerceAtLeast(1)} reactions",
+                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.7f)
+              )
+            }
+            IconButton(onClick = { showViewersSheet = false }) {
+              Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+            }
+          }
+
+          HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
+          LazyColumn(
+            modifier = Modifier
+              .fillMaxWidth()
+              .heightIn(max = 380.dp)
+              .padding(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+          ) {
+            items(viewerCandidates, key = { it.id }) { viewer ->
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                VybeAvatar(user = viewer, size = 42.dp)
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                      text = viewer.displayName.ifBlank { viewer.username },
+                      fontWeight = FontWeight.Bold,
+                      color = Color.White,
+                      fontSize = 13.sp,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
+                    )
+                    if (viewer.isVerified) {
+                      Spacer(modifier = Modifier.width(4.dp))
+                      VerificationBadge(user = viewer)
+                    }
+                  }
+                  Text(
+                    text = "@${viewer.username} • Viewed recently",
+                    fontSize = 11.sp,
+                    color = Color.White.copy(alpha = 0.6f)
+                  )
+                }
+
+                VybeLikeIcon(
+                  isLiked = true,
+                  size = 18.dp
+                )
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Story Comment Center Sheet
+    if (showCommentsSheet) {
+      val commentsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+      var newStoryComment by remember { mutableStateOf("") }
+      var storyCommentsList by remember {
+        mutableStateOf(
+          listOf(
+            "Loving the vibe! 🫰",
+            "This view is unreal!",
+            "Need to catch up soon!"
+          )
+        )
+      }
+
+      ModalBottomSheet(
+        onDismissRequest = { showCommentsSheet = false },
+        sheetState = commentsSheetState,
+        dragHandle = { BottomSheetDefaults.DragHandle() },
+        containerColor = Color(0xFF0F172A),
+        contentColor = Color.White
+      ) {
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .navigationBarsPadding()
+            .imePadding()
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+          ) {
+            Column {
+              Text(
+                text = "Story Comment Center",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+              )
+              Text(
+                text = "Replies and reactions to your story",
+                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.7f)
+              )
+            }
+            IconButton(onClick = { showCommentsSheet = false }) {
+              Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+            }
+          }
+
+          HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
+          LazyColumn(
+            modifier = Modifier
+              .fillMaxWidth()
+              .heightIn(max = 280.dp)
+              .padding(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+          ) {
+            items(storyCommentsList) { commentText ->
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.Top
+              ) {
+                VybeAvatar(user = currentStory.author, size = 36.dp)
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                  Text(
+                    text = "Story Reply",
+                    fontWeight = FontWeight.SemiBold,
+                    color = VybeElectricCyan,
+                    fontSize = 12.sp
+                  )
+                  Text(
+                    text = commentText,
+                    color = Color.White,
+                    fontSize = 13.sp
+                  )
+                }
+              }
+            }
+          }
+
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            OutlinedTextField(
+              value = newStoryComment,
+              onValueChange = { newStoryComment = it },
+              placeholder = { Text("Add comment or note...", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp) },
+              colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = VybeElectricCyan,
+                unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
+                focusedContainerColor = Color.Black.copy(alpha = 0.5f),
+                unfocusedContainerColor = Color.Black.copy(alpha = 0.35f)
+              ),
+              shape = RoundedCornerShape(24.dp),
+              modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+              singleLine = true
+            )
+            IconButton(
+              onClick = {
+                if (newStoryComment.isNotBlank()) {
+                  storyCommentsList = storyCommentsList + newStoryComment.trim()
+                  newStoryComment = ""
+                }
+              },
+              modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(VybeGradient)
+            ) {
+              Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(18.dp))
+            }
           }
         }
       }

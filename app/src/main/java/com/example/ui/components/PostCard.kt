@@ -203,9 +203,14 @@ fun PostCard(
             .weight(1f)
             .clickable { onUserClick(post.author) }
         ) {
+          val safeDisplayName = remember(post.author.displayName, post.author.username) {
+            post.author.displayName.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+              ?: post.author.username.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+              ?: "VYBE Member"
+          }
           Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-              text = if (post.author.username.isNotBlank()) "@${post.author.username}" else post.author.displayName,
+              text = safeDisplayName,
               fontSize = 15.sp,
               fontWeight = FontWeight.Bold,
               color = primaryText,
@@ -217,6 +222,15 @@ fun PostCard(
           }
           Spacer(modifier = Modifier.height(2.dp))
           Row(verticalAlignment = Alignment.CenterVertically) {
+            if (post.author.username.isNotBlank()) {
+              Text(
+                text = "@${post.author.username} • ",
+                fontSize = 12.sp,
+                color = mutedText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+            }
             Text(
               text = if (relativeTimestamp.isNotBlank()) "$relativeTimestamp • " else "",
               fontSize = 12.sp,
@@ -653,11 +667,10 @@ fun PostCard(
               modifier = Modifier.size(24.dp),
               contentAlignment = Alignment.Center
             ) {
-              Icon(
-                imageVector = if (isLiked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                contentDescription = if (isLiked) "Unlike post" else "Like post",
-                tint = if (isLiked) Color(0xFFEF4444) else primaryText,
-                modifier = Modifier.size(23.dp)
+              VybeLikeIcon(
+                isLiked = isLiked,
+                size = 23.dp,
+                inactiveTint = Color.White
               )
             }
             if (post.likesCount > 0) {

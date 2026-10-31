@@ -24,6 +24,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -525,7 +526,10 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                  modifier = Modifier.weight(1f, fill = false),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
                   Box(
                     modifier = Modifier
                       .size(28.dp)
@@ -548,11 +552,14 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                   Text(
                     text = "EXPLORE VYBES",
                     fontWeight = FontWeight.ExtraBold,
-                    fontSize = 17.sp,
-                    letterSpacing = 1.sp,
-                    color = Color.White
+                    fontSize = 16.sp,
+                    letterSpacing = 0.8.sp,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                   )
                 }
+                Spacer(modifier = Modifier.width(8.dp))
                 Surface(
                   color = VybeViolet.copy(alpha = 0.22f),
                   shape = RoundedCornerShape(8.dp),
@@ -563,7 +570,8 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                     fontSize = 9.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = VybeBrandCyan,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    maxLines = 1
                   )
                 }
               }
@@ -1831,13 +1839,16 @@ private fun ExploreExperienceFeedCard(
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top
+        verticalAlignment = Alignment.CenterVertically
       ) {
-        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+          modifier = Modifier.weight(1f, fill = false),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
           Box(
             modifier = Modifier
-              .size(44.dp)
-              .clip(RoundedCornerShape(14.dp))
+              .size(40.dp)
+              .clip(RoundedCornerShape(12.dp))
               .background(accent.copy(alpha = 0.16f)),
             contentAlignment = Alignment.Center
           ) {
@@ -1845,26 +1856,31 @@ private fun ExploreExperienceFeedCard(
               imageVector = icon,
               contentDescription = null,
               tint = accent,
-              modifier = Modifier.size(24.dp)
+              modifier = Modifier.size(22.dp)
             )
           }
-          Spacer(modifier = Modifier.width(12.dp))
-          Column {
+          Spacer(modifier = Modifier.width(10.dp))
+          Column(modifier = Modifier.weight(1f, fill = false)) {
             Text(
               text = title,
               fontWeight = FontWeight.Black,
-              fontSize = 16.sp,
-              letterSpacing = 0.8.sp,
-              color = Color.White
+              fontSize = 15.sp,
+              letterSpacing = 0.6.sp,
+              color = Color.White,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis
             )
             Text(
               text = tagline,
               fontSize = 11.sp,
               fontWeight = FontWeight.SemiBold,
-              color = accent
+              color = accent,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis
             )
           }
         }
+        Spacer(modifier = Modifier.width(8.dp))
         Surface(
           color = accent.copy(alpha = 0.15f),
           shape = RoundedCornerShape(8.dp),
@@ -1875,7 +1891,8 @@ private fun ExploreExperienceFeedCard(
             fontSize = 9.sp,
             fontWeight = FontWeight.Bold,
             color = accent,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            maxLines = 1
           )
         }
       }

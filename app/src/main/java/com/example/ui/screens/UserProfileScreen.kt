@@ -41,6 +41,7 @@ import coil.compose.AsyncImage
 import com.example.data.model.CallAvailabilityResult
 import com.example.data.model.MediaType
 import com.example.data.model.User
+import com.example.ui.MainTab
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.components.PostCard
@@ -56,10 +57,11 @@ import kotlinx.coroutines.launch
 @Composable
 fun UserProfileScreen(viewModel: VybeViewModel) {
   BackHandler {
-    viewModel.clearProfileLookupError()
-    viewModel.navigateBack()
+    viewModel.closeUserProfileOrBack()
   }
 
+  val currentScreen by viewModel.currentScreen.collectAsState()
+  val selectedNavTab by viewModel.selectedTab.collectAsState()
   val profileUser by viewModel.selectedUserProfile.collectAsState()
   val profileLookupError by viewModel.profileLookupError.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
@@ -108,8 +110,7 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
           navigationIcon = {
             IconButton(
               onClick = {
-                viewModel.clearProfileLookupError()
-                viewModel.navigateBack()
+                viewModel.closeUserProfileOrBack()
               },
               modifier = Modifier.testTag("profile_unavailable_back_button")
             ) {
@@ -187,13 +188,17 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
     return
   }
 
-  // Strict ID-based ownership check — never match by username fallback alone
-  val user: User = remember(profileUser, currentUser, allUsers) {
-    val target = profileUser ?: currentUser!!
-    if (currentUser != null && target.id == currentUser!!.id) {
-      currentUser!!
+  // Strict ID-based ownership check — on MainTab.PROFILE always show currentUser
+  val user: User = remember(profileUser, currentUser, allUsers, currentScreen, selectedNavTab) {
+    if (currentScreen == Screen.MAIN && selectedNavTab == MainTab.PROFILE) {
+      currentUser ?: allUsers.firstOrNull() ?: User.EMPTY
     } else {
-      allUsers.firstOrNull { it.id == target.id } ?: target
+      val target = profileUser ?: currentUser ?: allUsers.firstOrNull() ?: User.EMPTY
+      if (currentUser != null && target.id == currentUser!!.id) {
+        currentUser!!
+      } else {
+        allUsers.firstOrNull { it.id == target.id } ?: target
+      }
     }
   }
   val isMe = currentUser != null && currentUser!!.id == user.id
@@ -331,8 +336,7 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
         navigationIcon = {
           IconButton(
             onClick = {
-              viewModel.clearProfileLookupError()
-              viewModel.navigateBack()
+              viewModel.closeUserProfileOrBack()
             },
             modifier = Modifier.testTag("profile_back_button")
           ) {

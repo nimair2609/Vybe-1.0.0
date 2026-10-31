@@ -39,6 +39,7 @@ import com.example.data.model.CommunityMember
 import com.example.data.model.CommunityPost
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VybeAvatar
+import com.example.ui.components.VybeLikeIcon
 import com.example.ui.theme.*
 import com.example.util.MediaUtils
 import com.example.util.rememberRelativeTimestamp
@@ -502,11 +503,10 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                       .padding(vertical = 4.dp)
                       .testTag("like_comm_post_${post.id}")
                   ) {
-                    Icon(
-                      imageVector = if (post.isLikedByMe) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
-                      contentDescription = "Like",
-                      tint = if (post.isLikedByMe) VybeHeartbreakRed else MaterialTheme.colorScheme.onSurfaceVariant,
-                      modifier = Modifier.size(18.dp)
+                    VybeLikeIcon(
+                      isLiked = post.isLikedByMe,
+                      size = 18.dp,
+                      inactiveTint = Color.White
                     )
                     Spacer(modifier = Modifier.width(5.dp))
                     Text("${post.likesCount}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

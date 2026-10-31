@@ -1,5 +1,6 @@
 package com.example.ui.theme
 
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 // VYBE Official Brand Identity Palette (from Brand Asset Sheet)
@@ -13,6 +14,9 @@ val VybeViolet = VybeBrandViolet
 val VybeVioletDark = Color(0xFF6D28D9)
 val VybeMagenta = VybeBrandMagenta
 val VybeCyan = VybeBrandCyan
+val VybeElectricCyan = VybeBrandCyan
+
+val VybeGradient = Brush.horizontalGradient(listOf(VybeBrandCyan, VybeBrandViolet, VybeBrandMagenta))
 
 // Mood Zone Signature Colors
 val MoodHeartbreak = Color(0xFF818CF8)

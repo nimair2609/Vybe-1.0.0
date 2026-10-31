@@ -107,12 +107,22 @@ fun VybeReactionOutlineIcon(
     modifier = modifier.size(size),
     contentAlignment = Alignment.Center
   ) {
-    Text(
-      text = reaction.emoji,
-      fontSize = (size.value * 0.88f).sp,
-      lineHeight = (size.value * 0.88f).sp,
-      textAlign = androidx.compose.ui.text.style.TextAlign.Center
-    )
+    if (reaction == VybeReaction.LOVE) {
+      val isLiked = tint != Color.White && tint != Color(0xFF64748B) && tint != Color.Unspecified
+      VybeLikeIcon(
+        isLiked = isLiked,
+        size = size,
+        inactiveTint = tint,
+        activeTintOverride = tint
+      )
+    } else {
+      Text(
+        text = reaction.emoji,
+        fontSize = (size.value * 0.88f).sp,
+        lineHeight = (size.value * 0.88f).sp,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+      )
+    }
   }
 }
 
