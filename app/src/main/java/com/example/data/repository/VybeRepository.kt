@@ -4051,6 +4051,43 @@ class VybeRepository private constructor() {
     }
   }
 
+  suspend fun syncBackgroundNotifications(ctx: Context) {
+    if (appContext == null) appContext = ctx.applicationContext
+    val session = SessionManager.getInstance(ctx)
+    val myId = session.userId
+    if (!session.isLoggedIn || myId.isNullOrBlank()) return
+
+    try {
+      val validToken = supabaseRepo.resolveValidAccessToken(session.accessToken).orEmpty()
+      val convRes = supabaseRepo.fetchConversationsForUser(
+        myUserId = myId,
+        blockedIds = _blockedUserIds.value,
+        restrictedIds = _restrictedUserIds.value,
+        accessToken = validToken
+      )
+      if (convRes.isSuccess) {
+        val remoteConvs = mergeRemoteConversationsPreservingInFlight(
+          dedupeConversationCallLogs(convRes.getOrThrow())
+        )
+        _conversations.value = remoteConvs
+        VybeLocalStore.get()?.saveConversations(remoteConvs)
+      }
+
+      val notifRes = supabaseRepo.fetchNotifications(myId, validToken)
+      if (notifRes.isSuccess) {
+        val enriched = enrichNotificationsWithLocalContext(notifRes.getOrThrow())
+        _notifications.value = enriched
+        VybeLocalStore.get()?.saveNotifications(enriched)
+      }
+
+      reconcileAndDispatchSystemNotifications(
+        myId = myId,
+        notifications = _notifications.value,
+        conversations = _conversations.value
+      )
+    } catch (_: Exception) {}
+  }
+
   fun refreshFromCloud() {
     ioScope.launch {
       try {
@@ -4443,21 +4480,18 @@ class VybeRepository private constructor() {
     presenceLoopJob = ioScope.launch {
       var tick = 0
       while (isActive && _isLoggedIn.value) {
-        // Avoid background polling when VYBE is backgrounded/locked — FCM HTTP v1 handles background wake-ups.
-        if (!VybeNotificationHelper.isAppInForeground && _activeCall.value == null) {
-          delay(12_000L)
-          continue
-        }
+        val isForeground = VybeNotificationHelper.isAppInForeground
+        val loopInterval = if (isForeground) 4500L else 7500L
         try {
           val me = _currentUser.value
           val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
           val authHeader = SupabaseConfig.buildAuthHeader(token)
           if (me != null && me.id.isNotBlank() && !authHeader.isNullOrBlank()) {
             VybeRealtimePushManager.updateAccessToken(token)
-            if (tick % 5 == 0) {
+            if (isForeground && tick % 5 == 0) {
               SupabaseRoomsAndCallsRemote.updatePresence(me.id, me.livePulse, authHeader)
             }
-            // Check for incoming calls when idle
+            // Check for incoming calls when idle (runs in both foreground and background)
             val active = _activeCall.value
             if (active == null) {
               val incoming = SupabaseRoomsAndCallsRemote.fetchIncomingCalls(me.id, authHeader)
@@ -4496,12 +4530,12 @@ class VybeRepository private constructor() {
                 }
               }
             }
-            // Refresh active room messages if user is inside a live room
+            // Refresh active room messages if user is inside a live room (foreground only)
             val openRoom = _activeUnloadRoom.value
-            if (openRoom != null && !openRoom.id.startsWith("ul_") && !openRoom.id.startsWith("room_")) {
+            if (isForeground && openRoom != null && !openRoom.id.startsWith("ul_") && !openRoom.id.startsWith("room_")) {
               refreshActiveRoomMessages(openRoom.id, token)
             }
-            // Fast notification & message sync (~9s) so phone notifications arrive promptly even on polling fallback
+            // Fast notification & message sync so notifications arrive promptly even when app is backgrounded
             if (tick > 0 && tick % 2 == 0 && !isUploadInFlight) {
               val convRes = supabaseRepo.fetchConversationsForUser(
                 myUserId = me.id,
@@ -4528,8 +4562,8 @@ class VybeRepository private constructor() {
                 conversations = _conversations.value
               )
             }
-            // Periodic cross-device sync (~13.5s) for Feed, Stories, Live Zone & Explore Zone
-            if (tick > 0 && tick % 3 == 0 && !isUploadInFlight) {
+            // Periodic cross-device sync for Feed, Stories, Live Zone & Explore Zone (foreground only)
+            if (isForeground && tick > 0 && tick % 3 == 0 && !isUploadInFlight) {
               syncFeedFromSupabase(token)
               syncStoriesFromSupabase(me.id, token)
               syncRoomsFromSupabase(token)
@@ -4538,7 +4572,7 @@ class VybeRepository private constructor() {
           }
         } catch (_: Exception) {}
         tick++
-        delay(4500L)
+        delay(loopInterval)
       }
     }
   }

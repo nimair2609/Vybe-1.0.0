@@ -1078,6 +1078,47 @@
 
         <!-- 6. PUSH & ANNOUNCEMENTS TAB -->
         <section id="tab-push" class="tab-panel" style="display: none;">
+          <!-- FCM Direct-to-Device Gateway Configuration Card -->
+          <div class="card" style="margin-bottom: 24px; border: 1px solid rgba(123, 44, 191, 0.45); background: linear-gradient(135deg, rgba(20, 15, 38, 0.95), rgba(12, 10, 24, 0.95));">
+            <div class="card-title">
+              <span style="display: flex; align-items: center; gap: 8px;">
+                <i data-lucide="cloud-lightning" style="color: #c084fc;"></i>
+                <strong>FCM Cloud Push Gateway (Direct-to-Device / App Closed)</strong>
+              </span>
+              <span class="badge" id="badge-fcm-status">Checking...</span>
+            </div>
+            <p style="font-size: 13px; color: var(--text-sub); line-height: 1.5; margin-bottom: 14px;">
+              FCM HTTP v1 delivers high-priority notifications directly to the Android lock screen and system tray even when the app is completely closed or device is asleep. Paste your Firebase Service Account JSON below to activate direct Google Cloud delivery.
+            </p>
+            <div class="grid-3" style="margin-bottom: 14px; gap: 12px;">
+              <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px;">
+                <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Firebase Project</div>
+                <div id="fcm-cfg-project" style="font-size: 14px; font-weight: 700; color: #fff; margin-top: 4px;">vybe-1c966</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px;">
+                <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Service Account Email</div>
+                <div id="fcm-cfg-email" style="font-size: 12px; font-weight: 600; color: var(--accent-cyan); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Loading...</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px;">
+                <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Registered Device Reach</div>
+                <div id="fcm-cfg-tokens" style="font-size: 14px; font-weight: 700; color: var(--accent-green); margin-top: 4px;">0 Android Devices</div>
+              </div>
+            </div>
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label style="font-size: 12px;">Update Firebase Service Account JSON (from Firebase Console > Project Settings > Service Accounts)</label>
+              <textarea id="input-fcm-sa-json" class="form-control" rows="2" style="font-family: monospace; font-size: 11px;" placeholder='Paste {"type": "service_account", "project_id": "...", "private_key": "...", "client_email": "..."}'></textarea>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+              <button type="button" class="btn btn-primary btn-sm" id="btn-save-fcm" onclick="saveFcmConfig()">
+                <i data-lucide="save"></i> Save FCM Credentials
+              </button>
+              <button type="button" class="btn btn-outline btn-sm" onclick="loadFcmConfig()">
+                <i data-lucide="refresh-cw"></i> Refresh Status
+              </button>
+              <span id="fcm-save-result" style="font-size: 12px; font-weight: 600; margin-left: 10px;"></span>
+            </div>
+          </div>
+
           <div class="grid-2">
             <div class="card">
               <div class="card-title">
@@ -1469,7 +1510,7 @@
           else if (tabId === 'users') loadUsers();
           else if (tabId === 'content') loadContent();
           else if (tabId === 'experiences') loadExperiences();
-          else if (tabId === 'push') loadPushStats();
+          else if (tabId === 'push') { loadPushStats(); loadFcmConfig(); }
           else if (tabId === 'verification') loadBadgeDirectory();
           else if (tabId === 'moderation') loadReports();
           else if (tabId === 'ads') loadAds();
@@ -1998,6 +2039,71 @@
           </tr>
         `).join('');
       } catch {}
+    }
+
+    async function loadFcmConfig() {
+      const badge = document.getElementById('badge-fcm-status');
+      const projectEl = document.getElementById('fcm-cfg-project');
+      const emailEl = document.getElementById('fcm-cfg-email');
+      const tokensEl = document.getElementById('fcm-cfg-tokens');
+      if (!badge || !projectEl) return;
+      try {
+        const resp = await fetch('/api/v1/admin/fcm-config');
+        const d = await resp.json();
+        projectEl.innerText = d.projectId || 'vybe-1c966';
+        emailEl.innerText = d.clientEmail || 'Not configured';
+        tokensEl.innerText = `${d.activeTokensCount || 0} Android Devices`;
+        if (d.configured) {
+          badge.className = 'badge badge-green';
+          badge.innerHTML = '<i data-lucide="check-circle" size="12"></i> Active & Connected';
+        } else {
+          badge.className = 'badge badge-gold';
+          badge.innerHTML = '<i data-lucide="alert-triangle" size="12"></i> Standby (Needs Service Account)';
+        }
+        if (window.lucide) lucide.createIcons();
+      } catch (e) {
+        badge.className = 'badge badge-muted';
+        badge.innerText = 'Offline';
+      }
+    }
+
+    async function saveFcmConfig() {
+      const input = document.getElementById('input-fcm-sa-json');
+      const resultEl = document.getElementById('fcm-save-result');
+      const btn = document.getElementById('btn-save-fcm');
+      const val = input.value.trim();
+      if (!val) {
+        alert('Please paste your Firebase Service Account JSON first.');
+        return;
+      }
+      btn.disabled = true;
+      btn.innerText = 'Validating & Connecting...';
+      resultEl.innerHTML = '';
+      try {
+        const resp = await fetch('/api/v1/admin/fcm-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serviceAccountJson: val })
+        });
+        const res = await resp.json();
+        if (res.success) {
+          resultEl.style.color = 'var(--accent-green)';
+          resultEl.innerText = '✓ ' + (res.message || 'FCM Service Account successfully saved & authenticated!');
+          input.value = '';
+          await loadFcmConfig();
+          await loadPushStats();
+        } else {
+          resultEl.style.color = '#ef4444';
+          resultEl.innerText = '✗ ' + (res.error || 'Failed to save configuration');
+        }
+      } catch (err) {
+        resultEl.style.color = '#ef4444';
+        resultEl.innerText = '✗ Network error: ' + err.message;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="save"></i> Save FCM Credentials';
+        if (window.lucide) lucide.createIcons();
+      }
     }
 
     // 7. Badge Directory

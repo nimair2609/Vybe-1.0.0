@@ -324,11 +324,26 @@ async function dispatchFcmIfConfigured({ tokens = [], topic, title, body, data =
         body: JSON.stringify({
           message: {
             ...(target.token ? { token: target.token } : { topic: target.topic }),
+            notification: {
+              title: String(title),
+              body: String(body)
+            },
             data: stringData,
             android: {
               priority: 'high',
               ttl: '86400s',
-              direct_boot_ok: true
+              direct_boot_ok: true,
+              notification: {
+                title: String(title),
+                body: String(body),
+                channel_id: channelId || 'vybe_activity_high_v2',
+                icon: 'ic_vybe_notification',
+                color: '#7B2CBF',
+                default_sound: true,
+                default_vibrate_timings: true,
+                notification_priority: 'PRIORITY_MAX',
+                visibility: 'PUBLIC'
+              }
             }
           }
         })
@@ -382,7 +397,7 @@ const server = http.createServer(async (req, res) => {
 
   const cleanUrl = (req.url || '/').split('?')[0];
 
-  if (cleanUrl === '/health') {
+  if (cleanUrl === '/health' || cleanUrl === '/api/v1/health') {
     sendJson(res, 200, {
       status: 'healthy',
       server: 'VYBE Admin & Push Gateway',
@@ -528,6 +543,56 @@ const server = http.createServer(async (req, res) => {
       realtimeConfigured: true,
       recentDevices: activeDevices.slice(0, 10),
       recentLogs: recentPushLogs
+    });
+    return;
+  }
+
+  if (cleanUrl === '/api/v1/admin/fcm-config' && req.method === 'GET') {
+    const sa = getFirebaseServiceAccount();
+    const activeTokens = await getAllActiveTokens();
+    sendJson(res, 200, {
+      configured: Boolean(sa),
+      projectId: sa?.project_id || (process.env.FIREBASE_PROJECT_ID || 'vybe-1c966'),
+      clientEmail: sa?.client_email || 'Not Configured (Standby Mode)',
+      activeTokensCount: activeTokens.length
+    });
+    return;
+  }
+
+  if (cleanUrl === '/api/v1/admin/fcm-config' && req.method === 'POST') {
+    const body = await readJsonBody(req);
+    let saObj = null;
+    if (body.serviceAccountJson) {
+      if (typeof body.serviceAccountJson === 'string') {
+        try {
+          saObj = JSON.parse(body.serviceAccountJson);
+        } catch {
+          sendJson(res, 400, { error: 'Invalid JSON string provided.' });
+          return;
+        }
+      } else if (typeof body.serviceAccountJson === 'object') {
+        saObj = body.serviceAccountJson;
+      }
+    } else if (body.project_id && body.private_key) {
+      saObj = body;
+    }
+
+    if (!saObj || !saObj.client_email || !saObj.private_key) {
+      sendJson(res, 400, { error: 'Service account must contain client_email and private_key.' });
+      return;
+    }
+
+    const saPath = path.resolve(__dirname, 'firebase-service-account.json');
+    fs.writeFileSync(saPath, JSON.stringify(saObj, null, 2), 'utf8');
+    cachedAccessToken = null;
+
+    const testToken = await getGoogleAccessToken(saObj);
+    sendJson(res, 200, {
+      success: true,
+      configured: Boolean(testToken),
+      projectId: saObj.project_id || 'vybe-1c966',
+      clientEmail: saObj.client_email,
+      message: testToken ? 'FCM Service Account verified and actively authenticated!' : 'Saved, but OAuth token minting returned null. Please verify private_key.'
     });
     return;
   }
