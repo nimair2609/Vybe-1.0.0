@@ -137,3 +137,71 @@ h1, h2, h3, h4, .brand-font {
 .animate-breathing {
   animation: breathingOrb 16s ease-in-out infinite;
 }
+
+/* Global Finger Heart Reaction Animations */
+@keyframes vybeFingerHeartFloat {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.5);
+    opacity: 0.95;
+  }
+  70% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate3d(var(--fh-dx, 10px), var(--fh-dy, -30px), 0) scale(1.05);
+    opacity: 0;
+  }
+}
+
+@keyframes vybeFingerHeartCenterBurst {
+  0% {
+    transform: scale(0.25) rotate(-10deg);
+    opacity: 0;
+  }
+  35% {
+    transform: scale(1.28) rotate(4deg);
+    opacity: 1;
+  }
+  65% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.05) rotate(0deg);
+    opacity: 0;
+  }
+}
+
+
+@keyframes vybeFloatHeart {
+  0% {
+    opacity: 0.95;
+    transform: translate(0px, 0px) scale(0.45);
+  }
+  45% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes vybeCenterHeartBurst {
+  0% {
+    opacity: 0;
+    transform: scale(0.35) rotate(-10deg);
+  }
+  38% {
+    opacity: 1;
+    transform: scale(1.28) rotate(6deg);
+  }
+  68% {
+    opacity: 0.95;
+    transform: scale(1.0) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.12) rotate(0deg);
+  }
+}
+

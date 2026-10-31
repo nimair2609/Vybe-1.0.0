@@ -3,9 +3,9 @@ import { User, Post, Story, PostComment, MoodType, OfficialVybeBadge } from '../
 export const SUPABASE_URL = 'https://cppwadedazpbevkfrchg.supabase.co';
 export const SUPABASE_ANON_KEY = 'sb_publishable_MI-UdOqfccHVZIHjQq9vrw_IjEzeR7H';
 
-const headers = {
+const headers: Record<string, string> = {
   'apikey': SUPABASE_ANON_KEY,
-  'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+  ...(SUPABASE_ANON_KEY.startsWith('eyJ') ? { 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } : {}),
   'Content-Type': 'application/json',
   'Prefer': 'return=representation'
 };
@@ -391,4 +391,20 @@ export async function createLiveStory(storyData: {
     console.warn('[Supabase] createLiveStory exception:', err);
   }
   return null;
+}
+
+// 8. Sync Finger Heart reaction count to Supabase posts table
+export async function syncPostLikeCountToSupabase(postId: string, nextLikesCount: number): Promise<void> {
+  if (!postId || postId.startsWith('post_')) return;
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/posts?id=eq.${encodeURIComponent(postId)}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({
+        likes_count: Math.max(0, nextLikesCount)
+      })
+    });
+  } catch (err) {
+    console.warn('[Supabase] Reaction sync notice:', err);
+  }
 }

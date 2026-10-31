@@ -55,7 +55,10 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UserProfileScreen(viewModel: VybeViewModel) {
+fun UserProfileScreen(
+  viewModel: VybeViewModel,
+  forceOwnProfile: Boolean = false
+) {
   BackHandler {
     viewModel.closeUserProfileOrBack()
   }
@@ -103,7 +106,9 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
   var photoActionTarget by remember { mutableStateOf<String?>(null) } // "AVATAR" or "BANNER"
   var showPhotoActionSheet by remember { mutableStateOf(false) }
 
-  if (profileLookupError != null || (profileUser == null && currentUser == null)) {
+  val isOwnProfileContext = forceOwnProfile || (currentScreen == Screen.MAIN && selectedNavTab == MainTab.PROFILE)
+
+  if ((!isOwnProfileContext && profileLookupError != null) || (profileUser == null && currentUser == null)) {
     Scaffold(
       topBar = {
         TopAppBar(
@@ -188,20 +193,20 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
     return
   }
 
-  // Strict ID-based ownership check — on MainTab.PROFILE always show currentUser
-  val user: User = remember(profileUser, currentUser, allUsers, currentScreen, selectedNavTab) {
-    if (currentScreen == Screen.MAIN && selectedNavTab == MainTab.PROFILE) {
+  // Strict ID-based ownership check — on MainTab.PROFILE / forceOwnProfile always show currentUser
+  val user: User = remember(profileUser, currentUser, allUsers, isOwnProfileContext) {
+    if (isOwnProfileContext) {
       currentUser ?: allUsers.firstOrNull() ?: User.EMPTY
     } else {
       val target = profileUser ?: currentUser ?: allUsers.firstOrNull() ?: User.EMPTY
-      if (currentUser != null && target.id == currentUser!!.id) {
+      if (currentUser != null && target.id.equals(currentUser!!.id, ignoreCase = true)) {
         currentUser!!
       } else {
-        allUsers.firstOrNull { it.id == target.id } ?: target
+        allUsers.firstOrNull { it.id.equals(target.id, ignoreCase = true) } ?: target
       }
     }
   }
-  val isMe = currentUser != null && currentUser!!.id == user.id
+  val isMe = isOwnProfileContext || (currentUser != null && currentUser!!.id.equals(user.id, ignoreCase = true))
 
   LaunchedEffect(user.id) {
     if (!isMe && selectedTab == "Saved") {
@@ -333,12 +338,15 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
     snackbarHost = { SnackbarHost(snackbarHostState) },
     topBar = {
       TopAppBar(
+        windowInsets = WindowInsets.statusBars,
         navigationIcon = {
           IconButton(
             onClick = {
               viewModel.closeUserProfileOrBack()
             },
-            modifier = Modifier.testTag("profile_back_button")
+            modifier = Modifier
+              .size(48.dp)
+              .testTag("profile_back_button")
           ) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
           }
@@ -1195,6 +1203,7 @@ fun UserProfileScreen(viewModel: VybeViewModel) {
           PostCard(
             post = post,
             onLikeClick = { viewModel.toggleLike(post.id) },
+            onDoubleTapLike = { viewModel.ensurePostLoved(post.id) },
             onReact = { rx -> viewModel.reactToPost(post.id, rx) },
             onSaveClick = { viewModel.toggleSave(post.id) },
             onCommentClick = { viewModel.loadCommentsForPost(post.id) },

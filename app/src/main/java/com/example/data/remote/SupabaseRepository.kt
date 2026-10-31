@@ -288,10 +288,23 @@ class SupabaseRepository {
     }
 
     try {
-      val response = SupabaseNetworkClient.authApi.signIn(
-        apiKey = SupabaseConfig.supabaseAnonKey,
+      var activeKey = SupabaseConfig.supabaseAnonKey
+      var response = SupabaseNetworkClient.authApi.signIn(
+        apiKey = activeKey,
         request = SupabaseSignInRequest(email = email.trim(), password = password)
       )
+      if (!response.isSuccessful && response.code() == 401 && activeKey != SupabaseConfig.LIVE_SUPABASE_ANON_KEY) {
+        val peekErr = response.errorBody()?.string().orEmpty()
+        if (peekErr.contains("Invalid API key", ignoreCase = true) || peekErr.contains("apikey", ignoreCase = true)) {
+          activeKey = SupabaseConfig.LIVE_SUPABASE_ANON_KEY
+          response = SupabaseNetworkClient.authApi.signIn(
+            apiKey = activeKey,
+            request = SupabaseSignInRequest(email = email.trim(), password = password)
+          )
+        } else {
+          return@withContext Result.failure(Exception(parseErrorMessage(peekErr, "Invalid email or password.")))
+        }
+      }
 
       if (response.isSuccessful && response.body() != null) {
         val authBody = response.body()!!
@@ -349,10 +362,24 @@ class SupabaseRepository {
     }
     try {
       val normalized = normalizePhoneE164(phone).ifBlank { phone.trim() }
-      val response = SupabaseNetworkClient.authApi.signInWithPhone(
-        apiKey = SupabaseConfig.supabaseAnonKey,
+      var activeKey = SupabaseConfig.supabaseAnonKey
+      var response = SupabaseNetworkClient.authApi.signInWithPhone(
+        apiKey = activeKey,
         request = SupabasePhoneSignInRequest(phone = normalized, password = password)
       )
+      var cachedErrorBody: String? = null
+      if (!response.isSuccessful && response.code() == 401 && activeKey != SupabaseConfig.LIVE_SUPABASE_ANON_KEY) {
+        val peekErr = response.errorBody()?.string().orEmpty()
+        if (peekErr.contains("Invalid API key", ignoreCase = true) || peekErr.contains("apikey", ignoreCase = true)) {
+          activeKey = SupabaseConfig.LIVE_SUPABASE_ANON_KEY
+          response = SupabaseNetworkClient.authApi.signInWithPhone(
+            apiKey = activeKey,
+            request = SupabasePhoneSignInRequest(phone = normalized, password = password)
+          )
+        } else {
+          cachedErrorBody = peekErr
+        }
+      }
       if (response.isSuccessful && response.body() != null) {
         val authBody = response.body()!!
         val token = authBody.accessToken ?: return@withContext Result.failure(
@@ -367,7 +394,7 @@ class SupabaseRepository {
           ?: buildFallbackUserFromAuthDto(userDto, userDto.email.orEmpty())
         Result.success(AuthSessionPayload(userProfile, token, refresh, expiresIn))
       } else {
-        val errorBody = response.errorBody()?.string() ?: ""
+        val errorBody = cachedErrorBody ?: response.errorBody()?.string() ?: ""
         Result.failure(Exception(parseErrorMessage(errorBody, "Invalid phone number or password.")))
       }
     } catch (e: Exception) {
@@ -439,14 +466,28 @@ class SupabaseRepository {
         }
       }
 
-      val otpResp = SupabaseNetworkClient.authApi.sendOtp(
-        apiKey = SupabaseConfig.supabaseAnonKey,
+      var activeKey = SupabaseConfig.supabaseAnonKey
+      var otpResp = SupabaseNetworkClient.authApi.sendOtp(
+        apiKey = activeKey,
         request = SupabaseOtpSendRequest(phone = normalized, createUser = false)
       )
+      var cachedRawErr: String? = null
+      if (!otpResp.isSuccessful && otpResp.code() == 401 && activeKey != SupabaseConfig.LIVE_SUPABASE_ANON_KEY) {
+        val peekErr = otpResp.errorBody()?.string().orEmpty()
+        if (peekErr.contains("Invalid API key", ignoreCase = true) || peekErr.contains("apikey", ignoreCase = true)) {
+          activeKey = SupabaseConfig.LIVE_SUPABASE_ANON_KEY
+          otpResp = SupabaseNetworkClient.authApi.sendOtp(
+            apiKey = activeKey,
+            request = SupabaseOtpSendRequest(phone = normalized, createUser = false)
+          )
+        } else {
+          cachedRawErr = peekErr
+        }
+      }
       if (otpResp.isSuccessful) {
         Result.success("SMS verification code sent to $normalized.")
       } else {
-        val rawErr = otpResp.errorBody()?.string().orEmpty()
+        val rawErr = cachedRawErr ?: otpResp.errorBody()?.string().orEmpty()
         val msg = if (rawErr.contains("Phone", true) || rawErr.contains("sms", true) || otpResp.code() == 422 || otpResp.code() == 400) {
           parseErrorMessage(
             rawErr,
@@ -3241,19 +3282,47 @@ class SupabaseRepository {
 
     val json = JSONObject().apply {
       put("recipient_id", recipientId)
+      put("recipientId", recipientId)
       put("actor_id", actorId)
+      put("actorId", actorId)
       put("type", type)
       put("title", title)
       put("body", body)
+      put("message", body)
       put("event_key", canonicalKey)
-      if (!targetId.isNullOrBlank()) put("target_id", targetId)
-      if (!conversationId.isNullOrBlank()) put("conversation_id", conversationId)
-      if (!notificationId.isNullOrBlank()) put("notification_id", notificationId)
-      if (!actorUsername.isNullOrBlank()) put("actor_username", actorUsername)
-      if (!actorDisplayName.isNullOrBlank()) put("actor_display_name", actorDisplayName)
-      if (!actorAvatarUrl.isNullOrBlank()) put("actor_avatar_url", actorAvatarUrl)
-      if (!mediaUrl.isNullOrBlank()) put("media_url", mediaUrl)
-      if (!groupName.isNullOrBlank()) put("group_name", groupName)
+      put("eventKey", canonicalKey)
+      if (!targetId.isNullOrBlank()) {
+        put("target_id", targetId)
+        put("targetId", targetId)
+      }
+      if (!conversationId.isNullOrBlank()) {
+        put("conversation_id", conversationId)
+        put("conversationId", conversationId)
+      }
+      if (!notificationId.isNullOrBlank()) {
+        put("notification_id", notificationId)
+        put("notificationId", notificationId)
+      }
+      if (!actorUsername.isNullOrBlank()) {
+        put("actor_username", actorUsername)
+        put("actorUsername", actorUsername)
+      }
+      if (!actorDisplayName.isNullOrBlank()) {
+        put("actor_display_name", actorDisplayName)
+        put("actorDisplayName", actorDisplayName)
+      }
+      if (!actorAvatarUrl.isNullOrBlank()) {
+        put("actor_avatar_url", actorAvatarUrl)
+        put("actorAvatarUrl", actorAvatarUrl)
+      }
+      if (!mediaUrl.isNullOrBlank()) {
+        put("media_url", mediaUrl)
+        put("mediaUrl", mediaUrl)
+      }
+      if (!groupName.isNullOrBlank()) {
+        put("group_name", groupName)
+        put("groupName", groupName)
+      }
     }.toString()
 
     val jsonBody = json.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
@@ -3299,9 +3368,14 @@ class SupabaseRepository {
       put("broadcast", true)
       put("title", title)
       put("body", body)
+      put("message", body)
       put("destination", destination)
       put("event_key", eventKey)
-      if (!mediaUrl.isNullOrBlank()) put("media_url", mediaUrl)
+      put("eventKey", eventKey)
+      if (!mediaUrl.isNullOrBlank()) {
+        put("media_url", mediaUrl)
+        put("mediaUrl", mediaUrl)
+      }
     }.toString()
     val jsonBody = json.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
 

@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -40,6 +41,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.zIndex
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import com.example.data.model.MoodType
 import com.example.data.model.VybeReaction
@@ -101,6 +103,7 @@ fun VybeReactionOutlineIcon(
   reaction: VybeReaction,
   size: Dp = 20.dp,
   tint: Color = reactionColor(reaction),
+  forceDarkSurface: Boolean = false,
   modifier: Modifier = Modifier
 ) {
   Box(
@@ -108,12 +111,15 @@ fun VybeReactionOutlineIcon(
     contentAlignment = Alignment.Center
   ) {
     if (reaction == VybeReaction.LOVE) {
-      val isLiked = tint != Color.White && tint != Color(0xFF64748B) && tint != Color.Unspecified
-      VybeLikeIcon(
+      val isLiked = tint == reactionColor(VybeReaction.LOVE) ||
+        tint == FingerHeartPinkStart ||
+        tint == Color(0xFFFF2A85)
+      val inactiveOverride = if (!isLiked && tint != Color.Unspecified) tint else null
+      FingerHeartIcon(
         isLiked = isLiked,
         size = size,
-        inactiveTint = tint,
-        activeTintOverride = tint
+        forceDarkSurface = forceDarkSurface,
+        inactiveTintOverride = inactiveOverride
       )
     } else {
       Text(
@@ -252,6 +258,7 @@ private fun VybeReactionGestureButtonInternal(
 ) {
   val haptic = LocalHapticFeedback.current
   val densityObj = androidx.compose.ui.platform.LocalDensity.current
+  val scope = rememberCoroutineScope()
   val currentUserReaction by rememberUpdatedState(userReaction)
   val currentOnReact by rememberUpdatedState(onReact)
   val currentOnToggleDefault by rememberUpdatedState(onToggleDefault)
@@ -260,6 +267,37 @@ private fun VybeReactionGestureButtonInternal(
   var hoveredIndex by remember { mutableStateOf<Int?>(null) }
   val reactions = remember { VybeReaction.values() }
   val buttonSize = if (isSideBar) 48.dp else 40.dp
+  val tapScale = remember { Animatable(1f) }
+  val tapRotation = remember { Animatable(0f) }
+  var showMiniBurst by remember { mutableStateOf(false) }
+  val burstProgress = remember { Animatable(0f) }
+
+  val triggerTapAnimation: (Boolean) -> Unit = { becomingLiked ->
+    scope.launch {
+      if (becomingLiked) {
+        showMiniBurst = true
+        launch {
+          burstProgress.snapTo(0f)
+          burstProgress.animateTo(1f, androidx.compose.animation.core.tween(410))
+          showMiniBurst = false
+        }
+        launch {
+          tapRotation.animateTo(-10f, androidx.compose.animation.core.tween(120))
+          tapRotation.animateTo(5f, androidx.compose.animation.core.tween(120))
+          tapRotation.animateTo(0f, androidx.compose.animation.core.tween(140))
+        }
+        tapScale.animateTo(1.35f, androidx.compose.animation.core.tween(145))
+        tapScale.animateTo(
+          1.0f,
+          spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)
+        )
+      } else {
+        tapRotation.snapTo(0f)
+        tapScale.animateTo(0.86f, androidx.compose.animation.core.tween(110))
+        tapScale.animateTo(1.0f, androidx.compose.animation.core.tween(150))
+      }
+    }
+  }
 
   Box(
     modifier = modifier.size(buttonSize),
@@ -349,8 +387,11 @@ private fun VybeReactionGestureButtonInternal(
               }
 
               if (upOrCancel != null) {
-                // Quick tap: toggle current/default 🫰 reaction
+                // Quick tap: toggle current/default 🫰 Finger Heart reaction with 1.0 -> 1.35 bounce + rotation + particles
+                val becomingLiked = currentUserReaction == null
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 currentOnToggleDefault()
+                triggerTapAnimation(becomingLiked)
               } else {
                 // Press & hold: open floating 5-icon bar
                 isBarVisible = true
@@ -423,11 +464,48 @@ private fun VybeReactionGestureButtonInternal(
     ) {
       val displayReaction = userReaction ?: VybeReaction.LOVE
       val isReacted = userReaction != null
-      VybeReactionOutlineIcon(
-        reaction = displayReaction,
-        size = if (isSideBar) 24.dp else 22.dp,
-        tint = if (isReacted) reactionColor(displayReaction) else Color.White
-      )
+      val isLightBg = !isSideBar && MaterialTheme.colorScheme.background.luminance() > 0.5f
+      val inactiveOutlineTint = if (isSideBar || !isLightBg) Color.White else Color(0xFF0F172A)
+
+      if (showMiniBurst) {
+        val p = burstProgress.value
+        listOf(
+          Pair(-12f, -26f),
+          Pair(12f, -30f),
+          Pair(-4f, -34f),
+          Pair(15f, -20f)
+        ).forEach { (dx, dy) ->
+          Box(
+            modifier = Modifier
+              .offset(x = (dx * p).dp, y = (dy * p).dp)
+              .scale((0.55f + 0.55f * p).coerceAtMost(1.1f))
+          ) {
+            FingerHeartIcon(
+              isLiked = true,
+              size = (10f * (1f - p * 0.35f)).dp,
+              forceDarkSurface = true
+            )
+          }
+        }
+      }
+
+      Box(
+        modifier = Modifier
+          .scale(tapScale.value)
+          .let { base ->
+            if (tapRotation.value != 0f) {
+              base.then(Modifier.zIndex(1f))
+            } else base
+          },
+        contentAlignment = Alignment.Center
+      ) {
+        VybeReactionOutlineIcon(
+          reaction = displayReaction,
+          size = if (isSideBar) 25.dp else 23.dp,
+          forceDarkSurface = isSideBar,
+          tint = if (isReacted) reactionColor(displayReaction) else inactiveOutlineTint
+        )
+      }
     }
   }
 }

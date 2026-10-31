@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Heart, MessageCircle, Bookmark, MapPin,
+  MessageCircle, Bookmark, MapPin,
   Music, Volume2, VolumeX, Send, Link2, Share2, X, Lock
 } from 'lucide-react';
 import { Post, VYBE_REACTIONS, MOOD_DEFINITIONS } from '../types';
 import { OfficialBadge } from './Badges';
+import { FingerHeartReaction, FingerHeartDoubleTapOverlay, FingerHeartIcon } from './FingerHeartReaction';
 import { useVybe } from '../context/VybeContext';
 import { formatRelativeTimestamp } from '../utils/timestamp';
 
@@ -16,8 +17,11 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
   const {
     currentUser,
     conversations,
+    openUserProfile,
     toggleLikePost,
+    ensurePostLoved,
     reactToPost,
+    toggleCommentLike,
     toggleSavePost,
     addCommentToPost,
     sharePostToConversation,
@@ -89,7 +93,10 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
       {/* Post Header — Single clean circular avatar border */}
       <div className="flex items-center justify-between p-4">
         <div className="flex items-center gap-3">
-          <div className="relative shrink-0">
+          <div
+            onClick={() => openUserProfile(post.author)}
+            className="relative shrink-0 cursor-pointer"
+          >
             <img
               src={post.author.avatarUrl}
               alt={post.author.displayName}
@@ -101,13 +108,21 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
           </div>
           <div>
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="font-bold text-white text-sm hover:underline cursor-pointer">
+              <span
+                onClick={() => openUserProfile(post.author)}
+                className="font-bold text-white text-sm hover:underline cursor-pointer"
+              >
                 {post.author.displayName}
               </span>
               {post.author.badges?.map(b => (
                 <OfficialBadge key={b} badge={b} size="sm" />
               ))}
-              <span className="text-xs text-gray-400 font-mono">@{post.author.username}</span>
+              <span
+                onClick={() => openUserProfile(post.author)}
+                className="text-xs text-gray-400 font-mono cursor-pointer hover:underline"
+              >
+                @{post.author.username}
+              </span>
             </div>
             <div className="flex items-center gap-2 mt-0.5 text-[11px] text-gray-400">
               <span>{displayTimestamp}</span>
@@ -150,9 +165,12 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
         )}
       </div>
 
-      {/* Media Attachment */}
+      {/* Media Attachment with Safe Double-Tap Finger Heart Burst */}
       {post.mediaUrls?.length > 0 && (
-        <div className="relative w-full max-h-[500px] bg-[#060714] overflow-hidden flex items-center justify-center">
+        <FingerHeartDoubleTapOverlay
+          onDoubleTap={() => ensurePostLoved(post.id)}
+          className="w-full max-h-[500px] bg-[#060714] overflow-hidden flex items-center justify-center"
+        >
           {post.mediaType === 'VIDEO' || post.mediaType === 'REEL' ? (
             <video
               src={post.mediaUrls[0]}
@@ -172,7 +190,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
               VYBES Reel
             </div>
           )}
-        </div>
+        </FingerHeartDoubleTapOverlay>
       )}
 
       {/* Music Track Banner if attached */}
@@ -213,30 +231,30 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
       <div className="p-4 border-t border-[#262E4A]/50">
         <div className="flex items-center justify-between min-h-[36px]">
           <div className="flex items-center gap-5 relative">
-            {/* 1. Reaction / Like */}
+            {/* 1. Global Finger Heart Reaction */}
             <div
               className="relative flex items-center"
               onMouseEnter={() => setShowReactionMenu(true)}
               onMouseLeave={() => setShowReactionMenu(false)}
             >
-              <button
-                type="button"
-                onClick={() => toggleLikePost(post.id)}
-                className={`inline-flex items-center justify-center gap-1.5 h-9 px-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                  post.isLiked ? 'text-[#EC4899]' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                <span className="w-5 h-5 inline-flex items-center justify-center">
-                  {post.userReaction ? (
-                    <span className="text-base leading-none">
-                      {VYBE_REACTIONS.find(r => r.id === post.userReaction)?.emoji || '🫰'}
-                    </span>
-                  ) : (
-                    <Heart className={`w-5 h-5 ${post.isLiked ? 'fill-current' : ''}`} />
-                  )}
-                </span>
-                {post.likesCount > 0 && <span>{post.likesCount}</span>}
-              </button>
+              {post.userReaction && post.userReaction !== 'LOVE' ? (
+                <button
+                  type="button"
+                  onClick={() => toggleLikePost(post.id)}
+                  className="inline-flex items-center justify-center gap-1.5 h-9 px-1.5 rounded-lg text-xs font-semibold text-[#FF2E93] transition-colors"
+                >
+                  <span className="w-5 h-5 inline-flex items-center justify-center text-base leading-none">
+                    {VYBE_REACTIONS.find(r => r.id === post.userReaction)?.emoji}
+                  </span>
+                  {post.likesCount > 0 && <span>{post.likesCount.toLocaleString()}</span>}
+                </button>
+              ) : (
+                <FingerHeartReaction
+                  isLiked={post.isLiked}
+                  count={post.likesCount}
+                  onToggle={() => toggleLikePost(post.id)}
+                />
+              )}
 
               {showReactionMenu && (
                 <div className="absolute bottom-9 left-0 flex items-center gap-2 p-2 bg-[#1A1F36] border border-[#262E4A] rounded-full shadow-2xl z-20 animate-in fade-in slide-in-from-bottom-2">
@@ -249,9 +267,13 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
                         setShowReactionMenu(false);
                       }}
                       title={reaction.label}
-                      className="text-xl hover:scale-125 transition-transform p-1 rounded-full hover:bg-white/10"
+                      className="text-xl hover:scale-125 transition-transform p-1.5 rounded-full hover:bg-white/10 inline-flex items-center justify-center"
                     >
-                      {reaction.emoji}
+                      {reaction.id === 'LOVE' ? (
+                        <FingerHeartIcon isLiked={true} size={20} forceDarkOverlay={true} />
+                      ) : (
+                        reaction.emoji
+                      )}
                     </button>
                   ))}
                 </div>
@@ -426,14 +448,29 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
                   <img
                     src={c.author.avatarUrl}
                     alt={c.author.displayName}
-                    className="w-7 h-7 rounded-full object-cover shrink-0 mt-0.5"
+                    onClick={() => openUserProfile(c.author)}
+                    className="w-7 h-7 rounded-full object-cover shrink-0 mt-0.5 cursor-pointer"
                   />
                   <div className="flex-1 bg-[#101322] border border-[#262E4A] rounded-xl p-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-white">{c.author.displayName}</span>
-                      <span className="text-[10px] text-gray-400">
-                        {formatRelativeTimestamp(c.createdAtIso, c.timestamp, nowTick)}
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        onClick={() => openUserProfile(c.author)}
+                        className="font-bold text-white cursor-pointer hover:underline"
+                      >
+                        {c.author.displayName}
                       </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-gray-400">
+                          {formatRelativeTimestamp(c.createdAtIso, c.timestamp, nowTick)}
+                        </span>
+                        <FingerHeartReaction
+                          isLiked={Boolean(c.isLiked)}
+                          count={c.likesCount || 0}
+                          size={15}
+                          onToggle={() => toggleCommentLike(post.id, c.id)}
+                          className="h-6 px-1"
+                        />
+                      </div>
                     </div>
                     <p className="text-gray-200 mt-1 leading-relaxed">{c.content}</p>
                   </div>

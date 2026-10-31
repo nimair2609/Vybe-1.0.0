@@ -282,13 +282,13 @@ fun StoryCreateDialog(
     onDismissRequest = { if (!isPublishingStory) onDismiss() },
     properties = DialogProperties(
       usePlatformDefaultWidth = false,
-      decorFitsSystemWindows = false
+      decorFitsSystemWindows = true
     )
   ) {
     Scaffold(
       modifier = Modifier
         .fillMaxSize()
-        .windowInsetsPadding(WindowInsets.safeDrawing)
+        .systemBarsPadding()
         .imePadding(),
       contentWindowInsets = WindowInsets(0, 0, 0, 0),
       topBar = {
@@ -373,23 +373,24 @@ fun StoryCreateDialog(
       bottomBar = {
         Surface(
           color = MaterialTheme.colorScheme.surface,
-          shadowElevation = 10.dp,
-          tonalElevation = 4.dp,
+          shadowElevation = 12.dp,
+          tonalElevation = 6.dp,
           modifier = Modifier
             .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.navigationBars)
+            .navigationBarsPadding()
+            .testTag("create_story_bottom_bar")
         ) {
           Box(
             modifier = Modifier
               .fillMaxWidth()
-              .padding(horizontal = 12.dp, vertical = 8.dp),
+              .padding(horizontal = 14.dp, vertical = 10.dp),
             contentAlignment = Alignment.Center
           ) {
             Row(
               modifier = Modifier
                 .widthIn(max = 600.dp)
                 .fillMaxWidth(),
-              horizontalArrangement = Arrangement.spacedBy(8.dp),
+              horizontalArrangement = Arrangement.spacedBy(10.dp),
               verticalAlignment = Alignment.CenterVertically
             ) {
               // 1. VYBE Matches Button
@@ -408,31 +409,31 @@ fun StoryCreateDialog(
                 },
                 enabled = !isPublishingStory,
                 border = BorderStroke(1.5.dp, Color(0xFF10B981)),
-                shape = RoundedCornerShape(20.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(16.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
                 modifier = Modifier
                   .weight(1f)
-                  .heightIn(min = 44.dp)
+                  .height(50.dp)
                   .testTag("publish_vybe_matches_button")
               ) {
                 Icon(
                   Icons.Default.Star,
                   contentDescription = null,
                   tint = Color(0xFF10B981),
-                  modifier = Modifier.size(15.dp)
+                  modifier = Modifier.size(16.dp)
                 )
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(6.dp))
                 Text(
                   text = "Matches (${vybeMatches.size})",
                   color = Color(0xFF10B981),
                   fontWeight = FontWeight.Bold,
-                  fontSize = 11.sp,
+                  fontSize = 12.sp,
                   maxLines = 1,
                   overflow = TextOverflow.Ellipsis
                 )
               }
 
-              // 2. Your Story Button
+              // 2. Share Story Button
               Button(
                 onClick = {
                   if (selectedAudience == StoryAudience.VYBE_MATCHES) {
@@ -452,43 +453,43 @@ fun StoryCreateDialog(
                 },
                 enabled = !isPublishingStory,
                 colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-                shape = RoundedCornerShape(20.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(16.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
                 modifier = Modifier
                   .weight(1f)
-                  .heightIn(min = 44.dp)
+                  .height(50.dp)
                   .testTag("publish_your_story_button")
               ) {
                 if (isPublishingStory) {
                   CircularProgressIndicator(
                     color = Color.White,
                     strokeWidth = 2.dp,
-                    modifier = Modifier.size(14.dp)
+                    modifier = Modifier.size(15.dp)
                   )
                   Spacer(modifier = Modifier.width(6.dp))
-                  Text("Sharing...", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                  Text("Sharing...", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 } else {
                   Icon(
                     Icons.Default.Upload,
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(15.dp)
+                    modifier = Modifier.size(16.dp)
                   )
-                  Spacer(modifier = Modifier.width(4.dp))
+                  Spacer(modifier = Modifier.width(6.dp))
                   Text(
                     text = "Share Story",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                   )
-                  Spacer(modifier = Modifier.width(3.dp))
+                  Spacer(modifier = Modifier.width(4.dp))
                   Icon(
                     Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(14.dp)
+                    modifier = Modifier.size(15.dp)
                   )
                 }
               }
@@ -497,12 +498,16 @@ fun StoryCreateDialog(
         }
       }
     ) { padding ->
-      Box(
+      BoxWithConstraints(
         modifier = Modifier
           .fillMaxSize()
           .padding(padding),
         contentAlignment = Alignment.TopCenter
       ) {
+        val adaptivePreviewHeight = remember(maxHeight, selectedMode, detectedVideoRatio) {
+          val baseTarget = if (selectedMode == StoryCreateMode.VIDEO && detectedVideoRatio > 1.15f) 220.dp else 285.dp
+          minOf(baseTarget, (maxHeight * 0.44f).coerceAtLeast(180.dp))
+        }
         Column(
           modifier = Modifier
             .widthIn(max = 600.dp)
@@ -626,12 +631,11 @@ fun StoryCreateDialog(
             }
           }
 
-          // --- 2. Clean Visual Preview Canvas (Zero Overlapping Composer Buttons) ---
-          val canvasHeight = if (selectedMode == StoryCreateMode.VIDEO && detectedVideoRatio > 1.15f) 240.dp else 310.dp
+          // --- 2. Clean Visual Preview Canvas (Adaptive height so bottom buttons never clip) ---
           Box(
             modifier = Modifier
               .fillMaxWidth()
-              .height(canvasHeight)
+              .height(adaptivePreviewHeight)
               .clip(RoundedCornerShape(18.dp))
               .background(Color(0xFF0A0A0F)),
             contentAlignment = Alignment.Center

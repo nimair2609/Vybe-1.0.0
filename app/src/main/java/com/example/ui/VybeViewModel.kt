@@ -126,6 +126,7 @@ class VybeViewModel : ViewModel() {
 
   private val _selectedUserProfile = MutableStateFlow<User?>(null)
   val selectedUserProfile: StateFlow<User?> = _selectedUserProfile.asStateFlow()
+  private val userProfileBackStack = ArrayDeque<User>()
 
   private val _profileLookupError = MutableStateFlow<String?>(null)
   val profileLookupError: StateFlow<String?> = _profileLookupError.asStateFlow()
@@ -347,15 +348,17 @@ class VybeViewModel : ViewModel() {
         val activeAuthor = _activeStoryAuthorId.value
         if (!activeAuthor.isNullOrBlank()) {
           val updatedSeq = visible
-            .filter { it.author.id == activeAuthor }
+            .filter { it.author.id.equals(activeAuthor, ignoreCase = true) }
             .sortedBy { com.example.util.TimestampUtils.parseIsoMillis(it.createdAtIso) ?: 0L }
-          _activeStorySequence.value = updatedSeq
-          if (updatedSeq.isEmpty() && _currentScreen.value == Screen.STORY_VIEWER) {
+          if (updatedSeq.isNotEmpty()) {
+            _activeStorySequence.value = updatedSeq
+            if (_currentStoryIndex.value >= updatedSeq.size) {
+              _currentStoryIndex.value = updatedSeq.lastIndex
+            }
+          } else if (_activeStorySequence.value.isEmpty() && _currentScreen.value == Screen.STORY_VIEWER) {
             _activeStoryAuthorId.value = null
             _currentStoryIndex.value = 0
             navigateBack()
-          } else if (_currentStoryIndex.value >= updatedSeq.size && updatedSeq.isNotEmpty()) {
-            _currentStoryIndex.value = updatedSeq.lastIndex
           }
         }
       }
@@ -635,6 +638,15 @@ class VybeViewModel : ViewModel() {
         destination == "POST_DETAIL" && !targetId.isNullOrBlank() -> {
           openPostFromNotification(targetId)
         }
+        // Story Reaction / Mention Deep Link
+        (destination == "STORY_VIEWER" || type.equals("STORY_REACTION", ignoreCase = true) || type.equals("STORY_MENTION", ignoreCase = true)) && !targetId.isNullOrBlank() -> {
+          val matchedStory = repository.stories.value.firstOrNull { it.id == targetId }
+          if (matchedStory != null) {
+            openStory(matchedStory)
+          } else {
+            navigateTo(Screen.NOTIFICATIONS)
+          }
+        }
         // Live Stream Studio
         destination == "LIVE_STUDIO" -> {
           navigateTo(Screen.LIVE_STUDIO)
@@ -783,8 +795,15 @@ class VybeViewModel : ViewModel() {
 
   fun navigateBack(): Boolean {
     if (_currentScreen.value == Screen.USER_PROFILE) {
-      _selectedUserProfile.value = null
       _profileLookupError.value = null
+      if (userProfileBackStack.isNotEmpty()) {
+        _selectedUserProfile.value = userProfileBackStack.removeLast()
+        return true
+      }
+      _selectedUserProfile.value = null
+      while (screenBackStack.isNotEmpty() && screenBackStack.last() == Screen.USER_PROFILE) {
+        screenBackStack.removeAt(screenBackStack.lastIndex)
+      }
     }
     if (_currentScreen.value == Screen.PASSWORD_RECOVERY) {
       exitPasswordRecoveryToLogin()
@@ -804,11 +823,12 @@ class VybeViewModel : ViewModel() {
   }
 
   fun closeUserProfileOrBack(): Boolean {
-    _selectedUserProfile.value = null
     _profileLookupError.value = null
     if (_currentScreen.value == Screen.USER_PROFILE) {
       return navigateBack()
     }
+    userProfileBackStack.clear()
+    _selectedUserProfile.value = null
     if (_currentScreen.value == Screen.MAIN && _selectedTab.value == MainTab.PROFILE) {
       _selectedTab.value = MainTab.FEED
       return true
@@ -824,10 +844,13 @@ class VybeViewModel : ViewModel() {
       refreshAllData()
     }
     if (tab == MainTab.PROFILE) {
+      userProfileBackStack.clear()
       _selectedUserProfile.value = null
+      _profileLookupError.value = null
     }
     _selectedTab.value = tab
     if (_currentScreen.value != Screen.MAIN) {
+      screenBackStack.removeAll { it == Screen.USER_PROFILE }
       _currentScreen.value = Screen.MAIN
     }
   }
@@ -851,13 +874,20 @@ class VybeViewModel : ViewModel() {
     }
     _profileLookupError.value = null
     val me = repository.currentUser.value
-    if (me != null && me.id == user.id) {
-      // Opening own profile routes cleanly to own profile tab / latest state
-      _selectedUserProfile.value = me
+    val resolvedTarget = if (me != null && me.id.equals(user.id, ignoreCase = true)) {
+      me
     } else {
-      val latest = repository.registerDiscoveredUser(user)
-      _selectedUserProfile.value = latest
+      repository.registerDiscoveredUser(user)
     }
+    val currentPeer = _selectedUserProfile.value
+    if (
+      _currentScreen.value == Screen.USER_PROFILE &&
+      currentPeer != null &&
+      !currentPeer.id.equals(resolvedTarget.id, ignoreCase = true)
+    ) {
+      userProfileBackStack.addLast(currentPeer)
+    }
+    _selectedUserProfile.value = resolvedTarget
     navigateTo(Screen.USER_PROFILE)
   }
 
@@ -897,6 +927,7 @@ class VybeViewModel : ViewModel() {
 
   // --- Posts, Comments & Reactions ---
   fun toggleLike(postId: String) = repository.toggleLikePost(postId)
+  fun ensurePostLoved(postId: String) = repository.ensurePostReacted(postId, VybeReaction.LOVE)
   fun toggleSave(postId: String) = repository.toggleSavePost(postId)
   fun archivePost(postId: String) = repository.archivePost(postId)
   fun restoreArchivedPost(postId: String) = repository.restoreArchivedPost(postId)
@@ -1004,20 +1035,22 @@ class VybeViewModel : ViewModel() {
     val myId = repository.currentUser.value?.id.orEmpty()
     val blocked = repository.blockedUserIds.value
     val following = repository.followingUserIds.value
-    val matchIds = repository.vybeMatches.value.map { it.id }.toSet()
+    val matchIds = repository.vybeMatches.value.map { it.id }
 
-    if (blocked.contains(s.author.id)) return false
+    if (blocked.any { it.equals(s.author.id, ignoreCase = true) }) return false
     val exp = com.example.util.TimestampUtils.parseIsoMillis(s.expiresAtIso)
     val notExpired = if (exp != null) exp > nowMillis else s.expiresHoursRemaining > 0
     if (!notExpired) return false
 
     if (myId.isNotBlank() && s.author.id.equals(myId, ignoreCase = true)) return true
-    if (s.author.isPrivate && !following.contains(s.author.id)) return false
+    val isFollowingAuthor = following.any { it.equals(s.author.id, ignoreCase = true) }
+    if (s.author.isPrivate && !isFollowingAuthor) return false
 
     return when (s.audience) {
       StoryAudience.EVERYONE, StoryAudience.PUBLIC -> true
-      StoryAudience.FOLLOWERS -> following.contains(s.author.id)
-      StoryAudience.VYBE_MATCHES, StoryAudience.CLOSE_FRIENDS -> matchIds.contains(s.author.id)
+      StoryAudience.FOLLOWERS -> isFollowingAuthor
+      StoryAudience.VYBE_MATCHES, StoryAudience.CLOSE_FRIENDS ->
+        matchIds.any { it.equals(s.author.id, ignoreCase = true) }
       StoryAudience.ONLY_ME -> false
     }
   }

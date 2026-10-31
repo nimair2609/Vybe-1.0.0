@@ -645,6 +645,7 @@ fun SharedPostDetailDialog(viewModel: VybeViewModel) {
               PostCard(
                 post = post,
                 onLikeClick = { viewModel.toggleLike(post.id) },
+                onDoubleTapLike = { viewModel.ensurePostLoved(post.id) },
                 onReact = { rx -> viewModel.reactToPost(post.id, rx) },
                 onSaveClick = { viewModel.toggleSave(post.id) },
                 onCommentClick = { viewModel.loadCommentsForPost(post.id) },

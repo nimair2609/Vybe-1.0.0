@@ -277,14 +277,12 @@ class MainActivity : ComponentActivity() {
                 )
               }
 
-              // In-App Update Notification Banner
+              // In-App Update Notification Banner (only on Main Feed so sub-screen Back buttons stay unobstructed)
               if (
                 availableUpdate != null &&
                 activeCall == null &&
-                currentScreen != Screen.SPLASH &&
-                currentScreen != Screen.AUTH &&
-                currentScreen != Screen.PASSWORD_RECOVERY &&
-                currentScreen != Screen.SETTINGS
+                currentScreen == Screen.MAIN &&
+                selectedTab == MainTab.FEED
               ) {
                 com.example.ui.components.InAppUpdateBanner(
                   release = availableUpdate!!,
@@ -293,7 +291,7 @@ class MainActivity : ComponentActivity() {
                   modifier = Modifier
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
-                    .padding(top = 8.dp)
+                    .padding(top = 56.dp)
                 )
               }
 

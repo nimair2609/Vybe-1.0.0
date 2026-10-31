@@ -81,6 +81,7 @@ fun PostCard(
   onFollowClick: (() -> Unit)? = null,
   onToggleAudio: ((Boolean) -> Unit)? = null,
   onOpenMusicTrack: ((MusicAttachment) -> Unit)? = null,
+  onDoubleTapLike: (() -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
   var showCommentDialog by remember { mutableStateOf(false) }
@@ -93,10 +94,23 @@ fun PostCard(
   var commentText by remember { mutableStateOf("") }
   var detectedMediaRatio by remember(post.id, post.mediaAspectRatio) { mutableStateOf(post.mediaAspectRatio) }
   var showDoubleTapResonance by remember { mutableStateOf(false) }
+  var doubleTapBurstNonce by remember { mutableIntStateOf(0) }
+  val likedCommentIds = remember(post.id) { mutableStateListOf<String>() }
 
-  LaunchedEffect(showDoubleTapResonance) {
+  val isCurrentlyLiked = post.isLiked || post.userReaction != null
+  val handleDoubleTapLike = {
+    doubleTapBurstNonce += 1
+    showDoubleTapResonance = true
+    if (onDoubleTapLike != null) {
+      onDoubleTapLike()
+    } else if (!isCurrentlyLiked) {
+      if (onReact != null) onReact(VybeReaction.LOVE) else onLikeClick()
+    }
+  }
+
+  LaunchedEffect(showDoubleTapResonance, doubleTapBurstNonce) {
     if (showDoubleTapResonance) {
-      delay(850L)
+      delay(720L)
       showDoubleTapResonance = false
     }
   }
@@ -434,16 +448,9 @@ fun PostCard(
             .fillMaxWidth()
             .aspectRatio(containerRatio)
             .clip(RoundedCornerShape(16.dp))
-            .pointerInput(post.id) {
+            .pointerInput(post.id, isCurrentlyLiked) {
               detectTapGestures(
-                onDoubleTap = {
-                  showDoubleTapResonance = true
-                  if (onReact != null) {
-                    onReact(VybeReaction.LOVE)
-                  } else {
-                    onLikeClick()
-                  }
-                }
+                onDoubleTap = { handleDoubleTapLike() }
               )
             }
         ) {
@@ -471,10 +478,7 @@ fun PostCard(
                   onAspectRatioDetected = { ratio ->
                     detectedMediaRatio = ratio
                   },
-                  onDoubleTapOverlay = {
-                    showDoubleTapResonance = true
-                    if (onReact != null) onReact(VybeReaction.LOVE) else onLikeClick()
-                  },
+                  onDoubleTapOverlay = { handleDoubleTapLike() },
                   onMuteToggled = { muted -> onToggleAudio?.invoke(!muted) },
                   modifier = Modifier.fillMaxSize()
                 )
@@ -540,14 +544,7 @@ fun PostCard(
                 onAspectRatioDetected = { ratio ->
                   detectedMediaRatio = ratio
                 },
-                onDoubleTapOverlay = {
-                  showDoubleTapResonance = true
-                  if (onReact != null) {
-                    onReact(VybeReaction.LOVE)
-                  } else {
-                    onLikeClick()
-                  }
-                },
+                onDoubleTapOverlay = { handleDoubleTapLike() },
                 onMuteToggled = { muted ->
                   onToggleAudio?.invoke(!muted)
                 },
@@ -602,31 +599,16 @@ fun PostCard(
             }
           }
 
-          // Double-Tap Animated Resonance Feedback
-          androidx.compose.animation.AnimatedVisibility(
+          // Double-Tap Central Finger Heart Burst Feedback
+          FingerHeartDoubleTapOverlay(
             visible = showDoubleTapResonance,
-            enter = scaleIn(initialScale = 0.4f) + fadeIn(),
-            exit = scaleOut(targetScale = 1.35f) + fadeOut(),
+            burstKey = doubleTapBurstNonce,
             modifier = Modifier.align(Alignment.Center)
-          ) {
-            Box(
-              modifier = Modifier
-                .size(90.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.6f)),
-              contentAlignment = Alignment.Center
-            ) {
-              VybeReactionOutlineIcon(
-                reaction = VybeReaction.LOVE,
-                size = 50.dp,
-                tint = Color(0xFFEC4899)
-              )
-            }
-          }
+          )
         }
       }
 
-      // Action Bar: Optically aligned Like, Comment, Share, and Bookmark buttons
+      // Action Bar: Optically aligned Finger Heart, Comment, Share, and Bookmark buttons
       Spacer(modifier = Modifier.height(10.dp))
       val displayedCommentsCount = if (post.comments.isNotEmpty()) post.comments.size else post.commentsCount.coerceAtLeast(0)
       val isLiked = post.isLiked || post.userReaction != null
@@ -634,55 +616,34 @@ fun PostCard(
       Row(
         modifier = Modifier
           .fillMaxWidth()
-          .heightIn(min = 44.dp),
+          .heightIn(min = 48.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
-        // Left Action Group: Like, Comment, Share — identical 44dp height, 24dp icon frame, uniform spacing
+        // Left Action Group: Finger Heart, Comment, Share
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(18.dp)
+          horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-          // 1. Like / Heart
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-              .defaultMinSize(minHeight = 44.dp)
-              .clip(RoundedCornerShape(10.dp))
-              .clickable {
-                if (isLiked) {
-                  if (post.userReaction != null && onReact != null) {
-                    onReact(post.userReaction!!)
-                  } else {
-                    onLikeClick()
-                  }
+          // 1. Global VYBE Finger Heart Reaction
+          FingerHeartReaction(
+            isLiked = isLiked,
+            count = post.likesCount,
+            iconSize = 23.dp,
+            countColorOverride = primaryText,
+            testTag = "like_button_${post.id}",
+            onClick = {
+              if (isLiked) {
+                if (post.userReaction != null && onReact != null) {
+                  onReact(post.userReaction!!)
                 } else {
-                  if (onReact != null) onReact(VybeReaction.LOVE) else onLikeClick()
+                  onLikeClick()
                 }
+              } else {
+                if (onReact != null) onReact(VybeReaction.LOVE) else onLikeClick()
               }
-              .padding(horizontal = 2.dp, vertical = 6.dp)
-              .testTag("like_button_${post.id}")
-          ) {
-            Box(
-              modifier = Modifier.size(24.dp),
-              contentAlignment = Alignment.Center
-            ) {
-              VybeLikeIcon(
-                isLiked = isLiked,
-                size = 23.dp,
-                inactiveTint = Color.White
-              )
             }
-            if (post.likesCount > 0) {
-              Spacer(modifier = Modifier.width(6.dp))
-              Text(
-                text = "${post.likesCount}",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = primaryText
-              )
-            }
-          }
+          )
 
           // 2. Comment
           Row(
@@ -827,11 +788,16 @@ fun PostCard(
                   modifier = Modifier.weight(1f, fill = false)
                 )
                 Spacer(modifier = Modifier.weight(1f))
-                Icon(
-                  imageVector = Icons.Outlined.FavoriteBorder,
-                  contentDescription = "Like comment",
-                  tint = mutedText,
-                  modifier = Modifier.size(13.dp)
+                val isPreviewCommentLiked = likedCommentIds.contains(topComment.id)
+                FingerHeartReaction(
+                  isLiked = isPreviewCommentLiked,
+                  iconSize = 15.dp,
+                  compactPadding = true,
+                  testTag = "comment_preview_like_${topComment.id}",
+                  onClick = {
+                    if (isPreviewCommentLiked) likedCommentIds.remove(topComment.id)
+                    else likedCommentIds.add(topComment.id)
+                  }
                 )
               }
               Spacer(modifier = Modifier.height(2.dp))
@@ -992,6 +958,18 @@ fun PostCard(
                       }
                     )
                   }
+                  val isCommentLiked = likedCommentIds.contains(comment.id)
+                  FingerHeartReaction(
+                    isLiked = isCommentLiked,
+                    count = if (isCommentLiked) 1 else 0,
+                    iconSize = 17.dp,
+                    compactPadding = true,
+                    testTag = "comment_like_button_${comment.id}",
+                    onClick = {
+                      if (isCommentLiked) likedCommentIds.remove(comment.id)
+                      else likedCommentIds.add(comment.id)
+                    }
+                  )
                 }
               }
             }

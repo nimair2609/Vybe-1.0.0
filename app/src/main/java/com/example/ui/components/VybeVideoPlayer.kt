@@ -71,6 +71,11 @@ fun VybeVideoPlayer(
   onAspectRatioDetected: ((Float) -> Unit)? = null,
   onDurationDetected: ((Int) -> Unit)? = null,
   onVideoCompleted: (() -> Unit)? = null,
+  onReadyChanged: ((Boolean) -> Unit)? = null,
+  onErrorChanged: ((String?) -> Unit)? = null,
+  onProgressChanged: ((Int, Int) -> Unit)? = null,
+  seekToFraction: Float? = null,
+  seekNonce: Int = 0,
   onTapOverlay: (() -> Unit)? = null,
   onDoubleTapOverlay: (() -> Unit)? = null,
   onMuteToggled: ((Boolean) -> Unit)? = null,
@@ -130,6 +135,46 @@ fun VybeVideoPlayer(
     val ownerId = feedAudioOwnerId ?: return@LaunchedEffect
     val mp = mediaPlayerRef.value ?: return@LaunchedEffect
     FeedAudioController.onVideoAudioStateChanged(ownerId, mp, shouldPlayAudio = isPlaying && !isMuted)
+  }
+
+  LaunchedEffect(isPrepared, isBuffering, playbackError) {
+    onReadyChanged?.invoke(isPrepared && !isBuffering && playbackError == null)
+  }
+
+  LaunchedEffect(playbackError) {
+    onErrorChanged?.invoke(playbackError)
+  }
+
+  LaunchedEffect(seekNonce) {
+    if (seekNonce > 0 && seekToFraction != null && isPrepared && playbackError == null) {
+      val mp = mediaPlayerRef.value ?: return@LaunchedEffect
+      try {
+        val dur = mp.duration
+        if (dur > 0) {
+          val targetMs = (dur * seekToFraction.coerceIn(0f, 1f)).toInt()
+          mp.seekTo(targetMs)
+          onProgressChanged?.invoke(targetMs, dur)
+        }
+      } catch (_: Exception) {}
+    }
+  }
+
+  LaunchedEffect(isPrepared, isPlaying, videoUrl, onProgressChanged != null) {
+    if (onProgressChanged == null || !isPrepared || playbackError != null) return@LaunchedEffect
+    while (isPrepared && playbackError == null) {
+      val mp = mediaPlayerRef.value
+      if (mp != null) {
+        try {
+          val dur = mp.duration
+          val pos = mp.currentPosition
+          if (dur > 0 && pos >= 0) {
+            onProgressChanged(pos.coerceAtMost(dur), dur)
+          }
+        } catch (_: Exception) {}
+      }
+      if (!isPlaying) break
+      kotlinx.coroutines.delay(80L)
+    }
   }
 
   fun applyAspectTransform() {

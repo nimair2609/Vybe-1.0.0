@@ -399,10 +399,10 @@ fun NotificationCard(
   val actionDescription = remember(item.type, item.message, resolvedIsReel) {
     if (item.type == NotificationType.LIKE) {
       val contentKind = if (resolvedIsReel) "Reel" else "post"
-      if (item.message.contains("Reel", ignoreCase = true) || item.message.contains("post", ignoreCase = true)) {
+      if (item.message.contains("Reel", ignoreCase = true) || item.message.contains("post", ignoreCase = true) || item.message.contains("story", ignoreCase = true)) {
         item.message
       } else {
-        "Liked your $contentKind"
+        "Sent a Finger Heart 🫰 on your $contentKind"
       }
     } else {
       item.message
@@ -436,20 +436,28 @@ fun NotificationCard(
           )
           Box(
             modifier = Modifier
-              .size(19.dp)
+              .size(20.dp)
               .clip(CircleShape)
               .background(MaterialTheme.colorScheme.surface)
               .padding(1.5.dp)
               .clip(CircleShape)
-              .background(iconTint),
+              .background(if (item.type == NotificationType.LIKE) Color(0xFF1F1228) else iconTint),
             contentAlignment = Alignment.Center
           ) {
-            Icon(
-              imageVector = icon,
-              contentDescription = null,
-              tint = Color.White,
-              modifier = Modifier.size(11.dp)
-            )
+            if (item.type == NotificationType.LIKE) {
+              com.example.ui.components.FingerHeartIcon(
+                isLiked = true,
+                size = 13.dp,
+                forceDarkSurface = true
+              )
+            } else {
+              Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(11.dp)
+              )
+            }
           }
         }
       } else {
@@ -460,12 +468,20 @@ fun NotificationCard(
             .background(iconTint.copy(alpha = 0.15f)),
           contentAlignment = Alignment.Center
         ) {
-          Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = iconTint,
-            modifier = Modifier.size(20.dp)
-          )
+          if (item.type == NotificationType.LIKE) {
+            com.example.ui.components.FingerHeartIcon(
+              isLiked = true,
+              size = 22.dp,
+              forceDarkSurface = true
+            )
+          } else {
+            Icon(
+              imageVector = icon,
+              contentDescription = null,
+              tint = iconTint,
+              modifier = Modifier.size(20.dp)
+            )
+          }
         }
       }
 

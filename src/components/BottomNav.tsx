@@ -1,7 +1,7 @@
 import React from 'react';
-import { 
-  Home, PlaySquare, Smile, Compass, MessageCircle, 
-  User, Plus, Users, Store 
+import {
+  Home, PlaySquare, Compass, MessageCircle,
+  User, Plus, Users
 } from 'lucide-react';
 import { useVybe, MainTab } from '../context/VybeContext';
 
@@ -12,9 +12,8 @@ export const BottomNav: React.FC = () => {
 
   const navItems: { tab: MainTab; label: string; icon: React.FC<{ className?: string }> }[] = [
     { tab: 'FEED', label: 'Feed', icon: Home },
-    { tab: 'VYBES', label: 'VYBES', icon: PlaySquare },
-    { tab: 'MOOD_ZONES', label: 'Moods', icon: Smile },
-    { tab: 'CROSSED_PATHS', label: 'Crossed', icon: Compass },
+    { tab: 'EXPLORE', label: 'Explore', icon: Compass },
+    { tab: 'VYBES', label: 'Reels', icon: PlaySquare },
     { tab: 'INBOX', label: 'Inbox', icon: MessageCircle },
     { tab: 'COMMUNITY', label: 'Clubs', icon: Users },
     { tab: 'PROFILE', label: 'Profile', icon: User },

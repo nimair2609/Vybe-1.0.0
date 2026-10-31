@@ -1507,6 +1507,35 @@ class VybeRepository private constructor() {
       _uploadStatus.value = UploadStatus.Published("Story published!")
 
       if (supabaseRepo.isConfigured) {
+        // Dispatch Story Mention notifications + FCM push for @username tags in story caption
+        val mentionRegex = Regex("@([A-Za-z0-9_.]{2,30})")
+        val mentionedHandles = mentionRegex.findAll(withDefaultExpiry.caption)
+          .map { it.groupValues[1].lowercase() }
+          .distinct()
+          .toList()
+        if (mentionedHandles.isNotEmpty()) {
+          val knownUsers = _allUsers.value
+          mentionedHandles.forEach { handle ->
+            val mentionedUser = knownUsers.firstOrNull { it.username.equals(handle, ignoreCase = true) }
+            if (mentionedUser != null && !mentionedUser.id.equals(user.id, ignoreCase = true)) {
+              ioScope.launch {
+                supabaseRepo.createInteractionNotificationIfNeeded(
+                  recipientId = mentionedUser.id,
+                  actorId = user.id,
+                  type = "STORY_MENTION",
+                  title = "@${user.username} mentioned you in a story",
+                  message = withDefaultExpiry.caption.trim().take(80).ifBlank { "Tap to view their story" },
+                  targetId = withDefaultExpiry.id,
+                  actorUsername = user.username,
+                  actorDisplayName = user.displayName,
+                  actorAvatarUrl = user.avatarUrl,
+                  mediaUrl = withDefaultExpiry.mediaUrl.takeIf { it.startsWith("http") },
+                  accessToken = token
+                )
+              }
+            }
+          }
+        }
         syncStoriesFromSupabase(user.id, token)
       }
       Result.success(withDefaultExpiry)
@@ -1685,6 +1714,17 @@ class VybeRepository private constructor() {
     reactToPost(postId, targetReaction)
   }
 
+  /**
+   * Ensures a post has an active reaction (defaulting to Finger Heart LOVE) on double-tap.
+   * Never unlikes an already-liked post and never creates duplicate database entries.
+   */
+  fun ensurePostReacted(postId: String, reaction: VybeReaction = VybeReaction.LOVE) {
+    val post = _posts.value.firstOrNull { it.id == postId } ?: return
+    if (post.userReaction == null && !post.isLiked) {
+      reactToPost(postId, reaction)
+    }
+  }
+
   fun reactToPost(postId: String, reaction: VybeReaction) {
     val me = _currentUser.value ?: return
     val current = _posts.value.toMutableList()
@@ -1844,14 +1884,15 @@ class VybeRepository private constructor() {
               p.copy(comments = p.comments.map { c -> if (c.id == tempId) c.copy(id = dto.id ?: tempId) else c })
             } else p
           }
-          if (targetPost != null && targetPost.author.id != user.id) {
+          if (targetPost != null && !targetPost.author.id.equals(user.id, ignoreCase = true)) {
             val contentKind = if (targetPost.isVybesReel || targetPost.mediaType == MediaType.REEL) "Reel" else "post"
+            val isReplyFormat = clean.startsWith("@")
             supabaseRepo.createInteractionNotificationIfNeeded(
               recipientId = targetPost.author.id,
               actorId = user.id,
-              type = "COMMENT",
-              title = "@${user.username} commented on your $contentKind",
-              message = "Commented: \"${clean.take(80)}\"",
+              type = if (isReplyFormat) "REPLY" else "COMMENT",
+              title = if (isReplyFormat) "@${user.username} replied on your $contentKind" else "@${user.username} commented on your $contentKind",
+              message = "\"${clean.take(80)}\"",
               targetId = postId,
               actorUsername = user.username,
               actorDisplayName = user.displayName,
@@ -1859,6 +1900,33 @@ class VybeRepository private constructor() {
               mediaUrl = targetPost.mediaUrls.firstOrNull(),
               accessToken = token
             )
+          }
+          // Notify @mentioned user in comment reply if distinct from post author & commenter
+          val replyHandles = Regex("@([A-Za-z0-9_.]{2,30})").findAll(clean)
+            .map { it.groupValues[1].lowercase() }
+            .distinct()
+            .toList()
+          replyHandles.forEach { handle ->
+            val targetPeer = _allUsers.value.firstOrNull { it.username.equals(handle, ignoreCase = true) }
+            if (
+              targetPeer != null &&
+              !targetPeer.id.equals(user.id, ignoreCase = true) &&
+              !targetPeer.id.equals(targetPost?.author?.id, ignoreCase = true)
+            ) {
+              supabaseRepo.createInteractionNotificationIfNeeded(
+                recipientId = targetPeer.id,
+                actorId = user.id,
+                type = "REPLY",
+                title = "@${user.username} replied to your comment",
+                message = "\"${clean.take(80)}\"",
+                targetId = postId,
+                actorUsername = user.username,
+                actorDisplayName = user.displayName,
+                actorAvatarUrl = user.avatarUrl,
+                mediaUrl = targetPost?.mediaUrls?.firstOrNull(),
+                accessToken = token
+              )
+            }
           }
         } else {
           // Roll back failed comment so counts stay truthful
@@ -2021,16 +2089,40 @@ class VybeRepository private constructor() {
   }
 
   fun toggleStoryLike(storyId: String) {
+    val me = _currentUser.value
+    var likedStory: Story? = null
     _stories.value = _stories.value.map {
       if (it.id == storyId) {
         val nextLiked = !it.isLikedByMe
-        it.copy(
+        val updated = it.copy(
           isLikedByMe = nextLiked,
           reactionsCount = if (nextLiked) it.reactionsCount + 1 else maxOf(0, it.reactionsCount - 1)
         )
+        if (nextLiked) likedStory = updated
+        updated
       } else it
     }
     VybeLocalStore.get()?.saveStories(_stories.value)
+
+    val targetStory = likedStory
+    if (me != null && targetStory != null && !targetStory.author.id.equals(me.id, ignoreCase = true) && supabaseRepo.isConfigured) {
+      ioScope.launch {
+        val token = SessionManager.get()?.accessToken.orEmpty()
+        supabaseRepo.createInteractionNotificationIfNeeded(
+          recipientId = targetStory.author.id,
+          actorId = me.id,
+          type = "STORY_REACTION",
+          title = "@${me.username} sent a Finger Heart to your story",
+          message = "${me.displayName} reacted to your story",
+          targetId = targetStory.id,
+          actorUsername = me.username,
+          actorDisplayName = me.displayName,
+          actorAvatarUrl = me.avatarUrl,
+          mediaUrl = targetStory.mediaUrl.takeIf { it.startsWith("http") },
+          accessToken = token
+        )
+      }
+    }
   }
 
   fun deleteStory(storyId: String) {

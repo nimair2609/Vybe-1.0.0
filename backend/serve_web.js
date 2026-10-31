@@ -9,6 +9,16 @@ const DIST_DIR = path.resolve(__dirname, '../dist');
 const PUBLIC_DIR = path.resolve(__dirname, '../public');
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://cppwadedazpbevkfrchg.supabase.co';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_MI-UdOqfccHVZIHjQq9vrw_IjEzeR7H';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
+function buildSupabaseHeaders(extra = {}, useServiceRoleIfPresent = true) {
+  const activeKey = (useServiceRoleIfPresent && SUPABASE_SERVICE_ROLE_KEY) ? SUPABASE_SERVICE_ROLE_KEY : SUPABASE_ANON_KEY;
+  const hdrs = { 'apikey': activeKey, ...extra };
+  if (typeof activeKey === 'string' && activeKey.startsWith('eyJ')) {
+    hdrs['Authorization'] = `Bearer ${activeKey}`;
+  }
+  return hdrs;
+}
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -143,12 +153,10 @@ async function patchSupabaseProfile(userId, patchData) {
     const url = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?id=eq.${userId}`;
     const resp = await fetch(url, {
       method: 'PATCH',
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      headers: buildSupabaseHeaders({
         'Content-Type': 'application/json',
         'Prefer': 'return=representation'
-      },
+      }),
       body: JSON.stringify(patchData)
     });
     return resp.ok;
@@ -219,11 +227,7 @@ async function relayRealtimeBroadcast(topic, payload) {
     const rawTopic = topic.replace(/^realtime:/, '');
     const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/realtime/v1/api/broadcast`, {
       method: 'POST',
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json'
-      },
+      headers: buildSupabaseHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         messages: [
           { topic: `realtime:${rawTopic}`, event: 'push', payload },
@@ -238,24 +242,56 @@ async function relayRealtimeBroadcast(topic, payload) {
 }
 
 async function getTokensForUser(userId) {
+  const normalizedTarget = String(userId || '').toLowerCase();
   const inMem = Array.from(deviceRegistry.values())
-    .filter(d => d.is_active && (d.userId === userId || d.user_id === userId))
+    .filter(d => d.is_active && (String(d.userId || '').toLowerCase() === normalizedTarget || String(d.user_id || '').toLowerCase() === normalizedTarget))
     .map(d => d.fcmToken || d.fcm_token)
     .filter(Boolean);
   try {
-    const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/user_device_tokens?user_id=eq.${userId}&is_active=eq.true&select=fcm_token`, {
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-      }
+    const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/user_device_tokens?user_id=eq.${encodeURIComponent(userId)}&is_active=eq.true&select=fcm_token`, {
+      headers: buildSupabaseHeaders()
     });
     if (resp.ok) {
       const rows = await resp.json();
-      const dbTokens = rows.map(r => r.fcm_token).filter(Boolean);
+      const dbTokens = (Array.isArray(rows) ? rows : []).map(r => r.fcm_token).filter(Boolean);
       return Array.from(new Set([...inMem, ...dbTokens]));
     }
   } catch {}
   return inMem;
+}
+
+async function getAllActiveTokens() {
+  const inMem = Array.from(deviceRegistry.values())
+    .filter(d => d.is_active)
+    .map(d => d.fcmToken || d.fcm_token)
+    .filter(Boolean);
+  try {
+    const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/user_device_tokens?is_active=eq.true&select=fcm_token&limit=1000`, {
+      headers: buildSupabaseHeaders()
+    });
+    if (resp.ok) {
+      const rows = await resp.json();
+      const dbTokens = (Array.isArray(rows) ? rows : []).map(r => r.fcm_token).filter(Boolean);
+      return Array.from(new Set([...inMem, ...dbTokens]));
+    }
+  } catch {}
+  return inMem;
+}
+
+async function deactivateInvalidToken(badToken) {
+  if (!badToken) return;
+  const rec = deviceRegistry.get(badToken);
+  if (rec) {
+    rec.is_active = false;
+    deviceRegistry.set(badToken, rec);
+  }
+  try {
+    await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/user_device_tokens?fcm_token=eq.${encodeURIComponent(badToken)}`, {
+      method: 'PATCH',
+      headers: buildSupabaseHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ is_active: false, updated_at: new Date().toISOString() })
+    });
+  } catch {}
 }
 
 async function dispatchFcmIfConfigured({ tokens = [], topic, title, body, data = {}, channelId = 'vybe_activity_high_v2' }) {
@@ -269,12 +305,15 @@ async function dispatchFcmIfConfigured({ tokens = [], topic, title, body, data =
   const targets = tokens.length > 0 ? tokens.map(t => ({ token: t })) : (topic ? [{ topic }] : []);
   let ok = 0;
 
+  // High-priority data-only Direct-Boot FCM HTTP v1 payload:
+  // Wakes closed & locked Android devices via VybeFirebaseMessagingService without duplicate OS + app tray banners.
+  const resolvedEventKey = String(data.event_key || data.eventKey || data.notification_id || `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
   for (const target of targets) {
     try {
-      const resolvedEventKey = String(data.event_key || data.notification_id || `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
       const stringData = Object.fromEntries(
         Object.entries({ ...data, title, body, event_key: resolvedEventKey, channel_id: channelId })
-          .map(([k, v]) => [k, String(v ?? '')])
+          .filter(([, v]) => v !== undefined && v !== null)
+          .map(([k, v]) => [k, String(v)])
       );
       const resp = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
         method: 'POST',
@@ -285,27 +324,23 @@ async function dispatchFcmIfConfigured({ tokens = [], topic, title, body, data =
         body: JSON.stringify({
           message: {
             ...(target.token ? { token: target.token } : { topic: target.topic }),
-            notification: {
-              title: title,
-              body: body
-            },
             data: stringData,
             android: {
               priority: 'high',
               ttl: '86400s',
-              notification: {
-                channel_id: channelId,
-                sound: 'default',
-                default_sound: true,
-                default_vibrate_timings: true,
-                notification_priority: 'PRIORITY_MAX',
-                visibility: 'PUBLIC'
-              }
+              direct_boot_ok: true
             }
           }
         })
       });
-      if (resp.ok) ok++;
+      if (resp.ok) {
+        ok++;
+      } else if (target.token) {
+        const errText = await resp.text();
+        if (errText.includes('UNREGISTERED') || errText.includes('INVALID_ARGUMENT')) {
+          await deactivateInvalidToken(target.token);
+        }
+      }
     } catch {}
   }
   return { dispatchedFcm: true, count: ok };
@@ -384,7 +419,17 @@ const server = http.createServer(async (req, res) => {
     const recipientId = body.recipientId || body.recipient_id;
     const title = body.title;
     const msgBody = body.body || body.message;
-    const data = body.data || {};
+    const rawData = body.data || {};
+    const channelId = body.channelId || body.channel_id || rawData.channel_id || 'vybe_activity_high_v2';
+    const data = {
+      ...rawData,
+      type: body.type || rawData.type || 'ACTIVITY',
+      event_key: body.eventKey || body.event_key || rawData.event_key || `evt_${Date.now()}`,
+      ...(body.actorId || body.actor_id ? { actor_id: body.actorId || body.actor_id } : {}),
+      ...(body.targetId || body.target_id ? { target_id: body.targetId || body.target_id } : {}),
+      ...(body.conversationId || body.conversation_id ? { conversation_id: body.conversationId || body.conversation_id } : {}),
+      recipient_id: recipientId
+    };
     if (!recipientId || !title || !msgBody) {
       sendJson(res, 400, { error: 'recipientId, title, and body are required.' });
       return;
@@ -404,7 +449,8 @@ const server = http.createServer(async (req, res) => {
       topic: sanitizedTopic,
       title,
       body: msgBody,
-      data
+      data,
+      channelId
     });
 
     recentPushLogs.unshift({
@@ -412,7 +458,7 @@ const server = http.createServer(async (req, res) => {
       title,
       recipientCount: Math.max(tokens.length, 1),
       status: fcmRes.dispatchedFcm ? 'Dispatched (FCM + Realtime Live)' : 'Dispatched (Realtime Live)',
-      channel: 'vybe_activity_high_v2'
+      channel: channelId
     });
     if (recentPushLogs.length > 50) recentPushLogs.pop();
 
@@ -422,13 +468,16 @@ const server = http.createServer(async (req, res) => {
 
   if (cleanUrl === '/api/v1/admin/broadcast-push' && req.method === 'POST') {
     const body = await readJsonBody(req);
-    const { title, body: msgBody, destination = 'NOTIFICATIONS', targetId } = body;
+    const title = body.title;
+    const msgBody = body.body || body.message;
+    const destination = body.destination || 'NOTIFICATIONS';
+    const targetId = body.targetId || body.target_id;
     if (!title || !msgBody) {
       sendJson(res, 400, { error: 'Title and body are required.' });
       return;
     }
 
-    const eventKey = `bcast_${Date.now()}`;
+    const eventKey = body.eventKey || body.event_key || `bcast_${Date.now()}`;
     const pushData = {
       type: 'ANNOUNCEMENT',
       channel: 'broadcast',
@@ -443,9 +492,7 @@ const server = http.createServer(async (req, res) => {
       body: msgBody
     });
 
-    const tokens = Array.from(deviceRegistry.values())
-      .filter(d => d.is_active)
-      .map(d => d.fcmToken);
+    const tokens = await getAllActiveTokens();
 
     const fcmRes = await dispatchFcmIfConfigured({
       tokens,
@@ -491,10 +538,7 @@ const server = http.createServer(async (req, res) => {
     let users = [];
     try {
       const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?select=*&order=created_at.desc&limit=100`, {
-        headers: {
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-        }
+        headers: buildSupabaseHeaders()
       });
       if (resp.ok) {
         users = await resp.json();
@@ -1566,6 +1610,20 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  const sendStaticFile = (filePath, headersObj) => {
+    res.writeHead(200, headersObj);
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
+    const stream = fs.createReadStream(filePath);
+    stream.on('error', () => {
+      if (!res.headersSent) res.writeHead(500);
+      res.end();
+    });
+    stream.pipe(res);
+  };
+
   // 1. APK Direct Download Route
   if (cleanUrl === '/download' || cleanUrl === '/vybe-debug.apk' || cleanUrl === '/app-debug.apk') {
     const apkFile = fs.existsSync(path.join(PUBLIC_DIR, 'vybe-debug.apk'))
@@ -1573,12 +1631,11 @@ const server = http.createServer(async (req, res) => {
       : path.resolve(__dirname, '../.build-outputs/app-debug.apk');
     if (fs.existsSync(apkFile)) {
       const stat = fs.statSync(apkFile);
-      res.writeHead(200, {
+      return sendStaticFile(apkFile, {
         'Content-Type': 'application/vnd.android.package-archive',
         'Content-Disposition': 'attachment; filename="vybe-debug.apk"',
         'Content-Length': stat.size
       });
-      return fs.createReadStream(apkFile).pipe(res);
     }
   }
 
@@ -1586,8 +1643,7 @@ const server = http.createServer(async (req, res) => {
   if (cleanUrl === '/admin' || cleanUrl === '/admin/' || cleanUrl === '/admin/index.html') {
     const adminPath = path.join(WEB_DIR, 'index.html');
     if (fs.existsSync(adminPath)) {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      return fs.createReadStream(adminPath).pipe(res);
+      return sendStaticFile(adminPath, { 'Content-Type': 'text/html; charset=utf-8' });
     }
   }
 
@@ -1595,24 +1651,21 @@ const server = http.createServer(async (req, res) => {
   const publicCandidate = path.join(PUBLIC_DIR, cleanUrl.replace(/^\/+/, ''));
   if (publicCandidate.startsWith(PUBLIC_DIR) && fs.existsSync(publicCandidate) && fs.statSync(publicCandidate).isFile()) {
     const ext = path.extname(publicCandidate).toLowerCase();
-    res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
-    return fs.createReadStream(publicCandidate).pipe(res);
+    return sendStaticFile(publicCandidate, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
   }
 
   // 4. Static Assets: Check DIST_DIR (Vite JS/CSS bundles)
   const distCandidate = path.join(DIST_DIR, cleanUrl.replace(/^\/+/, ''));
   if (distCandidate.startsWith(DIST_DIR) && fs.existsSync(distCandidate) && fs.statSync(distCandidate).isFile()) {
     const ext = path.extname(distCandidate).toLowerCase();
-    res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
-    return fs.createReadStream(distCandidate).pipe(res);
+    return sendStaticFile(distCandidate, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
   }
 
   // 5. Static Assets: Check WEB_DIR (Admin portal badges and assets)
   const webCandidate = path.join(WEB_DIR, cleanUrl.replace(/^\/admin/, '').replace(/^\/+/, ''));
   if (webCandidate.startsWith(WEB_DIR) && fs.existsSync(webCandidate) && fs.statSync(webCandidate).isFile()) {
     const ext = path.extname(webCandidate).toLowerCase();
-    res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
-    return fs.createReadStream(webCandidate).pipe(res);
+    return sendStaticFile(webCandidate, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
   }
 
   // 6. SPA Route Fallback:
@@ -1620,21 +1673,18 @@ const server = http.createServer(async (req, res) => {
   if (cleanUrl.startsWith('/admin')) {
     const adminIndex = path.join(WEB_DIR, 'index.html');
     if (fs.existsSync(adminIndex)) {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      return fs.createReadStream(adminIndex).pipe(res);
+      return sendStaticFile(adminIndex, { 'Content-Type': 'text/html; charset=utf-8' });
     }
   }
 
   const appIndex = path.join(DIST_DIR, 'index.html');
   if (fs.existsSync(appIndex)) {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    return fs.createReadStream(appIndex).pipe(res);
+    return sendStaticFile(appIndex, { 'Content-Type': 'text/html; charset=utf-8' });
   }
 
   const fallbackAdmin = path.join(WEB_DIR, 'index.html');
   if (fs.existsSync(fallbackAdmin)) {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    return fs.createReadStream(fallbackAdmin).pipe(res);
+    return sendStaticFile(fallbackAdmin, { 'Content-Type': 'text/html; charset=utf-8' });
   }
 
   res.writeHead(404, { 'Content-Type': 'text/plain' });

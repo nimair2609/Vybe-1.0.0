@@ -223,7 +223,7 @@ fun MainScreen(viewModel: VybeViewModel) {
         MainTab.EXPLORE -> ExploreScreen(viewModel)
         MainTab.CREATE -> CreatePostScreen(viewModel)
         MainTab.VYBES -> ReelsViewerScreen(viewModel)
-        MainTab.PROFILE -> UserProfileScreen(viewModel)
+        MainTab.PROFILE -> UserProfileScreen(viewModel, forceOwnProfile = true)
         MainTab.INBOX -> InboxScreen(viewModel)
         MainTab.MOOD_ZONES -> MoodZonesScreen(viewModel)
         MainTab.CROSSED_PATHS -> CrossedPathsScreen(viewModel)

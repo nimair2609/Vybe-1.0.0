@@ -107,9 +107,10 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- Firebase Cloud Messaging Service -->
+        <!-- Firebase Cloud Messaging Service (Direct-Boot aware for locked devices) -->
         <service
             android:name=".notifications.VybeFirebaseMessagingService"
+            android:directBootAware="true"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
@@ -119,6 +120,7 @@
         <!-- Instagram-Style Inline Reply & Mark-as-Read Notification Receiver -->
         <receiver
             android:name=".notifications.VybeNotificationActionReceiver"
+            android:directBootAware="true"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.aistudio.vybe.ACTION_DIRECT_REPLY" />

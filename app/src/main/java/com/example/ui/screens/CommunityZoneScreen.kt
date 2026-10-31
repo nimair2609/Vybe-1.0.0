@@ -495,22 +495,13 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                   horizontalArrangement = Arrangement.spacedBy(20.dp),
                   verticalAlignment = Alignment.CenterVertically
                 ) {
-                  Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                      .heightIn(min = 36.dp)
-                      .clickable { viewModel.toggleLikeCommunityPost(post.id) }
-                      .padding(vertical = 4.dp)
-                      .testTag("like_comm_post_${post.id}")
-                  ) {
-                    VybeLikeIcon(
-                      isLiked = post.isLikedByMe,
-                      size = 18.dp,
-                      inactiveTint = Color.White
-                    )
-                    Spacer(modifier = Modifier.width(5.dp))
-                    Text("${post.likesCount}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                  }
+                  com.example.ui.components.FingerHeartReaction(
+                    isLiked = post.isLikedByMe,
+                    count = post.likesCount,
+                    onClick = { viewModel.toggleLikeCommunityPost(post.id) },
+                    iconSize = 19.dp,
+                    testTag = "like_comm_post_${post.id}"
+                  )
 
                   Row(
                     verticalAlignment = Alignment.CenterVertically,

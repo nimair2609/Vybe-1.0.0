@@ -485,6 +485,7 @@ fun ExploreScreen(viewModel: VybeViewModel) {
               PostCard(
                 post = post,
                 onLikeClick = { viewModel.toggleLike(post.id) },
+                onDoubleTapLike = { viewModel.ensurePostLoved(post.id) },
                 onReact = { rx -> viewModel.reactToPost(post.id, rx) },
                 onSaveClick = { viewModel.toggleSave(post.id) },
                 onCommentClick = { viewModel.loadCommentsForPost(post.id) },
@@ -554,14 +555,14 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 16.sp,
                     letterSpacing = 0.8.sp,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                   )
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Surface(
-                  color = VybeViolet.copy(alpha = 0.22f),
+                  color = VybeViolet.copy(alpha = 0.18f),
                   shape = RoundedCornerShape(8.dp),
                   border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.45f))
                 ) {
@@ -569,7 +570,7 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                     text = "6 SIGNATURE ZONES",
                     fontSize = 9.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    color = VybeBrandCyan,
+                    color = VybeViolet,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                     maxLines = 1
                   )
@@ -580,7 +581,7 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                 text = "Find your vibe. Enter your zone.",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = VybeBrandCyan
+                color = VybeViolet
               )
               Spacer(modifier = Modifier.height(2.dp))
               Text(
@@ -589,6 +590,81 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = 15.sp
               )
+
+              Spacer(modifier = Modifier.height(14.dp))
+
+              // Balanced 2x3 Header Grid ensuring all 6 Signature Features are 100% visible above the fold
+              Column(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .testTag("explore_six_features_header_grid"),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+              ) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                  ExploreHeaderFeatureTile(
+                    title = "UNLOAD",
+                    subtitle = "Voice Lounge",
+                    icon = Icons.Default.GraphicEq,
+                    accent = VybeViolet,
+                    testTag = "explore_header_feature_unload",
+                    onClick = { viewModel.navigateTo(Screen.UNLOAD_VIEW) },
+                    modifier = Modifier.weight(1f)
+                  )
+                  ExploreHeaderFeatureTile(
+                    title = "UNFILTERED",
+                    subtitle = "Zero Filters",
+                    icon = Icons.Default.CameraAlt,
+                    accent = VybeOnlineGreen,
+                    testTag = "explore_header_feature_unfiltered",
+                    onClick = { viewModel.navigateTo(Screen.UNFILTERED_VIEW) },
+                    modifier = Modifier.weight(1f)
+                  )
+                  ExploreHeaderFeatureTile(
+                    title = "WHAT NEXT",
+                    subtitle = "Live Polls",
+                    icon = Icons.Default.Poll,
+                    accent = VybeBrandCyan,
+                    testTag = "explore_header_feature_what_next",
+                    onClick = { viewModel.navigateTo(Screen.WHAT_NEXT_VIEW) },
+                    modifier = Modifier.weight(1f)
+                  )
+                }
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                  ExploreHeaderFeatureTile(
+                    title = "TIME CAPSULE",
+                    subtitle = "Future Vault",
+                    icon = Icons.Default.Schedule,
+                    accent = VybeVerifiedGold,
+                    testTag = "explore_header_feature_time_capsule",
+                    onClick = { viewModel.navigateTo(Screen.TIME_CAPSULES_VIEW) },
+                    modifier = Modifier.weight(1f)
+                  )
+                  ExploreHeaderFeatureTile(
+                    title = "DOUBLE TAKE",
+                    subtitle = "Two Sides",
+                    icon = Icons.Default.CompareArrows,
+                    accent = VybeHeartbreakRed,
+                    testTag = "explore_header_feature_double_take",
+                    onClick = { viewModel.navigateTo(Screen.DOUBLE_TAKE_VIEW) },
+                    modifier = Modifier.weight(1f)
+                  )
+                  ExploreHeaderFeatureTile(
+                    title = "CROSSED PATHS",
+                    subtitle = "Near Radar",
+                    icon = Icons.Default.NearMe,
+                    accent = VybeBrandBlue,
+                    testTag = "explore_header_feature_crossed_paths",
+                    onClick = { viewModel.navigateTo(Screen.CREATE_CROSSED_PATH) },
+                    modifier = Modifier.weight(1f)
+                  )
+                }
+              }
             }
           }
           Spacer(modifier = Modifier.height(10.dp))
@@ -656,7 +732,7 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                     text = featuredRoom.title,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onSurface
                   )
                   Spacer(modifier = Modifier.height(2.dp))
                   Text(
@@ -722,7 +798,7 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                           text = latestUnfiltered.author.displayName,
                           fontWeight = FontWeight.Bold,
                           fontSize = 12.sp,
-                          color = Color.White
+                          color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
                           text = "@${latestUnfiltered.author.username} • ${latestUnfiltered.timestamp}",
@@ -825,7 +901,7 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                     text = topPrediction.title,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onSurface
                   )
                   if (topPrediction.options.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(8.dp))
@@ -939,7 +1015,7 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                     text = latestCapsule.title,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onSurface
                   )
                   Spacer(modifier = Modifier.height(2.dp))
                   Text(
@@ -1009,7 +1085,7 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                     text = topPrompt.promptQuestion,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onSurface
                   )
                   Spacer(modifier = Modifier.height(8.dp))
                   Row(
@@ -1121,7 +1197,7 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                     text = topEncounter.title,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onSurface
                   )
                   Spacer(modifier = Modifier.height(2.dp))
                   Text(
@@ -1810,6 +1886,72 @@ private fun ExploreExperienceCard(
 }
 
 @Composable
+private fun ExploreHeaderFeatureTile(
+  title: String,
+  subtitle: String,
+  icon: androidx.compose.ui.graphics.vector.ImageVector,
+  accent: Color,
+  testTag: String,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier
+) {
+  Surface(
+    color = MaterialTheme.colorScheme.surface,
+    shape = RoundedCornerShape(14.dp),
+    border = BorderStroke(1.2.dp, accent.copy(alpha = 0.52f)),
+    tonalElevation = 2.dp,
+    modifier = modifier
+      .defaultMinSize(minHeight = 68.dp)
+      .clip(RoundedCornerShape(14.dp))
+      .clickable { onClick() }
+      .testTag(testTag)
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 8.dp, vertical = 9.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.Center
+    ) {
+      Box(
+        modifier = Modifier
+          .size(28.dp)
+          .clip(CircleShape)
+          .background(accent.copy(alpha = 0.16f)),
+        contentAlignment = Alignment.Center
+      ) {
+        Icon(
+          imageVector = icon,
+          contentDescription = title,
+          tint = accent,
+          modifier = Modifier.size(15.dp)
+        )
+      }
+      Spacer(modifier = Modifier.height(5.dp))
+      Text(
+        text = title,
+        fontSize = 9.5.sp,
+        fontWeight = FontWeight.ExtraBold,
+        letterSpacing = 0.25.sp,
+        color = MaterialTheme.colorScheme.onSurface,
+        textAlign = TextAlign.Center,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+      )
+      Text(
+        text = subtitle,
+        fontSize = 8.5.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = accent,
+        textAlign = TextAlign.Center,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+      )
+    }
+  }
+}
+
+@Composable
 private fun ExploreExperienceFeedCard(
   title: String,
   tagline: String,
@@ -1866,7 +2008,7 @@ private fun ExploreExperienceFeedCard(
               fontWeight = FontWeight.Black,
               fontSize = 15.sp,
               letterSpacing = 0.6.sp,
-              color = Color.White,
+              color = MaterialTheme.colorScheme.onSurface,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis
             )

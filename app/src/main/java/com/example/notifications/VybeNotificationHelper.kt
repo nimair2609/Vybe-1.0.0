@@ -214,10 +214,31 @@ object VybeNotificationHelper {
     }
   }
 
+  private fun getSafeLedgerPrefs(context: Context): android.content.SharedPreferences {
+    val appCtx = context.applicationContext
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+      val um = appCtx.getSystemService(Context.USER_SERVICE) as? android.os.UserManager
+      if (um != null && !um.isUserUnlocked) {
+        return appCtx.createDeviceProtectedStorageContext()
+          .getSharedPreferences(PREF_NOTIFIED_LEDGER, Context.MODE_PRIVATE)
+      }
+    }
+    return try {
+      appCtx.getSharedPreferences(PREF_NOTIFIED_LEDGER, Context.MODE_PRIVATE)
+    } catch (_: IllegalStateException) {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        appCtx.createDeviceProtectedStorageContext()
+          .getSharedPreferences(PREF_NOTIFIED_LEDGER, Context.MODE_PRIVATE)
+      } else {
+        throw IllegalStateException("SharedPreferences unavailable")
+      }
+    }
+  }
+
   @Synchronized
   fun ensureBaselineSeeded(context: Context, userId: String, existingEventKeys: Collection<String>): Boolean {
     if (userId.isBlank()) return false
-    val prefs = context.applicationContext.getSharedPreferences(PREF_NOTIFIED_LEDGER, Context.MODE_PRIVATE)
+    val prefs = getSafeLedgerPrefs(context)
     val flagKey = "$KEY_BASELINE_USER_PREFIX$userId"
     val stored = prefs.getStringSet(KEY_NOTIFIED_IDS, emptySet()).orEmpty()
     inMemoryNotifiedKeys.addAll(stored)
@@ -249,7 +270,7 @@ object VybeNotificationHelper {
   @Synchronized
   fun hasEventBeenNotified(context: Context, eventKey: String?): Boolean {
     if (eventKey.isNullOrBlank()) return false
-    val prefs = context.applicationContext.getSharedPreferences(PREF_NOTIFIED_LEDGER, Context.MODE_PRIVATE)
+    val prefs = getSafeLedgerPrefs(context)
     if (inMemoryNotifiedKeys.isEmpty()) {
       inMemoryNotifiedKeys.addAll(prefs.getStringSet(KEY_NOTIFIED_IDS, emptySet()).orEmpty())
     }
@@ -271,7 +292,7 @@ object VybeNotificationHelper {
     }
     if (candidateKeys.isEmpty()) return true
 
-    val prefs = context.applicationContext.getSharedPreferences(PREF_NOTIFIED_LEDGER, Context.MODE_PRIVATE)
+    val prefs = getSafeLedgerPrefs(context)
     if (inMemoryNotifiedKeys.isEmpty()) {
       inMemoryNotifiedKeys.addAll(prefs.getStringSet(KEY_NOTIFIED_IDS, emptySet()).orEmpty())
     }
@@ -309,8 +330,7 @@ object VybeNotificationHelper {
     inMemoryNotifiedKeys.clear()
     conversationStacks.clear()
     activeSocialNotifIds.clear()
-    context.applicationContext
-      .getSharedPreferences(PREF_NOTIFIED_LEDGER, Context.MODE_PRIVATE)
+    getSafeLedgerPrefs(context)
       .edit()
       .clear()
       .commit()
@@ -801,14 +821,43 @@ object VybeNotificationHelper {
         val body = if (rawBody.isNotBlank() && !rawBody.equals("New activity on VYBE", true)) {
           rawBody
         } else {
-          "Liked your post ❤️"
+          "Sent a Finger Heart 🫰 on your post"
         }
         Triple(title, body, "VYBE Activity")
+      }
+      "STORY_REACTION", "STORY_LIKE" -> {
+        val who = handle.ifBlank { actorDisplayName }.ifBlank { rawTitle.ifBlank { "Someone" } }
+        val title = if (actorDisplayName.isNotBlank() && handle.startsWith("@")) {
+          "$actorDisplayName ($handle)"
+        } else {
+          who
+        }
+        val body = if (rawBody.isNotBlank() && !rawBody.equals("New activity on VYBE", true)) {
+          rawBody
+        } else {
+          "Sent a Finger Heart 🫰 on your story"
+        }
+        Triple(title, body, "Stories")
+      }
+      "STORY_MENTION", "MENTION" -> {
+        val who = handle.ifBlank { actorDisplayName }.ifBlank { rawTitle.ifBlank { "VYBE" } }
+        val body = if (rawBody.isNotBlank()) rawBody else "Mentioned you in their story."
+        Triple(who, body, "Stories")
+      }
+      "REPLY", "COMMENT_REPLY" -> {
+        val who = handle.ifBlank { actorDisplayName }.ifBlank { rawTitle.ifBlank { "VYBE" } }
+        val cleanReply = rawBody.removePrefix("\"").removeSuffix("\"")
+        val body = if (rawBody.startsWith("replied", ignoreCase = true)) {
+          rawBody
+        } else {
+          "Replied: \"$cleanReply\""
+        }
+        Triple(who, body, "Replies")
       }
       "COMMENT", "COMMENT_OR_REPLY" -> {
         val who = handle.ifBlank { actorDisplayName }.ifBlank { rawTitle.ifBlank { "VYBE" } }
         val cleanComment = rawBody.removePrefix("\"").removeSuffix("\"")
-        val body = if (rawBody.startsWith("commented", ignoreCase = true)) {
+        val body = if (rawBody.startsWith("commented", ignoreCase = true) || rawBody.startsWith("replied", ignoreCase = true)) {
           rawBody
         } else {
           "Commented: \"$cleanComment\""
@@ -828,7 +877,7 @@ object VybeNotificationHelper {
       "INCOMING_CALL", "CALL" -> {
         Triple(rawTitle.ifBlank { "Incoming VYBE Call" }, rawBody, "Live Call")
       }
-      "ANNOUNCEMENT", "BROADCAST" -> {
+      "ANNOUNCEMENT", "BROADCAST", "ADMIN" -> {
         Triple(rawTitle.ifBlank { "VYBE Official" }, rawBody, "Official Update")
       }
       else -> {

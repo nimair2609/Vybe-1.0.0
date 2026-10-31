@@ -16,28 +16,64 @@ import com.example.BuildConfig
 object SupabaseConfig {
   const val LIVE_SUPABASE_URL = "https://cppwadedazpbevkfrchg.supabase.co"
   const val LIVE_SUPABASE_ANON_KEY = "sb_publishable_MI-UdOqfccHVZIHjQq9vrw_IjEzeR7H"
+  const val SUPABASE_PROJECT_REF = "cppwadedazpbevkfrchg"
 
   private fun isEffectiveKey(raw: String?): Boolean {
     if (raw.isNullOrBlank()) return false
-    val trimmed = raw.trim().lowercase()
-    return !trimmed.contains("placeholder") &&
-      !trimmed.contains("default") &&
-      !trimmed.contains("example") &&
-      !trimmed.startsWith("your_")
+    val trimmed = raw.trim()
+    val lower = trimmed.lowercase()
+    if (
+      lower.contains("placeholder") ||
+      lower.contains("default") ||
+      lower.contains("example") ||
+      lower.startsWith("your_") ||
+      lower.contains("invalid") ||
+      trimmed.length < 20
+    ) {
+      return false
+    }
+    return true
+  }
+
+  /**
+   * Validates any configured anon/publishable key so stale or foreign-project keys
+   * in .env / Secrets never trigger `401 Invalid API key` during Phone or Email login.
+   */
+  fun resolveAnonKey(candidate: String?): String {
+    val clean = candidate?.trim().orEmpty()
+    if (!isEffectiveKey(clean)) return LIVE_SUPABASE_ANON_KEY
+    if (clean.startsWith("sb_publishable_")) {
+      return if (clean.length >= 24) clean else LIVE_SUPABASE_ANON_KEY
+    }
+    if (isJwtAccessToken(clean)) {
+      val payload = decodeJwtPayloadJson(clean)
+      if (payload != null) {
+        val refMatch = Regex("\"ref\"\\s*:\\s*\"([^\"]+)\"").find(payload)
+        if (refMatch != null && !refMatch.groupValues[1].equals(SUPABASE_PROJECT_REF, ignoreCase = true)) {
+          return LIVE_SUPABASE_ANON_KEY
+        }
+        return clean
+      }
+    }
+    return LIVE_SUPABASE_ANON_KEY
   }
 
   val supabaseUrl: String
     get() = try {
       val url = BuildConfig.SUPABASE_URL.trim().removeSuffix("/")
-      if (url.isNotBlank() && url.startsWith("https://") && isEffectiveKey(url)) url else LIVE_SUPABASE_URL
+      if (
+        url.isNotBlank() &&
+        url.startsWith("https://") &&
+        url.contains(".supabase.co", ignoreCase = true) &&
+        isEffectiveKey(url)
+      ) url else LIVE_SUPABASE_URL
     } catch (e: Throwable) {
       LIVE_SUPABASE_URL
     }
 
   val supabaseAnonKey: String
     get() = try {
-      val key = BuildConfig.SUPABASE_ANON_KEY.trim()
-      if (isEffectiveKey(key)) key else LIVE_SUPABASE_ANON_KEY
+      resolveAnonKey(BuildConfig.SUPABASE_ANON_KEY)
     } catch (e: Throwable) {
       LIVE_SUPABASE_ANON_KEY
     }
@@ -176,7 +212,7 @@ object SupabaseConfig {
       !key.contains("placeholder")
   }
 
-  const val CANONICAL_VYBE_WEB_URL = "https://ais-pre-of6bxbjd5wujogdyorbmow-552256630561.asia-northeast1.run.app"
+  const val CANONICAL_VYBE_WEB_URL = "https://ais-pre-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app"
 
   val vybeBackendBaseUrl: String
     get() = CANONICAL_VYBE_WEB_URL

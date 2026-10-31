@@ -41,7 +41,13 @@ import com.example.data.model.StoryMediaType
 import com.example.data.repository.MessagingEligibility
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import android.os.SystemClock
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.ui.VybeViewModel
+import com.example.ui.components.FingerHeartReaction
 import com.example.ui.components.StoryGradients
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VideoFitMode
@@ -67,29 +73,53 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
     viewModel.closeStoryViewer()
   }
 
-  val stories by viewModel.activeStorySequence.collectAsState()
+  val sequenceStories by viewModel.activeStorySequence.collectAsState()
+  val allStories by viewModel.stories.collectAsState()
   val currentIndex by viewModel.currentStoryIndex.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
   val allUsers by viewModel.allUsers.collectAsState()
+  val lifecycleOwner = LocalLifecycleOwner.current
   val scope = rememberCoroutineScope()
 
-  DisposableEffect(Unit) {
+  // Guard initial touch-up bleed from tapping a Story ring in StoryCarousel
+  val viewerMountedAtMs = remember { SystemClock.elapsedRealtime() }
+  var isLifecyclePaused by remember { mutableStateOf(false) }
+
+  DisposableEffect(lifecycleOwner) {
     com.example.util.FeedAudioController.stopAll()
+    val observer = LifecycleEventObserver { _, event ->
+      when (event) {
+        Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> isLifecyclePaused = true
+        Lifecycle.Event.ON_RESUME -> isLifecyclePaused = false
+        else -> {}
+      }
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
     onDispose {
+      lifecycleOwner.lifecycle.removeObserver(observer)
       com.example.util.FeedAudioController.stopMusicTrack("story_music")
+    }
+  }
+
+  val stories = remember(sequenceStories, allStories) {
+    sequenceStories.map { seqItem ->
+      allStories.firstOrNull { it.id == seqItem.id } ?: seqItem
     }
   }
 
   if (stories.isEmpty()) {
     LaunchedEffect(Unit) {
-      viewModel.closeStoryViewer()
+      delay(120L)
+      if (viewModel.activeStorySequence.value.isEmpty()) {
+        viewModel.closeStoryViewer()
+      }
     }
     return
   }
 
   val safeIndex = currentIndex.coerceIn(0, stories.size - 1)
   val currentStory = stories[safeIndex]
-  val isMe = currentStory.author.id == currentUser?.id
+  val isMe = currentUser != null && currentStory.author.id.equals(currentUser?.id, ignoreCase = true)
   val relativeTimestamp = rememberRelativeTimestamp(currentStory.createdAtIso, currentStory.timestamp)
 
   var isPaused by remember { mutableStateOf(false) }
@@ -100,8 +130,25 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
   var showViewersSheet by remember { mutableStateOf(false) }
   var showCommentsSheet by remember { mutableStateOf(false) }
   var videoDurationMs by remember(currentStory.id) { mutableIntStateOf(15000) }
+  var mediaRetryNonce by remember(currentStory.id) { mutableIntStateOf(0) }
 
-  val effectivelyPaused = isPaused || showViewersSheet || showCommentsSheet
+  val requiresRemoteMediaLoad = remember(currentStory.id, currentStory.mediaType, currentStory.mediaUrl) {
+    (currentStory.mediaType == StoryMediaType.PHOTO || currentStory.mediaType == StoryMediaType.VIDEO) &&
+      currentStory.mediaUrl.isNotBlank()
+  }
+  var isMediaReady by remember(currentStory.id, mediaRetryNonce) {
+    mutableStateOf(!requiresRemoteMediaLoad)
+  }
+  var mediaLoadError by remember(currentStory.id, mediaRetryNonce) {
+    mutableStateOf<String?>(null)
+  }
+
+  val effectivelyPaused = isPaused ||
+    isLifecyclePaused ||
+    showViewersSheet ||
+    showCommentsSheet ||
+    showMenuDropdown ||
+    replyMessage.isNotEmpty()
 
   // Mark story viewed in backend whenever active story changes
   LaunchedEffect(currentStory.id) {
@@ -110,8 +157,9 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
 
   val progress = remember(currentStory.id) { Animatable(0f) }
 
-  LaunchedEffect(currentStory.id, effectivelyPaused, videoDurationMs) {
-    if (!effectivelyPaused) {
+  // Countdown starts ONLY after media is decoded/prepared and never runs during buffering or error states
+  LaunchedEffect(currentStory.id, effectivelyPaused, isMediaReady, mediaLoadError, videoDurationMs) {
+    if (!effectivelyPaused && isMediaReady && mediaLoadError == null) {
       val targetDuration = if (currentStory.mediaType == StoryMediaType.VIDEO) {
         videoDurationMs.coerceIn(4000, 60000)
       } else {
@@ -121,19 +169,21 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
       progress.animateTo(
         targetValue = 1f,
         animationSpec = tween(
-          durationMillis = (targetDuration * remainingFraction).toInt().coerceAtLeast(300),
+          durationMillis = (targetDuration * remainingFraction).toInt().coerceAtLeast(350),
           easing = LinearEasing
         )
       )
-      val hasNext = viewModel.nextStory()
-      if (!hasNext) {
-        viewModel.closeStoryViewer()
+      if (progress.value >= 0.995f) {
+        val hasNext = viewModel.nextStory()
+        if (!hasNext) {
+          viewModel.closeStoryViewer()
+        }
       }
     }
   }
 
-  LaunchedEffect(currentStory.id, currentStory.mediaType, isMuted, isPaused) {
-    if (currentStory.mediaType == StoryMediaType.MUSIC && !isMuted && !isPaused) {
+  LaunchedEffect(currentStory.id, currentStory.mediaType, isMuted, effectivelyPaused) {
+    if (currentStory.mediaType == StoryMediaType.MUSIC && !isMuted && !effectivelyPaused) {
       com.example.util.FeedAudioController.syncPostMusicTrack(
         postId = "story_music",
         audioTrackTitle = currentStory.musicTrackTitle ?: "Original Sound",
@@ -158,21 +208,60 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
       .imePadding()
       .testTag("story_viewer_screen")
   ) {
-    // 1. Story Visual Content Canvas with Gesture Handler
+    // 1. Story Visual Content Canvas with Hold-to-Pause, Left/Right Tap Navigation, and Swipe-Down to Close
     Box(
       modifier = Modifier
         .fillMaxSize()
         .pointerInput(currentStory.id) {
+          var dragTotalY = 0f
+          detectVerticalDragGestures(
+            onDragStart = {
+              dragTotalY = 0f
+              isPaused = true
+            },
+            onDragEnd = {
+              isPaused = false
+              if (dragTotalY > 110f) {
+                viewModel.closeStoryViewer()
+              }
+              dragTotalY = 0f
+            },
+            onDragCancel = {
+              isPaused = false
+              dragTotalY = 0f
+            },
+            onVerticalDrag = { _, dragAmount ->
+              dragTotalY += dragAmount
+            }
+          )
+        }
+        .pointerInput(currentStory.id) {
           detectTapGestures(
             onPress = {
+              val pressStart = SystemClock.elapsedRealtime()
               isPaused = true
               tryAwaitRelease()
               isPaused = false
+              // Ignore accidental release from opening tap
+              if (SystemClock.elapsedRealtime() - viewerMountedAtMs < 260L) {
+                return@detectTapGestures
+              }
+              // Only treat short taps (< 240ms) in onTap; long press just resumes smoothly!
+              val heldMs = SystemClock.elapsedRealtime() - pressStart
+              if (heldMs >= 240L) {
+                return@detectTapGestures
+              }
             },
             onTap = { offset ->
+              if (SystemClock.elapsedRealtime() - viewerMountedAtMs < 260L) {
+                return@detectTapGestures
+              }
               val screenWidth = size.width
-              if (offset.x < screenWidth * 0.33f) {
-                viewModel.prevStory()
+              if (offset.x < screenWidth * 0.34f) {
+                val movedPrev = viewModel.prevStory()
+                if (!movedPrev) {
+                  scope.launch { progress.snapTo(0f) }
+                }
               } else {
                 val hasNext = viewModel.nextStory()
                 if (!hasNext) {
@@ -186,8 +275,22 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
     ) {
       StoryCanvas(
         story = currentStory,
-        isPaused = isPaused,
+        retryKey = mediaRetryNonce,
+        isPaused = effectivelyPaused,
         isMuted = isMuted,
+        isMediaReady = isMediaReady,
+        mediaLoadError = mediaLoadError,
+        onMediaReady = {
+          mediaLoadError = null
+          isMediaReady = true
+        },
+        onMediaError = { errMsg ->
+          isMediaReady = false
+          mediaLoadError = errMsg
+        },
+        onRetryMedia = {
+          mediaRetryNonce += 1
+        },
         onVideoDurationDetected = { dur -> videoDurationMs = dur },
         onVideoCompleted = {
           val hasNext = viewModel.nextStory()
@@ -496,22 +599,24 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
             }
           )
 
-          IconButton(
-            onClick = {
-              viewModel.toggleStoryLike(currentStory.id)
-              reactionToast = if (!currentStory.isLikedByMe) "Vibed!" else null
-            },
+          Box(
             modifier = Modifier
               .size(48.dp)
               .clip(CircleShape)
               .background(Color.Black.copy(alpha = 0.5f))
-              .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
-              .testTag("story_like_button")
+              .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape),
+            contentAlignment = Alignment.Center
           ) {
-            VybeLikeIcon(
+            FingerHeartReaction(
               isLiked = currentStory.isLikedByMe,
-              size = 22.dp,
-              inactiveTint = Color.White
+              iconSize = 23.dp,
+              forceDarkSurface = true,
+              compactPadding = true,
+              testTag = "story_like_button",
+              onClick = {
+                viewModel.toggleStoryLike(currentStory.id)
+                reactionToast = if (!currentStory.isLikedByMe) "Finger Heart sent!" else null
+              }
             )
           }
         }
@@ -850,8 +955,14 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
 @Composable
 private fun StoryCanvas(
   story: Story,
+  retryKey: Int,
   isPaused: Boolean,
   isMuted: Boolean,
+  isMediaReady: Boolean,
+  mediaLoadError: String?,
+  onMediaReady: () -> Unit,
+  onMediaError: (String) -> Unit,
+  onRetryMedia: () -> Unit,
   onVideoDurationDetected: (Int) -> Unit,
   onVideoCompleted: () -> Unit
 ) {
@@ -859,13 +970,18 @@ private fun StoryCanvas(
     when (story.mediaType) {
       StoryMediaType.PHOTO -> {
         if (story.mediaUrl.isNotBlank()) {
-          AsyncImage(
-            model = story.mediaUrl,
-            contentDescription = "Story photo",
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize()
-          )
+          key(story.id, retryKey) {
+            AsyncImage(
+              model = story.mediaUrl,
+              contentDescription = "Story photo",
+              contentScale = ContentScale.Fit,
+              onSuccess = { onMediaReady() },
+              onError = { onMediaError("Unable to load story image. Check your connection.") },
+              modifier = Modifier.fillMaxSize()
+            )
+          }
         } else {
+          LaunchedEffect(story.id) { onMediaReady() }
           Box(
             modifier = Modifier
               .fillMaxSize()
@@ -875,6 +991,7 @@ private fun StoryCanvas(
       }
 
       StoryMediaType.TEXT -> {
+        LaunchedEffect(story.id) { onMediaReady() }
         val gradient = StoryGradients.firstOrNull { it.first == story.textBackgroundColor }?.second
           ?: StoryGradients.first().second
 
@@ -897,6 +1014,7 @@ private fun StoryCanvas(
       }
 
       StoryMediaType.MUSIC -> {
+        LaunchedEffect(story.id) { onMediaReady() }
         Box(
           modifier = Modifier
             .fillMaxSize()
@@ -960,19 +1078,72 @@ private fun StoryCanvas(
       }
 
       StoryMediaType.VIDEO -> {
-        // Real uploaded video playback supporting both portrait & landscape dimensions cleanly
-        VybeVideoPlayer(
-          videoUrl = story.mediaUrl,
-          autoPlay = true,
-          isLooping = false,
-          initialMuted = isMuted,
-          isPausedExternal = isPaused,
-          fitMode = VideoFitMode.FIT_CONTAIN,
-          showControls = false,
-          onDurationDetected = onVideoDurationDetected,
-          onVideoCompleted = onVideoCompleted,
-          modifier = Modifier.fillMaxSize()
-        )
+        key(story.id, retryKey) {
+          VybeVideoPlayer(
+            videoUrl = story.mediaUrl,
+            autoPlay = true,
+            isLooping = false,
+            initialMuted = isMuted,
+            isPausedExternal = isPaused,
+            fitMode = VideoFitMode.FIT_CONTAIN,
+            showControls = false,
+            onReadyChanged = { ready ->
+              if (ready) onMediaReady()
+            },
+            onErrorChanged = { err ->
+              if (err != null) onMediaError(err)
+            },
+            onDurationDetected = onVideoDurationDetected,
+            onVideoCompleted = onVideoCompleted,
+            modifier = Modifier.fillMaxSize()
+          )
+        }
+      }
+    }
+
+    if (!isMediaReady && mediaLoadError == null) {
+      CircularProgressIndicator(
+        color = Color.White,
+        strokeWidth = 2.8.dp,
+        modifier = Modifier
+          .size(38.dp)
+          .testTag("story_loading_spinner")
+      )
+    }
+
+    if (mediaLoadError != null) {
+      Surface(
+        color = Color(0xFF0F172A).copy(alpha = 0.92f),
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+        modifier = Modifier
+          .padding(24.dp)
+          .testTag("story_error_retry_card")
+      ) {
+        Column(
+          modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+          horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+          Icon(Icons.Default.CloudOff, contentDescription = "Story load error", tint = Color(0xFFFF6B6B), modifier = Modifier.size(28.dp))
+          Spacer(modifier = Modifier.height(8.dp))
+          Text(
+            text = mediaLoadError,
+            color = Color.White,
+            fontSize = 13.sp,
+            textAlign = TextAlign.Center
+          )
+          Spacer(modifier = Modifier.height(12.dp))
+          Button(
+            onClick = onRetryMedia,
+            colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.heightIn(min = 44.dp)
+          ) {
+            Icon(Icons.Default.Refresh, contentDescription = "Retry story", tint = Color.White, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Retry Story", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+          }
+        }
       }
     }
 

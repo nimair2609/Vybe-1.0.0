@@ -102,82 +102,89 @@ Deno.serve(async (req: Request) => {
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
     const body = await req.json();
 
-    const {
-      recipientId,
-      title,
-      message,
-      type = 'LIKE',
-      targetId = null,
-      eventKey,
-      channelId = 'vybe_activity_high_v2',
-      data = {},
-    } = body;
+    const isBroadcast = Boolean(body.broadcast);
+    const recipientId = body.recipientId || body.recipient_id || null;
+    const title = body.title;
+    const message = body.message || body.body;
+    const type = body.type || (isBroadcast ? 'ANNOUNCEMENT' : 'LIKE');
+    const targetId = body.targetId ?? body.target_id ?? null;
+    const conversationId = body.conversationId ?? body.conversation_id ?? null;
+    const eventKey = body.eventKey || body.event_key;
+    const channelId = body.channelId || body.channel_id || (isBroadcast ? 'vybe_broadcast_high_v2' : 'vybe_activity_high_v2');
+    const data: Record<string, unknown> = body.data || {};
 
-    if (!recipientId || !title || !message) {
-      return new Response(JSON.stringify({ error: 'recipientId, title, and message are required' }), {
+    if ((!recipientId && !isBroadcast) || !title || !message) {
+      return new Response(JSON.stringify({ error: 'recipientId (or broadcast=true), title, and message/body are required' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    if (recipientId === callerId && type !== 'ANNOUNCEMENT') {
+    if (!isBroadcast && recipientId === callerId && type !== 'ANNOUNCEMENT') {
       return new Response(JSON.stringify({ skipped: 'self_event' }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Respect bidirectional block list
-    const { data: blocks } = await supabaseAdmin
-      .from('user_blocks')
-      .select('blocker_id')
-      .or(`and(blocker_id.eq.${callerId},blocked_id.eq.${recipientId}),and(blocker_id.eq.${recipientId},blocked_id.eq.${callerId})`)
-      .limit(1);
+    // Respect bidirectional block list for targeted notifications
+    if (!isBroadcast && recipientId) {
+      const { data: blocks } = await supabaseAdmin
+        .from('user_blocks')
+        .select('blocker_id')
+        .or(`and(blocker_id.eq.${callerId},blocked_id.eq.${recipientId}),and(blocker_id.eq.${recipientId},blocked_id.eq.${callerId})`)
+        .limit(1);
 
-    if (blocks && blocks.length > 0) {
-      return new Response(JSON.stringify({ skipped: 'blocked' }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      if (blocks && blocks.length > 0) {
+        return new Response(JSON.stringify({ skipped: 'blocked' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     const canonicalEventKey = String(
-      eventKey || data.event_key || `${String(type).toLowerCase()}_${callerId}_${targetId || recipientId}`
+      eventKey || data.event_key || `${String(type).toLowerCase()}_${callerId}_${targetId || recipientId || 'broadcast'}`
     );
 
-    // 1. Persist deduplicated notification record in public.notifications
+    // 1. Persist deduplicated notification record in public.notifications when targeted
     let notificationId = String(data.notification_id || '');
-    const { data: insertedNotif } = await supabaseAdmin
-      .from('notifications')
-      .upsert(
-        {
-          recipient_id: recipientId,
-          actor_id: callerId,
-          type,
-          title,
-          message,
-          target_id: targetId,
-          event_key: canonicalEventKey,
-          is_read: false,
-        },
-        { onConflict: 'recipient_id,event_key', ignoreDuplicates: false }
-      )
-      .select('id')
-      .maybeSingle();
+    if (!isBroadcast && recipientId) {
+      const { data: insertedNotif } = await supabaseAdmin
+        .from('notifications')
+        .upsert(
+          {
+            recipient_id: recipientId,
+            actor_id: callerId,
+            type,
+            title,
+            message,
+            target_id: targetId,
+            event_key: canonicalEventKey,
+            is_read: false,
+          },
+          { onConflict: 'recipient_id,event_key', ignoreDuplicates: false }
+        )
+        .select('id')
+        .maybeSingle();
 
-    if (insertedNotif?.id) {
-      notificationId = insertedNotif.id;
+      if (insertedNotif?.id) {
+        notificationId = insertedNotif.id;
+      }
     }
 
-    // 2. Fetch active FCM registration tokens for recipient
-    const { data: tokenRows } = await supabaseAdmin
+    // 2. Fetch active FCM registration tokens
+    const tokenQuery = supabaseAdmin
       .from('user_device_tokens')
       .select('fcm_token')
-      .eq('user_id', recipientId)
       .eq('is_active', true);
 
+    const { data: tokenRows } = isBroadcast
+      ? await tokenQuery.limit(1000)
+      : await tokenQuery.eq('user_id', recipientId);
+
     const tokens = Array.from(new Set((tokenRows || []).map((r: { fcm_token: string }) => r.fcm_token).filter(Boolean)));
-    if (!saRaw || tokens.length === 0) {
+    if (!saRaw || (tokens.length === 0 && !isBroadcast)) {
       return new Response(
         JSON.stringify({
           success: true,
@@ -197,8 +204,7 @@ Deno.serve(async (req: Request) => {
     let delivered = 0;
     let failed = 0;
 
-    // Data-only high-priority FCM HTTP v1 payload prevents OS + app duplicate notifications
-    for (const token of tokens) {
+    const buildStringPayload = () => {
       const stringData: Record<string, string> = {};
       for (const [k, v] of Object.entries(data)) {
         if (v !== undefined && v !== null) stringData[k] = String(v);
@@ -206,11 +212,23 @@ Deno.serve(async (req: Request) => {
       stringData.title = String(title);
       stringData.body = String(message);
       stringData.type = String(type);
+      stringData.actor_id = String(body.actorId || body.actor_id || callerId);
+      if (recipientId) stringData.recipient_id = String(recipientId);
       stringData.event_key = canonicalEventKey;
       stringData.channel_id = String(channelId);
       if (notificationId) stringData.notification_id = notificationId;
       if (targetId) stringData.target_id = String(targetId);
+      if (conversationId) stringData.conversation_id = String(conversationId);
+      return stringData;
+    };
 
+    const fcmTargets = tokens.length > 0
+      ? tokens.map((t) => ({ token: t }))
+      : (isBroadcast ? [{ topic: 'vybe_all_users' }] : []);
+
+    // Data-only high-priority Direct-Boot-enabled FCM HTTP v1 payload prevents OS + app duplicates and wakes locked phones
+    for (const target of fcmTargets) {
+      const stringData = buildStringPayload();
       const fcmResp = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
         method: 'POST',
         headers: {
@@ -219,10 +237,12 @@ Deno.serve(async (req: Request) => {
         },
         body: JSON.stringify({
           message: {
-            token,
+            ...(target.token ? { token: target.token } : { topic: target.topic }),
             data: stringData,
             android: {
               priority: 'high',
+              ttl: '86400s',
+              direct_boot_ok: true,
             },
           },
         }),
@@ -233,11 +253,11 @@ Deno.serve(async (req: Request) => {
       } else {
         failed++;
         const errText = await fcmResp.text();
-        if (errText.includes('UNREGISTERED') || errText.includes('INVALID_ARGUMENT')) {
+        if (target.token && (errText.includes('UNREGISTERED') || errText.includes('INVALID_ARGUMENT'))) {
           await supabaseAdmin
             .from('user_device_tokens')
             .update({ is_active: false, updated_at: new Date().toISOString() })
-            .eq('fcm_token', token);
+            .eq('fcm_token', target.token);
         }
       }
     }

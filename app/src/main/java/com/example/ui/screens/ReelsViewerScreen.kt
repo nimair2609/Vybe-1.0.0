@@ -220,11 +220,29 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
       val isCurrentPage = pageIndex == pagerState.settledPage
       val reelRelativeTime = rememberRelativeTimestamp(reelPost.createdAtIso, reelPost.timestamp)
       var showDoubleTapResonance by remember { mutableStateOf(false) }
+      var doubleTapBurstNonce by remember { mutableIntStateOf(0) }
+      var reelProgressFraction by remember(reelPost.id) { mutableFloatStateOf(0f) }
+      var seekFraction by remember(reelPost.id) { mutableStateOf<Float?>(null) }
+      var seekNonce by remember(reelPost.id) { mutableIntStateOf(0) }
 
-      LaunchedEffect(showDoubleTapResonance) {
+      LaunchedEffect(isCurrentPage) {
+        if (!isCurrentPage) {
+          reelProgressFraction = 0f
+        }
+      }
+
+      LaunchedEffect(showDoubleTapResonance, doubleTapBurstNonce) {
         if (showDoubleTapResonance) {
-          delay(850L)
+          delay(720L)
           showDoubleTapResonance = false
+        }
+      }
+
+      val triggerReelDoubleTap = {
+        doubleTapBurstNonce += 1
+        showDoubleTapResonance = true
+        if (reelPost.userReaction == null) {
+          viewModel.reactToPost(reelPost.id, VybeReaction.LOVE)
         }
       }
 
@@ -235,10 +253,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
           .pointerInput(reelPost.id) {
             detectTapGestures(
               onTap = { isPlaying = !isPlaying },
-              onDoubleTap = {
-                showDoubleTapResonance = true
-                viewModel.reactToPost(reelPost.id, VybeReaction.LOVE)
-              }
+              onDoubleTap = { triggerReelDoubleTap() }
             )
           }
       ) {
@@ -250,35 +265,24 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
           isPausedExternal = !isCurrentPage || !isPlaying || showCommentsSheet || showShareInboxSheet,
           fitMode = VideoFitMode.FIT_CONTAIN,
           showControls = false,
-          onTapOverlay = { isPlaying = !isPlaying },
-          onDoubleTapOverlay = {
-            showDoubleTapResonance = true
-            viewModel.reactToPost(reelPost.id, VybeReaction.LOVE)
+          onProgressChanged = { posMs, durMs ->
+            if (isCurrentPage && durMs > 0) {
+              reelProgressFraction = (posMs.toFloat() / durMs.toFloat()).coerceIn(0f, 1f)
+            }
           },
+          seekToFraction = seekFraction,
+          seekNonce = seekNonce,
+          onTapOverlay = { isPlaying = !isPlaying },
+          onDoubleTapOverlay = { triggerReelDoubleTap() },
           modifier = Modifier.fillMaxSize()
         )
 
-        // Double-Tap Resonance PULSE Animation Overlay
-        androidx.compose.animation.AnimatedVisibility(
+        // Central Finger Heart Double-Tap Burst Overlay
+        com.example.ui.components.FingerHeartDoubleTapOverlay(
           visible = showDoubleTapResonance,
-          enter = androidx.compose.animation.scaleIn(initialScale = 0.4f) + androidx.compose.animation.fadeIn(),
-          exit = androidx.compose.animation.scaleOut(targetScale = 1.35f) + androidx.compose.animation.fadeOut(),
+          burstKey = doubleTapBurstNonce,
           modifier = Modifier.align(Alignment.Center)
-        ) {
-          Box(
-            modifier = Modifier
-              .size(90.dp)
-              .clip(CircleShape)
-              .background(Color.Black.copy(alpha = 0.55f)),
-            contentAlignment = Alignment.Center
-          ) {
-            VybeLikeIcon(
-              isLiked = true,
-              size = 54.dp,
-              activeTintOverride = VybeMagenta
-            )
-          }
-        }
+        )
 
         if (!isPlaying && isCurrentPage && !showDoubleTapResonance) {
           Box(
@@ -299,51 +303,93 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
           }
         }
 
-        // Top subtle gradient & Controls
+        // Top subtle gradient, Instagram-style horizontal Reel Duration Progress Bar, & Controls
         Box(
           modifier = Modifier
             .fillMaxWidth()
-            .height(110.dp)
+            .height(122.dp)
             .align(Alignment.TopCenter)
-            .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.68f), Color.Transparent)))
+            .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.72f), Color.Transparent)))
         ) {
-          Row(
+          Column(
             modifier = Modifier
               .fillMaxWidth()
               .statusBarsPadding()
-              .padding(horizontal = 12.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
           ) {
-            IconButton(
-              onClick = { handleBackFromReels() },
+            // Thin horizontal Reel playback progress bar at the top with tap & drag seeking
+            Box(
               modifier = Modifier
-                .size(48.dp)
-                .testTag("reels_back_button")
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+                .height(18.dp)
+                .pointerInput(reelPost.id) {
+                  detectTapGestures { offset ->
+                    if (size.width > 0) {
+                      val frac = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
+                      reelProgressFraction = frac
+                      seekFraction = frac
+                      seekNonce += 1
+                    }
+                  }
+                }
+                .testTag("reel_top_progress_bar"),
+              contentAlignment = Alignment.CenterStart
             ) {
-              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+              Box(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .height(3.dp)
+                  .clip(RoundedCornerShape(99.dp))
+                  .background(Color.White.copy(alpha = 0.28f))
+              ) {
+                Box(
+                  modifier = Modifier
+                    .fillMaxWidth(reelProgressFraction.coerceIn(0f, 1f))
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(99.dp))
+                    .background(Color.White)
+                    .testTag("reel_top_progress_fill")
+                )
+              }
             }
 
-            Text(
-              text = "VYBES",
-              fontFamily = SyneFontFamily,
-              fontSize = 19.sp,
-              fontWeight = FontWeight.ExtraBold,
-              letterSpacing = 1.4.sp,
-              color = Color.White
-            )
-
-            IconButton(
-              onClick = { viewModel.navigateTo(Screen.CREATE_POST) },
+            Row(
               modifier = Modifier
-                .size(48.dp)
-                .testTag("reels_create_shortcut_button")
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 2.dp),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
             ) {
-              Icon(
-                imageVector = Icons.Default.AddCircleOutline,
-                contentDescription = "Create Reel",
-                tint = Color.White
+              IconButton(
+                onClick = { handleBackFromReels() },
+                modifier = Modifier
+                  .size(48.dp)
+                  .testTag("reels_back_button")
+              ) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+              }
+
+              Text(
+                text = "VYBES",
+                fontFamily = SyneFontFamily,
+                fontSize = 19.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 1.4.sp,
+                color = Color.White
               )
+
+              IconButton(
+                onClick = { viewModel.navigateTo(Screen.CREATE_POST) },
+                modifier = Modifier
+                  .size(48.dp)
+                  .testTag("reels_create_shortcut_button")
+              ) {
+                Icon(
+                  imageVector = Icons.Default.AddCircleOutline,
+                  contentDescription = "Create Reel",
+                  tint = Color.White
+                )
+              }
             }
           }
         }

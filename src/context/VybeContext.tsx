@@ -21,7 +21,8 @@ import {
   fetchLiveStories,
   createLivePost,
   createLiveStory,
-  submitLiveComment
+  submitLiveComment,
+  syncPostLikeCountToSupabase
 } from '../services/supabaseService';
 
 export type MainTab = 'FEED' | 'VYBES' | 'MOOD_ZONES' | 'EXPLORE' | 'INBOX' | 'CROSSED_PATHS' | 'COMMUNITY' | 'PROFILE';
@@ -59,6 +60,9 @@ interface VybeContextType {
   // Current user & Users
   currentUser: User;
   allUsers: User[];
+  viewedProfileUser: User | null;
+  openUserProfile: (user: User) => void;
+  closeUserProfile: () => void;
   setCurrentUserMood: (mood: MoodType) => void;
   setCurrentUserPulse: (pulse: any) => void;
 
@@ -75,7 +79,9 @@ interface VybeContextType {
   posts: Post[];
   reels: Post[];
   toggleLikePost: (postId: string) => void;
+  ensurePostLoved: (postId: string) => void;
   reactToPost: (postId: string, reaction: VybeReaction) => void;
+  toggleCommentLike: (postId: string, commentId: string) => void;
   toggleSavePost: (postId: string) => void;
   addCommentToPost: (postId: string, text: string) => void;
   createPost: (postData: Partial<Post>) => void;
@@ -98,6 +104,7 @@ interface VybeContextType {
   closeStoryViewer: () => void;
   nextStory: () => void;
   prevStory: () => void;
+  toggleStoryLike: (storyId: string) => void;
   createStory: (storyData: Partial<Story>) => void;
 
   // Crossed Paths
@@ -170,10 +177,38 @@ const VybeContext = createContext<VybeContextType | undefined>(undefined);
 export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User>(CURRENT_USER);
   const [allUsers, setAllUsers] = useState<User[]>(SEED_USERS);
+  const [viewedProfileUser, setViewedProfileUser] = useState<User | null>(null);
+  const [previousTabBeforeProfile, setPreviousTabBeforeProfile] = useState<MainTab>('FEED');
   const [isDbConnected, setIsDbConnected] = useState<boolean>(false);
-  const [selectedTab, setSelectedTab] = useState<MainTab>('FEED');
+  const [selectedTab, setSelectedTabState] = useState<MainTab>('FEED');
   const [activeModal, setActiveModal] = useState<ModalScreen | null>(null);
   const [selectedMoodFilter, setSelectedMoodFilter] = useState<MoodType | 'ALL'>('ALL');
+
+  const setSelectedTab = (tab: MainTab) => {
+    // Selecting PROFILE from bottom navigation strictly opens the logged-in user's own profile
+    if (tab === 'PROFILE') {
+      setViewedProfileUser(null);
+    }
+    setSelectedTabState(tab);
+  };
+
+  const openUserProfile = (user: User) => {
+    if (!user || user.id.toLowerCase() === currentUser.id.toLowerCase()) {
+      setViewedProfileUser(null);
+      setSelectedTabState('PROFILE');
+      return;
+    }
+    if (selectedTab !== 'PROFILE') {
+      setPreviousTabBeforeProfile(selectedTab);
+    }
+    setViewedProfileUser(user);
+    setSelectedTabState('PROFILE');
+  };
+
+  const closeUserProfile = () => {
+    setViewedProfileUser(null);
+    setSelectedTabState(previousTabBeforeProfile || 'FEED');
+  };
 
   // Theme Mode (persisted in localStorage & applied to documentElement)
   const [themeMode, setThemeModeState] = useState<'dark' | 'light'>(() => {
@@ -479,60 +514,124 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCurrentUser(prev => ({ ...prev, livePulse: pulse }));
   };
 
-  // Post Actions
-  const toggleLikePost = (postId: string) => {
+  // Post Actions (synchronized across Feed Posts, Reels, and Supabase)
+  const applyPostTransform = (postId: string, updater: (p: Post) => Post) => {
+    let updatedLikes: number | null = null;
     setPosts(prev => prev.map(p => {
       if (p.id === postId) {
-        const isLiked = !p.isLiked;
-        return {
-          ...p,
-          isLiked,
-          likesCount: isLiked ? p.likesCount + 1 : Math.max(0, p.likesCount - 1),
-          userReaction: isLiked ? (p.userReaction || 'LOVE') : undefined
-        };
+        const next = updater(p);
+        updatedLikes = next.likesCount;
+        return next;
       }
       return p;
     }));
+    setReels(prev => prev.map(p => {
+      if (p.id === postId) {
+        const next = updater(p);
+        if (updatedLikes === null) updatedLikes = next.likesCount;
+        return next;
+      }
+      return p;
+    }));
+    if (updatedLikes !== null) {
+      syncPostLikeCountToSupabase(postId, updatedLikes);
+    }
+  };
+
+  const toggleLikePost = (postId: string) => {
+    applyPostTransform(postId, p => {
+      const isLiked = !p.isLiked;
+      const nextLikes = isLiked ? p.likesCount + 1 : Math.max(0, p.likesCount - 1);
+      const nextReactions = { ...p.reactionsCount };
+      if (isLiked) {
+        nextReactions.LOVE = (nextReactions.LOVE || 0) + 1;
+      } else if (p.userReaction) {
+        nextReactions[p.userReaction] = Math.max(0, (nextReactions[p.userReaction] || 1) - 1);
+      } else {
+        nextReactions.LOVE = Math.max(0, (nextReactions.LOVE || 1) - 1);
+      }
+      return {
+        ...p,
+        isLiked,
+        likesCount: nextLikes,
+        reactionsCount: nextReactions,
+        userReaction: isLiked ? (p.userReaction || 'LOVE') : undefined
+      };
+    });
+  };
+
+  const ensurePostLoved = (postId: string) => {
+    applyPostTransform(postId, p => {
+      if (p.isLiked) return p;
+      const nextReactions = {
+        ...p.reactionsCount,
+        LOVE: (p.reactionsCount?.LOVE || 0) + 1
+      };
+      return {
+        ...p,
+        isLiked: true,
+        likesCount: p.likesCount + 1,
+        reactionsCount: nextReactions,
+        userReaction: 'LOVE'
+      };
+    });
   };
 
   const reactToPost = (postId: string, reaction: VybeReaction) => {
-    setPosts(prev => prev.map(p => {
-      if (p.id === postId) {
-        const currentReaction = p.userReaction;
-        const nextReaction = currentReaction === reaction ? undefined : reaction;
-        const newReactionsCount = { ...p.reactionsCount };
+    applyPostTransform(postId, p => {
+      const currentReaction = p.userReaction;
+      const nextReaction = currentReaction === reaction ? undefined : reaction;
+      const newReactionsCount = { ...p.reactionsCount };
 
-        if (currentReaction) {
-          newReactionsCount[currentReaction] = Math.max(0, (newReactionsCount[currentReaction] || 1) - 1);
-        }
-        if (nextReaction) {
-          newReactionsCount[nextReaction] = (newReactionsCount[nextReaction] || 0) + 1;
-        }
-
-        return {
-          ...p,
-          userReaction: nextReaction,
-          isLiked: !!nextReaction,
-          reactionsCount: newReactionsCount,
-          likesCount: Object.values(newReactionsCount).reduce((a, b) => a + b, 0)
-        };
+      if (currentReaction) {
+        newReactionsCount[currentReaction] = Math.max(0, (newReactionsCount[currentReaction] || 1) - 1);
       }
-      return p;
-    }));
+      if (nextReaction) {
+        newReactionsCount[nextReaction] = (newReactionsCount[nextReaction] || 0) + 1;
+      }
+
+      return {
+        ...p,
+        userReaction: nextReaction,
+        isLiked: !!nextReaction,
+        reactionsCount: newReactionsCount,
+        likesCount: Object.values(newReactionsCount).reduce((a, b) => a + b, 0)
+      };
+    });
+  };
+
+  const toggleCommentLike = (postId: string, commentId: string) => {
+    const mapComments = (p: Post): Post => {
+      if (p.id !== postId) return p;
+      return {
+        ...p,
+        comments: (p.comments || []).map(c => {
+          if (c.id !== commentId) return c;
+          const nextLiked = !c.isLiked;
+          return {
+            ...c,
+            isLiked: nextLiked,
+            likesCount: nextLiked ? (c.likesCount || 0) + 1 : Math.max(0, (c.likesCount || 0) - 1)
+          };
+        })
+      };
+    };
+    setPosts(prev => prev.map(mapComments));
+    setReels(prev => prev.map(mapComments));
   };
 
   const toggleSavePost = (postId: string) => {
-    setPosts(prev => prev.map(p => {
-      if (p.id === postId) {
-        const isSaved = !p.isSaved;
-        return {
-          ...p,
-          isSaved,
-          savesCount: isSaved ? p.savesCount + 1 : Math.max(0, p.savesCount - 1)
-        };
-      }
-      return p;
-    }));
+    const mapSave = (p: Post): Post => {
+      if (p.id !== postId) return p;
+      const isSaved = !p.isSaved;
+      return {
+        ...p,
+        isSaved,
+        savesCount: isSaved ? p.savesCount + 1 : Math.max(0, p.savesCount - 1)
+      };
+    };
+    setPosts(prev => prev.map(mapSave));
+    setReels(prev => prev.map(mapSave));
   };
 
   const addCommentToPost = (postId: string, text: string) => {
@@ -545,18 +644,19 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       content: text.trim(),
       timestamp: 'Just now',
       createdAtIso: nowIso,
-      likesCount: 0
+      likesCount: 0,
+      isLiked: false
     };
-    setPosts(prev => prev.map(p => {
-      if (p.id === postId) {
-        return {
-          ...p,
-          commentsCount: p.commentsCount + 1,
-          comments: [newComment, ...p.comments]
-        };
-      }
-      return p;
-    }));
+    const appendComment = (p: Post): Post => {
+      if (p.id !== postId) return p;
+      return {
+        ...p,
+        commentsCount: p.commentsCount + 1,
+        comments: [newComment, ...(p.comments || [])]
+      };
+    };
+    setPosts(prev => prev.map(appendComment));
+    setReels(prev => prev.map(appendComment));
 
     // Persist live comment to Supabase
     submitLiveComment(postId, currentUser.id, text.trim()).catch(err => {
@@ -629,10 +729,20 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  // Story Actions
-  const openStoryViewer = (authorId: string, index: number = 0) => {
+  // Story Actions (case-insensitive cross-user author matching)
+  const openStoryViewer = (authorId: string, index?: number) => {
+    const normalizedAuthor = (authorId || '').toLowerCase();
+    const matchedIdx =
+      typeof index === 'number' && index >= 0 && index < stories.length
+        ? index
+        : stories.findIndex(s => (s.author?.id || '').toLowerCase() === normalizedAuthor);
+    const safeIdx = matchedIdx >= 0 ? matchedIdx : 0;
+    const targetStory = stories[safeIdx];
+    if (targetStory) {
+      setStories(prev => prev.map((s, idx) => (idx === safeIdx ? { ...s, isViewed: true } : s)));
+    }
     setActiveStoryAuthorId(authorId);
-    setActiveStoryIndex(index);
+    setActiveStoryIndex(safeIdx);
     openModal('STORY_VIEWER');
   };
 
@@ -642,17 +752,31 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const nextStory = () => {
-    if (activeStoryIndex < stories.length - 1) {
-      setActiveStoryIndex(prev => prev + 1);
-    } else {
+    setActiveStoryIndex(prev => {
+      if (prev < stories.length - 1) {
+        const nextIdx = prev + 1;
+        setStories(list => list.map((s, idx) => (idx === nextIdx ? { ...s, isViewed: true } : s)));
+        return nextIdx;
+      }
       closeStoryViewer();
-    }
+      return prev;
+    });
   };
 
   const prevStory = () => {
-    if (activeStoryIndex > 0) {
-      setActiveStoryIndex(prev => prev - 1);
-    }
+    setActiveStoryIndex(prev => (prev > 0 ? prev - 1 : 0));
+  };
+
+  const toggleStoryLike = (storyId: string) => {
+    setStories(prev => prev.map(s => {
+      if (s.id !== storyId) return s;
+      const nextLiked = !s.isLikedByMe;
+      return {
+        ...s,
+        isLikedByMe: nextLiked,
+        reactionsCount: nextLiked ? (s.reactionsCount || 0) + 1 : Math.max(0, (s.reactionsCount || 0) - 1)
+      };
+    }));
   };
 
   const createStory = (storyData: Partial<Story>) => {
@@ -906,6 +1030,9 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     <VybeContext.Provider value={{
       currentUser,
       allUsers,
+      viewedProfileUser,
+      openUserProfile,
+      closeUserProfile,
       setCurrentUserMood,
       setCurrentUserPulse,
       selectedTab,
@@ -918,7 +1045,9 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       posts,
       reels,
       toggleLikePost,
+      ensurePostLoved,
       reactToPost,
+      toggleCommentLike,
       toggleSavePost,
       addCommentToPost,
       createPost,
@@ -937,6 +1066,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       closeStoryViewer,
       nextStory,
       prevStory,
+      toggleStoryLike,
       createStory,
       crossedPaths,
       sendConnectionRequest,

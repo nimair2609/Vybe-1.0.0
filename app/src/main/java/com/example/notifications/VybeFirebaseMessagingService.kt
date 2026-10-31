@@ -54,6 +54,14 @@ class VybeFirebaseMessagingService : FirebaseMessagingService() {
     Log.i(TAG, "New FCM registration token received: ${token.take(12)}... (len=${token.length})")
 
     try {
+      val userManager = applicationContext.getSystemService(android.content.Context.USER_SERVICE) as? android.os.UserManager
+      val isUnlocked = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+        userManager?.isUserUnlocked ?: true
+      } else true
+      if (!isUnlocked) {
+        subscribeStandardTopics(null)
+        return
+      }
       val session = SessionManager.getInstance(applicationContext)
       session.saveFcmToken(token)
 
@@ -98,16 +106,24 @@ class VybeFirebaseMessagingService : FirebaseMessagingService() {
         ?: data["content"]
         ?: "You have a new update on VYBE.").toString()
 
-      val session = SessionManager.getInstance(applicationContext)
-      val currentUserId = session.userId
+      val userManager = applicationContext.getSystemService(android.content.Context.USER_SERVICE) as? android.os.UserManager
+      val isUnlocked = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+        userManager?.isUserUnlocked ?: true
+      } else true
+
+      val session = if (isUnlocked) {
+        try { SessionManager.getInstance(applicationContext) } catch (_: Exception) { null }
+      } else null
+      val currentUserId = session?.userId
+      val isLoggedIn = session?.isLoggedIn == true
       val recipientId: String? = data["recipient_id"] ?: data["user_id"]
       val actorId: String? = data["actor_id"] ?: data["sender_id"]
 
       // Never notify a user about their own action or another user's private payload
-      if (!actorId.isNullOrBlank() && actorId == currentUserId) {
+      if (!actorId.isNullOrBlank() && !currentUserId.isNullOrBlank() && actorId.equals(currentUserId, ignoreCase = true)) {
         return
       }
-      if (!recipientId.isNullOrBlank() && !currentUserId.isNullOrBlank() && recipientId != currentUserId) {
+      if (!recipientId.isNullOrBlank() && !currentUserId.isNullOrBlank() && !recipientId.equals(currentUserId, ignoreCase = true)) {
         return
       }
 
@@ -155,7 +171,7 @@ class VybeFirebaseMessagingService : FirebaseMessagingService() {
       val isBackground = !VybeNotificationHelper.isAppInForeground
 
       // Record every eligible incoming push into VYBE's In-App Notification Center & sync Supabase
-      if (session.isLoggedIn && repo != null && (recipientId.isNullOrBlank() || recipientId == currentUserId)) {
+      if (isLoggedIn && repo != null && (recipientId.isNullOrBlank() || recipientId.equals(currentUserId, ignoreCase = true))) {
         try {
           repo.ingestIncomingPushEvent(
             title = title,
@@ -183,7 +199,7 @@ class VybeFirebaseMessagingService : FirebaseMessagingService() {
         else -> VybeNotificationHelper.CHANNEL_ID_PRIMARY
       }
 
-      if (session.isLoggedIn && repo != null && (recipientId.isNullOrBlank() || recipientId == currentUserId)) {
+      if (isLoggedIn && repo != null && (recipientId.isNullOrBlank() || recipientId.equals(currentUserId, ignoreCase = true))) {
         val conversationId = data["conversation_id"] ?: data["target_id"]
         if (
           !conversationId.isNullOrBlank() &&
