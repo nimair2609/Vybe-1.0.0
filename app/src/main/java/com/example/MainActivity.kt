@@ -87,7 +87,15 @@ class MainActivity : ComponentActivity() {
       pendingDeepLinkUri.value = uri
     }
     intent?.extras?.let { extras ->
-      if (extras.containsKey("destination") || extras.containsKey("target_id") || extras.containsKey("conversation_id")) {
+      if (
+        extras.containsKey("destination") ||
+        extras.containsKey("target_id") ||
+        extras.containsKey("conversation_id") ||
+        extras.containsKey("notification_id") ||
+        extras.containsKey("type") ||
+        extras.containsKey("event_key") ||
+        extras.containsKey("google.message_id")
+      ) {
         pendingNotificationPayload.value = extras
       }
     }
@@ -411,7 +419,15 @@ class MainActivity : ComponentActivity() {
       pendingDeepLinkUri.value = uri
     }
     intent.extras?.let { extras ->
-      if (extras.containsKey("destination") || extras.containsKey("target_id") || extras.containsKey("conversation_id")) {
+      if (
+        extras.containsKey("destination") ||
+        extras.containsKey("target_id") ||
+        extras.containsKey("conversation_id") ||
+        extras.containsKey("notification_id") ||
+        extras.containsKey("type") ||
+        extras.containsKey("event_key") ||
+        extras.containsKey("google.message_id")
+      ) {
         pendingNotificationPayload.value = extras
       }
     }

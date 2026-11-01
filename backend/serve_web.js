@@ -330,7 +330,7 @@ async function dispatchFcmIfConfigured({ tokens = [], topic, title, body, data =
             },
             data: stringData,
             android: {
-              priority: 'high',
+              priority: 'HIGH',
               ttl: '86400s',
               direct_boot_ok: true,
               notification: {

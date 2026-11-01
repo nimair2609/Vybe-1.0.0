@@ -238,11 +238,23 @@ Deno.serve(async (req: Request) => {
         body: JSON.stringify({
           message: {
             ...(target.token ? { token: target.token } : { topic: target.topic }),
+            notification: {
+              title: String(title),
+              body: String(message),
+            },
             data: stringData,
             android: {
-              priority: 'high',
+              priority: 'HIGH',
               ttl: '86400s',
               direct_boot_ok: true,
+              notification: {
+                channel_id: String(channelId || 'vybe_activity_high_v2'),
+                visibility: 'PUBLIC',
+                priority: 'MAX',
+                default_sound: true,
+                default_vibrate_timings: true,
+                notification_priority: 'PRIORITY_MAX',
+              },
             },
           },
         }),
