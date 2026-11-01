@@ -1208,6 +1208,7 @@ class VybeViewModel : ViewModel() {
   fun searchUsers(query: String): List<User> = repository.searchUsers(query)
   fun getOrCreateConversation(peerUser: User): Conversation = repository.getOrCreateConversation(peerUser)
   fun syncMessagesForConversation(convId: String) = repository.syncMessagesForConversation(convId)
+  fun syncConversations() = repository.syncConversationsQuick()
   suspend fun submitReport(targetType: String, targetId: String, reason: String, details: String = "") =
     repository.submitReport(targetType, targetId, reason, details)
 

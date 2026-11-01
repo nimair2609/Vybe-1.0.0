@@ -2937,8 +2937,9 @@ class VybeRepository private constructor() {
                 val msgEventKey = serverMsg.id?.takeIf { it.isNotBlank() }?.let { "msg_$it" }
                 val previewImageUrl = if (mediaType.equals("IMAGE", ignoreCase = true)) resolvedMediaUrl else null
 
+                val safeEventKey = msgEventKey ?: "msg_${System.currentTimeMillis()}_${(1000..9999).random()}"
                 recipientIds.forEach { recipientId ->
-                  if (!msgEventKey.isNullOrBlank()) {
+                  ioScope.launch {
                     VybeRealtimePushManager.sendInstantUserPush(
                       recipientId = recipientId,
                       actorId = user.id,
@@ -2947,7 +2948,7 @@ class VybeRepository private constructor() {
                       body = msgPreview,
                       targetId = resolvedConvId,
                       conversationId = resolvedConvId,
-                      eventKey = msgEventKey,
+                      eventKey = safeEventKey,
                       actorUsername = user.username,
                       actorDisplayName = user.displayName,
                       actorAvatarUrl = user.avatarUrl,
@@ -2963,28 +2964,12 @@ class VybeRepository private constructor() {
                       body = msgPreview,
                       targetId = resolvedConvId,
                       conversationId = resolvedConvId,
-                      eventKey = msgEventKey,
+                      eventKey = safeEventKey,
                       actorUsername = user.username,
                       actorDisplayName = user.displayName,
                       actorAvatarUrl = user.avatarUrl,
                       mediaUrl = previewImageUrl,
                       groupName = c.groupName
-                    )
-                  } else {
-                    supabaseRepo.createInteractionNotificationIfNeeded(
-                      recipientId = recipientId,
-                      actorId = user.id,
-                      type = notifKind,
-                      title = pushTitle,
-                      message = msgPreview,
-                      targetId = resolvedConvId,
-                      conversationId = resolvedConvId,
-                      actorUsername = user.username,
-                      actorDisplayName = user.displayName,
-                      actorAvatarUrl = user.avatarUrl,
-                      mediaUrl = previewImageUrl,
-                      groupName = c.groupName,
-                      accessToken = token
                     )
                   }
                 }
@@ -3298,6 +3283,27 @@ class VybeRepository private constructor() {
       return Result.failure(IllegalStateException("This post belongs to a private account. LINK UP with @${enriched.author.username} to view their posts."))
     }
     return Result.success(enriched)
+  }
+
+  fun syncConversationsQuick() {
+    if (!supabaseRepo.isConfigured) return
+    val myId = _currentUser.value?.id ?: SessionManager.get()?.userId ?: return
+    ioScope.launch {
+      val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+      val convRes = supabaseRepo.fetchConversationsForUser(
+        myUserId = myId,
+        blockedIds = _blockedUserIds.value,
+        restrictedIds = _restrictedUserIds.value,
+        accessToken = token
+      )
+      if (convRes.isSuccess) {
+        val remoteConvs = mergeRemoteConversationsPreservingInFlight(
+          dedupeConversationCallLogs(convRes.getOrThrow())
+        )
+        _conversations.value = remoteConvs
+        VybeLocalStore.get()?.saveConversations(remoteConvs)
+      }
+    }
   }
 
   fun syncMessagesForConversation(conversationId: String) {
@@ -4481,7 +4487,7 @@ class VybeRepository private constructor() {
       var tick = 0
       while (isActive && _isLoggedIn.value) {
         val isForeground = VybeNotificationHelper.isAppInForeground
-        val loopInterval = if (isForeground) 4500L else 7500L
+        val loopInterval = if (isForeground) 2500L else 6000L
         try {
           val me = _currentUser.value
           val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
@@ -4536,7 +4542,7 @@ class VybeRepository private constructor() {
               refreshActiveRoomMessages(openRoom.id, token)
             }
             // Fast notification & message sync so notifications arrive promptly even when app is backgrounded
-            if (tick > 0 && tick % 2 == 0 && !isUploadInFlight) {
+            if ((isForeground || (tick > 0 && tick % 2 == 0)) && !isUploadInFlight) {
               val convRes = supabaseRepo.fetchConversationsForUser(
                 myUserId = me.id,
                 blockedIds = _blockedUserIds.value,

@@ -64,7 +64,11 @@ fun InboxScreen(viewModel: VybeViewModel) {
   var conversationToDelete by remember { mutableStateOf<Conversation?>(null) }
 
   LaunchedEffect(Unit) {
-    viewModel.refreshAllData()
+    viewModel.syncConversations()
+    while (true) {
+      kotlinx.coroutines.delay(2000L)
+      viewModel.syncConversations()
+    }
   }
 
   val displayedConversations = remember(conversations, currentTab, searchQuery, isHiddenUnlocked) {

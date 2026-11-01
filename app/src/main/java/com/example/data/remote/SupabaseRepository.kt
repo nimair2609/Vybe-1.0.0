@@ -3337,7 +3337,15 @@ class SupabaseRepository {
           .post(jsonBody)
           .build()
         SupabaseNetworkClient.okHttpClient.newCall(edgeReq).execute().use { resp ->
-          dispatched = resp.isSuccessful
+          if (resp.isSuccessful) {
+            val respStr = resp.body?.string().orEmpty()
+            val parsed = try { JSONObject(respStr) } catch (_: Exception) { null }
+            val fcmConfigured = parsed?.optBoolean("fcmConfigured", true) ?: true
+            val delivered = parsed?.optInt("delivered", 0) ?: 0
+            if (fcmConfigured && (delivered > 0 || parsed?.optBoolean("success", false) == true)) {
+              dispatched = true
+            }
+          }
         }
       } catch (_: Exception) {}
     }
