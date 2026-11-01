@@ -2647,13 +2647,21 @@ class VybeRepository private constructor() {
     return Result.success(getOrCreateConversation(peerUser))
   }
 
+  fun sortConversationsStably(convs: List<Conversation>): List<Conversation> {
+    return convs.sortedWith(
+      compareByDescending<Conversation> { it.lastMessageCreatedAtIso ?: "" }
+        .thenByDescending { it.messages.lastOrNull()?.createdAtIso ?: "" }
+        .thenBy { it.id }
+    )
+  }
+
   /**
    * Merges remote conversations while preserving any newly opened local `conv_` threads and
    * in-flight/failed optimistic messages so background sync never drops active user messages.
    */
   private fun mergeRemoteConversationsPreservingInFlight(remoteConvs: List<Conversation>): List<Conversation> {
     val currentLocal = _conversations.value
-    if (currentLocal.isEmpty()) return remoteConvs
+    if (currentLocal.isEmpty()) return sortConversationsStably(remoteConvs)
 
     val remotePeers = remoteConvs.filter { !it.isGroup }.map { it.peerUser.id }.toSet()
     val mergedRemote = remoteConvs.map { remote ->
@@ -2675,7 +2683,7 @@ class VybeRepository private constructor() {
     val pendingNewThreads = currentLocal.filter { local ->
       local.id.startsWith("conv_") && !local.isGroup && !remotePeers.contains(local.peerUser.id)
     }
-    return pendingNewThreads + mergedRemote
+    return sortConversationsStably(pendingNewThreads + mergedRemote)
   }
 
   private fun findConversationIndex(list: List<Conversation>, conversationId: String, fallbackPeerId: String? = null): Int {
@@ -2820,13 +2828,18 @@ class VybeRepository private constructor() {
       isRead = true,
       status = MessageStatus.SENDING
     )
+    val nowIso = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply {
+      timeZone = java.util.TimeZone.getTimeZone("UTC")
+    }.format(java.util.Date())
     current[index] = conv.copy(
       lastMessage = if (cleanText.isNotBlank()) cleanText else "[$mediaType attachment]",
       lastMessageTimestamp = "Just now",
+      lastMessageCreatedAtIso = nowIso,
       messages = conv.messages + optimisticMsg
     )
-    _conversations.value = current
-    VybeLocalStore.get()?.saveConversations(current)
+    val sorted = sortConversationsStably(current)
+    _conversations.value = sorted
+    VybeLocalStore.get()?.saveConversations(sorted)
 
     ioScope.launch {
       try {
@@ -2911,9 +2924,14 @@ class VybeRepository private constructor() {
                   )
                 } else m
               }
-              updatedList[convIdx] = c.copy(id = resolvedConvId, messages = reconciled)
-              _conversations.value = updatedList
-              VybeLocalStore.get()?.saveConversations(updatedList)
+              updatedList[convIdx] = c.copy(
+                id = resolvedConvId,
+                messages = reconciled,
+                lastMessageCreatedAtIso = serverMsg.createdAt ?: c.lastMessageCreatedAtIso
+              )
+              val sorted = sortConversationsStably(updatedList)
+              _conversations.value = sorted
+              VybeLocalStore.get()?.saveConversations(sorted)
 
               // Dispatch push & in-app notification to conversation recipient(s)
               if (!mediaType.equals("CALL_LOG", ignoreCase = true)) {
@@ -3144,11 +3162,17 @@ class VybeRepository private constructor() {
     val targetConv: Conversation = when {
       !existingConversationId.isNullOrBlank() -> {
         val found = _conversations.value.firstOrNull { it.id == existingConversationId }
-          ?: return Result.failure(IllegalStateException("Conversation not found."))
-        if (found.id.startsWith("conv_") && !found.isGroup) {
-          openOrCreateRemoteConversation(found.peerUser).getOrElse { return Result.failure(it) }
+          ?: (if (targetUser != null) _conversations.value.firstOrNull { !it.isGroup && it.peerUser.id == targetUser.id } else null)
+        if (found != null) {
+          if (found.id.startsWith("conv_") && !found.isGroup) {
+            openOrCreateRemoteConversation(found.peerUser).getOrElse { return Result.failure(it) }
+          } else {
+            found
+          }
+        } else if (targetUser != null) {
+          openOrCreateRemoteConversation(targetUser).getOrElse { return Result.failure(it) }
         } else {
-          found
+          return Result.failure(IllegalStateException("Conversation not found."))
         }
       }
       targetUser != null -> {
@@ -3209,16 +3233,60 @@ class VybeRepository private constructor() {
         isRead = true,
         status = MessageStatus.SENT
       )
-      _conversations.value = _conversations.value.map { c ->
-        if (c.id == targetConv.id) {
+      val updatedList = _conversations.value.map { c ->
+        if (c.id == targetConv.id || (!c.isGroup && !targetConv.isGroup && c.peerUser.id == targetConv.peerUser.id)) {
           c.copy(
+            id = targetConv.id,
             lastMessage = noteLine.ifBlank { "Shared a post by @${post.author.username}" },
             lastMessageTimestamp = "Just now",
+            lastMessageCreatedAtIso = createdDto.createdAt,
             messages = (c.messages + deliveredMsg).distinctBy { it.id }
           )
         } else c
       }
-      VybeLocalStore.get()?.saveConversations(_conversations.value)
+      val sorted = sortConversationsStably(updatedList)
+      _conversations.value = sorted
+      VybeLocalStore.get()?.saveConversations(sorted)
+
+      // Send push notification & realtime broadcast to recipient(s)
+      val recipientIds = if (targetConv.isGroup) {
+        targetConv.groupMembers.map { it.id }.filter { it != me.id }
+      } else {
+        listOf(targetConv.peerUser.id).filter { it != me.id }
+      }
+      val pushPreview = "Shared a post: ${bodyBuilder.take(100)}"
+      val safeEventKey = "msg_${createdDto.id ?: System.currentTimeMillis()}"
+      recipientIds.forEach { rid ->
+        ioScope.launch {
+          VybeRealtimePushManager.sendInstantUserPush(
+            recipientId = rid,
+            actorId = me.id,
+            type = if (targetConv.isGroup) "GROUP_MESSAGE" else "DIRECT_MESSAGE",
+            title = me.displayName.ifBlank { "@${me.username}" },
+            body = pushPreview,
+            targetId = targetConv.id,
+            conversationId = targetConv.id,
+            eventKey = safeEventKey,
+            actorUsername = me.username,
+            actorDisplayName = me.displayName,
+            actorAvatarUrl = me.avatarUrl,
+            accessToken = token
+          )
+          supabaseRepo.triggerBackendPush(
+            recipientId = rid,
+            actorId = me.id,
+            type = if (targetConv.isGroup) "GROUP_MESSAGE" else "DIRECT_MESSAGE",
+            title = me.displayName.ifBlank { "@${me.username}" },
+            body = pushPreview,
+            targetId = targetConv.id,
+            conversationId = targetConv.id,
+            eventKey = safeEventKey,
+            actorUsername = me.username,
+            actorDisplayName = me.displayName,
+            actorAvatarUrl = me.avatarUrl
+          )
+        }
+      }
       incrementLocalPostShares(post.id)
       return Result.success(targetConv.id)
     } else {
@@ -3374,11 +3442,10 @@ class VybeRepository private constructor() {
             lastMessageCreatedAtIso = lastRemoteIso,
             lastMessageTimestamp = TimestampUtils.formatRelative(lastRemoteIso, conv.lastMessageTimestamp)
           )
-          current.removeAt(convIdx)
-          // Bubble updated conversation to top of Inbox in real time like Instagram Direct
-          current.add(0, updatedConv)
-          _conversations.value = current
-          VybeLocalStore.get()?.saveConversations(current)
+          current[convIdx] = updatedConv
+          val sorted = sortConversationsStably(current)
+          _conversations.value = sorted
+          VybeLocalStore.get()?.saveConversations(sorted)
         }
       }
     }
@@ -4487,7 +4554,7 @@ class VybeRepository private constructor() {
       var tick = 0
       while (isActive && _isLoggedIn.value) {
         val isForeground = VybeNotificationHelper.isAppInForeground
-        val loopInterval = if (isForeground) 2500L else 6000L
+        val loopInterval = if (isForeground) 4500L else 8000L
         try {
           val me = _currentUser.value
           val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
@@ -4541,8 +4608,8 @@ class VybeRepository private constructor() {
             if (isForeground && openRoom != null && !openRoom.id.startsWith("ul_") && !openRoom.id.startsWith("room_")) {
               refreshActiveRoomMessages(openRoom.id, token)
             }
-            // Fast notification & message sync so notifications arrive promptly even when app is backgrounded
-            if ((isForeground || (tick > 0 && tick % 2 == 0)) && !isUploadInFlight) {
+            // Periodic background notification & message sync
+            if (tick > 0 && tick % 4 == 0 && !isUploadInFlight) {
               val convRes = supabaseRepo.fetchConversationsForUser(
                 myUserId = me.id,
                 blockedIds = _blockedUserIds.value,

@@ -101,7 +101,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
     viewModel.markConversationAsRead(activeId)
     while (true) {
       viewModel.syncMessagesForConversation(activeId)
-      delay(1200L)
+      delay(2500L)
     }
   }
 

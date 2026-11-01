@@ -72,7 +72,7 @@ fun PostShareBottomSheet(
 
   val activeConversations = remember(conversations, searchQuery, blockedIds) {
     val q = searchQuery.trim().lowercase()
-    conversations.filter { conv ->
+    val filtered = conversations.filter { conv ->
       !conv.isBlocked &&
         !blockedIds.contains(conv.peerUser.id) &&
         (
@@ -82,6 +82,11 @@ fun PostShareBottomSheet(
             conv.peerUser.username.lowercase().contains(q)
           )
     }
+    filtered.sortedWith(
+      compareByDescending<Conversation> { it.lastMessageCreatedAtIso ?: "" }
+        .thenByDescending { it.messages.lastOrNull()?.createdAtIso ?: "" }
+        .thenBy { it.id }
+    )
   }
 
   val additionalUsers = remember(allUsers, conversations, currentUser?.id, searchQuery, blockedIds) {

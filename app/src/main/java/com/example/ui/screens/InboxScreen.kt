@@ -65,10 +65,6 @@ fun InboxScreen(viewModel: VybeViewModel) {
 
   LaunchedEffect(Unit) {
     viewModel.syncConversations()
-    while (true) {
-      kotlinx.coroutines.delay(2000L)
-      viewModel.syncConversations()
-    }
   }
 
   val displayedConversations = remember(conversations, currentTab, searchQuery, isHiddenUnlocked) {
@@ -83,12 +79,17 @@ fun InboxScreen(viewModel: VybeViewModel) {
       }
     }
 
-    when (currentTab) {
+    val filtered = when (currentTab) {
       "Chats" -> list.filter { !it.isMessageRequest && !it.isHidden }
       "Message Requests" -> list.filter { it.isMessageRequest && !it.isHidden }
       "Hidden Chats" -> if (isHiddenUnlocked) list.filter { it.isHidden } else emptyList()
       else -> list
     }
+    filtered.sortedWith(
+      compareByDescending<Conversation> { it.lastMessageCreatedAtIso ?: "" }
+        .thenByDescending { it.messages.lastOrNull()?.createdAtIso ?: "" }
+        .thenBy { it.id }
+    )
   }
 
   Scaffold(
