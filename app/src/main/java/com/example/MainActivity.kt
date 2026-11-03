@@ -270,6 +270,8 @@ class MainActivity : ComponentActivity() {
                 Screen.COMMUNITY_ZONE -> CommunityZoneScreen(viewModel)
                 Screen.MUSIC_TRACK_DETAIL -> MusicTrackScreen(viewModel)
                 Screen.VERIFICATION_CENTER -> VerificationCenterScreen(viewModel)
+                Screen.VYBE_CIRCLE -> CircleScreen(viewModel)
+                Screen.VYBE_GROW -> GrowScreen(viewModel)
               }
 
               // Floating Upload Status Banner positioned cleanly below the top header

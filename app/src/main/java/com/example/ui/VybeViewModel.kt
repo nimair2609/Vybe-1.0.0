@@ -48,7 +48,9 @@ enum class Screen {
   LIVE_STUDIO,
   COMMUNITY_ZONE,
   MUSIC_TRACK_DETAIL,
-  VERIFICATION_CENTER
+  VERIFICATION_CENTER,
+  VYBE_CIRCLE,
+  VYBE_GROW
 }
 
 class VybeViewModel : ViewModel() {
@@ -235,6 +237,29 @@ class VybeViewModel : ViewModel() {
   val restrictedUserIds = repository.restrictedUserIds
   val dismissedSuggestionUserIds = repository.dismissedSuggestionUserIds
   val commentReactionsByMe = repository.commentReactionsByMe
+
+  // --- VYBE 2.0: Feed Modes, Circle & Grow Flows ---
+  val feedMode = repository.feedMode
+  val circles = repository.circles
+  val activeCircle = repository.activeCircle
+  val circleMoments = repository.circleMoments
+  val growJourneys = repository.growJourneys
+  val activeGrowJourney = repository.activeGrowJourney
+  val growReflections = repository.growReflections
+  val growBadges = repository.growBadges
+  val hiddenPostIds = repository.hiddenPostIds
+  val mutedCreatorIds = repository.mutedCreatorIds
+
+  fun setFeedMode(mode: String) = repository.setFeedMode(mode)
+  fun hidePost(postId: String) = repository.hidePost(postId)
+  fun muteCreator(creatorId: String) = repository.muteCreator(creatorId)
+  fun joinCircle(circleId: String) = repository.joinCircle(circleId)
+  fun leaveCircle(circleId: String) = repository.leaveCircle(circleId)
+  fun createCircle(name: String, description: String, category: String, isPrivate: Boolean) =
+    repository.createCircle(name, description, category, isPrivate)
+  fun joinGrowJourney(journeyId: String) = repository.joinGrowJourney(journeyId)
+  fun submitGrowReflection(journeyId: String, dayNumber: Int, text: String, isShared: Boolean) =
+    repository.submitGrowReflection(journeyId, dayNumber, text, isShared)
 
   // --- Central Admin Control Center Flows ---
   val adminSubRole = repository.adminSubRole

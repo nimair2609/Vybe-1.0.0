@@ -373,17 +373,17 @@ fun StoryCreateDialog(
       bottomBar = {
         Surface(
           color = MaterialTheme.colorScheme.surface,
-          shadowElevation = 12.dp,
-          tonalElevation = 6.dp,
+          shadowElevation = 8.dp,
+          tonalElevation = 4.dp,
           modifier = Modifier
             .fillMaxWidth()
-            .navigationBarsPadding()
+            .windowInsetsPadding(WindowInsets.navigationBars)
             .testTag("create_story_bottom_bar")
         ) {
           Box(
             modifier = Modifier
               .fillMaxWidth()
-              .padding(horizontal = 14.dp, vertical = 10.dp),
+              .padding(horizontal = 14.dp, vertical = 8.dp),
             contentAlignment = Alignment.Center
           ) {
             Row(
@@ -410,10 +410,10 @@ fun StoryCreateDialog(
                 enabled = !isPublishingStory,
                 border = BorderStroke(1.5.dp, Color(0xFF10B981)),
                 shape = RoundedCornerShape(16.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                 modifier = Modifier
                   .weight(1f)
-                  .height(50.dp)
+                  .heightIn(min = 46.dp)
                   .testTag("publish_vybe_matches_button")
               ) {
                 Icon(
@@ -454,10 +454,10 @@ fun StoryCreateDialog(
                 enabled = !isPublishingStory,
                 colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
                 shape = RoundedCornerShape(16.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                 modifier = Modifier
                   .weight(1f)
-                  .height(50.dp)
+                  .heightIn(min = 46.dp)
                   .testTag("publish_your_story_button")
               ) {
                 if (isPublishingStory) {

@@ -218,10 +218,16 @@ fun PostCard(
             .weight(1f)
             .clickable { onUserClick(post.author) }
         ) {
-          val safeDisplayName = remember(post.author.displayName, post.author.username) {
-            post.author.displayName.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
-              ?: post.author.username.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
-              ?: "VYBE Member"
+          val safeDisplayName = remember(post.author.displayName, post.author.firstName, post.author.lastName, post.author.username) {
+            val combinedName = "${post.author.firstName} ${post.author.lastName}".trim()
+            when {
+              combinedName.isNotBlank() && !combinedName.equals("null", ignoreCase = true) -> combinedName
+              post.author.displayName.isNotBlank() && !post.author.displayName.equals("null", ignoreCase = true) ->
+                post.author.displayName.removePrefix("@").trim()
+              post.author.username.isNotBlank() && !post.author.username.equals("null", ignoreCase = true) ->
+                post.author.username.removePrefix("@").replaceFirstChar { it.uppercase() }
+              else -> "VYBE Member"
+            }
           }
           Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -237,21 +243,20 @@ fun PostCard(
           }
           Spacer(modifier = Modifier.height(2.dp))
           Row(verticalAlignment = Alignment.CenterVertically) {
-            if (post.author.username.isNotBlank()) {
-              Text(
-                text = "@${post.author.username} • ",
-                fontSize = 12.sp,
-                color = mutedText,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-              )
-            }
             Text(
               text = if (relativeTimestamp.isNotBlank()) "$relativeTimestamp • " else "",
               fontSize = 12.sp,
               color = mutedText,
+              maxLines = 1,
               modifier = Modifier.testTag("post_timestamp_${post.id}")
             )
+            Text(
+              text = if (post.isPrivate) "Private" else "Public",
+              fontSize = 12.sp,
+              color = if (post.isPrivate) VybeViolet else mutedText,
+              maxLines = 1
+            )
+            Spacer(modifier = Modifier.width(4.dp))
             Icon(
               imageVector = if (post.author.isPrivate) Icons.Outlined.Lock else Icons.Outlined.Public,
               contentDescription = if (post.author.isPrivate) "Private" else "Public",

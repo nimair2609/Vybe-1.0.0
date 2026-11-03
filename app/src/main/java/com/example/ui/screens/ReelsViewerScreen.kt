@@ -219,7 +219,6 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
     ) { pageIndex ->
       val reelPost = videoPosts[pageIndex]
       val isCurrentPage = pageIndex == pagerState.settledPage
-      val reelRelativeTime = rememberRelativeTimestamp(reelPost.createdAtIso, reelPost.timestamp)
       var showDoubleTapResonance by remember { mutableStateOf(false) }
       var doubleTapBurstNonce by remember { mutableIntStateOf(0) }
       var reelProgressFraction by remember(reelPost.id) { mutableFloatStateOf(0f) }

@@ -32,10 +32,10 @@ class VybeApplication : Application() {
           FirebaseApp.initializeApp(this)
         } catch (_: Throwable) {
           val fallbackOptions = FirebaseOptions.Builder()
-            .setApplicationId("1:701872969956:android:b16340a6dd134786ad40bf")
+            .setApplicationId("1:675799521050:android:e80aea6e02d0b1dda47ea3")
             .setProjectId("vybe-1c966")
-            .setGcmSenderId("701872969956")
-            .setApiKey("AIzaSyB_VYBE_PROD_FCM_FALLBACK_KEY")
+            .setGcmSenderId("675799521050")
+            .setApiKey("AIzaSyAx9TH2g8SaMMvsDyozinT_w1jHQIskAmU")
             .build()
           FirebaseApp.initializeApp(this, fallbackOptions)
         }

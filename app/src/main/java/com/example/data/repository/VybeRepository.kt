@@ -321,6 +321,37 @@ class VybeRepository private constructor() {
   private val _verificationRequests = MutableStateFlow<List<BadgeVerificationRequest>>(emptyList())
   val verificationRequests: StateFlow<List<BadgeVerificationRequest>> = _verificationRequests.asStateFlow()
 
+  // --- VYBE 2.0: Circle, Grow, Feed Mode & Feed Controls ---
+  private val _feedMode = MutableStateFlow("FOR_YOU")
+  val feedMode: StateFlow<String> = _feedMode.asStateFlow()
+
+  private val _circles = MutableStateFlow<List<VybeCircle>>(emptyList())
+  val circles: StateFlow<List<VybeCircle>> = _circles.asStateFlow()
+
+  private val _activeCircle = MutableStateFlow<VybeCircle?>(null)
+  val activeCircle: StateFlow<VybeCircle?> = _activeCircle.asStateFlow()
+
+  private val _circleMoments = MutableStateFlow<List<CircleMoment>>(emptyList())
+  val circleMoments: StateFlow<List<CircleMoment>> = _circleMoments.asStateFlow()
+
+  private val _growJourneys = MutableStateFlow<List<GrowJourney>>(emptyList())
+  val growJourneys: StateFlow<List<GrowJourney>> = _growJourneys.asStateFlow()
+
+  private val _activeGrowJourney = MutableStateFlow<GrowJourney?>(null)
+  val activeGrowJourney: StateFlow<GrowJourney?> = _activeGrowJourney.asStateFlow()
+
+  private val _growReflections = MutableStateFlow<List<GrowReflection>>(emptyList())
+  val growReflections: StateFlow<List<GrowReflection>> = _growReflections.asStateFlow()
+
+  private val _growBadges = MutableStateFlow<List<GrowBadge>>(emptyList())
+  val growBadges: StateFlow<List<GrowBadge>> = _growBadges.asStateFlow()
+
+  private val _hiddenPostIds = MutableStateFlow<Set<String>>(emptySet())
+  val hiddenPostIds: StateFlow<Set<String>> = _hiddenPostIds.asStateFlow()
+
+  private val _mutedCreatorIds = MutableStateFlow<Set<String>>(emptySet())
+  val mutedCreatorIds: StateFlow<Set<String>> = _mutedCreatorIds.asStateFlow()
+
   // --- Central Admin Control Center State Flows ---
   private val _adminSubRole = MutableStateFlow(AdminSubRole.OWNER_ADMIN)
   val adminSubRole: StateFlow<AdminSubRole> = _adminSubRole.asStateFlow()
@@ -395,6 +426,83 @@ class VybeRepository private constructor() {
         locationApprox = "Current Session",
         lastActiveTimestamp = "Active now",
         isCurrent = true
+      )
+    )
+
+    _circles.value = listOf(
+      VybeCircle(
+        id = "circle_indie_founders",
+        name = "Indian Indie Creators",
+        description = "Founders, designers & engineers building digital products from Bengaluru, Mumbai, Delhi & beyond.",
+        category = "Tech & Founders",
+        membersCount = 380,
+        isPrivate = false,
+        tags = listOf("#IndieHacker", "#MadeInIndia", "#Tech")
+      ),
+      VybeCircle(
+        id = "circle_mindful_living",
+        name = "Mindful Morning Circle",
+        description = "Early risers dedicated to 20-minute daily meditation, intentional journaling, and peaceful focus.",
+        category = "Wellness",
+        membersCount = 540,
+        isPrivate = false,
+        tags = listOf("#Mindfulness", "#MorningRoutine", "#Peace")
+      ),
+      VybeCircle(
+        id = "circle_photography_club",
+        name = "Desi Shutterbugs",
+        description = "Visual storytellers capturing raw street photography, architecture, and unfiltered moments.",
+        category = "Creative",
+        membersCount = 290,
+        isPrivate = false,
+        tags = listOf("#Photography", "#StreetArt", "#Visuals")
+      )
+    )
+
+    _growJourneys.value = listOf(
+      GrowJourney(
+        id = "journey_7day_digital_clarity",
+        title = "7-Day Digital Clarity",
+        subtitle = "Declutter mind & screen time",
+        description = "A 7-day guided reset to replace doomscrolling with purposeful habits and deep calm.",
+        durationDays = 7,
+        category = "Mindfulness",
+        dailyPrompt = "Notice the first 30 minutes of your morning today. Breathe before checking any feeds.",
+        currentDay = 1,
+        participantsCount = 420
+      ),
+      GrowJourney(
+        id = "journey_21day_deep_work",
+        title = "21-Day Deep Work Habit",
+        subtitle = "Master distraction-free focus",
+        description = "Build a consistent 90-minute daily deep work block for creative or technical excellence.",
+        durationDays = 21,
+        category = "Productivity",
+        dailyPrompt = "Set a timer for 45 minutes of single-tasking with zero notifications.",
+        currentDay = 1,
+        participantsCount = 680
+      ),
+      GrowJourney(
+        id = "journey_30day_fitness_spark",
+        title = "30-Day Movement Spark",
+        subtitle = "Consistent daily physical vitality",
+        description = "30 consecutive days of mindful movement, walking, or functional bodyweight fitness.",
+        durationDays = 30,
+        category = "Fitness",
+        dailyPrompt = "Complete a 25-minute brisk outdoor walk or mindful stretching session.",
+        currentDay = 1,
+        participantsCount = 890
+      )
+    )
+
+    _growBadges.value = listOf(
+      GrowBadge(
+        id = "badge_clarity_starter",
+        title = "Digital Clarity Pioneer",
+        description = "Initiated the 7-Day Digital Clarity Journey on VYBE.",
+        category = "Mindfulness",
+        earnedDate = "November 2026",
+        badgeTier = "Bronze"
       )
     )
   }
@@ -8165,5 +8273,81 @@ class VybeRepository private constructor() {
         }
       }
     }
+  }
+
+  // --- VYBE 2.0: Feed Modes & Controls ---
+  fun setFeedMode(mode: String) {
+    _feedMode.value = mode
+  }
+
+  fun hidePost(postId: String) {
+    _hiddenPostIds.value = _hiddenPostIds.value + postId
+  }
+
+  fun muteCreator(creatorId: String) {
+    _mutedCreatorIds.value = _mutedCreatorIds.value + creatorId
+  }
+
+  // --- VYBE 2.0: Circles ---
+  fun joinCircle(circleId: String) {
+    _circles.value = _circles.value.map {
+      if (it.id == circleId) it.copy(isMember = true, membersCount = it.membersCount + 1) else it
+    }
+  }
+
+  fun leaveCircle(circleId: String) {
+    _circles.value = _circles.value.map {
+      if (it.id == circleId) it.copy(isMember = false, membersCount = (it.membersCount - 1).coerceAtLeast(1)) else it
+    }
+  }
+
+  fun createCircle(name: String, description: String, category: String, isPrivate: Boolean) {
+    val me = _currentUser.value
+    val newCircle = VybeCircle(
+      name = name,
+      description = description,
+      category = category,
+      isPrivate = isPrivate,
+      membersCount = 1,
+      ownerId = me?.id.orEmpty(),
+      ownerName = me?.displayName ?: "Creator",
+      isMember = true,
+      isAdmin = true,
+      recentActivity = "Active just now"
+    )
+    _circles.value = listOf(newCircle) + _circles.value
+  }
+
+  // --- VYBE 2.0: Grow Journeys ---
+  fun joinGrowJourney(journeyId: String) {
+    _growJourneys.value = _growJourneys.value.map {
+      if (it.id == journeyId) it.copy(isJoined = true, currentDay = 1, streakDays = 1, participantsCount = it.participantsCount + 1) else it
+    }
+  }
+
+  fun advanceGrowJourneyDay(journeyId: String) {
+    _growJourneys.value = _growJourneys.value.map {
+      if (it.id == journeyId) {
+        val nextDay = it.currentDay + 1
+        val completed = nextDay > it.durationDays
+        it.copy(
+          currentDay = if (completed) it.durationDays else nextDay,
+          isCompleted = completed,
+          streakDays = it.streakDays + 1
+        )
+      } else it
+    }
+  }
+
+  fun submitGrowReflection(journeyId: String, dayNumber: Int, text: String, isShared: Boolean) {
+    val ref = GrowReflection(
+      journeyId = journeyId,
+      dayNumber = dayNumber,
+      reflectionText = text,
+      createdAtIso = java.time.Instant.now().toString(),
+      isSharedPublicly = isShared
+    )
+    _growReflections.value = listOf(ref) + _growReflections.value
+    advanceGrowJourneyDay(journeyId)
   }
 }

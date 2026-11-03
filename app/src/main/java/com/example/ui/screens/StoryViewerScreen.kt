@@ -407,17 +407,16 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
             .clickable { viewModel.openUserProfile(currentStory.author) }
         ) {
           Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
+            verticalAlignment = Alignment.CenterVertically
           ) {
             Text(
               text = currentStory.author.displayName,
               color = Color.White,
               fontWeight = FontWeight.Bold,
-              fontSize = 13.sp,
+              fontSize = 14.sp,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
-              modifier = Modifier.weight(1f, fill = false)
+              modifier = Modifier.widthIn(max = 160.dp)
             )
             if (currentStory.author.isVerified) {
               Spacer(modifier = Modifier.width(4.dp))
@@ -426,7 +425,7 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
             if (relativeTimestamp.isNotBlank()) {
               Spacer(modifier = Modifier.width(6.dp))
               Text(
-                text = "• $relativeTimestamp",
+                text = "•  $relativeTimestamp",
                 color = Color.White.copy(alpha = 0.85f),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium

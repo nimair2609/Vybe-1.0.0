@@ -53,6 +53,7 @@ fun MoodZonesScreen(viewModel: VybeViewModel) {
   Scaffold(
     topBar = {
       TopAppBar(
+        windowInsets = WindowInsets.statusBars,
         title = {
           Column {
             Text(

@@ -47,6 +47,7 @@ import com.example.ui.MainTab
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.components.FindYourVybeSection
+import com.example.ui.components.PostCard
 import com.example.ui.components.StoryCarousel
 import com.example.ui.components.StoryCreateDialog
 import com.example.ui.components.VybeAvatar
@@ -80,12 +81,32 @@ fun HomeScreen(viewModel: VybeViewModel) {
   val posts by viewModel.posts.collectAsState()
   val selectedMood by viewModel.selectedMoodFilter.collectAsState()
   val allUsers by viewModel.allUsers.collectAsState()
+  val feedMode by viewModel.feedMode.collectAsState()
+  val circles by viewModel.circles.collectAsState()
+  val growJourneys by viewModel.growJourneys.collectAsState()
+  val followingUserIds by viewModel.followingUserIds.collectAsState()
+  val requestedFollowUserIds by viewModel.requestedFollowUserIds.collectAsState()
+  val hiddenPostIds by viewModel.hiddenPostIds.collectAsState()
+  val mutedCreatorIds by viewModel.mutedCreatorIds.collectAsState()
 
   var showMatchesDialog by remember { mutableStateOf(false) }
   var showStoryCreateSheet by remember { mutableStateOf(false) }
 
   val unreadNotificationsCount = remember(notifications) {
     notifications.count { !it.isRead }
+  }
+
+  val videoReels = remember(posts) {
+    posts.filter { it.mediaType == com.example.data.model.MediaType.REEL || it.mediaType == com.example.data.model.MediaType.VIDEO || it.isVybesReel }
+  }
+
+  val modePosts = remember(posts, feedMode, followingUserIds, hiddenPostIds, mutedCreatorIds) {
+    val nonHidden = posts.filter { !it.isArchived && !hiddenPostIds.contains(it.id) && !mutedCreatorIds.contains(it.author.id) }
+    when (feedMode) {
+      "FOLLOWING" -> nonHidden.filter { followingUserIds.contains(it.author.id) }
+      "TRENDING" -> nonHidden.sortedByDescending { it.likesCount + it.commentsCount }
+      else -> nonHidden // FOR_YOU: personalized hybrid stream
+    }
   }
 
   // Calculate trending tags from real posts

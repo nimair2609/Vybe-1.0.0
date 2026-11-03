@@ -348,11 +348,7 @@ fun VybeFollowButton(
         modifier = modifier
           .minimumInteractiveComponentSize()
           .clip(shape)
-          .background(
-            Brush.horizontalGradient(
-              listOf(Color(0xFF2563EB), Color(0xFF7C3AED))
-            )
-          )
+          .background(VybeViolet)
           .testTag(testTag ?: "follow_button_active")
           .clickable { onClick() }
           .padding(

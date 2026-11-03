@@ -511,6 +511,91 @@ fun ExploreScreen(viewModel: VybeViewModel) {
           }
         }
       } else {
+        // 0. Spiritual Mode Gateway Card
+        item {
+          Spacer(modifier = Modifier.height(10.dp))
+          Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 16.dp)
+              .clickable { viewModel.navigateTo(Screen.SPIRITUAL_MODE) }
+              .testTag("explore_spiritual_mode_card"),
+            border = BorderStroke(1.dp, Color(0xFF6B8E78).copy(alpha = 0.6f))
+          ) {
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+              ) {
+                Box(
+                  modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(
+                      androidx.compose.ui.graphics.Brush.linearGradient(
+                        listOf(Color(0xFF6B8E78), Color(0xFF8E8CD8))
+                      )
+                    ),
+                  contentAlignment = Alignment.Center
+                ) {
+                  Icon(
+                    Icons.Outlined.Spa,
+                    contentDescription = "Spiritual Mode",
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp)
+                  )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                      text = "Spiritual Mode",
+                      fontWeight = FontWeight.Bold,
+                      fontSize = 15.sp,
+                      color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(
+                      color = Color(0xFF6B8E78).copy(alpha = 0.2f),
+                      shape = RoundedCornerShape(6.dp)
+                    ) {
+                      Text(
+                        text = "Serene",
+                        color = Color(0xFF6B8E78),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                      )
+                    }
+                  }
+                  Spacer(modifier = Modifier.height(2.dp))
+                  Text(
+                    text = "Mindful breathing, reflections & peaceful vibes",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                  )
+                }
+              }
+              Icon(
+                Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = "Open Spiritual Mode",
+                tint = Color(0xFF8E8CD8),
+                modifier = Modifier.size(20.dp)
+              )
+            }
+          }
+        }
+
         // EXPLORE VYBES Mobile Discovery Feed Header
         item {
           Spacer(modifier = Modifier.height(10.dp))

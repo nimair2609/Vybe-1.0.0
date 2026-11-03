@@ -1279,10 +1279,29 @@ fun SettingsScreen(viewModel: VybeViewModel) {
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-              text = "Product of NR Next",
+              text = "AN NR NEXT PRODUCT",
               fontSize = 12.sp,
               fontWeight = FontWeight.Bold,
               color = VybeBrandCyan,
+              letterSpacing = 1.2.sp
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            // Subtle Indian tricolour accent
+            Row(
+              modifier = Modifier
+                .size(width = 54.dp, height = 3.dp)
+                .clip(RoundedCornerShape(2.dp))
+            ) {
+              Box(modifier = Modifier.weight(1f).fillMaxHeight().background(Color(0xFFFF9933)))
+              Box(modifier = Modifier.weight(1f).fillMaxHeight().background(Color(0xFFFFFFFF)))
+              Box(modifier = Modifier.weight(1f).fillMaxHeight().background(Color(0xFF138808)))
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+              text = "🇮🇳 PROUDLY MADE IN INDIA",
+              fontSize = 11.sp,
+              fontWeight = FontWeight.SemiBold,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
               letterSpacing = 1.sp
             )
           }
@@ -1299,12 +1318,13 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                 verticalArrangement = Arrangement.spacedBy(10.dp)
               ) {
                 Text(
-                  text = "Designed for Authentic Expression",
+                  text = "BORN IN INDIA. BUILT FOR THE WORLD.",
                   fontWeight = FontWeight.Bold,
-                  fontSize = 15.sp
+                  fontSize = 14.sp,
+                  color = VybeViolet
                 )
                 Text(
-                  text = "VYBE brings together expressive social feeds, mood-aligned spaces, VYBE Matches stories, Time Capsules, and privacy-first connections built by NR Next.",
+                  text = "VYBE is an original next-generation social networking ecosystem combining expressive feeds, mood-aligned spaces, authentic circles, personal and professional growth journeys, and privacy-first connections built by NR NEXT.",
                   fontSize = 13.sp,
                   lineHeight = 19.sp,
                   color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1315,11 +1335,12 @@ fun SettingsScreen(viewModel: VybeViewModel) {
 
           item {
             Text(
-              text = "Connect • Share • Be You",
+              text = "CONNECT. EXPRESS. GROW.",
               fontSize = 12.sp,
-              fontWeight = FontWeight.SemiBold,
+              fontWeight = FontWeight.Bold,
               textAlign = TextAlign.Center,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
+              color = VybeBrandCyan,
+              letterSpacing = 1.5.sp
             )
             Spacer(modifier = Modifier.height(20.dp))
           }

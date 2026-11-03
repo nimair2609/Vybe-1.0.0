@@ -108,7 +108,7 @@ fun UserProfileScreen(
 
   val isOwnProfileContext = forceOwnProfile || (currentScreen == Screen.MAIN && selectedNavTab == MainTab.PROFILE)
 
-  if ((!isOwnProfileContext && profileLookupError != null) || (profileUser == null && currentUser == null)) {
+  if ((!isOwnProfileContext && (profileLookupError != null || profileUser == null)) || (isOwnProfileContext && currentUser == null)) {
     Scaffold(
       topBar = {
         TopAppBar(
@@ -177,8 +177,7 @@ fun UserProfileScreen(
             Spacer(modifier = Modifier.height(18.dp))
             Button(
               onClick = {
-                viewModel.clearProfileLookupError()
-                viewModel.navigateBack()
+                viewModel.closeUserProfileOrBack()
               },
               colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
               shape = RoundedCornerShape(12.dp),
@@ -198,7 +197,7 @@ fun UserProfileScreen(
     if (isOwnProfileContext) {
       currentUser ?: allUsers.firstOrNull() ?: User.EMPTY
     } else {
-      val target = profileUser ?: currentUser ?: allUsers.firstOrNull() ?: User.EMPTY
+      val target = profileUser ?: User.EMPTY
       if (currentUser != null && target.id.equals(currentUser!!.id, ignoreCase = true)) {
         currentUser!!
       } else {

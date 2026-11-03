@@ -97,13 +97,46 @@ fun SplashScreen() {
         )
       }
 
+      Spacer(modifier = Modifier.height(10.dp))
+
+      Text(
+        text = "CONNECT. EXPRESS. GROW.",
+        style = MaterialTheme.typography.labelMedium,
+        color = Color(0xFF38BDF8),
+        letterSpacing = 2.sp,
+        fontWeight = FontWeight.Bold
+      )
+
+      Spacer(modifier = Modifier.height(16.dp))
+
+      // Subtle Indian tricolour accent bar
+      Row(
+        modifier = Modifier
+          .size(width = 64.dp, height = 3.dp)
+          .clip(RoundedCornerShape(2.dp))
+      ) {
+        Box(modifier = Modifier.weight(1f).fillMaxHeight().background(Color(0xFFFF9933)))
+        Box(modifier = Modifier.weight(1f).fillMaxHeight().background(Color(0xFFFFFFFF)))
+        Box(modifier = Modifier.weight(1f).fillMaxHeight().background(Color(0xFF138808)))
+      }
+
       Spacer(modifier = Modifier.height(14.dp))
 
       Text(
-        text = "from NR Next",
+        text = "AN NR NEXT PRODUCT",
         style = MaterialTheme.typography.bodySmall,
-        color = Color.White.copy(alpha = 0.85f),
-        letterSpacing = 2.5.sp,
+        color = Color.White.copy(alpha = 0.90f),
+        letterSpacing = 2.sp,
+        fontWeight = FontWeight.SemiBold
+      )
+
+      Spacer(modifier = Modifier.height(4.dp))
+
+      Text(
+        text = "🇮🇳 PROUDLY MADE IN INDIA",
+        style = MaterialTheme.typography.labelSmall,
+        color = Color.White.copy(alpha = 0.70f),
+        letterSpacing = 1.2.sp,
         fontWeight = FontWeight.Medium
       )
     }
