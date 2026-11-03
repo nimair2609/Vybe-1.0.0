@@ -193,28 +193,36 @@ interface SupabaseRestApi {
     @Body conversation: SupabaseConversationInsertDto
   ): Response<List<SupabaseConversationDto>>
 
+  @POST("conversations")
+  suspend fun insertConversationMinimal(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Header("Prefer") prefer: String = "return=minimal",
+    @Body conversation: SupabaseConversationInsertDto
+  ): Response<Unit>
+
   @POST("conversation_members")
   suspend fun insertConversationMembers(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
-    @Header("Prefer") prefer: String = "resolution=merge-duplicates,return=representation",
-    @Body members: List<SupabaseConversationMemberDto>
-  ): Response<List<SupabaseConversationMemberDto>>
+    @Header("Prefer") prefer: String = "resolution=ignore-duplicates,return=minimal",
+    @Body members: List<SupabaseConversationMemberInsertDto>
+  ): Response<Unit>
 
   @POST("rpc/get_or_create_direct_conversation")
   suspend fun getOrCreateDirectConversation(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Body request: SupabaseRpcPeerConversationRequest
-  ): Response<String>
+  ): Response<okhttp3.ResponseBody>
 
   @GET("messages")
   suspend fun getMessages(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("conversation_id") conversationIdFilter: String,
-    @Query("order") order: String = "created_at.asc",
-    @Query("limit") limit: Int = 80
+    @Query("order") order: String = "created_at.desc",
+    @Query("limit") limit: Int = 100
   ): Response<List<SupabaseMessageDto>>
 
   @POST("messages")
@@ -607,6 +615,14 @@ interface SupabaseRestApi {
     @Header("Authorization") authHeader: String? = null,
     @Query("id") idFilter: String,
     @Body body: Map<String, Boolean>
+  ): Response<Unit>
+
+  @PATCH("posts")
+  suspend fun patchPostCounts(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("id") idFilter: String,
+    @Body body: Map<String, Int>
   ): Response<Unit>
 
   @DELETE("posts")

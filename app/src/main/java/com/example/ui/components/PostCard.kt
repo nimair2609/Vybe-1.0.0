@@ -82,6 +82,7 @@ fun PostCard(
   onToggleAudio: ((Boolean) -> Unit)? = null,
   onOpenMusicTrack: ((MusicAttachment) -> Unit)? = null,
   onDoubleTapLike: (() -> Unit)? = null,
+  onReactComment: ((String, VybeReaction) -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
   var showCommentDialog by remember { mutableStateOf(false) }
@@ -95,7 +96,7 @@ fun PostCard(
   var detectedMediaRatio by remember(post.id, post.mediaAspectRatio) { mutableStateOf(post.mediaAspectRatio) }
   var showDoubleTapResonance by remember { mutableStateOf(false) }
   var doubleTapBurstNonce by remember { mutableIntStateOf(0) }
-  val likedCommentIds = remember(post.id) { mutableStateListOf<String>() }
+  val localCommentReactions = remember(post.id) { mutableStateMapOf<String, VybeReaction>() }
 
   val isCurrentlyLiked = post.isLiked || post.userReaction != null
   val handleDoubleTapLike = {
@@ -625,13 +626,17 @@ fun PostCard(
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-          // 1. Global VYBE Finger Heart Reaction (Private appreciation; count hidden publicly, visible to author only)
+          // 1. Global VYBE Universal Reaction (Single-tap + Press-Hold-Drag-Release; count visible to author only)
           FingerHeartReaction(
             isLiked = isLiked,
+            userReaction = post.userReaction,
             count = if (isAuthor && post.likesCount > 0) post.likesCount else null,
             iconSize = 23.dp,
             countColorOverride = primaryText,
             testTag = "like_button_${post.id}",
+            onReact = { rx ->
+              if (onReact != null) onReact(rx) else onLikeClick()
+            },
             onClick = {
               if (isLiked) {
                 if (post.userReaction != null && onReact != null) {
@@ -788,15 +793,31 @@ fun PostCard(
                   modifier = Modifier.weight(1f, fill = false)
                 )
                 Spacer(modifier = Modifier.weight(1f))
-                val isPreviewCommentLiked = likedCommentIds.contains(topComment.id)
+                val previewRx = topComment.userReaction ?: localCommentReactions[topComment.id]
+                val isPreviewCommentLiked = previewRx != null || topComment.isLiked
                 FingerHeartReaction(
                   isLiked = isPreviewCommentLiked,
+                  userReaction = previewRx,
+                  count = maxOf(topComment.likesCount, if (isPreviewCommentLiked) 1 else 0).takeIf { it > 0 },
                   iconSize = 15.dp,
                   compactPadding = true,
                   testTag = "comment_preview_like_${topComment.id}",
+                  onReact = { rx ->
+                    if (onReactComment != null) {
+                      onReactComment(topComment.id, rx)
+                    } else {
+                      if (localCommentReactions[topComment.id] == rx) localCommentReactions.remove(topComment.id)
+                      else localCommentReactions[topComment.id] = rx
+                    }
+                  },
                   onClick = {
-                    if (isPreviewCommentLiked) likedCommentIds.remove(topComment.id)
-                    else likedCommentIds.add(topComment.id)
+                    val targetRx = previewRx ?: VybeReaction.LOVE
+                    if (onReactComment != null) {
+                      onReactComment(topComment.id, targetRx)
+                    } else {
+                      if (localCommentReactions.containsKey(topComment.id)) localCommentReactions.remove(topComment.id)
+                      else localCommentReactions[topComment.id] = VybeReaction.LOVE
+                    }
                   }
                 )
               }
@@ -958,16 +979,31 @@ fun PostCard(
                       }
                     )
                   }
-                  val isCommentLiked = likedCommentIds.contains(comment.id)
+                  val commentRx = comment.userReaction ?: localCommentReactions[comment.id]
+                  val isCommentLiked = commentRx != null || comment.isLiked
                   FingerHeartReaction(
                     isLiked = isCommentLiked,
-                    count = if (isCommentLiked) 1 else 0,
+                    userReaction = commentRx,
+                    count = maxOf(comment.likesCount, if (isCommentLiked) 1 else 0),
                     iconSize = 17.dp,
                     compactPadding = true,
                     testTag = "comment_like_button_${comment.id}",
+                    onReact = { rx ->
+                      if (onReactComment != null) {
+                        onReactComment(comment.id, rx)
+                      } else {
+                        if (localCommentReactions[comment.id] == rx) localCommentReactions.remove(comment.id)
+                        else localCommentReactions[comment.id] = rx
+                      }
+                    },
                     onClick = {
-                      if (isCommentLiked) likedCommentIds.remove(comment.id)
-                      else likedCommentIds.add(comment.id)
+                      val targetRx = commentRx ?: VybeReaction.LOVE
+                      if (onReactComment != null) {
+                        onReactComment(comment.id, targetRx)
+                      } else {
+                        if (localCommentReactions.containsKey(comment.id)) localCommentReactions.remove(comment.id)
+                        else localCommentReactions[comment.id] = VybeReaction.LOVE
+                      }
                     }
                   )
                 }

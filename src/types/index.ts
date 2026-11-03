@@ -106,7 +106,11 @@ export interface User {
   joinedDate: string;
   location?: string;
   isFollowedByMe?: boolean;
+  isFollowRequestedByMe?: boolean;
+  followsMe?: boolean;
   isPrivate?: boolean;
+  isBlocked?: boolean;
+  role?: string;
 }
 
 export type VybeReaction = 'LOVE' | 'FLAME' | 'LAUGH' | 'WOW' | 'SAD';
@@ -119,7 +123,7 @@ export interface ReactionDetail {
 }
 
 export const VYBE_REACTIONS: ReactionDetail[] = [
-  { id: 'LOVE', label: 'Finger Heart', emoji: '🫰', color: '#EC4899' },
+  { id: 'LOVE', label: 'VYBE', emoji: '⚡', color: '#8B5CF6' },
   { id: 'FLAME', label: 'Fire', emoji: '🔥', color: '#F97316' },
   { id: 'LAUGH', label: 'Laugh', emoji: '😂', color: '#FACC15' },
   { id: 'WOW', label: 'Wow', emoji: '😮', color: '#38BDF8' },
@@ -135,6 +139,7 @@ export interface PostComment {
   createdAtIso?: string;
   likesCount: number;
   isLiked?: boolean;
+  userReaction?: VybeReaction;
 }
 
 export interface MusicAttachment {
@@ -188,6 +193,7 @@ export interface Story {
   isViewed: boolean;
   reactionsCount: number;
   isLikedByMe: boolean;
+  myReaction?: VybeReaction;
   textBackgroundColor?: string;
 }
 

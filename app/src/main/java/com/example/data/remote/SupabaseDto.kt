@@ -152,6 +152,7 @@ data class SupabaseConversationDto(
 )
 
 data class SupabaseConversationInsertDto(
+  val id: String? = null,
   @Json(name = "created_by") val createdBy: String? = null,
   @Json(name = "is_group") val isGroup: Boolean = false,
   @Json(name = "group_name") val groupName: String? = null
@@ -166,6 +167,11 @@ data class SupabaseConversationMemberDto(
   @Json(name = "chat_theme") val chatTheme: String? = "DEFAULT",
   val profiles: SupabaseProfileDto? = null,
   val conversations: SupabaseConversationDto? = null
+)
+
+data class SupabaseConversationMemberInsertDto(
+  @Json(name = "conversation_id") val conversationId: String,
+  @Json(name = "user_id") val userId: String
 )
 
 data class SupabaseMessageDto(
@@ -574,7 +580,8 @@ data class SupabaseRpcIncrementViewRequest(
 )
 
 data class SupabaseRpcPeerConversationRequest(
-  @Json(name = "p_peer_id") val peerId: String
+  @Json(name = "p_peer_id") val peerId: String,
+  @Json(name = "p_other_user_id") val otherUserId: String = peerId
 )
 
 data class SupabaseRpcResolveIdentifierRequest(

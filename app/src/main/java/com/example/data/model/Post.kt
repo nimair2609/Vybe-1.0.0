@@ -5,7 +5,7 @@ enum class MediaType {
 }
 
 enum class VybeReaction(val label: String, val emoji: String) {
-  LOVE("Finger Heart", "🫰"),
+  LOVE("VYBE", "⚡"),
   FLAME("Fire", "🔥"),
   LAUGH("Laugh", "😂"),
   WOW("Wow", "😮"),
@@ -14,7 +14,7 @@ enum class VybeReaction(val label: String, val emoji: String) {
   companion object {
     fun fromWire(raw: String?): VybeReaction {
       return when (raw?.trim()?.uppercase()) {
-        "LOVE", "HEART", "FINGER_HEART", "LIKE" -> LOVE
+        "LOVE", "VYBE", "VYBE_PULSE", "HEART", "FINGER_HEART", "LIKE" -> LOVE
         "FLAME", "FIRE", "HEAT" -> FLAME
         "LAUGH", "JOY", "LOL", "FUN", "PULSE" -> LAUGH
         "WOW", "SURPRISE", "SPARK", "AMAZED" -> WOW
@@ -33,7 +33,8 @@ data class PostComment(
   val timestamp: String,
   val createdAtIso: String? = null,
   val likesCount: Int = 0,
-  val isLiked: Boolean = false
+  val isLiked: Boolean = false,
+  val userReaction: VybeReaction? = null
 )
 
 data class Post(

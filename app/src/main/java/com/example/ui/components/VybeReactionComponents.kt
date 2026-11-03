@@ -48,15 +48,15 @@ import com.example.data.model.VybeReaction
 import com.example.ui.theme.*
 
 fun reactionColor(reaction: VybeReaction): Color = when (reaction) {
-  VybeReaction.LOVE -> Color(0xFFEC4899)  // Signature Finger Heart Magenta
-  VybeReaction.FLAME -> Color(0xFFEF4444) // Vivid Flame Coral
-  VybeReaction.LAUGH -> Color(0xFFF59E0B) // Amber / Gold Laugh
-  VybeReaction.WOW -> Color(0xFF00F0FF)   // Neon Wow Cyan
-  VybeReaction.SAD -> Color(0xFF3B82F6)   // Ocean Sad Blue
+  VybeReaction.LOVE -> VybePulseVioletGlow  // Signature VYBE Blue-Purple Energy Pulse
+  VybeReaction.FLAME -> Color(0xFFEF4444)   // Vivid Flame Coral
+  VybeReaction.LAUGH -> Color(0xFFF59E0B)   // Amber / Gold Laugh
+  VybeReaction.WOW -> Color(0xFF00F0FF)     // Neon Wow Cyan
+  VybeReaction.SAD -> Color(0xFF3B82F6)     // Ocean Sad Blue
 }
 
 fun reactionGradient(reaction: VybeReaction): Brush = when (reaction) {
-  VybeReaction.LOVE -> Brush.linearGradient(listOf(Color(0xFFEC4899), Color(0xFF8B5CF6)))
+  VybeReaction.LOVE -> Brush.linearGradient(listOf(VybePulseBlueStart, VybePulseIndigoMid, VybePulsePurpleEnd))
   VybeReaction.FLAME -> Brush.linearGradient(listOf(Color(0xFFEF4444), Color(0xFFF97316)))
   VybeReaction.LAUGH -> Brush.linearGradient(listOf(Color(0xFFF59E0B), Color(0xFFFBBF24)))
   VybeReaction.WOW -> Brush.linearGradient(listOf(Color(0xFF00F0FF), Color(0xFF38BDF8)))
@@ -112,11 +112,13 @@ fun VybeReactionOutlineIcon(
   ) {
     if (reaction == VybeReaction.LOVE) {
       val isLiked = tint == reactionColor(VybeReaction.LOVE) ||
-        tint == FingerHeartPinkStart ||
+        tint == VybePulseIndigoMid ||
+        tint == VybePulseBlueStart ||
+        tint == Color(0xFFEC4899) ||
         tint == Color(0xFFFF2A85)
       val inactiveOverride = if (!isLiked && tint != Color.Unspecified) tint else null
-      FingerHeartIcon(
-        isLiked = isLiked,
+      VybeUniversalReactionIcon(
+        isActive = isLiked,
         size = size,
         forceDarkSurface = forceDarkSurface,
         inactiveTintOverride = inactiveOverride
@@ -379,78 +381,91 @@ private fun VybeReactionGestureButtonInternal(
         .pointerInput(isSideBar) {
           awaitEachGesture {
             try {
-              awaitFirstDown(requireUnconsumed = false)
+              val down = awaitFirstDown(requireUnconsumed = false)
               hoveredIndex = null
 
-              val upOrCancel = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
-                waitForUpOrCancellation()
-              }
+              when (awaitScrollSafeTapOrLongPress(down.position, down.id)) {
+                ReactionGestureOutcome.CANCELLED_BY_SCROLL -> {
+                  isBarVisible = false
+                  hoveredIndex = null
+                }
 
-              if (upOrCancel != null) {
-                // Quick tap: toggle current/default 🫰 Finger Heart reaction with 1.0 -> 1.35 bounce + rotation + particles
-                val becomingLiked = currentUserReaction == null
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                currentOnToggleDefault()
-                triggerTapAnimation(becomingLiked)
-              } else {
-                // Press & hold: open floating 5-icon bar
-                isBarVisible = true
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                ReactionGestureOutcome.TAP -> {
+                  val becomingLiked = currentUserReaction == null
+                  haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                  currentOnToggleDefault()
+                  triggerTapAnimation(becomingLiked)
+                }
 
-                while (true) {
-                  val event = awaitPointerEvent()
-                  val change = event.changes.firstOrNull() ?: break
-                  if (!change.pressed) {
-                    val selectedIndex = hoveredIndex
-                    if (selectedIndex != null && selectedIndex in reactions.indices) {
-                      currentOnReact(reactions[selectedIndex])
-                      haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                ReactionGestureOutcome.LONG_PRESS -> {
+                  isBarVisible = true
+                  hoveredIndex = 0
+                  haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+
+                  while (true) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == down.id }
+                      ?: event.changes.firstOrNull() ?: break
+                    if (!change.pressed) {
+                      val selectedIndex = hoveredIndex
+                      if (selectedIndex != null && selectedIndex in reactions.indices) {
+                        currentOnReact(reactions[selectedIndex])
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        triggerTapAnimation(currentUserReaction != reactions[selectedIndex])
+                      }
+                      isBarVisible = false
+                      hoveredIndex = null
+                      change.consume()
+                      break
                     }
-                    isBarVisible = false
-                    hoveredIndex = null
+
+                    val currentX = change.position.x
+                    val currentY = change.position.y
+
+                    if (isSideBar) {
+                      // Reel floating bar spans [-238dp, -8dp] to the left of the 48dp button
+                      val barStartX = -238f * density
+                      val barEndX = -8f * density
+                      val barMinY = -44f * density
+                      val barMaxY = 88f * density
+
+                      if (currentY in barMinY..barMaxY) {
+                        if (currentX in barStartX..barEndX) {
+                          val progress = ((currentX - barStartX) / (barEndX - barStartX)).coerceIn(0f, 0.999f)
+                          val newIndex = (progress * reactions.size).toInt().coerceIn(reactions.indices)
+                          if (newIndex != hoveredIndex) {
+                            hoveredIndex = newIndex
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                          }
+                        } else if (currentX > barEndX && currentX <= 56f * density) {
+                          // Finger still resting on the Reel trigger button -> default VYBE reaction (index 0)
+                          if (hoveredIndex != 0) hoveredIndex = 0
+                        } else {
+                          hoveredIndex = null
+                        }
+                      } else {
+                        hoveredIndex = null
+                      }
+                    } else {
+                      // Feed Post floating bar spans [-8dp, 230dp] above the 40dp button
+                      val barStartX = -8f * density
+                      val barEndX = 230f * density
+                      val barMinY = -96f * density
+                      val barMaxY = 58f * density
+
+                      if (currentX in (barStartX - 18f * density)..(barEndX + 18f * density) && currentY in barMinY..barMaxY) {
+                        val progress = ((currentX - barStartX) / (barEndX - barStartX)).coerceIn(0f, 0.999f)
+                        val newIndex = (progress * reactions.size).toInt().coerceIn(reactions.indices)
+                        if (newIndex != hoveredIndex) {
+                          hoveredIndex = newIndex
+                          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
+                      } else {
+                        hoveredIndex = null
+                      }
+                    }
                     change.consume()
-                    break
                   }
-
-                  val currentX = change.position.x
-                  val currentY = change.position.y
-
-                  if (isSideBar) {
-                    // Reel floating bar spans [-238dp, -8dp] to the left of the 48dp button
-                    val barStartX = -238f * density
-                    val barEndX = -8f * density
-                    val barMinY = -28f * density
-                    val barMaxY = 76f * density
-
-                    if (currentX in barStartX..barEndX && currentY in barMinY..barMaxY) {
-                      val progress = ((currentX - barStartX) / (barEndX - barStartX)).coerceIn(0f, 0.999f)
-                      val newIndex = (progress * reactions.size).toInt()
-                      if (newIndex != hoveredIndex) {
-                        hoveredIndex = newIndex
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                      }
-                    } else {
-                      hoveredIndex = null
-                    }
-                  } else {
-                    // Feed Post floating bar spans [-4dp, 226dp] above the 40dp button
-                    val barStartX = -8f * density
-                    val barEndX = 230f * density
-                    val barMinY = -78f * density
-                    val barMaxY = -2f * density
-
-                    if (currentX in barStartX..barEndX && currentY in barMinY..barMaxY) {
-                      val progress = ((currentX - barStartX) / (barEndX - barStartX)).coerceIn(0f, 0.999f)
-                      val newIndex = (progress * reactions.size).toInt()
-                      if (newIndex != hoveredIndex) {
-                        hoveredIndex = newIndex
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                      }
-                    } else {
-                      hoveredIndex = null
-                    }
-                  }
-                  change.consume()
                 }
               }
             } finally {

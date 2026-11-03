@@ -121,14 +121,14 @@ object GitHubUpdater {
     get() = try {
       com.example.BuildConfig.VERSION_NAME
     } catch (_: Throwable) {
-      "1.2.62"
+      "1.3.0"
     }
 
   val INSTALLED_VERSION_CODE: Long
     get() = try {
       com.example.BuildConfig.VERSION_CODE.toLong()
     } catch (_: Throwable) {
-      162L
+      165L
     }
 
   const val DEFAULT_GITHUB_REPO = "nimair2609/Vybe-1.0.0"

@@ -3,6 +3,7 @@ import { Sparkles, Filter, Plus, Flame, Clock, RefreshCw } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
 import { StoryCarousel } from '../components/StoryCarousel';
 import { PostCard } from '../components/PostCard';
+import { FindYourVybeSection } from '../components/FindYourVybeSection';
 import { MOOD_DEFINITIONS, MoodType } from '../types';
 
 export const FeedView: React.FC = () => {
@@ -87,6 +88,7 @@ export const FeedView: React.FC = () => {
 
       {/* Main Stream Container */}
       <main className="max-w-xl mx-auto px-4 py-4 space-y-5">
+        <FindYourVybeSection />
         {filteredPosts.length === 0 ? (
           <div className="p-8 text-center bg-[#101322] border border-[#262E4A] rounded-2xl">
             <Sparkles className="w-8 h-8 text-[#00C6FF] mx-auto mb-2 opacity-80" />

@@ -189,6 +189,13 @@ class VybeRepository private constructor() {
   val stories: StateFlow<List<Story>> = _stories.asStateFlow()
 
   private var viewedStoryIdsLocal: Set<String> = emptySet()
+  private var storyReactionsLocal: Map<String, VybeReaction> = emptyMap()
+
+  private val _commentReactionsByMe = MutableStateFlow<Map<String, VybeReaction>>(emptyMap())
+  val commentReactionsByMe: StateFlow<Map<String, VybeReaction>> = _commentReactionsByMe.asStateFlow()
+
+  private val _dismissedSuggestionUserIds = MutableStateFlow<Set<String>>(emptySet())
+  val dismissedSuggestionUserIds: StateFlow<Set<String>> = _dismissedSuggestionUserIds.asStateFlow()
 
   // --- Social Graph State ---
   private val _followingUserIds = MutableStateFlow<Set<String>>(emptySet())
@@ -443,15 +450,38 @@ class VybeRepository private constructor() {
         _currentUser.value = latestUser
         _isLoggedIn.value = true
         viewedStoryIdsLocal = localStore.loadViewedStoryIds(latestUser.id)
+        storyReactionsLocal = localStore.loadStoryReactions(latestUser.id)
+        _commentReactionsByMe.value = localStore.loadCommentReactions(latestUser.id)
+        _dismissedSuggestionUserIds.value = localStore.loadDismissedSuggestions(latestUser.id)
         vybeMatchIdsCache = localStore.loadVybeMatches(latestUser.id)
         if (_allUsers.value.none { it.id == latestUser.id }) {
           _allUsers.value = listOf(latestUser) + _allUsers.value
         }
 
         deletedMessageIdsCache.addAll(localStore.loadDeletedMessageIds())
-        _posts.value = localStore.loadPosts()
+        val commentRxMap = _commentReactionsByMe.value
+        _posts.value = localStore.loadPosts().map { p ->
+          if (p.comments.isEmpty() || commentRxMap.isEmpty()) p
+          else p.copy(
+            comments = p.comments.map { c ->
+              val rx = commentRxMap[c.id] ?: c.userReaction
+              c.copy(
+                userReaction = rx,
+                isLiked = rx != null || c.isLiked,
+                likesCount = maxOf(c.likesCount, if (rx != null) 1 else 0)
+              )
+            }
+          )
+        }
         _unfilteredPosts.value = localStore.loadUnfilteredPosts()
-        _stories.value = localStore.loadStories()
+        _stories.value = localStore.loadStories().map { s ->
+          val rx = storyReactionsLocal[s.id] ?: s.myReaction
+          s.copy(
+            myReaction = rx,
+            isLikedByMe = rx != null || s.isLikedByMe,
+            reactionsCount = maxOf(s.reactionsCount, if (rx != null) 1 else 0)
+          )
+        }
         _conversations.value = dedupeConversationCallLogs(localStore.loadConversations())
         _notifications.value = enrichNotificationsWithLocalContext(localStore.loadNotifications())
         _followingUserIds.value = localStore.loadFollowing()
@@ -525,8 +555,13 @@ class VybeRepository private constructor() {
       if (com.example.data.remote.SupabaseNetworkClient.isSupabaseHostCurrentlyUnreachable()) return
       if (remoteProfiles.isNotEmpty()) {
         val decorated = remoteProfiles.map { u -> decorateUserRelationshipFlags(u) }
-        _allUsers.value = decorated
-        VybeLocalStore.get()?.saveAllUsers(decorated)
+        val remoteIds = decorated.map { it.id }.toSet()
+        val localExtras = _allUsers.value
+          .filter { it.id.isNotBlank() && !remoteIds.contains(it.id) }
+          .map { decorateUserRelationshipFlags(it) }
+        val mergedProfiles = decorated + localExtras
+        _allUsers.value = mergedProfiles
+        VybeLocalStore.get()?.saveAllUsers(mergedProfiles)
 
         // Keep currentUser social counters in sync with profiles table
         val myRemote = decorated.firstOrNull { it.id == myId }
@@ -757,9 +792,13 @@ class VybeRepository private constructor() {
         .map { s ->
           val fullAuthor = usersMap[s.author.id]?.let { decorateUserRelationshipFlags(it) } ?: s.author
           val viewed = s.isViewed || viewedStoryIdsLocal.contains(s.id)
+          val savedRx = storyReactionsLocal[s.id] ?: s.myReaction
           s.copy(
             author = fullAuthor,
             isViewed = viewed,
+            myReaction = savedRx,
+            isLikedByMe = s.isLikedByMe || savedRx != null,
+            reactionsCount = maxOf(s.reactionsCount, if (savedRx != null) 1 else 0),
             timestamp = TimestampUtils.formatRelative(iso = s.createdAtIso, nowMillis = nowMs, fallback = s.timestamp)
           )
         }
@@ -1759,7 +1798,7 @@ class VybeRepository private constructor() {
       if (supabaseRepo.isConfigured) {
         ioScope.launch {
           val token = SessionManager.get()?.accessToken.orEmpty()
-          supabaseRepo.setPostReaction(postId, me.id, appliedReaction, token)
+          supabaseRepo.setPostReaction(postId, me.id, appliedReaction, token, expectedLikesCount = nextLikes)
           if (appliedReaction != null && post.author.id != me.id) {
             val contentKind = if (post.isVybesReel || post.mediaType == MediaType.REEL) "Reel" else "post"
             val snippetPart = post.caption.trim().take(48).let { if (it.isNotEmpty()) ": \"$it\"" else "" }
@@ -1767,7 +1806,7 @@ class VybeRepository private constructor() {
               recipientId = post.author.id,
               actorId = me.id,
               type = "LIKE",
-              title = "@${me.username} liked your $contentKind",
+              title = "@${me.username} reacted ${appliedReaction.label} to your $contentKind",
               message = "${me.displayName} reacted ${appliedReaction.label} to your $contentKind$snippetPart",
               targetId = postId,
               actorUsername = me.username,
@@ -1840,7 +1879,15 @@ class VybeRepository private constructor() {
       val token = SessionManager.get()?.accessToken.orEmpty()
       val res = supabaseRepo.fetchCommentsForPost(postId, token)
       if (res.isSuccess) {
-        val comments = res.getOrThrow()
+        val commentRxMap = _commentReactionsByMe.value
+        val comments = res.getOrThrow().map { c ->
+          val rx = commentRxMap[c.id] ?: c.userReaction
+          c.copy(
+            userReaction = rx,
+            isLiked = rx != null || c.isLiked,
+            likesCount = maxOf(c.likesCount, if (rx != null) 1 else 0)
+          )
+        }
         val updatedPosts = _posts.value.map { p ->
           if (p.id == postId) {
             p.copy(comments = comments, commentsCount = comments.size)
@@ -1848,6 +1895,84 @@ class VybeRepository private constructor() {
         }
         _posts.value = updatedPosts
         VybeLocalStore.get()?.savePosts(updatedPosts)
+      }
+    }
+  }
+
+  fun toggleCommentLike(postId: String, commentId: String) {
+    val existing = _commentReactionsByMe.value[commentId]
+      ?: _posts.value.firstOrNull { it.id == postId }?.comments?.firstOrNull { it.id == commentId }?.userReaction
+    reactToComment(postId, commentId, existing ?: VybeReaction.LOVE)
+  }
+
+  fun reactToComment(postId: String, commentId: String, reaction: VybeReaction) {
+    val me = _currentUser.value ?: return
+    val currentMap = _commentReactionsByMe.value.toMutableMap()
+    val prevReaction = currentMap[commentId]
+      ?: _posts.value.firstOrNull { it.id == postId }?.comments?.firstOrNull { it.id == commentId }?.userReaction
+    val appliedReaction: VybeReaction? = if (prevReaction == reaction) null else reaction
+    if (appliedReaction == null) {
+      currentMap.remove(commentId)
+    } else {
+      currentMap[commentId] = appliedReaction
+    }
+    _commentReactionsByMe.value = currentMap
+    VybeLocalStore.get()?.saveCommentReactions(me.id, currentMap)
+
+    var reactedComment: PostComment? = null
+    var parentPost: Post? = null
+    val updatedPosts = _posts.value.map { p ->
+      if (p.id != postId) p
+      else {
+        parentPost = p
+        p.copy(
+          comments = p.comments.map { c ->
+            if (c.id != commentId) c
+            else {
+              val wasReacted = prevReaction != null || c.isLiked
+              val nextCount = when {
+                appliedReaction != null && !wasReacted -> c.likesCount + 1
+                appliedReaction == null && wasReacted -> maxOf(0, c.likesCount - 1)
+                else -> c.likesCount
+              }
+              val nextComment = c.copy(
+                isLiked = appliedReaction != null,
+                userReaction = appliedReaction,
+                likesCount = nextCount
+              )
+              reactedComment = nextComment
+              nextComment
+            }
+          }
+        )
+      }
+    }
+    _posts.value = updatedPosts
+    VybeLocalStore.get()?.savePosts(updatedPosts)
+
+    val targetComment = reactedComment
+    if (
+      appliedReaction != null &&
+      prevReaction != appliedReaction &&
+      targetComment != null &&
+      !targetComment.author.id.equals(me.id, ignoreCase = true) &&
+      supabaseRepo.isConfigured
+    ) {
+      ioScope.launch {
+        val token = SessionManager.get()?.accessToken.orEmpty()
+        supabaseRepo.createInteractionNotificationIfNeeded(
+          recipientId = targetComment.author.id,
+          actorId = me.id,
+          type = "LIKE",
+          title = "@${me.username} reacted ${appliedReaction.label} to your comment",
+          message = "\"${targetComment.content.take(70)}\"",
+          targetId = postId,
+          actorUsername = me.username,
+          actorDisplayName = me.displayName,
+          actorAvatarUrl = me.avatarUrl,
+          mediaUrl = parentPost?.mediaUrls?.firstOrNull(),
+          accessToken = token
+        )
       }
     }
   }
@@ -2089,31 +2214,67 @@ class VybeRepository private constructor() {
   }
 
   fun toggleStoryLike(storyId: String) {
+    val existing = storyReactionsLocal[storyId]
+      ?: _stories.value.firstOrNull { it.id == storyId }?.let {
+        it.myReaction ?: if (it.isLikedByMe) VybeReaction.LOVE else null
+      }
+    reactToStory(storyId, existing ?: VybeReaction.LOVE)
+  }
+
+  fun reactToStory(storyId: String, reaction: VybeReaction) {
     val me = _currentUser.value
-    var likedStory: Story? = null
-    _stories.value = _stories.value.map {
-      if (it.id == storyId) {
-        val nextLiked = !it.isLikedByMe
-        val updated = it.copy(
-          isLikedByMe = nextLiked,
-          reactionsCount = if (nextLiked) it.reactionsCount + 1 else maxOf(0, it.reactionsCount - 1)
+    var newlyReactedStory: Story? = null
+    var appliedForNotif: VybeReaction? = null
+
+    _stories.value = _stories.value.map { s ->
+      if (s.id != storyId) s
+      else {
+        val prevReaction = storyReactionsLocal[storyId]
+          ?: s.myReaction
+          ?: if (s.isLikedByMe) VybeReaction.LOVE else null
+        val appliedReaction = if (prevReaction == reaction) null else reaction
+        val nextCount = when {
+          appliedReaction != null && prevReaction == null -> s.reactionsCount + 1
+          appliedReaction == null && prevReaction != null -> maxOf(0, s.reactionsCount - 1)
+          else -> s.reactionsCount
+        }
+        val nextMap = storyReactionsLocal.toMutableMap()
+        if (appliedReaction == null) nextMap.remove(storyId) else nextMap[storyId] = appliedReaction
+        storyReactionsLocal = nextMap
+        if (me != null && me.id.isNotBlank()) {
+          VybeLocalStore.get()?.saveStoryReactions(me.id, storyReactionsLocal)
+        }
+        val updated = s.copy(
+          isLikedByMe = appliedReaction != null,
+          myReaction = appliedReaction,
+          reactionsCount = nextCount
         )
-        if (nextLiked) likedStory = updated
+        if (appliedReaction != null && prevReaction != appliedReaction) {
+          newlyReactedStory = updated
+          appliedForNotif = appliedReaction
+        }
         updated
-      } else it
+      }
     }
     VybeLocalStore.get()?.saveStories(_stories.value)
 
-    val targetStory = likedStory
-    if (me != null && targetStory != null && !targetStory.author.id.equals(me.id, ignoreCase = true) && supabaseRepo.isConfigured) {
+    val targetStory = newlyReactedStory
+    val chosenRx = appliedForNotif
+    if (
+      me != null &&
+      targetStory != null &&
+      chosenRx != null &&
+      !targetStory.author.id.equals(me.id, ignoreCase = true) &&
+      supabaseRepo.isConfigured
+    ) {
       ioScope.launch {
         val token = SessionManager.get()?.accessToken.orEmpty()
         supabaseRepo.createInteractionNotificationIfNeeded(
           recipientId = targetStory.author.id,
           actorId = me.id,
           type = "STORY_REACTION",
-          title = "@${me.username} sent a Finger Heart to your story",
-          message = "${me.displayName} reacted to your story",
+          title = "@${me.username} reacted ${chosenRx.label} to your story",
+          message = "${me.displayName} reacted ${chosenRx.label} to your story",
           targetId = targetStory.id,
           actorUsername = me.username,
           actorDisplayName = me.displayName,
@@ -2376,6 +2537,24 @@ class VybeRepository private constructor() {
     return _allUsers.value[existingIndex]
   }
 
+  fun dismissSuggestedUser(targetUserId: String) {
+    if (targetUserId.isBlank()) return
+    val next = _dismissedSuggestionUserIds.value + targetUserId
+    _dismissedSuggestionUserIds.value = next
+    val myId = _currentUser.value?.id.orEmpty()
+    if (myId.isNotBlank()) {
+      VybeLocalStore.get()?.saveDismissedSuggestions(myId, next)
+    }
+  }
+
+  fun restoreDismissedSuggestions() {
+    _dismissedSuggestionUserIds.value = emptySet()
+    val myId = _currentUser.value?.id.orEmpty()
+    if (myId.isNotBlank()) {
+      VybeLocalStore.get()?.saveDismissedSuggestions(myId, emptySet())
+    }
+  }
+
   fun toggleFollowUser(targetUserId: String): Boolean {
     val me = _currentUser.value ?: return false
     if (me.id == targetUserId || me.username.equals(targetUserId, ignoreCase = true)) {
@@ -2383,6 +2562,11 @@ class VybeRepository private constructor() {
     }
 
     val targetUser = _allUsers.value.firstOrNull { it.id == targetUserId }
+      ?: _posts.value.firstNotNullOfOrNull { p ->
+        if (p.author.id == targetUserId) p.author
+        else p.comments.firstOrNull { it.author.id == targetUserId }?.author
+      }
+      ?: _stories.value.firstOrNull { it.author.id == targetUserId }?.author
     val isTargetPrivate = targetUser?.isPrivate == true
     val alreadyFollowing = _followingUserIds.value.contains(targetUserId)
     val alreadyRequested = _requestedFollowUserIds.value.contains(targetUserId)
@@ -2613,29 +2797,40 @@ class VybeRepository private constructor() {
       return Result.failure(IllegalStateException(eligibility.reason))
     }
 
-    val existing = _conversations.value.firstOrNull { !it.isGroup && it.peerUser.id == peerUser.id }
-    if (existing != null && !existing.id.startsWith("conv_")) {
+    val existing = _conversations.value.firstOrNull { !it.isGroup && it.peerUser.id.equals(peerUser.id, ignoreCase = true) }
+    if (existing != null && supabaseRepo.isValidUuid(existing.id)) {
       return Result.success(existing)
     }
 
     val me = _currentUser.value ?: return Result.failure(IllegalStateException("Not signed in."))
     if (supabaseRepo.isConfigured) {
-      val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
-      val convIdRes = supabaseRepo.getOrCreateDirectConversation(me.id, peerUser.id, token)
+      val rawToken = SessionManager.get()?.accessToken
+        ?: appContext?.let { SessionManager.getInstance(it).accessToken }
+      val token = supabaseRepo.resolveValidAccessToken(rawToken).orEmpty()
+      val canonicalMyId = SupabaseConfig.extractJwtSubject(token) ?: me.id
+      val convIdRes = supabaseRepo.getOrCreateDirectConversation(canonicalMyId, peerUser.id, token)
       if (convIdRes.isSuccess) {
         val convId = convIdRes.getOrThrow()
-        val existingWithServerId = _conversations.value.firstOrNull { it.id == convId }
+        val existingWithServerId = _conversations.value.firstOrNull { it.id.equals(convId, ignoreCase = true) }
         if (existingWithServerId != null) return Result.success(existingWithServerId)
 
-        val createdConv = Conversation(
+        val localMatch = _conversations.value.firstOrNull {
+          !it.isGroup && it.peerUser.id.equals(peerUser.id, ignoreCase = true)
+        }
+        val createdConv = (localMatch ?: Conversation(
           id = convId,
           peerUser = peerUser,
           lastMessage = "Conversation started",
           lastMessageTimestamp = "Just now",
           messages = emptyList(),
           unreadCount = 0
+        )).copy(id = convId, peerUser = peerUser)
+        val next = sortConversationsStably(
+          listOf(createdConv) + _conversations.value.filterNot {
+            it.id.equals(convId, ignoreCase = true) ||
+              (!it.isGroup && it.peerUser.id.equals(peerUser.id, ignoreCase = true))
+          }
         )
-        val next = listOf(createdConv) + _conversations.value.filterNot { !it.isGroup && it.peerUser.id == peerUser.id }
         _conversations.value = next
         VybeLocalStore.get()?.saveConversations(next)
         return Result.success(createdConv)
@@ -2666,28 +2861,51 @@ class VybeRepository private constructor() {
     val remotePeers = remoteConvs.filter { !it.isGroup }.map { it.peerUser.id }.toSet()
     val mergedRemote = remoteConvs.map { remote ->
       val localMatch = currentLocal.firstOrNull { local ->
-        local.id == remote.id || (!local.isGroup && !remote.isGroup && local.peerUser.id == remote.peerUser.id)
+        local.id == remote.id ||
+          (!local.isGroup && !remote.isGroup && local.peerUser.id == remote.peerUser.id) ||
+          (local.isGroup && remote.isGroup && !local.groupName.isNullOrBlank() && local.groupName == remote.groupName)
       }
       if (localMatch == null) {
         remote
       } else {
-        val remoteIds = remote.messages.map { it.id }.toSet()
+        val localById = localMatch.messages.associateBy { it.id }
+        val enrichedRemoteMessages = remote.messages.map { rm ->
+          val prev = localById[rm.id]
+          if (prev != null) {
+            rm.copy(
+              clientId = prev.clientId ?: rm.clientId,
+              replyToText = rm.replyToText ?: prev.replyToText,
+              replyToSenderName = rm.replyToSenderName ?: prev.replyToSenderName,
+              fileName = rm.fileName ?: prev.fileName,
+              locationCoordinates = rm.locationCoordinates ?: prev.locationCoordinates,
+              isRead = prev.isRead,
+              reactions = if (rm.reactions.isNotEmpty()) rm.reactions else prev.reactions
+            )
+          } else rm
+        }
+        val remoteIds = enrichedRemoteMessages.map { it.id.lowercase() }.toSet()
+        val nowMs = System.currentTimeMillis()
         val pendingLocal = localMatch.messages.filter { msg ->
-          (msg.status == MessageStatus.SENDING || msg.status == MessageStatus.FAILED) &&
-            !remoteIds.contains(msg.id) &&
+          val isJustSentByMe = msg.isMe && msg.status == MessageStatus.SENT &&
+            (TimestampUtils.parseIsoMillis(msg.createdAtIso)?.let { (nowMs - it) in -60_000L..25_000L } == true)
+          (msg.status == MessageStatus.SENDING || msg.status == MessageStatus.FAILED || isJustSentByMe) &&
+            !remoteIds.contains(msg.id.lowercase()) &&
             !deletedMessageIdsCache.contains(msg.id)
         }
-        if (pendingLocal.isEmpty()) remote else remote.copy(messages = remote.messages + pendingLocal)
+        remote.copy(
+          messages = if (pendingLocal.isEmpty()) enrichedRemoteMessages else enrichedRemoteMessages + pendingLocal
+        )
       }
     }
     val pendingNewThreads = currentLocal.filter { local ->
-      local.id.startsWith("conv_") && !local.isGroup && !remotePeers.contains(local.peerUser.id)
+      (local.id.startsWith("conv_") && !local.isGroup && remotePeers.none { it.equals(local.peerUser.id, ignoreCase = true) }) ||
+        (local.id.startsWith("grp_") && local.isGroup && remoteConvs.none { it.isGroup && it.groupName == local.groupName })
     }
     return sortConversationsStably(pendingNewThreads + mergedRemote)
   }
 
   private fun findConversationIndex(list: List<Conversation>, conversationId: String, fallbackPeerId: String? = null): Int {
-    val exact = list.indexOfFirst { it.id == conversationId }
+    val exact = list.indexOfFirst { it.id.equals(conversationId, ignoreCase = true) }
     if (exact != -1) return exact
     val extractedPeer = fallbackPeerId ?: if (conversationId.startsWith("conv_")) {
       // conv_<timestamp>_<peerUserId>
@@ -2695,7 +2913,7 @@ class VybeRepository private constructor() {
       parts.getOrNull(2)?.takeIf { it.isNotBlank() }
     } else null
     if (!extractedPeer.isNullOrBlank()) {
-      return list.indexOfFirst { !it.isGroup && it.peerUser.id == extractedPeer }
+      return list.indexOfFirst { !it.isGroup && it.peerUser.id.equals(extractedPeer, ignoreCase = true) }
     }
     return -1
   }
@@ -2746,28 +2964,39 @@ class VybeRepository private constructor() {
     val existing = _conversations.value.firstOrNull { !it.isGroup && it.peerUser.id == peerUser.id }
     if (existing != null) return existing
 
+    val nowIso = TimestampUtils.nowIsoUtc()
     val placeholderConv = Conversation(
       id = "conv_${System.currentTimeMillis()}_${peerUser.id}",
       peerUser = peerUser,
       lastMessage = "Conversation started",
       lastMessageTimestamp = "Just now",
+      lastMessageCreatedAtIso = nowIso,
       messages = emptyList(),
       unreadCount = 0
     )
-    _conversations.value = listOf(placeholderConv) + _conversations.value
+    val nextConvs = sortConversationsStably(listOf(placeholderConv) + _conversations.value)
+    _conversations.value = nextConvs
+    VybeLocalStore.get()?.saveConversations(nextConvs)
 
     // Resolve real Supabase conversation UUID asynchronously using a validated/refreshed token
     val me = _currentUser.value
     if (supabaseRepo.isConfigured && me != null) {
       ioScope.launch {
-        val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
-        val res = supabaseRepo.getOrCreateDirectConversation(me.id, peerUser.id, token)
-        if (res.isSuccess) {
-          val realId = res.getOrThrow()
-          _conversations.value = _conversations.value.map {
-            if (it.id == placeholderConv.id) it.copy(id = realId) else it
+        val rawToken = SessionManager.get()?.accessToken
+          ?: appContext?.let { SessionManager.getInstance(it).accessToken }
+        val token = supabaseRepo.resolveValidAccessToken(rawToken).orEmpty()
+        if (token.isNotBlank()) {
+          val canonicalMyId = SupabaseConfig.extractJwtSubject(token) ?: me.id
+          val res = supabaseRepo.getOrCreateDirectConversation(canonicalMyId, peerUser.id, token)
+          if (res.isSuccess) {
+            val realId = res.getOrThrow()
+            _conversations.value = _conversations.value.map {
+              if (it.id == placeholderConv.id || (!it.isGroup && it.peerUser.id == peerUser.id && !supabaseRepo.isValidUuid(it.id))) {
+                it.copy(id = realId)
+              } else it
+            }
+            VybeLocalStore.get()?.saveConversations(_conversations.value)
           }
-          VybeLocalStore.get()?.saveConversations(_conversations.value)
         }
       }
     }
@@ -2835,7 +3064,7 @@ class VybeRepository private constructor() {
       replyToId = replyToId,
       replyToText = replyToText,
       replyToSenderName = replyToSenderName,
-      isRead = true,
+      isRead = false,
       status = MessageStatus.SENDING
     )
     val nowIso = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply {
@@ -2854,29 +3083,43 @@ class VybeRepository private constructor() {
     ioScope.launch {
       try {
         val ctx = appContext
-        if (supabaseRepo.isConfigured && ctx != null && !NetworkMonitor.checkCurrentlyOnline(ctx)) {
-          markMessageFailed(effectiveInitialConvId, clientId, peerIdForLookup)
-          return@launch
-        }
+        val sessionMgr = SessionManager.get() ?: ctx?.let { SessionManager.getInstance(it) }
+        val rawAccess = sessionMgr?.accessToken
+        val hasRefreshCredentials = !sessionMgr?.refreshToken.isNullOrBlank() || !rawAccess.isNullOrBlank()
 
-        if (supabaseRepo.isConfigured) {
-          val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+        if (supabaseRepo.isConfigured && hasRefreshCredentials) {
+          val token = supabaseRepo.resolveValidAccessToken(rawAccess).orEmpty()
           if (token.isBlank()) {
             markMessageFailed(effectiveInitialConvId, clientId, peerIdForLookup)
             return@launch
           }
+
+          val canonicalSenderId = SupabaseConfig.extractJwtSubject(token) ?: user.id
 
           // Re-check latest conversation ID in case async `getOrCreateConversation` already resolved `conv_` -> UUID
           val latestSnap = _conversations.value
           val latestIdx = findConversationIndex(latestSnap, effectiveInitialConvId, peerIdForLookup)
           var resolvedConvId = if (latestIdx != -1) latestSnap[latestIdx].id else effectiveInitialConvId
 
-          if (resolvedConvId.startsWith("conv_")) {
-            val createRes = supabaseRepo.getOrCreateDirectConversation(user.id, conv.peerUser.id, token)
+          if (!supabaseRepo.isValidUuid(resolvedConvId)) {
+            val createRes = if (conv.isGroup) {
+              supabaseRepo.createRemoteGroupConversation(
+                creatorId = canonicalSenderId,
+                groupName = conv.groupName ?: "VYBE Group",
+                memberIds = conv.groupMembers.map { it.id },
+                accessToken = token
+              )
+            } else {
+              supabaseRepo.getOrCreateDirectConversation(canonicalSenderId, conv.peerUser.id, token)
+            }
             if (createRes.isSuccess) {
               resolvedConvId = createRes.getOrThrow()
               _conversations.value = _conversations.value.map {
-                if (it.id == effectiveInitialConvId || (!it.isGroup && it.peerUser.id == conv.peerUser.id && it.id.startsWith("conv_"))) {
+                if (
+                  it.id.equals(effectiveInitialConvId, ignoreCase = true) ||
+                  (!conv.isGroup && !it.isGroup && it.peerUser.id.equals(conv.peerUser.id, ignoreCase = true) && !supabaseRepo.isValidUuid(it.id)) ||
+                  (conv.isGroup && it.isGroup && it.groupName == conv.groupName && !supabaseRepo.isValidUuid(it.id))
+                ) {
                   it.copy(id = resolvedConvId)
                 } else it
               }
@@ -2898,7 +3141,7 @@ class VybeRepository private constructor() {
               markMessageFailed(resolvedConvId, clientId, peerIdForLookup)
               return@launch
             }
-            val uploadRes = uploadChatAttachmentWithFallback(ctx, mediaUrl!!, user.id, token)
+            val uploadRes = uploadChatAttachmentWithFallback(ctx, mediaUrl!!, canonicalSenderId, token)
             if (uploadRes.isSuccess) {
               resolvedMediaUrl = uploadRes.getOrThrow()
             } else {
@@ -2907,8 +3150,7 @@ class VybeRepository private constructor() {
             }
           }
 
-          val canonicalSenderId = SupabaseConfig.extractJwtSubject(token) ?: user.id
-          val res = supabaseRepo.sendMessage(
+          var res = supabaseRepo.sendMessage(
             conversationId = resolvedConvId,
             senderId = canonicalSenderId,
             content = cleanText.ifBlank { resolvedMediaUrl ?: "[Attachment]" },
@@ -2917,6 +3159,25 @@ class VybeRepository private constructor() {
             replyToId = replyToId?.takeIf { !it.startsWith("c_") && !it.startsWith("m_") },
             accessToken = token
           )
+
+          // Self-heal stale or orphan local conversation IDs on 1-on-1 chats if membership/FK rejected the insert
+          if (res.isFailure && !conv.isGroup && supabaseRepo.isValidUuid(conv.peerUser.id)) {
+            val healRes = supabaseRepo.getOrCreateDirectConversation(canonicalSenderId, conv.peerUser.id, token)
+            if (healRes.isSuccess) {
+              val healedConvId = healRes.getOrThrow()
+              resolvedConvId = healedConvId
+              res = supabaseRepo.sendMessage(
+                conversationId = healedConvId,
+                senderId = canonicalSenderId,
+                content = cleanText.ifBlank { resolvedMediaUrl ?: "[Attachment]" },
+                mediaUrl = resolvedMediaUrl,
+                mediaType = mediaType,
+                replyToId = replyToId?.takeIf { !it.startsWith("c_") && !it.startsWith("m_") },
+                accessToken = token
+              )
+            }
+          }
+
           val updatedList = _conversations.value.toMutableList()
           val convIdx = findConversationIndex(updatedList, resolvedConvId, peerIdForLookup)
           if (convIdx != -1) {
@@ -3013,10 +3274,17 @@ class VybeRepository private constructor() {
             val c = updatedList[convIdx]
             updatedList[convIdx] = c.copy(
               messages = c.messages.map { m ->
-                if (m.clientId == clientId || m.id == clientId) m.copy(status = MessageStatus.SENT, timestamp = "Just now") else m
+                if (m.clientId == clientId || m.id == clientId) {
+                  m.copy(
+                    status = MessageStatus.SENT,
+                    timestamp = "Just now",
+                    createdAtIso = m.createdAtIso ?: nowIso
+                  )
+                } else m
               }
             )
             _conversations.value = updatedList
+            VybeLocalStore.get()?.saveConversations(updatedList)
           }
         }
       } finally {
@@ -3069,15 +3337,29 @@ class VybeRepository private constructor() {
 
     ioScope.launch {
       try {
-        if (supabaseRepo.isConfigured) {
-          val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+        val sessionMgr = SessionManager.get() ?: appContext?.let { SessionManager.getInstance(it) }
+        val rawAccess = sessionMgr?.accessToken
+        val hasRefreshCredentials = !sessionMgr?.refreshToken.isNullOrBlank() || !rawAccess.isNullOrBlank()
+
+        if (supabaseRepo.isConfigured && hasRefreshCredentials) {
+          val token = supabaseRepo.resolveValidAccessToken(rawAccess).orEmpty()
           if (token.isBlank()) {
             markMessageFailed(conv.id, clientId, peerIdForLookup)
             return@launch
           }
+          val canonicalSenderId = SupabaseConfig.extractJwtSubject(token) ?: user.id
           var resolvedConvId = conv.id
-          if (resolvedConvId.startsWith("conv_")) {
-            val createRes = supabaseRepo.getOrCreateDirectConversation(user.id, conv.peerUser.id, token)
+          if (!supabaseRepo.isValidUuid(resolvedConvId)) {
+            val createRes = if (conv.isGroup) {
+              supabaseRepo.createRemoteGroupConversation(
+                creatorId = canonicalSenderId,
+                groupName = conv.groupName ?: "VYBE Group",
+                memberIds = conv.groupMembers.map { it.id },
+                accessToken = token
+              )
+            } else {
+              supabaseRepo.getOrCreateDirectConversation(canonicalSenderId, conv.peerUser.id, token)
+            }
             if (createRes.isSuccess) {
               resolvedConvId = createRes.getOrThrow()
               _conversations.value = _conversations.value.map {
@@ -3109,8 +3391,7 @@ class VybeRepository private constructor() {
             }
           }
 
-          val canonicalSenderId = SupabaseConfig.extractJwtSubject(token) ?: user.id
-          val res = supabaseRepo.sendMessage(
+          var res = supabaseRepo.sendMessage(
             conversationId = resolvedConvId,
             senderId = canonicalSenderId,
             content = target.text.ifBlank { resolvedMediaUrl ?: "[Media]" },
@@ -3119,11 +3400,27 @@ class VybeRepository private constructor() {
             replyToId = target.replyToId?.takeIf { !it.startsWith("c_") && !it.startsWith("m_") },
             accessToken = token
           )
+          if (res.isFailure && !conv.isGroup && supabaseRepo.isValidUuid(conv.peerUser.id)) {
+            val healRes = supabaseRepo.getOrCreateDirectConversation(canonicalSenderId, conv.peerUser.id, token)
+            if (healRes.isSuccess) {
+              val healedConvId = healRes.getOrThrow()
+              resolvedConvId = healedConvId
+              res = supabaseRepo.sendMessage(
+                conversationId = healedConvId,
+                senderId = canonicalSenderId,
+                content = target.text.ifBlank { resolvedMediaUrl ?: "[Media]" },
+                mediaUrl = resolvedMediaUrl,
+                mediaType = target.mediaType,
+                replyToId = target.replyToId?.takeIf { !it.startsWith("c_") && !it.startsWith("m_") },
+                accessToken = token
+              )
+            }
+          }
           if (res.isSuccess) {
             val serverMsg = res.getOrThrow()
             val serverId = serverMsg.id ?: target.id
             _conversations.value = _conversations.value.map { c ->
-              if (c.id == resolvedConvId || (!c.isGroup && peerIdForLookup != null && c.peerUser.id == peerIdForLookup)) {
+              if (c.id.equals(resolvedConvId, ignoreCase = true) || (!c.isGroup && peerIdForLookup != null && c.peerUser.id.equals(peerIdForLookup, ignoreCase = true))) {
                 c.copy(
                   id = resolvedConvId,
                   messages = c.messages.map { m ->
@@ -3144,6 +3441,19 @@ class VybeRepository private constructor() {
           } else {
             markMessageFailed(resolvedConvId, clientId, peerIdForLookup)
           }
+        } else {
+          _conversations.value = _conversations.value.map { c ->
+            if (c.id == conv.id || (!c.isGroup && peerIdForLookup != null && c.peerUser.id == peerIdForLookup)) {
+              c.copy(
+                messages = c.messages.map { m ->
+                  if (m.id == target.id || m.clientId == clientId) {
+                    m.copy(status = MessageStatus.SENT, timestamp = "Just now")
+                  } else m
+                }
+              )
+            } else c
+          }
+          VybeLocalStore.get()?.saveConversations(_conversations.value)
         }
       } finally {
         inFlightMessageClientIds.remove(clientId)
@@ -3385,10 +3695,12 @@ class VybeRepository private constructor() {
   }
 
   fun syncMessagesForConversation(conversationId: String) {
-    if (!supabaseRepo.isConfigured || conversationId.startsWith("conv_")) return
+    if (!supabaseRepo.isConfigured || !supabaseRepo.isValidUuid(conversationId)) return
     val myId = _currentUser.value?.id ?: SessionManager.get()?.userId ?: return
     ioScope.launch {
-      val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+      val rawToken = SessionManager.get()?.accessToken ?: appContext?.let { SessionManager.getInstance(it).accessToken }
+      val token = supabaseRepo.resolveValidAccessToken(rawToken).orEmpty()
+      if (token.isBlank()) return@launch
       val existingIdx = _conversations.value.indexOfFirst { it.id == conversationId }
       if (existingIdx == -1) {
         // Brand-new conversation initiated by another user — pull full conversation list immediately
@@ -3402,48 +3714,80 @@ class VybeRepository private constructor() {
           val remoteConvs = mergeRemoteConversationsPreservingInFlight(
             dedupeConversationCallLogs(convRes.getOrThrow())
           )
-          _conversations.value = remoteConvs
-          VybeLocalStore.get()?.saveConversations(remoteConvs)
+          if (remoteConvs != _conversations.value) {
+            _conversations.value = remoteConvs
+            VybeLocalStore.get()?.saveConversations(remoteConvs)
+          }
         }
         return@launch
       }
 
-      val res = supabaseRepo.fetchMessages(conversationId, token, limit = 80)
+      val res = supabaseRepo.fetchMessages(conversationId, token, limit = 100)
       if (res.isSuccess) {
         val remoteList = res.getOrThrow()
         val current = _conversations.value.toMutableList()
-        val convIdx = current.indexOfFirst { it.id == conversationId }
+        val convIdx = current.indexOfFirst { it.id.equals(conversationId, ignoreCase = true) }
         if (convIdx != -1) {
           val conv = current[convIdx]
-          val existingIds = conv.messages.map { it.id }.toSet()
-          val inFlightMsgs = conv.messages.filter {
-            (it.status == MessageStatus.SENDING || it.status == MessageStatus.FAILED) &&
-              !deletedMessageIdsCache.contains(it.id)
+          val existingById = conv.messages.associateBy { it.id.lowercase() }
+          val existingIds = existingById.keys
+          val nowMs = System.currentTimeMillis()
+          val inFlightMsgs = conv.messages.filter { msg ->
+            val isJustSentByMe = msg.isMe && msg.status == MessageStatus.SENT &&
+              (TimestampUtils.parseIsoMillis(msg.createdAtIso)?.let { (nowMs - it) in -60_000L..25_000L } == true)
+            (msg.status == MessageStatus.SENDING || msg.status == MessageStatus.FAILED || isJustSentByMe) &&
+              !deletedMessageIdsCache.contains(msg.id)
           }
           val mappedRemote = remoteList.mapNotNull { dto ->
             val dtoId = dto.id ?: return@mapNotNull null
             if (dto.isDeletedForEveryone == true || deletedMessageIdsCache.contains(dtoId)) {
               return@mapNotNull null
             }
+            val prevLocal = existingById[dtoId.lowercase()]
             DirectMessage(
               id = dtoId,
+              clientId = prevLocal?.clientId,
               senderId = dto.senderId,
               text = dto.content,
-              timestamp = TimestampUtils.formatMessageTime(dto.createdAt, "Now"),
+              timestamp = TimestampUtils.formatMessageTime(dto.createdAt, prevLocal?.timestamp ?: "Now"),
               createdAtIso = dto.createdAt,
-              isMe = dto.senderId == myId,
+              isMe = dto.senderId.equals(myId, ignoreCase = true),
               mediaUrl = dto.mediaUrl,
               mediaType = dto.mediaType ?: "TEXT",
+              fileName = prevLocal?.fileName,
+              locationCoordinates = prevLocal?.locationCoordinates,
+              isRead = prevLocal?.isRead ?: true,
+              isEdited = prevLocal?.isEdited == true || (prevLocal != null && prevLocal.text != dto.content),
               isDeletedForEveryone = false,
               replyToId = dto.replyToMessageId,
+              replyToText = prevLocal?.replyToText,
+              replyToSenderName = prevLocal?.replyToSenderName,
+              reactions = prevLocal?.reactions.orEmpty(),
               status = MessageStatus.SENT
             )
           }
-          val remoteIds = mappedRemote.map { it.id }.toSet()
-          val merged = mappedRemote + inFlightMsgs.filterNot { remoteIds.contains(it.id) }
-          val newlyArrivedFromPeer = mappedRemote.count { !it.isMe && !existingIds.contains(it.id) }
+          val remoteIds = mappedRemote.map { it.id.lowercase() }.toSet()
+          val merged = mappedRemote + inFlightMsgs.filterNot { remoteIds.contains(it.id.lowercase()) }
+          val newlyArrivedFromPeer = mappedRemote.count { !it.isMe && !existingIds.contains(it.id.lowercase()) }
           val isActivelyOpen = VybeNotificationHelper.activeOpenConversationId == conversationId
           val nextUnread = if (isActivelyOpen) 0 else (conv.unreadCount + newlyArrivedFromPeer)
+
+          // Skip redundant state emissions when messages and unread count are completely unchanged
+          // (eliminates 2.5s background recomposition and scroll jitter!)
+          val hasMessageChanges = merged.size != conv.messages.size ||
+            merged.indices.any { i ->
+              val a = merged[i]
+              val b = conv.messages[i]
+              a.id != b.id ||
+                a.text != b.text ||
+                a.status != b.status ||
+                a.mediaUrl != b.mediaUrl ||
+                a.isDeletedForEveryone != b.isDeletedForEveryone
+            }
+          if (!hasMessageChanges && nextUnread == conv.unreadCount) {
+            return@launch
+          }
+
           val lastRemoteIso = mappedRemote.lastOrNull()?.createdAtIso ?: conv.lastMessageCreatedAtIso
           val updatedConv = conv.copy(
             messages = merged,
@@ -3773,6 +4117,9 @@ class VybeRepository private constructor() {
       _stories.value = emptyList()
       _vybeMatches.value = emptyList()
       _followingUserIds.value = emptySet()
+      storyReactionsLocal = emptyMap()
+      _commentReactionsByMe.value = emptyMap()
+      _dismissedSuggestionUserIds.value = emptySet()
     }
 
     val isDesignatedOwner = user.role == UserRole.SUPER_ADMIN ||
@@ -3800,6 +4147,9 @@ class VybeRepository private constructor() {
     _isLoggedIn.value = true
     pendingSessionPayload = null
     viewedStoryIdsLocal = VybeLocalStore.get()?.loadViewedStoryIds(onlineUser.id).orEmpty()
+    storyReactionsLocal = VybeLocalStore.get()?.loadStoryReactions(onlineUser.id).orEmpty()
+    _commentReactionsByMe.value = VybeLocalStore.get()?.loadCommentReactions(onlineUser.id).orEmpty()
+    _dismissedSuggestionUserIds.value = VybeLocalStore.get()?.loadDismissedSuggestions(onlineUser.id).orEmpty()
     vybeMatchIdsCache = VybeLocalStore.get()?.loadVybeMatches(onlineUser.id).orEmpty()
 
     SessionManager.get()?.saveSession(
@@ -4063,6 +4413,9 @@ class VybeRepository private constructor() {
     SessionManager.get()?.clearSession()
     VybeLocalStore.get()?.clearUserScopedCaches()
     viewedStoryIdsLocal = emptySet()
+    storyReactionsLocal = emptyMap()
+    _commentReactionsByMe.value = emptyMap()
+    _dismissedSuggestionUserIds.value = emptySet()
     vybeMatchIdsCache = emptySet()
     _currentUser.value = null
     _isLoggedIn.value = false
@@ -4466,18 +4819,46 @@ class VybeRepository private constructor() {
 
   fun createGroupConversation(groupName: String, members: List<User>): Conversation {
     val user = _currentUser.value ?: User(id = "u_self", username = "me", displayName = "Me")
+    val nowIso = TimestampUtils.nowIsoUtc()
+    val cleanName = groupName.trim().ifBlank { "VYBE Group" }
     val groupConv = Conversation(
       id = "grp_${System.currentTimeMillis()}",
       peerUser = members.firstOrNull() ?: user,
-      groupName = groupName,
+      groupName = cleanName,
       isGroup = true,
-      groupMembers = listOf(user) + members,
+      groupMembers = (listOf(user) + members).distinctBy { it.id },
       groupAdminId = user.id,
-      lastMessage = "Group \"$groupName\" created",
+      lastMessage = "Group \"$cleanName\" created",
       lastMessageTimestamp = "Just now",
+      lastMessageCreatedAtIso = nowIso,
       messages = emptyList()
     )
-    _conversations.value = listOf(groupConv) + _conversations.value
+    val next = sortConversationsStably(listOf(groupConv) + _conversations.value)
+    _conversations.value = next
+    VybeLocalStore.get()?.saveConversations(next)
+
+    if (supabaseRepo.isConfigured) {
+      ioScope.launch {
+        val rawToken = SessionManager.get()?.accessToken ?: appContext?.let { SessionManager.getInstance(it).accessToken }
+        val token = supabaseRepo.resolveValidAccessToken(rawToken).orEmpty()
+        if (token.isNotBlank()) {
+          val canonicalCreatorId = SupabaseConfig.extractJwtSubject(token) ?: user.id
+          val createRes = supabaseRepo.createRemoteGroupConversation(
+            creatorId = canonicalCreatorId,
+            groupName = cleanName,
+            memberIds = members.map { it.id },
+            accessToken = token
+          )
+          if (createRes.isSuccess) {
+            val remoteGroupId = createRes.getOrThrow()
+            _conversations.value = _conversations.value.map {
+              if (it.id == groupConv.id) it.copy(id = remoteGroupId) else it
+            }
+            VybeLocalStore.get()?.saveConversations(_conversations.value)
+          }
+        }
+      }
+    }
     return groupConv
   }
 

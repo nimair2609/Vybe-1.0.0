@@ -1,8 +1,8 @@
 import { GitHubReleaseInfo } from '../types';
 
 export const DEFAULT_GITHUB_REPO = 'nimair2609/Vybe-1.0.0';
-export const INSTALLED_VERSION = '1.2.62';
-export const INSTALLED_VERSION_CODE = 162;
+export const INSTALLED_VERSION = '1.3.0';
+export const INSTALLED_VERSION_CODE = 165;
 
 export interface GitHubUpdateStatus {
   isChecking: boolean;

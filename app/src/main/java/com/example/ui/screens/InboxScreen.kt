@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -40,6 +41,7 @@ fun InboxScreen(viewModel: VybeViewModel) {
 
   var currentTab by remember { mutableStateOf("Chats") }
   var searchQuery by remember { mutableStateOf("") }
+  val inboxListState = rememberLazyListState()
 
   // New Chat / Group modal state
   var showNewChatModal by remember { mutableStateOf(false) }
@@ -130,12 +132,14 @@ fun InboxScreen(viewModel: VybeViewModel) {
     }
   ) { paddingValues ->
     LazyColumn(
+      state = inboxListState,
       modifier = Modifier
         .fillMaxSize()
         .padding(paddingValues)
+        .testTag("inbox_conversations_list")
     ) {
       // Search Bar
-      item {
+      item(key = "inbox_search_bar") {
         OutlinedTextField(
           value = searchQuery,
           onValueChange = { searchQuery = it },
@@ -158,7 +162,7 @@ fun InboxScreen(viewModel: VybeViewModel) {
       }
 
       // Sub tabs: Chats, Message Requests, Hidden Chats
-      item {
+      item(key = "inbox_sub_tabs") {
         Row(
           modifier = Modifier
             .fillMaxWidth()
@@ -300,7 +304,10 @@ fun InboxScreen(viewModel: VybeViewModel) {
           }
         }
       } else {
-        items(displayedConversations, key = { it.id }) { conv ->
+        items(
+          items = displayedConversations,
+          key = { conv -> if (conv.isGroup) "grp_${conv.groupName ?: conv.id}" else "dm_${conv.peerUser.id}" }
+        ) { conv ->
           val dismissState = rememberSwipeToDismissBoxState(
             confirmValueChange = { dismissVal ->
               when (dismissVal) {
@@ -550,7 +557,7 @@ fun InboxScreen(viewModel: VybeViewModel) {
         }
       }
 
-      item {
+      item(key = "inbox_bottom_spacer") {
         Spacer(modifier = Modifier.height(88.dp))
       }
     }

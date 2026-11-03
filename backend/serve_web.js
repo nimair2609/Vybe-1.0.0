@@ -7,6 +7,7 @@ const PORT = 3000;
 const WEB_DIR = path.resolve(__dirname, '../web');
 const DIST_DIR = path.resolve(__dirname, '../dist');
 const PUBLIC_DIR = path.resolve(__dirname, '../public');
+const PUBLIC_WEBAPP_DIR = path.resolve(__dirname, '../public/webapp');
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://cppwadedazpbevkfrchg.supabase.co';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_MI-UdOqfccHVZIHjQq9vrw_IjEzeR7H';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -1719,11 +1720,16 @@ const server = http.createServer(async (req, res) => {
     return sendStaticFile(publicCandidate, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
   }
 
-  // 4. Static Assets: Check DIST_DIR (Vite JS/CSS bundles)
+  // 4. Static Assets: Check DIST_DIR (Vite JS/CSS bundles) and PUBLIC_WEBAPP_DIR fallback
   const distCandidate = path.join(DIST_DIR, cleanUrl.replace(/^\/+/, ''));
   if (distCandidate.startsWith(DIST_DIR) && fs.existsSync(distCandidate) && fs.statSync(distCandidate).isFile()) {
     const ext = path.extname(distCandidate).toLowerCase();
     return sendStaticFile(distCandidate, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
+  }
+  const persistedWebappCandidate = path.join(PUBLIC_WEBAPP_DIR, cleanUrl.replace(/^\/+/, ''));
+  if (persistedWebappCandidate.startsWith(PUBLIC_WEBAPP_DIR) && fs.existsSync(persistedWebappCandidate) && fs.statSync(persistedWebappCandidate).isFile()) {
+    const ext = path.extname(persistedWebappCandidate).toLowerCase();
+    return sendStaticFile(persistedWebappCandidate, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
   }
 
   // 5. Static Assets: Check WEB_DIR (Admin portal badges and assets)
@@ -1745,6 +1751,11 @@ const server = http.createServer(async (req, res) => {
   const appIndex = path.join(DIST_DIR, 'index.html');
   if (fs.existsSync(appIndex)) {
     return sendStaticFile(appIndex, { 'Content-Type': 'text/html; charset=utf-8' });
+  }
+
+  const persistedAppIndex = path.join(PUBLIC_WEBAPP_DIR, 'index.html');
+  if (fs.existsSync(persistedAppIndex)) {
+    return sendStaticFile(persistedAppIndex, { 'Content-Type': 'text/html; charset=utf-8' });
   }
 
   const fallbackAdmin = path.join(WEB_DIR, 'index.html');

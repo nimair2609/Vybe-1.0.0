@@ -13,7 +13,9 @@ export const ReelsView: React.FC = () => {
     openUserProfile,
     toggleLikePost,
     ensurePostLoved,
+    reactToPost,
     toggleCommentLike,
+    reactToComment,
     toggleSavePost,
     addCommentToPost
   } = useVybe();
@@ -191,15 +193,17 @@ export const ReelsView: React.FC = () => {
 
       {/* Right Floating Actions */}
       <div className="absolute right-3 bottom-24 flex flex-col items-center gap-5 z-20">
-        {/* Global Finger Heart Reaction */}
+        {/* Global VYBE Universal Reaction */}
         <div className="flex flex-col items-center">
           <FingerHeartReaction
-            isLiked={currentReel.isLiked}
+            isLiked={currentReel.isLiked || Boolean(currentReel.userReaction)}
+            userReaction={currentReel.userReaction}
             count={currentReel.likesCount}
             forceDarkOverlay={true}
             verticalLayout={true}
             size={28}
             onToggle={() => toggleLikePost(currentReel.id)}
+            onReact={(rx) => reactToPost(currentReel.id, rx)}
           />
         </div>
 
@@ -341,10 +345,12 @@ export const ReelsView: React.FC = () => {
                     </div>
                   </div>
                   <FingerHeartReaction
-                    isLiked={Boolean(c.isLiked)}
+                    isLiked={Boolean(c.isLiked || c.userReaction)}
+                    userReaction={c.userReaction}
                     count={c.likesCount || 0}
                     size={15}
                     onToggle={() => toggleCommentLike(currentReel.id, c.id)}
+                    onReact={(rx) => reactToComment(currentReel.id, c.id, rx)}
                   />
                 </div>
               ))

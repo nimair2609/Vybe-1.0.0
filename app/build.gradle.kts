@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.vybe.nzqpvx"
     minSdk = 24
     targetSdk = 36
-    versionCode = 162
-    versionName = "1.2.62"
+    versionCode = 165
+    versionName = "1.3.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = "GOOGLE_MAPS_API_KEY_DEFAULT_VALUE"

@@ -14,6 +14,7 @@ export const StoryViewerModal: React.FC = () => {
     nextStory,
     prevStory,
     toggleStoryLike,
+    reactToStory,
     openUserProfile,
     setInAppNotificationBanner
   } = useVybe() as any;
@@ -318,12 +319,14 @@ export const StoryViewerModal: React.FC = () => {
             </button>
           )}
           <FingerHeartReaction
-            isLiked={Boolean(currentStory.isLikedByMe)}
+            isLiked={Boolean(currentStory.isLikedByMe || currentStory.myReaction)}
+            userReaction={currentStory.myReaction}
             count={currentStory.reactionsCount || 0}
             showCount={(currentStory.reactionsCount || 0) > 0}
             forceDarkOverlay={true}
             size={23}
             onToggle={() => toggleStoryLike(currentStory.id)}
+            onReact={(rx) => reactToStory(currentStory.id, rx)}
           />
         </form>
       </div>

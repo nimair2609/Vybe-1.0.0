@@ -27,6 +27,7 @@ data class Story(
   val isViewed: Boolean = false,
   val reactionsCount: Int = 0,
   val isLikedByMe: Boolean = false,
+  val myReaction: VybeReaction? = null,
   val location: String? = null,
   val textBackgroundColor: String? = null,
   val createdAtIso: String? = null,

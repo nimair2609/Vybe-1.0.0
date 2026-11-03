@@ -233,6 +233,8 @@ class VybeViewModel : ViewModel() {
   val incomingFollowRequestUserIds = repository.incomingFollowRequestUserIds
   val blockedUserIds = repository.blockedUserIds
   val restrictedUserIds = repository.restrictedUserIds
+  val dismissedSuggestionUserIds = repository.dismissedSuggestionUserIds
+  val commentReactionsByMe = repository.commentReactionsByMe
 
   // --- Central Admin Control Center Flows ---
   val adminSubRole = repository.adminSubRole
@@ -251,6 +253,9 @@ class VybeViewModel : ViewModel() {
   }
 
   fun checkForAppUpdateInBackground(context: android.content.Context) {
+    // Do not display unsolicited "Update Available" banners in live AI Studio / debug preview builds;
+    // manual "Check for Updates" in Settings remains available at all times.
+    if (com.example.BuildConfig.DEBUG) return
     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
       try {
         val repo = com.example.util.GitHubUpdater.getSavedRepo(context)
@@ -279,9 +284,11 @@ class VybeViewModel : ViewModel() {
         val current = _selectedConversation.value
         if (current != null) {
           val updated = convs.firstOrNull {
-            it.id == current.id || (!it.isGroup && !current.isGroup && it.peerUser.id == current.peerUser.id)
+            it.id.equals(current.id, ignoreCase = true) ||
+              (!it.isGroup && !current.isGroup && it.peerUser.id.equals(current.peerUser.id, ignoreCase = true)) ||
+              (it.isGroup && current.isGroup && !current.groupName.isNullOrBlank() && it.groupName == current.groupName)
           }
-          if (updated != null) {
+          if (updated != null && updated != current) {
             _selectedConversation.value = updated
           }
         }
@@ -920,6 +927,8 @@ class VybeViewModel : ViewModel() {
   fun toggleFollowUser(targetUserId: String): Boolean = repository.toggleFollowUser(targetUserId)
   fun respondToFollowRequest(requesterUserId: String, approve: Boolean) = repository.respondToFollowRequest(requesterUserId, approve)
   fun removeFollowerUser(followerUserId: String): Boolean = repository.removeFollowerUser(followerUserId)
+  fun dismissSuggestedUser(targetUserId: String) = repository.dismissSuggestedUser(targetUserId)
+  fun restoreDismissedSuggestions() = repository.restoreDismissedSuggestions()
 
   // --- VYBE Matches ---
   fun addVybeMatch(user: User) = repository.addVybeMatch(user)
@@ -935,6 +944,8 @@ class VybeViewModel : ViewModel() {
   fun reactToPost(postId: String, reaction: VybeReaction) = repository.reactToPost(postId, reaction)
   fun loadCommentsForPost(postId: String) = repository.loadCommentsForPost(postId)
   fun addComment(postId: String, text: String) = repository.addComment(postId, text)
+  fun toggleCommentLike(postId: String, commentId: String) = repository.toggleCommentLike(postId, commentId)
+  fun reactToComment(postId: String, commentId: String, reaction: VybeReaction) = repository.reactToComment(postId, commentId, reaction)
 
   suspend fun publishPostAwait(
     caption: String,
@@ -1008,16 +1019,10 @@ class VybeViewModel : ViewModel() {
       onDenied?.invoke(eligibility.reason)
       return
     }
-    viewModelScope.launch {
-      val res = repository.openOrCreateRemoteConversation(user)
-      if (res.isSuccess) {
-        openConversation(res.getOrThrow())
-      } else {
-        val msg = res.exceptionOrNull()?.message ?: "Unable to start conversation."
-        _uiBannerMessage.value = msg
-        onDenied?.invoke(msg)
-      }
-    }
+    // Open conversation immediately for zero-latency UX; getOrCreateConversation resolves the remote UUID
+    // in the background while preserving any messages sent before resolution completes.
+    val immediateConv = repository.getOrCreateConversation(user)
+    openConversation(immediateConv)
   }
 
   fun toggleConversationUnread(conversationId: String) = repository.toggleConversationUnread(conversationId)
@@ -1166,6 +1171,7 @@ class VybeViewModel : ViewModel() {
 
   fun markStoryViewed(storyId: String) = repository.markStoryViewed(storyId)
   fun toggleStoryLike(storyId: String) = repository.toggleStoryLike(storyId)
+  fun reactToStory(storyId: String, reaction: VybeReaction) = repository.reactToStory(storyId, reaction)
   fun deleteStory(storyId: String) = repository.deleteStory(storyId)
 
   // --- Messaging & Calls ---

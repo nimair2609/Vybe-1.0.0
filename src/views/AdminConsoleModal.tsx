@@ -360,7 +360,7 @@ export const AdminConsoleModal: React.FC = () => {
                                 <span className="text-[11px] text-gray-400">@{u.username}</span>
                               </div>
                             </td>
-                            <td className="p-3.5 font-mono text-gray-300">{u.publicVybeId || `VYBE-${u.id.take(6).toUpperCase()}`}</td>
+                            <td className="p-3.5 font-mono text-gray-300">{u.publicVybeId || `VYBE-${u.id.slice(0, 6).toUpperCase()}`}</td>
                             <td className="p-3.5">
                               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                                 u.role === 'ADMIN' ? 'bg-[#FFB703]/20 text-[#FFB703]' : 'bg-gray-800 text-gray-300'
@@ -605,7 +605,7 @@ export const AdminConsoleModal: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <img src={p.author.avatarUrl} alt={p.author.displayName} className="w-6 h-6 rounded-full object-cover" />
                         <span className="text-xs font-bold text-white truncate">@{p.author.username}</span>
-                        <span className="text-[10px] text-gray-400 ml-auto">{p.mood}</span>
+                        <span className="text-[10px] text-gray-400 ml-auto">{p.moodZone || 'GENERAL'}</span>
                       </div>
                       {p.mediaUrls[0] && (
                         <img src={p.mediaUrls[0]} alt="Post media" className="w-full h-32 object-cover rounded-xl border border-[#1F1738]" />
@@ -615,7 +615,7 @@ export const AdminConsoleModal: React.FC = () => {
                         <span>{p.likesCount} loves • {p.commentsCount} comments</span>
                         <button
                           onClick={() => {
-                            setFeedback(`✓ Post ${p.id.take(8)} archived by Admin.`);
+                            setFeedback(`✓ Post ${p.id.slice(0, 8)} archived by Admin.`);
                             setTimeout(() => setFeedback(null), 3000);
                           }}
                           className="text-red-400 hover:text-red-300 font-semibold"

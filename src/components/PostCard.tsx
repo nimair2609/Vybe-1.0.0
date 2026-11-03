@@ -22,6 +22,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
     ensurePostLoved,
     reactToPost,
     toggleCommentLike,
+    reactToComment,
     toggleSavePost,
     addCommentToPost,
     sharePostToConversation,
@@ -231,33 +232,22 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
       <div className="p-4 border-t border-[#262E4A]/50">
         <div className="flex items-center justify-between min-h-[36px]">
           <div className="flex items-center gap-5 relative">
-            {/* 1. Global Finger Heart Reaction */}
+            {/* 1. Global VYBE Universal Reaction */}
             <div
               className="relative flex items-center"
               onMouseEnter={() => setShowReactionMenu(true)}
               onMouseLeave={() => setShowReactionMenu(false)}
             >
-              {post.userReaction && post.userReaction !== 'LOVE' ? (
-                <button
-                  type="button"
-                  onClick={() => toggleLikePost(post.id)}
-                  className="inline-flex items-center justify-center gap-1.5 h-9 px-1.5 rounded-lg text-xs font-semibold text-[#FF2E93] transition-colors"
-                >
-                  <span className="w-5 h-5 inline-flex items-center justify-center text-base leading-none">
-                    {VYBE_REACTIONS.find(r => r.id === post.userReaction)?.emoji}
-                  </span>
-                  {post.likesCount > 0 && <span>{post.likesCount.toLocaleString()}</span>}
-                </button>
-              ) : (
-                <FingerHeartReaction
-                  isLiked={post.isLiked}
-                  count={post.likesCount}
-                  onToggle={() => toggleLikePost(post.id)}
-                />
-              )}
+              <FingerHeartReaction
+                isLiked={post.isLiked || Boolean(post.userReaction)}
+                userReaction={post.userReaction}
+                count={post.likesCount}
+                onToggle={() => toggleLikePost(post.id)}
+                onReact={(rx) => reactToPost(post.id, rx)}
+              />
 
               {showReactionMenu && (
-                <div className="absolute bottom-9 left-0 flex items-center gap-2 p-2 bg-[#1A1F36] border border-[#262E4A] rounded-full shadow-2xl z-20 animate-in fade-in slide-in-from-bottom-2">
+                <div className="absolute bottom-9 left-0 flex items-center gap-2 p-2 bg-[#0B1022] border border-[#8B5CF6]/50 rounded-full shadow-2xl z-20 animate-in fade-in slide-in-from-bottom-2">
                   {VYBE_REACTIONS.map(reaction => (
                     <button
                       key={reaction.id}
@@ -336,7 +326,13 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
                   key={r.id}
                   className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#060714] border border-[#262E4A]"
                 >
-                  <span>{r.emoji}</span>
+                  <span className="inline-flex items-center">
+                    {r.id === 'LOVE' ? (
+                      <FingerHeartIcon isLiked={true} size={13} forceDarkOverlay={true} />
+                    ) : (
+                      r.emoji
+                    )}
+                  </span>
                   <span className="text-gray-300 font-semibold">{count}</span>
                 </span>
               );
@@ -464,10 +460,12 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
                           {formatRelativeTimestamp(c.createdAtIso, c.timestamp, nowTick)}
                         </span>
                         <FingerHeartReaction
-                          isLiked={Boolean(c.isLiked)}
+                          isLiked={Boolean(c.isLiked || c.userReaction)}
+                          userReaction={c.userReaction}
                           count={c.likesCount || 0}
                           size={15}
                           onToggle={() => toggleCommentLike(post.id, c.id)}
+                          onReact={(rx) => reactToComment(post.id, c.id, rx)}
                           className="h-6 px-1"
                         />
                       </div>

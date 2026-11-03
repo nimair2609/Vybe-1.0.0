@@ -408,3 +408,108 @@ export async function syncPostLikeCountToSupabase(postId: string, nextLikesCount
     console.warn('[Supabase] Reaction sync notice:', err);
   }
 }
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function getWebAuthHeaders(): Record<string, string> | null {
+  const jwt = localStorage.getItem('vybe_access_token') || localStorage.getItem('vybe_admin_jwt') || '';
+  if (!jwt || !jwt.startsWith('eyJ')) return null;
+  return {
+    'apikey': SUPABASE_ANON_KEY,
+    'Authorization': `Bearer ${jwt}`,
+    'Content-Type': 'application/json'
+  };
+}
+
+export async function resolveOrCreateWebDirectConversation(
+  myUserId: string,
+  peerUserId: string
+): Promise<string | null> {
+  const authHeaders = getWebAuthHeaders();
+  if (!authHeaders || !UUID_REGEX.test(peerUserId)) return null;
+
+  try {
+    // Pass both p_peer_id and p_other_user_id to avoid PostgREST HTTP 300 PGRST203 function overload ambiguity
+    const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_or_create_direct_conversation`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        p_peer_id: peerUserId,
+        p_other_user_id: peerUserId
+      })
+    });
+    if (rpcRes.ok) {
+      const raw = (await rpcRes.text()).trim().replace(/^"|"$/g, '');
+      if (UUID_REGEX.test(raw)) return raw;
+    }
+
+    if (UUID_REGEX.test(myUserId)) {
+      const generatedId = crypto.randomUUID();
+      const convRes = await fetch(`${SUPABASE_URL}/rest/v1/conversations`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Prefer': 'return=minimal' },
+        body: JSON.stringify({
+          id: generatedId,
+          created_by: myUserId,
+          is_group: false
+        })
+      });
+      if (convRes.ok) {
+        const memRes = await fetch(`${SUPABASE_URL}/rest/v1/conversation_members`, {
+          method: 'POST',
+          headers: { ...authHeaders, 'Prefer': 'resolution=ignore-duplicates,return=minimal' },
+          body: JSON.stringify([
+            { conversation_id: generatedId, user_id: myUserId },
+            { conversation_id: generatedId, user_id: peerUserId }
+          ])
+        });
+        if (memRes.ok) return generatedId;
+      }
+    }
+  } catch (err) {
+    console.warn('[Supabase] Web conversation resolution notice:', err);
+  }
+  return null;
+}
+
+export async function sendLiveDirectMessage(params: {
+  conversationId: string;
+  senderId: string;
+  peerUserId: string;
+  content: string;
+}): Promise<{ conversationId: string; messageId?: string; createdAt?: string } | null> {
+  const authHeaders = getWebAuthHeaders();
+  if (!authHeaders) return null;
+
+  try {
+    let resolvedConvId = params.conversationId;
+    if (!UUID_REGEX.test(resolvedConvId)) {
+      const createdId = await resolveOrCreateWebDirectConversation(params.senderId, params.peerUserId);
+      if (!createdId) return null;
+      resolvedConvId = createdId;
+    }
+
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/messages`, {
+      method: 'POST',
+      headers: { ...authHeaders, 'Prefer': 'return=representation' },
+      body: JSON.stringify({
+        conversation_id: resolvedConvId,
+        sender_id: params.senderId,
+        content: params.content,
+        media_type: 'TEXT'
+      })
+    });
+    if (!res.ok) return null;
+    const rows = await res.json();
+    const row = Array.isArray(rows) ? rows[0] : rows;
+    return {
+      conversationId: resolvedConvId,
+      messageId: row?.id,
+      createdAt: row?.created_at
+    };
+  } catch (err) {
+    console.warn('[Supabase] Web sendLiveDirectMessage notice:', err);
+    return null;
+  }
+}
+

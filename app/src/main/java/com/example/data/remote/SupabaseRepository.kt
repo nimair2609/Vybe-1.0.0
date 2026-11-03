@@ -19,6 +19,8 @@ import com.example.data.model.VybeReaction
 import com.example.data.session.SessionManager
 import com.example.util.TimestampUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.Request
@@ -71,6 +73,7 @@ class SupabaseRepository {
     get() = SupabaseConfig.isConfigured()
 
   private val signedUrlCache = ConcurrentHashMap<String, Pair<String, Long>>()
+  private val tokenRefreshMutex = Mutex()
 
   fun normalizePhoneE164(raw: String): String {
     val trimmed = raw.trim()
@@ -135,10 +138,22 @@ class SupabaseRepository {
     }
   }
 
-  suspend fun forceRefreshSessionToken(): String? {
-    val sm = SessionManager.get() ?: return null
-    val refreshToken = sm.refreshToken?.takeIf { it.isNotBlank() } ?: return null
-    return try {
+  suspend fun forceRefreshSessionToken(): String? = tokenRefreshMutex.withLock {
+    val sm = SessionManager.get() ?: return@withLock null
+    // Re-check inside lock in case a sibling coroutine just refreshed the single-use refresh_token
+    val existingAccess = sm.accessToken
+    val existingExpires = sm.expiresAtMs
+    if (
+      !existingAccess.isNullOrBlank() &&
+      SupabaseConfig.isJwtAccessToken(existingAccess) &&
+      !SupabaseConfig.isJwtExpired(existingAccess) &&
+      (existingExpires <= 0L || System.currentTimeMillis() <= (existingExpires - 45_000L))
+    ) {
+      return@withLock existingAccess
+    }
+
+    val refreshToken = sm.refreshToken?.takeIf { it.isNotBlank() } ?: return@withLock null
+    try {
       val resp = SupabaseNetworkClient.authApi.refreshSession(
         apiKey = SupabaseConfig.supabaseAnonKey,
         request = SupabaseRefreshTokenRequest(refreshToken = refreshToken)
@@ -151,6 +166,7 @@ class SupabaseRepository {
         sm.updateTokens(freshAccess, freshRefresh, expiresIn)
         freshAccess
       } else {
+        Log.w(TAG, "Token refresh returned HTTP ${resp.code()}")
         null
       }
     } catch (e: Exception) {
@@ -2156,12 +2172,13 @@ class SupabaseRepository {
     postId: String,
     userId: String,
     reaction: VybeReaction?,
-    accessToken: String = ""
+    accessToken: String = "",
+    expectedLikesCount: Int? = null
   ): Result<Unit> = withContext(Dispatchers.IO) {
     if (!isConfigured) return@withContext Result.success(Unit)
     val authHeader = authHeaderFor(accessToken) ?: return@withContext Result.failure(Exception("Sign in required."))
     try {
-      if (reaction == null) {
+      val result = if (reaction == null) {
         val resp = SupabaseNetworkClient.restApi.deleteReaction(
           apiKey = SupabaseConfig.supabaseAnonKey,
           authHeader = authHeader,
@@ -2193,6 +2210,20 @@ class SupabaseRepository {
         }
         if (resp.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to react to post."))
       }
+
+      if (result.isSuccess && expectedLikesCount != null) {
+        try {
+          SupabaseNetworkClient.restApi.patchPostCounts(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = authHeader,
+            idFilter = "eq.$postId",
+            body = mapOf("likes_count" to expectedLikesCount.coerceAtLeast(0))
+          )
+        } catch (_: Exception) {
+          // Non-fatal if author-only RLS restricts direct post counter patch; post_reactions remains authoritative
+        }
+      }
+      result
     } catch (e: Exception) {
       Result.failure(e)
     }
@@ -2658,17 +2689,28 @@ class SupabaseRepository {
         val convMeta = myMember.conversations
         val isGroup = convMeta?.isGroup ?: false
         val participants = membersByConv[convId].orEmpty()
-        val peerDtos = participants.filter { it.userId != myUserId }.mapNotNull { it.profiles }
+        val peerMembers = participants.filter { !it.userId.equals(myUserId, ignoreCase = true) }
+        val peerDtos = peerMembers.mapNotNull { it.profiles }
         val peerUser = peerDtos.firstOrNull()?.let { mapProfileDtoToUser(it) }
-          ?: if (!isGroup) return@mapNotNull null else User(id = convId, username = "group", displayName = convMeta?.groupName ?: "Group")
+          ?: if (!isGroup) {
+            val fallbackMember = peerMembers.firstOrNull() ?: return@mapNotNull null
+            User(
+              id = fallbackMember.userId,
+              username = "vybe_${fallbackMember.userId.take(6).lowercase()}",
+              displayName = "VYBE Member"
+            )
+          } else {
+            User(id = convId, username = "group", displayName = convMeta?.groupName ?: "Group")
+          }
 
         val msgResp = SupabaseNetworkClient.restApi.getMessages(
           apiKey = SupabaseConfig.supabaseAnonKey,
           authHeader = authHeader,
           conversationIdFilter = "eq.$convId",
+          order = "created_at.desc",
           limit = 60
         )
-        val rawMessages = msgResp.body().orEmpty()
+        val rawMessages = msgResp.body().orEmpty().asReversed()
         val mappedMessages = rawMessages
           .filter { m -> m.isDeletedForEveryone != true }
           .map { m ->
@@ -2678,7 +2720,7 @@ class SupabaseRepository {
               text = m.content,
               timestamp = TimestampUtils.formatMessageTime(m.createdAt, "Now"),
               createdAtIso = m.createdAt,
-              isMe = m.senderId == myUserId,
+              isMe = m.senderId.equals(myUserId, ignoreCase = true),
               mediaUrl = m.mediaUrl,
               mediaType = m.mediaType ?: "TEXT",
               isDeletedForEveryone = false,
@@ -2716,27 +2758,83 @@ class SupabaseRepository {
     }
   }
 
+  private val uuidRegex = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+  fun isValidUuid(value: String?): Boolean {
+    return !value.isNullOrBlank() && uuidRegex.matches(value.trim())
+  }
+
+  private fun extractUuidFromRpcPayload(raw: String?): String? {
+    if (raw.isNullOrBlank()) return null
+    val trimmed = raw.trim().removeSurrounding("\"")
+    if (isValidUuid(trimmed)) return trimmed
+    return Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+      .find(raw)
+      ?.value
+  }
+
   suspend fun getOrCreateDirectConversation(
     myUserId: String,
     peerUserId: String,
     accessToken: String = ""
   ): Result<String> = withContext(Dispatchers.IO) {
     if (!isConfigured) return@withContext Result.failure(Exception("Supabase not configured."))
-    val authHeader = authHeaderFor(accessToken)
-      ?: return@withContext Result.failure(Exception("Please sign in to send messages."))
+    var authHeader = authHeaderFor(accessToken)
+    if (authHeader == null) {
+      val refreshed = forceRefreshSessionToken()
+      authHeader = SupabaseConfig.buildAuthHeader(refreshed)
+    }
+    if (authHeader == null) {
+      return@withContext Result.failure(Exception("Please sign in to send messages."))
+    }
 
     try {
-      // 1. Try atomic server-side RPC enforcing mutual-follow / privacy / block rules
+      // 0. Reuse existing 1-on-1 conversation if both users are already members
+      try {
+        val myMembershipsResp = SupabaseNetworkClient.restApi.getMyConversationMemberships(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          userIdFilter = "eq.$myUserId"
+        )
+        val nonGroupIds = myMembershipsResp.body().orEmpty()
+          .filter { it.conversations?.isGroup != true }
+          .sortedByDescending { it.conversations?.updatedAt ?: it.conversations?.createdAt ?: "" }
+          .map { it.conversationId }
+          .filter { isValidUuid(it) }
+          .distinct()
+        if (nonGroupIds.isNotEmpty()) {
+          val membersResp = SupabaseNetworkClient.restApi.getMembersForConversations(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = authHeader,
+            conversationIdsInFilter = "in.(${nonGroupIds.joinToString(",")})"
+          )
+          val grouped = membersResp.body().orEmpty().groupBy { it.conversationId }
+          val matchedExistingId = nonGroupIds.firstOrNull { cid ->
+            grouped[cid].orEmpty().any { m -> m.userId.equals(peerUserId, ignoreCase = true) }
+          }
+          if (!matchedExistingId.isNullOrBlank()) {
+            return@withContext Result.success(matchedExistingId)
+          }
+        }
+      } catch (_: Exception) {
+        // Proceed to RPC / creation fallback
+      }
+
+      // 1. Atomic server-side RPC passing both p_peer_id and p_other_user_id (avoids PostgREST HTTP 300 PGRST203)
       val rpcResp = SupabaseNetworkClient.restApi.getOrCreateDirectConversation(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
-        request = SupabaseRpcPeerConversationRequest(peerId = peerUserId)
+        request = SupabaseRpcPeerConversationRequest(peerId = peerUserId, otherUserId = peerUserId)
       )
-      if (rpcResp.isSuccessful && !rpcResp.body().isNullOrBlank()) {
-        return@withContext Result.success(rpcResp.body()!!.trim().removeSurrounding("\""))
-      }
-      if (!rpcResp.isSuccessful && rpcResp.code() != 404) {
-        val rpcErr = parseErrorMessage(rpcResp.errorBody()?.string().orEmpty(), "")
+      if (rpcResp.isSuccessful) {
+        val parsedUuid = extractUuidFromRpcPayload(rpcResp.body()?.string())
+        if (!parsedUuid.isNullOrBlank()) {
+          return@withContext Result.success(parsedUuid)
+        }
+      } else if (rpcResp.code() != 404 && rpcResp.code() != 300) {
+        val rawErr = rpcResp.errorBody()?.string().orEmpty()
+        val rpcErr = parseErrorMessage(rawErr, "")
+        Log.w(TAG, "getOrCreateDirectConversation RPC HTTP ${rpcResp.code()}: $rawErr")
         if (rpcErr.contains("Mutual follow", true) ||
           rpcErr.contains("disabled", true) ||
           rpcErr.contains("block", true) ||
@@ -2746,7 +2844,37 @@ class SupabaseRepository {
         }
       }
 
-      // 2. Fallback direct table creation if migration 0004 RPC is not yet deployed
+      // 2. RLS-safe direct table creation using client-generated UUID + Prefer: return=minimal
+      //    (avoids SELECT RETURNING * failing before conversation_members rows exist)
+      val generatedConvId = java.util.UUID.randomUUID().toString()
+      val minConvResp = SupabaseNetworkClient.restApi.insertConversationMinimal(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        conversation = SupabaseConversationInsertDto(
+          id = generatedConvId,
+          isGroup = false,
+          createdBy = myUserId
+        )
+      )
+      if (minConvResp.isSuccessful) {
+        val membersResp = SupabaseNetworkClient.restApi.insertConversationMembers(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          members = listOf(
+            SupabaseConversationMemberInsertDto(conversationId = generatedConvId, userId = myUserId),
+            SupabaseConversationMemberInsertDto(conversationId = generatedConvId, userId = peerUserId)
+          )
+        )
+        if (membersResp.isSuccessful) {
+          return@withContext Result.success(generatedConvId)
+        } else {
+          Log.w(TAG, "insertConversationMembers minimal HTTP ${membersResp.code()}: ${membersResp.errorBody()?.string()}")
+        }
+      } else {
+        Log.w(TAG, "insertConversationMinimal HTTP ${minConvResp.code()}: ${minConvResp.errorBody()?.string()}")
+      }
+
+      // 3. Legacy representation fallback
       val convResp = SupabaseNetworkClient.restApi.insertConversation(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
@@ -2758,17 +2886,69 @@ class SupabaseRepository {
           apiKey = SupabaseConfig.supabaseAnonKey,
           authHeader = authHeader,
           members = listOf(
-            SupabaseConversationMemberDto(conversationId = convId, userId = myUserId),
-            SupabaseConversationMemberDto(conversationId = convId, userId = peerUserId)
+            SupabaseConversationMemberInsertDto(conversationId = convId, userId = myUserId),
+            SupabaseConversationMemberInsertDto(conversationId = convId, userId = peerUserId)
           )
         )
         if (membersResp.isSuccessful) {
           return@withContext Result.success(convId)
         }
       }
-      Result.failure(Exception("Unable to start conversation. Ensure migration 0004 RLS policies are applied."))
+      Result.failure(Exception("Unable to start conversation right now. Please try again."))
     } catch (e: Exception) {
       Result.failure(Exception(friendlyNetworkMessage(e, "Unable to open conversation.")))
+    }
+  }
+
+  suspend fun createRemoteGroupConversation(
+    creatorId: String,
+    groupName: String,
+    memberIds: List<String>,
+    accessToken: String = ""
+  ): Result<String> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.failure(Exception("Supabase not configured."))
+    var authHeader = authHeaderFor(accessToken)
+    if (authHeader == null) {
+      val refreshed = forceRefreshSessionToken()
+      authHeader = SupabaseConfig.buildAuthHeader(refreshed)
+    }
+    if (authHeader == null) {
+      return@withContext Result.failure(Exception("Please sign in to create a group."))
+    }
+
+    try {
+      val generatedGroupId = java.util.UUID.randomUUID().toString()
+      val minResp = SupabaseNetworkClient.restApi.insertConversationMinimal(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        conversation = SupabaseConversationInsertDto(
+          id = generatedGroupId,
+          createdBy = creatorId,
+          isGroup = true,
+          groupName = groupName.trim().ifBlank { "VYBE Group" }
+        )
+      )
+      if (minResp.isSuccessful) {
+        val allParticipantIds = (listOf(creatorId) + memberIds)
+          .map { it.trim() }
+          .filter { isValidUuid(it) }
+          .distinct()
+        val membersResp = SupabaseNetworkClient.restApi.insertConversationMembers(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          members = allParticipantIds.map { uid ->
+            SupabaseConversationMemberInsertDto(conversationId = generatedGroupId, userId = uid)
+          }
+        )
+        if (membersResp.isSuccessful) {
+          return@withContext Result.success(generatedGroupId)
+        } else {
+          Log.w(TAG, "createRemoteGroupConversation members HTTP ${membersResp.code()}: ${membersResp.errorBody()?.string()}")
+        }
+      }
+      Result.failure(Exception("Unable to create group conversation."))
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Unable to create group conversation.")))
     }
   }
 
@@ -2782,29 +2962,64 @@ class SupabaseRepository {
     accessToken: String = ""
   ): Result<SupabaseMessageDto> = withContext(Dispatchers.IO) {
     if (!isConfigured) return@withContext Result.failure(Exception("Supabase not configured"))
-    val authHeader = authHeaderFor(accessToken)
-      ?: return@withContext Result.failure(Exception("Please sign in again to send messages."))
+    var authHeader = authHeaderFor(accessToken)
+    if (authHeader == null) {
+      val refreshed = forceRefreshSessionToken()
+      authHeader = SupabaseConfig.buildAuthHeader(refreshed)
+    }
+    if (authHeader == null) {
+      return@withContext Result.failure(Exception("Please sign in again to send messages."))
+    }
     try {
+      val validReplyId = replyToId?.takeIf { isValidUuid(it) }
       val dto = SupabaseMessageInsertDto(
         conversationId = conversationId,
         senderId = senderId,
         content = content,
         mediaUrl = mediaUrl,
         mediaType = mediaType,
-        replyToMessageId = replyToId
+        replyToMessageId = validReplyId
       )
-      val resp = SupabaseNetworkClient.restApi.insertMessage(
+      var resp = SupabaseNetworkClient.restApi.insertMessage(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
         message = dto
       )
+
+      // Retry once with refreshed JWT if token expired right on boundary
+      if (!resp.isSuccessful && resp.code() == 401) {
+        val refreshedJwt = forceRefreshSessionToken()
+        val freshHeader = SupabaseConfig.buildAuthHeader(refreshedJwt)
+        if (freshHeader != null) {
+          authHeader = freshHeader
+          val refreshedSenderId = SupabaseConfig.extractJwtSubject(refreshedJwt) ?: senderId
+          resp = SupabaseNetworkClient.restApi.insertMessage(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = authHeader,
+            message = dto.copy(senderId = refreshedSenderId)
+          )
+        }
+      }
+
+      // If reply_to_message_id failed FK lookup (e.g. target message deleted), still deliver message without reply FK
+      if (!resp.isSuccessful && validReplyId != null && (resp.code() == 400 || resp.code() == 409)) {
+        resp = SupabaseNetworkClient.restApi.insertMessage(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          message = dto.copy(replyToMessageId = null)
+        )
+      }
+
       if (resp.isSuccessful && !resp.body().isNullOrEmpty()) {
         Result.success(resp.body()!!.first())
       } else {
-        val err = parseErrorMessage(resp.errorBody()?.string().orEmpty(), "Failed to deliver message.")
+        val rawBody = resp.errorBody()?.string().orEmpty()
+        Log.w(TAG, "sendMessage HTTP ${resp.code()} for conv=$conversationId: $rawBody")
+        val err = parseErrorMessage(rawBody, "Failed to deliver message.")
         Result.failure(Exception(err))
       }
     } catch (e: Exception) {
+      Log.w(TAG, "sendMessage exception: ${e.message}")
       Result.failure(Exception(friendlyNetworkMessage(e, "Message failed to send. Check your internet connection.")))
     }
   }
@@ -2812,7 +3027,7 @@ class SupabaseRepository {
   suspend fun fetchMessages(
     conversationId: String,
     accessToken: String = "",
-    limit: Int = 80
+    limit: Int = 100
   ): Result<List<SupabaseMessageDto>> = withContext(Dispatchers.IO) {
     if (!isConfigured) return@withContext Result.success(emptyList())
     try {
@@ -2820,10 +3035,12 @@ class SupabaseRepository {
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeaderFor(accessToken),
         conversationIdFilter = "eq.$conversationId",
+        order = "created_at.desc",
         limit = limit
       )
       if (resp.isSuccessful && resp.body() != null) {
-        Result.success(resp.body()!!.filter { it.isDeletedForEveryone != true })
+        // Reverse descending newest-first page so UI renders oldest -> newest chronologically
+        Result.success(resp.body()!!.asReversed().filter { it.isDeletedForEveryone != true })
       } else {
         Result.failure(Exception("Failed to fetch messages"))
       }

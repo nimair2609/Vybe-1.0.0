@@ -22,6 +22,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -49,6 +51,8 @@ import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -153,13 +157,95 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
     conversation?.messages?.filter { !it.isDeletedForEveryone }.orEmpty()
   }
   val density = LocalDensity.current
-  val imeBottomPx = WindowInsets.ime.getBottom(density)
+  val isImeVisible = WindowInsets.ime.getBottom(density) > 0
   val hasTypingIndicator = conversation?.typingIndicator != null
 
-  LaunchedEffect(visibleMessages.size, hasTypingIndicator, imeBottomPx) {
+  val threadIdentity = remember(
+    conversation?.isGroup,
+    conversation?.groupName,
+    conversation?.peerUser?.id,
+    conversation?.id
+  ) {
+    val c = conversation
+    when {
+      c == null -> ""
+      c.isGroup -> "grp_${c.groupName ?: c.id}"
+      else -> "dm_${c.peerUser.id}"
+    }
+  }
+
+  val isNearBottom by remember {
+    derivedStateOf {
+      val layoutInfo = listState.layoutInfo
+      val total = layoutInfo.totalItemsCount
+      if (total <= 1) {
+        true
+      } else {
+        val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+        lastVisible >= total - 3
+      }
+    }
+  }
+
+  var unreadBelowCount by remember(threadIdentity) { mutableIntStateOf(0) }
+  var hasAnchoredInitialOpen by remember(threadIdentity) { mutableStateOf(false) }
+  var lastTrackedMessageKey by remember(threadIdentity) { mutableStateOf<String?>(null) }
+  var prevImeVisible by remember(threadIdentity) { mutableStateOf(false) }
+
+  LaunchedEffect(isNearBottom) {
+    if (isNearBottom && unreadBelowCount > 0) {
+      unreadBelowCount = 0
+    }
+  }
+
+  val lastMessageIdentity = visibleMessages.lastOrNull()?.let { it.clientId ?: it.id }
+
+  LaunchedEffect(threadIdentity, lastMessageIdentity, visibleMessages.size) {
+    if (threadIdentity.isBlank()) return@LaunchedEffect
     val targetIndex = visibleMessages.size + (if (hasTypingIndicator) 1 else 0) - 1
-    if (targetIndex >= 0) {
-      listState.animateScrollToItem(targetIndex)
+    if (!hasAnchoredInitialOpen) {
+      hasAnchoredInitialOpen = true
+      lastTrackedMessageKey = lastMessageIdentity
+      if (targetIndex >= 0) {
+        listState.scrollToItem(targetIndex)
+      }
+      return@LaunchedEffect
+    }
+
+    if (lastMessageIdentity != null && lastMessageIdentity != lastTrackedMessageKey) {
+      val newest = visibleMessages.lastOrNull()
+      lastTrackedMessageKey = lastMessageIdentity
+      if (targetIndex >= 0) {
+        if (newest?.isMe == true) {
+          unreadBelowCount = 0
+          listState.animateScrollToItem(targetIndex)
+        } else if (isNearBottom) {
+          listState.animateScrollToItem(targetIndex)
+        } else {
+          unreadBelowCount += 1
+        }
+      }
+    }
+  }
+
+  LaunchedEffect(isImeVisible) {
+    val openedNow = isImeVisible && !prevImeVisible
+    prevImeVisible = isImeVisible
+    if (openedNow && isNearBottom) {
+      delay(100L)
+      val targetIndex = visibleMessages.size + (if (hasTypingIndicator) 1 else 0) - 1
+      if (targetIndex >= 0) {
+        listState.animateScrollToItem(targetIndex)
+      }
+    }
+  }
+
+  LaunchedEffect(hasTypingIndicator) {
+    if (hasTypingIndicator && isNearBottom) {
+      val targetIndex = visibleMessages.size
+      if (targetIndex >= 0) {
+        listState.animateScrollToItem(targetIndex)
+      }
     }
   }
 
@@ -531,6 +617,21 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
             }
           }
 
+          val dispatchSendTextMessage = {
+            val trimmed = messageInput.trim()
+            if (trimmed.isNotEmpty()) {
+              viewModel.sendExtendedDirectMessage(
+                convId = conv.id,
+                text = trimmed,
+                replyToId = replyingToMessage?.id,
+                replyToText = replyingToMessage?.text,
+                replyToSenderName = if (replyingToMessage?.isMe == true) "You" else conv.peerUser.displayName
+              )
+              messageInput = ""
+              replyingToMessage = null
+            }
+          }
+
           Row(
             modifier = Modifier
               .fillMaxWidth()
@@ -550,6 +651,13 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
               placeholder = { Text("Write a message...", fontSize = 14.sp) },
               shape = RoundedCornerShape(24.dp),
               maxLines = 4,
+              keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Sentences,
+                imeAction = ImeAction.Send
+              ),
+              keyboardActions = KeyboardActions(
+                onSend = { dispatchSendTextMessage() }
+              ),
               modifier = Modifier
                 .weight(1f)
                 .testTag("message_input_field")
@@ -558,20 +666,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
             Spacer(modifier = Modifier.width(6.dp))
 
             IconButton(
-              onClick = {
-                val trimmed = messageInput.trim()
-                if (trimmed.isNotEmpty()) {
-                  viewModel.sendExtendedDirectMessage(
-                    convId = conv.id,
-                    text = trimmed,
-                    replyToId = replyingToMessage?.id,
-                    replyToText = replyingToMessage?.text,
-                    replyToSenderName = if (replyingToMessage?.isMe == true) "You" else conv.peerUser.displayName
-                  )
-                  messageInput = ""
-                  replyingToMessage = null
-                }
-              },
+              onClick = { dispatchSendTextMessage() },
               enabled = messageInput.isNotBlank(),
               modifier = Modifier
                 .size(48.dp)
@@ -609,15 +704,20 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
       val lastSentByMeId = remember(visibleMessages) {
         visibleMessages.lastOrNull { it.isMe && it.mediaType != "CALL_LOG" }?.id
       }
-      LazyColumn(
-        state = listState,
+      Box(
         modifier = Modifier
           .fillMaxSize()
           .padding(paddingValues)
-          .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(vertical = 10.dp)
       ) {
-        itemsIndexed(visibleMessages, key = { _, msg -> msg.id }) { index, msg ->
+        LazyColumn(
+          state = listState,
+          modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp)
+            .testTag("chat_messages_list"),
+          contentPadding = PaddingValues(vertical = 10.dp)
+        ) {
+          itemsIndexed(visibleMessages, key = { _, msg -> msg.clientId ?: msg.id }) { index, msg ->
           val isMe = msg.isMe
           val prevMsg = visibleMessages.getOrNull(index - 1)
           val nextMsg = visibleMessages.getOrNull(index + 1)
@@ -738,6 +838,47 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
               themeAccent = themeAccent,
               modifier = Modifier.padding(top = 6.dp)
             )
+          }
+        }
+      }
+
+        if (unreadBelowCount > 0 && !isNearBottom) {
+          Surface(
+            onClick = {
+              coroutineScope.launch {
+                val targetIndex = visibleMessages.size + (if (hasTypingIndicator) 1 else 0) - 1
+                if (targetIndex >= 0) {
+                  unreadBelowCount = 0
+                  listState.animateScrollToItem(targetIndex)
+                }
+              }
+            },
+            shape = RoundedCornerShape(20.dp),
+            color = themeAccent,
+            shadowElevation = 6.dp,
+            modifier = Modifier
+              .align(Alignment.BottomCenter)
+              .padding(bottom = 12.dp)
+              .testTag("jump_to_new_messages_pill")
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Icon(
+                imageVector = Icons.Default.ArrowDownward,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(14.dp)
+              )
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(
+                text = if (unreadBelowCount == 1) "1 new message" else "$unreadBelowCount new messages",
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+              )
+            }
           }
         }
       }
@@ -1336,7 +1477,32 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
 
 private fun convMessagesKey(conv: com.example.data.model.Conversation?): String {
   if (conv == null) return ""
-  return "${conv.id}:${conv.messages.size}:${conv.messages.joinToString(",") { "${it.id}_${it.isDeletedForEveryone}_${it.text.hashCode()}_${it.reactions.size}" }}"
+  return buildString {
+    append(conv.id)
+    append(':')
+    append(conv.messages.size)
+    append(':')
+    conv.messages.forEach { m ->
+      append(m.id)
+      append('_')
+      append(m.clientId.orEmpty())
+      append('_')
+      append(m.status.name)
+      append('_')
+      append(m.isRead)
+      append('_')
+      append(m.isEdited)
+      append('_')
+      append(m.isDeletedForEveryone)
+      append('_')
+      append(m.text.hashCode())
+      append('_')
+      append(m.mediaUrl.orEmpty().hashCode())
+      append('_')
+      append(m.reactions.size)
+      append(',')
+    }
+  }
 }
 
 @Composable

@@ -286,8 +286,8 @@ fun VybeFollowButton(
         modifier = modifier
           .minimumInteractiveComponentSize()
           .clip(shape)
-          .clickable { showUnlinkConfirm = true }
           .testTag(testTag ?: "follow_button_following")
+          .clickable { showUnlinkConfirm = true }
       ) {
         Row(
           verticalAlignment = Alignment.CenterVertically,
@@ -322,8 +322,8 @@ fun VybeFollowButton(
         modifier = modifier
           .minimumInteractiveComponentSize()
           .clip(shape)
-          .clickable { onClick() }
           .testTag(testTag ?: "follow_button_requested")
+          .clickable { onClick() }
       ) {
         Box(
           contentAlignment = Alignment.Center,
@@ -353,12 +353,12 @@ fun VybeFollowButton(
               listOf(Color(0xFF2563EB), Color(0xFF7C3AED))
             )
           )
+          .testTag(testTag ?: "follow_button_active")
           .clickable { onClick() }
           .padding(
             horizontal = if (compact) 14.dp else 20.dp,
             vertical = if (compact) 7.dp else 11.dp
           )
-          .testTag(testTag ?: "follow_button_active")
       ) {
         Text(
           text = label,

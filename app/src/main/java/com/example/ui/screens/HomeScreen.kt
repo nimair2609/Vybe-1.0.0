@@ -46,6 +46,7 @@ import com.example.data.model.UnloadRoom
 import com.example.ui.MainTab
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
+import com.example.ui.components.FindYourVybeSection
 import com.example.ui.components.StoryCarousel
 import com.example.ui.components.StoryCreateDialog
 import com.example.ui.components.VybeAvatar
@@ -415,6 +416,11 @@ fun HomeScreen(viewModel: VybeViewModel) {
             }
           }
         }
+      }
+
+      // --- FIND YOUR VYBE: LINK UP & SUGGEST ---
+      item(key = "home_find_your_vybe") {
+        FindYourVybeSection(viewModel = viewModel)
       }
 
       // --- SECTION 2: DUAL CARDS (TIME CAPSULE & CROSSED PATHS) ---

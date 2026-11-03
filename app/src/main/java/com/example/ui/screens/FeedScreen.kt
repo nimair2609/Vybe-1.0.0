@@ -43,6 +43,7 @@ import com.example.ui.VybeViewModel
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import com.example.ui.components.FindYourVybeSection
 import com.example.ui.components.PostCard
 import com.example.ui.components.StoryCarousel
 import com.example.ui.components.StoryCreateDialog
@@ -519,6 +520,22 @@ fun FeedScreen(viewModel: VybeViewModel) {
           }
         }
 
+        if (feedTab == "Discover" || filteredPosts.isEmpty()) {
+          item(key = "feed_find_your_vybe") {
+            Box(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+              contentAlignment = Alignment.Center
+            ) {
+              FindYourVybeSection(
+                viewModel = viewModel,
+                modifier = Modifier.widthIn(max = 600.dp)
+              )
+            }
+          }
+        }
+
         // Feed Posts or Clean Empty State
         if (filteredPosts.isEmpty()) {
           item(key = "feed_empty_state") {
@@ -615,6 +632,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
                 onCommentClick = { viewModel.loadCommentsForPost(post.id) },
                 onAddComment = { text -> viewModel.addComment(post.id, text) },
                 onLoadComments = { viewModel.loadCommentsForPost(post.id) },
+                onReactComment = { commentId, rx -> viewModel.reactToComment(post.id, commentId, rx) },
                 onShareClick = { viewModel.openPostShareSheet(post) },
                 onUserClick = { user -> viewModel.openUserProfile(user) },
                 onRemixClick = { viewModel.openReelViewer(post.id) },

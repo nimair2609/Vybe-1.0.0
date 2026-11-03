@@ -24,6 +24,9 @@ class VybeLocalStore private constructor(context: Context) {
     private const val KEY_THEME_MODE = "saved_theme_mode"
     private const val KEY_DELETED_MESSAGE_IDS = "saved_deleted_message_ids_json"
     private const val KEY_STORIES = "saved_stories_json"
+    private const val KEY_DISMISSED_SUGGESTIONS = "saved_dismissed_suggestions_json"
+    private const val KEY_COMMENT_REACTIONS = "saved_comment_reactions_json"
+    private const val KEY_STORY_REACTIONS = "saved_story_reactions_json"
 
     private val LEGACY_SAMPLE_IDS = setOf(
       "u_me", "u_aarav", "u_priya", "u_vikram",
@@ -304,6 +307,89 @@ class VybeLocalStore private constructor(context: Context) {
     }
   }
 
+  // --- Find Your Vybe Dismissed Suggestions Cache (User-scoped) ---
+  fun saveDismissedSuggestions(userId: String, ids: Set<String>) {
+    if (userId.isBlank()) return
+    val array = JSONArray()
+    ids.filter { it.isNotBlank() }.distinct().forEach { array.put(it) }
+    prefs.edit().putString("${KEY_DISMISSED_SUGGESTIONS}_$userId", array.toString()).apply()
+  }
+
+  fun loadDismissedSuggestions(userId: String): Set<String> {
+    if (userId.isBlank()) return emptySet()
+    val raw = prefs.getString("${KEY_DISMISSED_SUGGESTIONS}_$userId", null) ?: return emptySet()
+    return try {
+      val array = JSONArray(raw)
+      buildSet {
+        for (i in 0 until array.length()) {
+          val id = array.optString(i)
+          if (id.isNotBlank()) add(id)
+        }
+      }
+    } catch (_: Exception) {
+      emptySet()
+    }
+  }
+
+  // --- Universal Comment & Story Reactions Cache (User-scoped) ---
+  fun saveCommentReactions(userId: String, map: Map<String, VybeReaction>) {
+    if (userId.isBlank()) return
+    val obj = JSONObject()
+    map.forEach { (commentId, rx) ->
+      if (commentId.isNotBlank()) obj.put(commentId, rx.name)
+    }
+    prefs.edit().putString("${KEY_COMMENT_REACTIONS}_$userId", obj.toString()).apply()
+  }
+
+  fun loadCommentReactions(userId: String): Map<String, VybeReaction> {
+    if (userId.isBlank()) return emptyMap()
+    val raw = prefs.getString("${KEY_COMMENT_REACTIONS}_$userId", null) ?: return emptyMap()
+    return try {
+      val obj = JSONObject(raw)
+      val out = mutableMapOf<String, VybeReaction>()
+      val keys = obj.keys()
+      while (keys.hasNext()) {
+        val k = keys.next()
+        val v = obj.optString(k, "")
+        if (k.isNotBlank() && v.isNotBlank()) {
+          out[k] = VybeReaction.fromWire(v)
+        }
+      }
+      out
+    } catch (_: Exception) {
+      emptyMap()
+    }
+  }
+
+  fun saveStoryReactions(userId: String, map: Map<String, VybeReaction>) {
+    if (userId.isBlank()) return
+    val obj = JSONObject()
+    map.forEach { (storyId, rx) ->
+      if (storyId.isNotBlank()) obj.put(storyId, rx.name)
+    }
+    prefs.edit().putString("${KEY_STORY_REACTIONS}_$userId", obj.toString()).apply()
+  }
+
+  fun loadStoryReactions(userId: String): Map<String, VybeReaction> {
+    if (userId.isBlank()) return emptyMap()
+    val raw = prefs.getString("${KEY_STORY_REACTIONS}_$userId", null) ?: return emptyMap()
+    return try {
+      val obj = JSONObject(raw)
+      val out = mutableMapOf<String, VybeReaction>()
+      val keys = obj.keys()
+      while (keys.hasNext()) {
+        val k = keys.next()
+        val v = obj.optString(k, "")
+        if (k.isNotBlank() && v.isNotBlank()) {
+          out[k] = VybeReaction.fromWire(v)
+        }
+      }
+      out
+    } catch (_: Exception) {
+      emptyMap()
+    }
+  }
+
   // ================= Serialization Helpers =================
   private fun userToJson(u: User): JSONObject {
     return JSONObject().apply {
@@ -431,6 +517,24 @@ class VybeLocalStore private constructor(context: Context) {
         p.reactionsCount.forEach { (k, v) -> rcObj.put(k.name, v) }
         put("reactionsCount", rcObj)
       }
+      if (p.comments.isNotEmpty()) {
+        val commentsArr = JSONArray()
+        p.comments.forEach { c ->
+          val cObj = JSONObject().apply {
+            put("id", c.id)
+            put("postId", c.postId)
+            put("author", userToJson(c.author))
+            put("content", c.content)
+            put("timestamp", c.timestamp)
+            if (!c.createdAtIso.isNullOrBlank()) put("createdAtIso", c.createdAtIso)
+            put("likesCount", c.likesCount)
+            put("isLiked", c.isLiked)
+            if (c.userReaction != null) put("userReaction", c.userReaction.name)
+          }
+          commentsArr.put(cObj)
+        }
+        put("comments", commentsArr)
+      }
     }
   }
 
@@ -469,8 +573,34 @@ class VybeLocalStore private constructor(context: Context) {
       }
     }
 
+    val postId = obj.optString("id", "p_${System.currentTimeMillis()}")
+    val commentsList = mutableListOf<PostComment>()
+    val commentsArr = obj.optJSONArray("comments")
+    if (commentsArr != null) {
+      for (i in 0 until commentsArr.length()) {
+        val cObj = commentsArr.optJSONObject(i) ?: continue
+        val cAuthorObj = cObj.optJSONObject("author")
+        val cAuthor = if (cAuthorObj != null) userFromJson(cAuthorObj) else User(id = "u_anon", username = "vybe", displayName = "Vyber")
+        val cRxRaw = cObj.optString("userReaction", "").takeUnless { it.isBlank() || it.equals("null", true) }
+        val cRx = cRxRaw?.let { VybeReaction.fromWire(it) }
+        commentsList.add(
+          PostComment(
+            id = cObj.optString("id", "c_${postId}_$i"),
+            postId = cObj.optString("postId", postId),
+            author = cAuthor,
+            content = cObj.optString("content", ""),
+            timestamp = cObj.optString("timestamp", "Just now"),
+            createdAtIso = cObj.optString("createdAtIso", "").ifBlank { null },
+            likesCount = cObj.optInt("likesCount", 0),
+            isLiked = cObj.optBoolean("isLiked", false) || cRx != null,
+            userReaction = cRx
+          )
+        )
+      }
+    }
+
     return Post(
-      id = obj.optString("id", "p_${System.currentTimeMillis()}"),
+      id = postId,
       author = author,
       caption = obj.optString("caption", ""),
       mediaUrls = mediaUrlsList,
@@ -478,7 +608,7 @@ class VybeLocalStore private constructor(context: Context) {
       timestamp = obj.optString("timestamp", "Just now"),
       createdAtIso = createdAtIso,
       likesCount = obj.optInt("likesCount", 0),
-      commentsCount = obj.optInt("commentsCount", 0),
+      commentsCount = maxOf(obj.optInt("commentsCount", 0), commentsList.size),
       savesCount = obj.optInt("savesCount", 0),
       sharesCount = obj.optInt("sharesCount", 0),
       viewsCount = obj.optInt("viewsCount", 0),
@@ -488,6 +618,7 @@ class VybeLocalStore private constructor(context: Context) {
       isUnfiltered = obj.optBoolean("isUnfiltered", false),
       isVybesReel = obj.optBoolean("isVybesReel", false),
       moodZone = mood,
+      comments = commentsList,
       locationName = loc,
       mediaAspectRatio = aspect,
       userReaction = userReaction,
@@ -737,7 +868,8 @@ class VybeLocalStore private constructor(context: Context) {
     put("expiresHoursRemaining", s.expiresHoursRemaining)
     put("isViewed", s.isViewed)
     put("reactionsCount", s.reactionsCount)
-    put("isLikedByMe", s.isLikedByMe)
+    put("isLikedByMe", s.isLikedByMe || s.myReaction != null)
+    if (s.myReaction != null) put("myReaction", s.myReaction.name)
     if (!s.location.isNullOrBlank()) put("location", s.location)
     if (!s.textBackgroundColor.isNullOrBlank()) put("textBackgroundColor", s.textBackgroundColor)
     if (!s.createdAtIso.isNullOrBlank()) put("createdAtIso", s.createdAtIso)
@@ -789,7 +921,8 @@ class VybeLocalStore private constructor(context: Context) {
       expiresHoursRemaining = remainingHours,
       isViewed = obj.optBoolean("isViewed", false),
       reactionsCount = obj.optInt("reactionsCount", 0),
-      isLikedByMe = obj.optBoolean("isLikedByMe", false),
+      isLikedByMe = obj.optBoolean("isLikedByMe", false) || !obj.optString("myReaction", "").isBlank(),
+      myReaction = obj.optString("myReaction", "").takeUnless { it.isBlank() || it.equals("null", true) }?.let { VybeReaction.fromWire(it) },
       location = obj.optString("location", "").ifBlank { null },
       textBackgroundColor = obj.optString("textBackgroundColor", "").ifBlank { null },
       createdAtIso = createdAtIso,

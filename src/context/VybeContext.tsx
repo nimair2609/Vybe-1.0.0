@@ -22,7 +22,8 @@ import {
   createLivePost,
   createLiveStory,
   submitLiveComment,
-  syncPostLikeCountToSupabase
+  syncPostLikeCountToSupabase,
+  sendLiveDirectMessage
 } from '../services/supabaseService';
 
 export type MainTab = 'FEED' | 'VYBES' | 'MOOD_ZONES' | 'EXPLORE' | 'INBOX' | 'CROSSED_PATHS' | 'COMMUNITY' | 'PROFILE';
@@ -75,6 +76,14 @@ interface VybeContextType {
   selectedMoodFilter: MoodType | 'ALL';
   setSelectedMoodFilter: (mood: MoodType | 'ALL') => void;
 
+  // Social Discovery (Find Your Vybe)
+  followingIds: string[];
+  requestedFollowIds: string[];
+  dismissedSuggestionIds: string[];
+  toggleFollowUser: (targetUserId: string) => void;
+  dismissSuggestedUser: (targetUserId: string) => void;
+  restoreDismissedSuggestions: () => void;
+
   // Posts & Reels
   posts: Post[];
   reels: Post[];
@@ -82,6 +91,7 @@ interface VybeContextType {
   ensurePostLoved: (postId: string) => void;
   reactToPost: (postId: string, reaction: VybeReaction) => void;
   toggleCommentLike: (postId: string, commentId: string) => void;
+  reactToComment: (postId: string, commentId: string, reaction: VybeReaction) => void;
   toggleSavePost: (postId: string) => void;
   addCommentToPost: (postId: string, text: string) => void;
   createPost: (postData: Partial<Post>) => void;
@@ -105,6 +115,7 @@ interface VybeContextType {
   nextStory: () => void;
   prevStory: () => void;
   toggleStoryLike: (storyId: string) => void;
+  reactToStory: (storyId: string, reaction: VybeReaction) => void;
   createStory: (storyData: Partial<Story>) => void;
 
   // Crossed Paths
@@ -141,6 +152,7 @@ interface VybeContextType {
   conversations: Conversation[];
   selectedConversation: Conversation | null;
   selectConversation: (conv: Conversation | null) => void;
+  startConversationWithUser: (peerUser: User) => Conversation;
   sendMessage: (convId: string, text: string) => void;
   callState: CallState;
   startCall: (peerUser: User, isVideo: boolean) => void;
@@ -162,7 +174,7 @@ interface VybeContextType {
   isCheckingUpdates: boolean;
   updateError: string | null;
   hasAvailableUpdate: boolean;
-  checkForUpdates: (repoToTest?: string) => Promise<void>;
+  checkForUpdates: (repoToTest?: string, silent?: boolean) => Promise<void>;
   resetGithubRepo: () => void;
   inAppNotificationBanner: string | null;
   dismissBanner: () => void;
@@ -183,6 +195,74 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [selectedTab, setSelectedTabState] = useState<MainTab>('FEED');
   const [activeModal, setActiveModal] = useState<ModalScreen | null>(null);
   const [selectedMoodFilter, setSelectedMoodFilter] = useState<MoodType | 'ALL'>('ALL');
+
+  // Persistent Social Graph & Find Your Vybe Dismissal State
+  const [followingIds, setFollowingIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('vybe_following_ids_v1');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return SEED_USERS.filter(u => u.isFollowedByMe).map(u => u.id);
+  });
+  const [requestedFollowIds, setRequestedFollowIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('vybe_requested_follow_ids_v1');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
+  const [dismissedSuggestionIds, setDismissedSuggestionIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('vybe_dismissed_suggestions_v1');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('vybe_following_ids_v1', JSON.stringify(followingIds));
+      localStorage.setItem('vybe_requested_follow_ids_v1', JSON.stringify(requestedFollowIds));
+      localStorage.setItem('vybe_dismissed_suggestions_v1', JSON.stringify(dismissedSuggestionIds));
+    } catch {}
+  }, [followingIds, requestedFollowIds, dismissedSuggestionIds]);
+
+  const toggleFollowUser = (targetUserId: string) => {
+    if (!targetUserId || targetUserId === currentUser.id) return;
+    const targetUser = allUsers.find(u => u.id === targetUserId);
+    const isFollowing = followingIds.includes(targetUserId);
+    const isRequested = requestedFollowIds.includes(targetUserId);
+
+    if (isFollowing || isRequested) {
+      setFollowingIds(prev => prev.filter(id => id !== targetUserId));
+      setRequestedFollowIds(prev => prev.filter(id => id !== targetUserId));
+      setAllUsers(prev => prev.map(u => u.id === targetUserId ? {
+        ...u,
+        isFollowedByMe: false,
+        isFollowRequestedByMe: false,
+        followersCount: isFollowing ? Math.max(0, u.followersCount - 1) : u.followersCount
+      } : u));
+    } else if (targetUser?.isPrivate) {
+      setRequestedFollowIds(prev => [...prev, targetUserId]);
+      setAllUsers(prev => prev.map(u => u.id === targetUserId ? { ...u, isFollowRequestedByMe: true } : u));
+    } else {
+      setFollowingIds(prev => [...prev, targetUserId]);
+      setAllUsers(prev => prev.map(u => u.id === targetUserId ? {
+        ...u,
+        isFollowedByMe: true,
+        followersCount: u.followersCount + 1
+      } : u));
+    }
+  };
+
+  const dismissSuggestedUser = (targetUserId: string) => {
+    if (!targetUserId) return;
+    setDismissedSuggestionIds(prev => prev.includes(targetUserId) ? prev : [...prev, targetUserId]);
+  };
+
+  const restoreDismissedSuggestions = () => {
+    setDismissedSuggestionIds([]);
+  };
 
   const setSelectedTab = (tab: MainTab) => {
     // Selecting PROFILE from bottom navigation strictly opens the logged-in user's own profile
@@ -332,9 +412,35 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [shops] = useState<VybeShop[]>(INITIAL_SHOPS);
   const [selectedShop, setSelectedShop] = useState<VybeShop | null>(null);
 
-  // Conversations
-  const [conversations, setConversations] = useState<Conversation[]>(INITIAL_CONVERSATIONS);
-  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  // Conversations (persisted across reloads and kept live-bound)
+  const [conversations, setConversations] = useState<Conversation[]>(() => {
+    try {
+      const cached = localStorage.getItem('vybe_web_conversations_v2');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return INITIAL_CONVERSATIONS;
+  });
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [selectedConversationPeerId, setSelectedConversationPeerId] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('vybe_web_conversations_v2', JSON.stringify(conversations));
+    } catch {}
+  }, [conversations]);
+
+  const selectedConversation = React.useMemo(() => {
+    if (!selectedConversationId && !selectedConversationPeerId) return null;
+    return (
+      conversations.find(c =>
+        (selectedConversationId && c.id === selectedConversationId) ||
+        (selectedConversationPeerId && c.peerUser.id === selectedConversationPeerId)
+      ) || null
+    );
+  }, [conversations, selectedConversationId, selectedConversationPeerId]);
 
   // Calls
   const [callState, setCallState] = useState<CallState>({
@@ -375,7 +481,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUpdateInfo(null);
   };
 
-  const checkForUpdates = async (repoToTest?: string) => {
+  const checkForUpdates = async (repoToTest?: string, silent: boolean = false) => {
     const repo = repoToTest ? cleanRepoSlug(repoToTest) : githubRepo;
     setIsCheckingUpdates(true);
     setUpdateError(null);
@@ -384,20 +490,24 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUpdateInfo(info);
       if (info.isNewerThanInstalled) {
         setHasAvailableUpdate(true);
-        setInAppNotificationBanner(`🚀 Update Available: VYBE ${info.tagName} is now ready!`);
+        if (!silent) {
+          setInAppNotificationBanner(`🚀 Update Available: VYBE ${info.tagName} is now ready!`);
+        }
       } else {
         setHasAvailableUpdate(false);
       }
     } catch (err: any) {
-      setUpdateError(err.message || 'Failed to check GitHub releases.');
+      if (!silent) {
+        setUpdateError(err.message || 'Failed to check GitHub releases.');
+      }
     } finally {
       setIsCheckingUpdates(false);
     }
   };
 
-  // Run auto update check silently in background on initial load
+  // Run auto update check silently in background on initial load (no unsolicited preview banner)
   useEffect(() => {
-    checkForUpdates();
+    checkForUpdates(undefined, true);
   }, []);
 
   // Synchronize state with real Supabase database
@@ -600,24 +710,38 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  const toggleCommentLike = (postId: string, commentId: string) => {
+  const reactToComment = (postId: string, commentId: string, reaction: VybeReaction) => {
     const mapComments = (p: Post): Post => {
       if (p.id !== postId) return p;
       return {
         ...p,
         comments: (p.comments || []).map(c => {
           if (c.id !== commentId) return c;
-          const nextLiked = !c.isLiked;
+          const prevRx = c.userReaction || (c.isLiked ? 'LOVE' : undefined);
+          const nextRx = prevRx === reaction ? undefined : reaction;
+          const nextCount = nextRx && !prevRx
+            ? (c.likesCount || 0) + 1
+            : !nextRx && prevRx
+              ? Math.max(0, (c.likesCount || 0) - 1)
+              : (c.likesCount || 0);
           return {
             ...c,
-            isLiked: nextLiked,
-            likesCount: nextLiked ? (c.likesCount || 0) + 1 : Math.max(0, (c.likesCount || 0) - 1)
+            isLiked: Boolean(nextRx),
+            userReaction: nextRx,
+            likesCount: nextCount
           };
         })
       };
     };
     setPosts(prev => prev.map(mapComments));
     setReels(prev => prev.map(mapComments));
+  };
+
+  const toggleCommentLike = (postId: string, commentId: string) => {
+    const targetPost = posts.find(p => p.id === postId) || reels.find(p => p.id === postId);
+    const targetComment = targetPost?.comments?.find(c => c.id === commentId);
+    const existing = targetComment?.userReaction || (targetComment?.isLiked ? 'LOVE' : undefined);
+    reactToComment(postId, commentId, existing || 'LOVE');
   };
 
   const toggleSavePost = (postId: string) => {
@@ -767,16 +891,29 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActiveStoryIndex(prev => (prev > 0 ? prev - 1 : 0));
   };
 
-  const toggleStoryLike = (storyId: string) => {
+  const reactToStory = (storyId: string, reaction: VybeReaction) => {
     setStories(prev => prev.map(s => {
       if (s.id !== storyId) return s;
-      const nextLiked = !s.isLikedByMe;
+      const prevRx = s.myReaction || (s.isLikedByMe ? 'LOVE' : undefined);
+      const nextRx = prevRx === reaction ? undefined : reaction;
+      const nextCount = nextRx && !prevRx
+        ? (s.reactionsCount || 0) + 1
+        : !nextRx && prevRx
+          ? Math.max(0, (s.reactionsCount || 0) - 1)
+          : (s.reactionsCount || 0);
       return {
         ...s,
-        isLikedByMe: nextLiked,
-        reactionsCount: nextLiked ? (s.reactionsCount || 0) + 1 : Math.max(0, (s.reactionsCount || 0) - 1)
+        isLikedByMe: Boolean(nextRx),
+        myReaction: nextRx,
+        reactionsCount: nextCount
       };
     }));
+  };
+
+  const toggleStoryLike = (storyId: string) => {
+    const target = stories.find(s => s.id === storyId);
+    const existing = target?.myReaction || (target?.isLikedByMe ? 'LOVE' : undefined);
+    reactToStory(storyId, existing || 'LOVE');
   };
 
   const createStory = (storyData: Partial<Story>) => {
@@ -939,41 +1076,99 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Chat & Messaging
   const selectConversation = (conv: Conversation | null) => {
-    setSelectedConversation(conv);
-    if (conv) {
-      setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, unreadCount: 0 } : c));
+    if (!conv) {
+      setSelectedConversationId(null);
+      setSelectedConversationPeerId(null);
+      return;
     }
+    setSelectedConversationId(conv.id);
+    setSelectedConversationPeerId(conv.peerUser.id);
+    setConversations(prev => prev.map(c =>
+      (c.id === conv.id || c.peerUser.id === conv.peerUser.id)
+        ? { ...c, unreadCount: 0 }
+        : c
+    ));
+  };
+
+  const startConversationWithUser = (peerUser: User): Conversation => {
+    const existing = conversations.find(c => c.peerUser.id === peerUser.id);
+    if (existing) {
+      selectConversation(existing);
+      return existing;
+    }
+    const created: Conversation = {
+      id: `conv_${Date.now()}_${peerUser.id}`,
+      peerUser,
+      lastMessage: 'Conversation started',
+      lastMessageTimestamp: 'Just now',
+      unreadCount: 0,
+      messages: []
+    };
+    setConversations(prev => [created, ...prev]);
+    setSelectedConversationId(created.id);
+    setSelectedConversationPeerId(peerUser.id);
+    return created;
   };
 
   const sendMessage = (convId: string, text: string) => {
-    if (!text.trim()) return;
+    const cleanText = text.trim();
+    if (!cleanText) return;
+    const clientMsgId = `dm_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const newMsg = {
-      id: `dm_${Date.now()}`,
+      id: clientMsgId,
       senderId: currentUser.id,
-      text: text.trim(),
-      timestamp: 'Just now',
+      text: cleanText,
+      timestamp: nowTime,
       isMe: true
     };
 
-    setConversations(prev => prev.map(c => {
-      if (c.id === convId) {
-        return {
-          ...c,
-          lastMessage: text.trim(),
-          lastMessageTimestamp: 'Just now',
-          messages: [...c.messages, newMsg]
-        };
-      }
-      return c;
-    }));
+    const existingConv = conversations.find(
+      c => c.id === convId || (selectedConversationPeerId && c.peerUser.id === selectedConversationPeerId)
+    );
+    const targetPeerId = existingConv?.peerUser.id || selectedConversationPeerId || '';
 
-    if (selectedConversation?.id === convId) {
-      setSelectedConversation(prev => prev ? {
-        ...prev,
-        lastMessage: text.trim(),
+    setConversations(prev => {
+      const idx = prev.findIndex(c => c.id === convId || (targetPeerId && c.peerUser.id === targetPeerId));
+      if (idx === -1) return prev;
+      const target = prev[idx];
+      const updatedConv: Conversation = {
+        ...target,
+        lastMessage: cleanText,
         lastMessageTimestamp: 'Just now',
-        messages: [...prev.messages, newMsg]
-      } : null);
+        unreadCount: 0,
+        messages: [...target.messages, newMsg]
+      };
+      const rest = prev.filter((_, i) => i !== idx);
+      return [updatedConv, ...rest];
+    });
+
+    if (targetPeerId) {
+      sendLiveDirectMessage({
+        conversationId: existingConv?.id || convId,
+        senderId: currentUser.id,
+        peerUserId: targetPeerId,
+        content: cleanText
+      }).then(serverRes => {
+        if (!serverRes) return;
+        setConversations(prev => prev.map(c => {
+          if (c.id === convId || c.peerUser.id === targetPeerId) {
+            return {
+              ...c,
+              id: serverRes.conversationId || c.id,
+              messages: c.messages.map(m =>
+                m.id === clientMsgId
+                  ? { ...m, id: serverRes.messageId || m.id }
+                  : m
+              )
+            };
+          }
+          return c;
+        }));
+        if (serverRes.conversationId) {
+          setSelectedConversationId(prevId => (prevId === convId ? serverRes.conversationId : prevId));
+        }
+      });
     }
   };
 
@@ -1042,12 +1237,19 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       closeModal,
       selectedMoodFilter,
       setSelectedMoodFilter,
+      followingIds,
+      requestedFollowIds,
+      dismissedSuggestionIds,
+      toggleFollowUser,
+      dismissSuggestedUser,
+      restoreDismissedSuggestions,
       posts,
       reels,
       toggleLikePost,
       ensurePostLoved,
       reactToPost,
       toggleCommentLike,
+      reactToComment,
       toggleSavePost,
       addCommentToPost,
       createPost,
@@ -1067,6 +1269,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       nextStory,
       prevStory,
       toggleStoryLike,
+      reactToStory,
       createStory,
       crossedPaths,
       sendConnectionRequest,
@@ -1089,6 +1292,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       conversations,
       selectedConversation,
       selectConversation,
+      startConversationWithUser,
       sendMessage,
       callState,
       startCall,

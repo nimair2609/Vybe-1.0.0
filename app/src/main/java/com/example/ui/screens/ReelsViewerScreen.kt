@@ -42,6 +42,7 @@ import com.example.data.repository.MessagingEligibility
 import com.example.ui.MainTab
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
+import com.example.ui.components.FingerHeartReaction
 import com.example.ui.components.ReelReactionBreakdownSheet
 import com.example.ui.components.ReelReactionGestureButton
 import com.example.ui.components.VerificationBadge
@@ -879,10 +880,30 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                         VerificationBadge(user = c.author, iconSize = 14.dp)
                       }
                       Text(c.content, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
-                      if (commentTime.isNotBlank()) {
-                        Text(commentTime, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (commentTime.isNotBlank()) {
+                          Text(commentTime, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                          Spacer(modifier = Modifier.width(10.dp))
+                        }
+                        Text(
+                          text = "Reply",
+                          fontSize = 10.sp,
+                          fontWeight = FontWeight.SemiBold,
+                          color = MaterialTheme.colorScheme.onSurfaceVariant,
+                          modifier = Modifier.clickable { reelCommentText = "@${c.author.username} " }
+                        )
                       }
                     }
+                    FingerHeartReaction(
+                      isLiked = c.isLiked || c.userReaction != null,
+                      userReaction = c.userReaction,
+                      count = maxOf(c.likesCount, if (c.isLiked || c.userReaction != null) 1 else 0).takeIf { it > 0 },
+                      iconSize = 16.dp,
+                      compactPadding = true,
+                      testTag = "reel_comment_like_${c.id}",
+                      onReact = { rx -> viewModel.reactToComment(currentReel.id, c.id, rx) },
+                      onClick = { viewModel.toggleCommentLike(currentReel.id, c.id) }
+                    )
                   }
                 }
               }

@@ -491,6 +491,7 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                 onCommentClick = { viewModel.loadCommentsForPost(post.id) },
                 onAddComment = { text -> viewModel.addComment(post.id, text) },
                 onLoadComments = { viewModel.loadCommentsForPost(post.id) },
+                onReactComment = { commentId, rx -> viewModel.reactToComment(post.id, commentId, rx) },
                 onShareClick = { viewModel.openPostShareSheet(post) },
                 onUserClick = { u -> viewModel.openUserProfile(u) },
                 onRemixClick = { viewModel.openReelViewer(post.id) },

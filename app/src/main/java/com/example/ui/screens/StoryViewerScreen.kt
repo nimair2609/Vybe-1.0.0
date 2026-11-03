@@ -38,6 +38,7 @@ import coil.compose.AsyncImage
 import com.example.data.model.Story
 import com.example.data.model.StoryAudience
 import com.example.data.model.StoryMediaType
+import com.example.data.model.VybeReaction
 import com.example.data.repository.MessagingEligibility
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -608,14 +609,21 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
             contentAlignment = Alignment.Center
           ) {
             FingerHeartReaction(
-              isLiked = currentStory.isLikedByMe,
+              isLiked = currentStory.isLikedByMe || currentStory.myReaction != null,
+              userReaction = currentStory.myReaction,
               iconSize = 23.dp,
               forceDarkSurface = true,
               compactPadding = true,
               testTag = "story_like_button",
+              onReact = { rx ->
+                val wasSame = currentStory.myReaction == rx || (currentStory.myReaction == null && currentStory.isLikedByMe && rx == VybeReaction.LOVE)
+                viewModel.reactToStory(currentStory.id, rx)
+                reactionToast = if (!wasSame) "${rx.label} sent!" else null
+              },
               onClick = {
+                val wasLiked = currentStory.isLikedByMe || currentStory.myReaction != null
                 viewModel.toggleStoryLike(currentStory.id)
-                reactionToast = if (!currentStory.isLikedByMe) "Finger Heart sent!" else null
+                reactionToast = if (!wasLiked) "VYBE Pulse sent!" else null
               }
             )
           }
