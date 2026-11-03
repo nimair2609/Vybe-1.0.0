@@ -204,6 +204,16 @@ object VybeRealtimePushManager {
               val actorAvatarUrl = data.optString("actor_avatar_url").takeIf { it.isNotBlank() }
               val mediaUrl = data.optString("media_url").takeIf { it.isNotBlank() }
 
+              if (type.equals("TYPING", ignoreCase = true)) {
+                val isTyping = body.equals("true", ignoreCase = true) || data.optBoolean("is_typing", true)
+                val convId = conversationId ?: targetId
+                if (!convId.isNullOrBlank()) {
+                  try {
+                    VybeRepository.get().setConversationTyping(convId, isTyping, actorDisplayName ?: actorUsername)
+                  } catch (_: Throwable) {}
+                }
+                return
+              }
               val bannerEvent = RealtimeInAppBannerEvent(
                 eventKey = eventKey,
                 type = type,

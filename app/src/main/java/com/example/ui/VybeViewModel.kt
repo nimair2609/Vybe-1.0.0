@@ -1192,6 +1192,7 @@ class VybeViewModel : ViewModel() {
   fun hasHiddenChatPinSet(): Boolean = repository.hasHiddenChatPinSet()
   fun toggleHideConversation(convId: String) = repository.toggleHideConversation(convId)
   fun markConversationAsRead(convId: String) = repository.markConversationAsRead(convId)
+  fun sendTypingIndicator(convId: String, recipientUserId: String, isTyping: Boolean) = repository.sendTypingIndicator(convId, recipientUserId, isTyping)
   fun deleteConversation(convId: String) = repository.deleteConversation(convId)
   fun addGroupMember(convId: String, user: User) = repository.addGroupMember(convId, user)
   fun removeGroupMember(convId: String, userId: String) = repository.removeGroupMember(convId, userId)

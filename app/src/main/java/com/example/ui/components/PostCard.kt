@@ -625,10 +625,10 @@ fun PostCard(
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-          // 1. Global VYBE Finger Heart Reaction
+          // 1. Global VYBE Finger Heart Reaction (Private appreciation; count hidden publicly, visible to author only)
           FingerHeartReaction(
             isLiked = isLiked,
-            count = post.likesCount,
+            count = if (isAuthor && post.likesCount > 0) post.likesCount else null,
             iconSize = 23.dp,
             countColorOverride = primaryText,
             testTag = "like_button_${post.id}",

@@ -574,8 +574,7 @@ data class SupabaseRpcIncrementViewRequest(
 )
 
 data class SupabaseRpcPeerConversationRequest(
-  @Json(name = "p_peer_id") val peerId: String,
-  @Json(name = "p_other_user_id") val otherUserId: String? = peerId
+  @Json(name = "p_peer_id") val peerId: String
 )
 
 data class SupabaseRpcResolveIdentifierRequest(

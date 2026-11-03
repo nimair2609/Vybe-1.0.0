@@ -27,21 +27,27 @@ import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.VybeBrandCyan
 import com.example.ui.theme.VybeBrandMagenta
 import com.example.ui.theme.VybeBrandViolet
+import com.example.ui.theme.VybeDanger
 import com.example.ui.theme.VybeVioletDark
 
 @Composable
 fun MainScreen(viewModel: VybeViewModel) {
   val selectedTab by viewModel.selectedTab.collectAsState()
+  val conversations by viewModel.conversations.collectAsState()
   val isDark = LocalIsDarkTheme.current
+
+  val unreadMessagesCount = remember(conversations) {
+    conversations.sumOf { conv ->
+      conv.messages.count { !it.isMe && !it.isRead && !it.isDeletedForEveryone }
+    }
+  }
 
   val navSurfaceColor = if (isDark) Color(0xFF070B14).copy(alpha = 0.96f) else Color.White.copy(alpha = 0.97f)
   val navBorderColor = if (isDark) Color(0xFF161F33) else Color(0xFFE2E8F0)
   val activeTint = if (isDark) VybeBrandCyan else VybeVioletDark
   val inactiveTint = if (isDark) Color(0xFF8E9BAE) else Color(0xFF64748B)
-  val createCenterBg = if (isDark) Color(0xFF070B14) else Color.White
-  val createIconTint = if (isDark) Color.White else VybeVioletDark
 
-  // Gracefully handle back press to return to Feed tab from any secondary tab
+  // Gracefully handle back press to return to Home tab from any secondary tab
   androidx.activity.compose.BackHandler(enabled = selectedTab != MainTab.FEED) {
     viewModel.selectTab(MainTab.FEED)
   }
@@ -62,11 +68,11 @@ fun MainScreen(viewModel: VybeViewModel) {
           modifier = Modifier
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .padding(horizontal = 6.dp, vertical = 6.dp),
           horizontalArrangement = Arrangement.SpaceAround,
           verticalAlignment = Alignment.CenterVertically
         ) {
-          // 1. Home
+          // 1. Home (VYBE Original Experience)
           val isHomeSelected = selectedTab == MainTab.FEED
           Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -122,39 +128,7 @@ fun MainScreen(viewModel: VybeViewModel) {
             )
           }
 
-          // 3. Create (+) - Centered elevated action with signature gradient border
-          Box(
-            modifier = Modifier
-              .weight(1f)
-              .defaultMinSize(minHeight = 48.dp),
-            contentAlignment = Alignment.Center
-          ) {
-            Box(
-              modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(
-                  Brush.sweepGradient(
-                    listOf(VybeBrandCyan, VybeBrandViolet, VybeBrandMagenta, VybeBrandCyan)
-                  )
-                )
-                .padding(2.dp)
-                .clip(CircleShape)
-                .background(createCenterBg)
-                .clickable { viewModel.navigateTo(Screen.CREATE_POST) }
-                .testTag("nav_tab_create"),
-              contentAlignment = Alignment.Center
-            ) {
-              Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = "Create Post",
-                tint = createIconTint,
-                modifier = Modifier.size(26.dp)
-              )
-            }
-          }
-
-          // 4. Vybe
+          // 3. Vybe (Short Videos / Reels)
           val isVybeSelected = selectedTab == MainTab.VYBES
           Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -179,6 +153,54 @@ fun MainScreen(viewModel: VybeViewModel) {
               fontSize = 11.sp,
               fontWeight = if (isVybeSelected) FontWeight.Bold else FontWeight.Medium,
               color = if (isVybeSelected) activeTint else inactiveTint
+            )
+          }
+
+          // 4. Inbox (Messaging with unread badge)
+          val isInboxSelected = selectedTab == MainTab.INBOX
+          Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier
+              .weight(1f)
+              .defaultMinSize(minHeight = 48.dp)
+              .clip(RoundedCornerShape(12.dp))
+              .clickable { viewModel.selectTab(MainTab.INBOX) }
+              .padding(vertical = 4.dp)
+              .testTag("nav_tab_inbox")
+          ) {
+            Box(modifier = Modifier.size(24.dp)) {
+              Icon(
+                imageVector = if (isInboxSelected) Icons.Filled.ChatBubble else Icons.Outlined.ChatBubbleOutline,
+                contentDescription = "Inbox",
+                tint = if (isInboxSelected) activeTint else inactiveTint,
+                modifier = Modifier.fillMaxSize()
+              )
+              if (unreadMessagesCount > 0) {
+                Box(
+                  modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 4.dp, y = (-2).dp)
+                    .size(14.dp)
+                    .clip(CircleShape)
+                    .background(VybeDanger),
+                  contentAlignment = Alignment.Center
+                ) {
+                  Text(
+                    text = if (unreadMessagesCount > 9) "9+" else unreadMessagesCount.toString(),
+                    color = Color.White,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold
+                  )
+                }
+              }
+            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+              text = "Inbox",
+              fontSize = 11.sp,
+              fontWeight = if (isInboxSelected) FontWeight.Bold else FontWeight.Medium,
+              color = if (isInboxSelected) activeTint else inactiveTint
             )
           }
 
@@ -219,7 +241,7 @@ fun MainScreen(viewModel: VybeViewModel) {
         .padding(paddingValues)
     ) {
       when (selectedTab) {
-        MainTab.FEED -> FeedScreen(viewModel)
+        MainTab.FEED -> HomeScreen(viewModel)
         MainTab.EXPLORE -> ExploreScreen(viewModel)
         MainTab.CREATE -> CreatePostScreen(viewModel)
         MainTab.VYBES -> ReelsViewerScreen(viewModel)

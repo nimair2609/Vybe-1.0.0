@@ -2797,10 +2797,20 @@ class VybeRepository private constructor() {
     if (!inFlightMessageClientIds.add(clientId)) return
 
     val current = _conversations.value.toMutableList()
-    val index = findConversationIndex(current, conversationId)
+    var index = findConversationIndex(current, conversationId)
     if (index == -1) {
-      inFlightMessageClientIds.remove(clientId)
-      return
+      val foundPeer = _allUsers.value.firstOrNull { it.id == conversationId || conversationId.contains(it.id) }
+        ?: User(id = conversationId.removePrefix("conv_").substringBefore("_"), username = "user", displayName = "VYBE Member")
+      val newConv = Conversation(
+        id = conversationId,
+        peerUser = foundPeer,
+        lastMessage = cleanText,
+        lastMessageTimestamp = "Just now",
+        isBlocked = false,
+        messages = emptyList()
+      )
+      current.add(0, newConv)
+      index = 0
     }
     val conv = current[index]
     val effectiveInitialConvId = conv.id
@@ -4495,6 +4505,37 @@ class VybeRepository private constructor() {
           )
         }
       }
+    }
+  }
+
+  fun setConversationTyping(conversationId: String, isTyping: Boolean, typerName: String? = null) {
+    val current = _conversations.value.toMutableList()
+    val idx = findConversationIndex(current, conversationId)
+    if (idx != -1) {
+      val conv = current[idx]
+      current[idx] = conv.copy(
+        typingIndicator = if (isTyping) "${typerName ?: conv.peerUser.displayName} is typing..." else null
+      )
+      _conversations.value = current
+    }
+  }
+
+  fun sendTypingIndicator(conversationId: String, recipientUserId: String, isTyping: Boolean) {
+    val me = _currentUser.value ?: return
+    ioScope.launch {
+      try {
+        com.example.notifications.VybeRealtimePushManager.sendInstantUserPush(
+          recipientId = recipientUserId,
+          actorId = me.id,
+          type = "TYPING",
+          title = if (isTyping) "typing" else "",
+          body = if (isTyping) "true" else "false",
+          conversationId = conversationId,
+          actorUsername = me.username,
+          actorDisplayName = me.displayName,
+          eventKey = "typing_${conversationId}_${me.id}"
+        )
+      } catch (_: Throwable) {}
     }
   }
 

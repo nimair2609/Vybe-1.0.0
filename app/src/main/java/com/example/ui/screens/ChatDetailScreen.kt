@@ -6,16 +6,24 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.*
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.automirrored.outlined.Send
@@ -23,14 +31,22 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.graphics.Brush
+import kotlinx.coroutines.Job
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -105,15 +121,45 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
     }
   }
 
+  var typingJob by remember { mutableStateOf<Job?>(null) }
+  LaunchedEffect(messageInput, conversation?.id) {
+    val activeConv = conversation ?: return@LaunchedEffect
+    if (activeConv.id.isNotBlank() && !activeConv.isBlocked) {
+      if (messageInput.isNotEmpty()) {
+        viewModel.sendTypingIndicator(activeConv.id, activeConv.peerUser.id, true)
+        typingJob?.cancel()
+        typingJob = coroutineScope.launch {
+          delay(2500L)
+          viewModel.sendTypingIndicator(activeConv.id, activeConv.peerUser.id, false)
+        }
+      } else {
+        typingJob?.cancel()
+        viewModel.sendTypingIndicator(activeConv.id, activeConv.peerUser.id, false)
+      }
+    }
+  }
+
+  DisposableEffect(conversation?.id) {
+    onDispose {
+      typingJob?.cancel()
+      val activeConv = conversation
+      if (activeConv != null && activeConv.id.isNotBlank()) {
+        viewModel.sendTypingIndicator(activeConv.id, activeConv.peerUser.id, false)
+      }
+    }
+  }
+
   val visibleMessages = remember(convMessagesKey(conversation)) {
     conversation?.messages?.filter { !it.isDeletedForEveryone }.orEmpty()
   }
   val density = LocalDensity.current
   val imeBottomPx = WindowInsets.ime.getBottom(density)
+  val hasTypingIndicator = conversation?.typingIndicator != null
 
-  LaunchedEffect(visibleMessages.size, imeBottomPx) {
-    if (visibleMessages.isNotEmpty()) {
-      listState.animateScrollToItem(visibleMessages.size - 1)
+  LaunchedEffect(visibleMessages.size, hasTypingIndicator, imeBottomPx) {
+    val targetIndex = visibleMessages.size + (if (hasTypingIndicator) 1 else 0) - 1
+    if (targetIndex >= 0) {
+      listState.animateScrollToItem(targetIndex)
     }
   }
 
@@ -545,7 +591,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
       }
     }
   ) { paddingValues ->
-    if (visibleMessages.isEmpty()) {
+    if (visibleMessages.isEmpty() && conv.typingIndicator == null) {
       Box(
         modifier = Modifier
           .fillMaxSize()
@@ -560,17 +606,24 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
         )
       }
     } else {
+      val lastSentByMeId = remember(visibleMessages) {
+        visibleMessages.lastOrNull { it.isMe && it.mediaType != "CALL_LOG" }?.id
+      }
       LazyColumn(
         state = listState,
         modifier = Modifier
           .fillMaxSize()
           .padding(paddingValues)
           .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(vertical = 10.dp)
       ) {
-        items(visibleMessages, key = { it.id }) { msg ->
+        itemsIndexed(visibleMessages, key = { _, msg -> msg.id }) { index, msg ->
           val isMe = msg.isMe
+          val prevMsg = visibleMessages.getOrNull(index - 1)
+          val nextMsg = visibleMessages.getOrNull(index + 1)
+          val prevSame = prevMsg != null && prevMsg.isMe == isMe && prevMsg.mediaType != "CALL_LOG"
+          val nextSame = nextMsg != null && nextMsg.isMe == isMe && nextMsg.mediaType != "CALL_LOG"
+
           if (msg.mediaType == "CALL_LOG" && !msg.isDeletedForEveryone) {
             val rawMeta = msg.mediaUrl.orEmpty()
             val isVideoCallLog = rawMeta.contains("type=video", ignoreCase = true) ||
@@ -585,7 +638,9 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
             val dynamicCallTimestamp = rememberMessageTimestamp(msg.createdAtIso, msg.timestamp)
 
             Column(
-              modifier = Modifier.fillMaxWidth(),
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = if (prevSame) 3.dp else 10.dp),
               horizontalAlignment = if (isMe) Alignment.End else Alignment.Start
             ) {
               Surface(
@@ -659,271 +714,30 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
               }
             }
           } else {
-          Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = if (isMe) Alignment.End else Alignment.Start
-          ) {
-            if (!msg.replyToText.isNullOrEmpty()) {
-              Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier
-                  .padding(bottom = 2.dp)
-                  .widthIn(max = 260.dp)
-              ) {
-                Row(modifier = Modifier.padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                  Box(
-                    modifier = Modifier
-                      .width(3.dp)
-                      .height(20.dp)
-                      .background(themeAccent)
-                  )
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Column {
-                    Text(
-                      text = msg.replyToSenderName ?: "Reply",
-                      fontSize = 10.sp,
-                      fontWeight = FontWeight.Bold,
-                      color = themeAccent
-                    )
-                    Text(
-                      text = msg.replyToText,
-                      fontSize = 11.sp,
-                      maxLines = 1,
-                      overflow = TextOverflow.Ellipsis,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                  }
-                }
-              }
-            }
-
-            Surface(
-              color = if (msg.isDeletedForEveryone) {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-              } else if (isMe) themeAccent else MaterialTheme.colorScheme.surfaceVariant,
-              shape = RoundedCornerShape(
-                topStart = 16.dp,
-                topEnd = 16.dp,
-                bottomStart = if (isMe) 16.dp else 4.dp,
-                bottomEnd = if (isMe) 4.dp else 16.dp
-              ),
-              modifier = Modifier
-                .widthIn(max = 290.dp)
-                .clickable { selectedMessageForActions = msg }
-                .testTag("chat_bubble_${msg.id}")
-            ) {
-              Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                if (!msg.isDeletedForEveryone && !msg.mediaUrl.isNullOrEmpty()) {
-                  if (msg.mediaType == "IMAGE" || msg.mediaType == "GIF") {
-                    AsyncImage(
-                      model = msg.mediaUrl,
-                      contentDescription = "Shared photo",
-                      contentScale = ContentScale.Crop,
-                      modifier = Modifier
-                        .fillMaxWidth()
-                        .height(170.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                  } else if (msg.mediaType == "VIDEO") {
-                    VybeVideoPlayer(
-                      videoUrl = msg.mediaUrl,
-                      autoPlay = false,
-                      isLooping = false,
-                      fitMode = VideoFitMode.FIT_CONTAIN,
-                      modifier = Modifier
-                        .fillMaxWidth()
-                        .height(190.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color.Black)
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                  }
-                }
-
-                if (!msg.isDeletedForEveryone && (msg.locationCoordinates != null || msg.mediaType == "LOCATION")) {
-                  Row(
-                    modifier = Modifier
-                      .fillMaxWidth()
-                      .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                  ) {
-                    Icon(
-                      Icons.Default.LocationOn,
-                      contentDescription = null,
-                      tint = if (isMe) Color.White else VybeMagenta
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Column {
-                      Text(
-                        text = msg.fileName ?: "Shared Location",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        color = if (isMe) Color.White else MaterialTheme.colorScheme.onSurface
-                      )
-                      if (!msg.locationCoordinates.isNullOrBlank()) {
-                        Text(
-                          text = msg.locationCoordinates,
-                          fontSize = 10.sp,
-                          color = if (isMe) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                      }
-                    }
-                  }
-                }
-
-                if (msg.text.isNotEmpty()) {
-                  Text(
-                    text = msg.text,
-                    color = if (msg.isDeletedForEveryone) MaterialTheme.colorScheme.onSurfaceVariant else if (isMe) Color.White else MaterialTheme.colorScheme.onSurface,
-                    fontSize = 14.sp,
-                    fontStyle = if (msg.isDeletedForEveryone) FontStyle.Italic else FontStyle.Normal
-                  )
-
-                  val sharedPostId = if (!msg.isDeletedForEveryone) {
-                    QrCodeGenerator.extractPostIdFromText(msg.text)
-                  } else {
-                    null
-                  }
-                  if (!sharedPostId.isNullOrBlank()) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Surface(
-                      color = if (isMe) Color.White.copy(alpha = 0.16f) else VybeViolet.copy(alpha = 0.14f),
-                      shape = RoundedCornerShape(10.dp),
-                      border = BorderStroke(
-                        1.dp,
-                        if (isMe) Color.White.copy(alpha = 0.3f) else VybeViolet.copy(alpha = 0.4f)
-                      ),
-                      modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable { viewModel.openSharedPostById(sharedPostId) }
-                        .testTag("open_shared_post_chip_${msg.id}")
-                    ) {
-                      Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                      ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                          Icon(
-                            imageVector = Icons.Outlined.OpenInNew,
-                            contentDescription = "Open shared post",
-                            tint = if (isMe) Color.White else VybeViolet,
-                            modifier = Modifier.size(15.dp)
-                          )
-                          Spacer(modifier = Modifier.width(6.dp))
-                          Text(
-                            text = "Open Shared Post",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isMe) Color.White else VybeViolet
-                          )
-                        }
-                        Icon(
-                          imageVector = Icons.Default.ChevronRight,
-                          contentDescription = null,
-                          tint = if (isMe) Color.White else VybeViolet,
-                          modifier = Modifier.size(16.dp)
-                        )
-                      }
-                    }
-                  }
-                }
-
-                Row(
-                  modifier = Modifier
-                    .align(Alignment.End)
-                    .padding(top = 4.dp),
-                  verticalAlignment = Alignment.CenterVertically
-                ) {
-                  if (msg.isEdited) {
-                    Text(
-                      text = "edited • ",
-                      color = if (isMe) Color.White.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant,
-                      fontSize = 9.sp
-                    )
-                  }
-                  val dynamicMsgTimestamp = rememberMessageTimestamp(msg.createdAtIso, msg.timestamp)
-                  Text(
-                    text = dynamicMsgTimestamp,
-                    color = if (isMe) Color.White.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 9.sp
-                  )
-                  if (isMe) {
-                    Spacer(modifier = Modifier.width(4.dp))
-                    when (msg.status) {
-                      MessageStatus.SENDING -> {
-                        CircularProgressIndicator(
-                          modifier = Modifier.size(10.dp),
-                          strokeWidth = 1.5.dp,
-                          color = Color.White.copy(alpha = 0.85f)
-                        )
-                      }
-                      MessageStatus.FAILED -> {
-                        Row(
-                          verticalAlignment = Alignment.CenterVertically,
-                          modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .clickable { viewModel.retrySendMessage(conv.id, msg.id) }
-                            .padding(horizontal = 2.dp)
-                        ) {
-                          Icon(
-                            imageVector = Icons.Default.ErrorOutline,
-                            contentDescription = "Failed. Tap to retry",
-                            tint = Color(0xFFFF6B6B),
-                            modifier = Modifier.size(12.dp)
-                          )
-                          Spacer(modifier = Modifier.width(2.dp))
-                          Text(
-                            text = "Retry",
-                            color = Color(0xFFFF6B6B),
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold
-                          )
-                        }
-                      }
-                      MessageStatus.SENT -> {
-                        Icon(
-                          imageVector = Icons.Default.DoneAll,
-                          contentDescription = if (msg.isRead) "Read" else "Sent",
-                          tint = if (msg.isRead) VybeBrandCyan else Color.White.copy(alpha = 0.75f),
-                          modifier = Modifier.size(12.dp)
-                        )
-                      }
-                    }
-                  }
-                }
-              }
-            }
-
-            if (msg.reactions.isNotEmpty()) {
-              Row(
-                modifier = Modifier
-                  .padding(top = 2.dp)
-                  .offset(y = (-4).dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-              ) {
-                msg.reactions.forEach { emoji ->
-                  Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
-                    modifier = Modifier.clickable {
-                      viewModel.addMessageReaction(conv.id, msg.id, emoji)
-                    }
-                  ) {
-                    Text(
-                      text = emoji,
-                      fontSize = 11.sp,
-                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                  }
-                }
-              }
-            }
+            InstagramMessageBubbleItem(
+              msg = msg,
+              isMe = isMe,
+              prevSame = prevSame,
+              nextSame = nextSame,
+              isLastSentByMe = msg.id == lastSentByMeId,
+              peerUser = conv.peerUser,
+              themeAccent = themeAccent,
+              onReply = { replyingToMessage = it },
+              onSelectActions = { selectedMessageForActions = it },
+              onDoubleTapHeart = { viewModel.addMessageReaction(conv.id, it.id, "❤️") },
+              onOpenSharedPost = { viewModel.openSharedPostById(it) },
+              onRetry = { viewModel.retrySendMessage(conv.id, msg.id) }
+            )
           }
+        }
+
+        if (conv.typingIndicator != null && !conv.isBlocked) {
+          item(key = "typing_bubble") {
+            InstagramTypingBubble(
+              peerUser = conv.peerUser,
+              themeAccent = themeAccent,
+              modifier = Modifier.padding(top = 6.dp)
+            )
           }
         }
       }
@@ -1523,4 +1337,665 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
 private fun convMessagesKey(conv: com.example.data.model.Conversation?): String {
   if (conv == null) return ""
   return "${conv.id}:${conv.messages.size}:${conv.messages.joinToString(",") { "${it.id}_${it.isDeletedForEveryone}_${it.text.hashCode()}_${it.reactions.size}" }}"
+}
+
+@Composable
+private fun InstagramMessageBubbleItem(
+  msg: DirectMessage,
+  isMe: Boolean,
+  prevSame: Boolean,
+  nextSame: Boolean,
+  isLastSentByMe: Boolean,
+  peerUser: com.example.data.model.User,
+  themeAccent: Color,
+  onReply: (DirectMessage) -> Unit,
+  onSelectActions: (DirectMessage) -> Unit,
+  onDoubleTapHeart: (DirectMessage) -> Unit,
+  onOpenSharedPost: (String) -> Unit,
+  onRetry: () -> Unit
+) {
+  val haptic = LocalHapticFeedback.current
+  val coroutineScope = rememberCoroutineScope()
+  val dragOffsetX = remember { Animatable(0f) }
+  var hasTriggeredReplyHaptic by remember { mutableStateOf(false) }
+
+  var showHeartAnim by remember { mutableStateOf(false) }
+  val heartScale = remember { Animatable(0f) }
+  val heartAlpha = remember { Animatable(0f) }
+
+  LaunchedEffect(showHeartAnim) {
+    if (showHeartAnim) {
+      heartScale.snapTo(0.25f)
+      heartAlpha.snapTo(1f)
+      haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+      onDoubleTapHeart(msg)
+      heartScale.animateTo(
+        1.3f,
+        animationSpec = spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium)
+      )
+      heartScale.animateTo(1.0f, animationSpec = tween(100))
+      delay(400L)
+      heartAlpha.animateTo(0f, animationSpec = tween(250))
+      showHeartAnim = false
+    }
+  }
+
+  val bubbleShape = remember(isMe, prevSame, nextSame) {
+    if (isMe) {
+      RoundedCornerShape(
+        topStart = 18.dp,
+        topEnd = if (prevSame) 4.dp else 18.dp,
+        bottomEnd = if (nextSame) 4.dp else 18.dp,
+        bottomStart = 18.dp
+      )
+    } else {
+      RoundedCornerShape(
+        topStart = if (prevSame) 4.dp else 18.dp,
+        topEnd = 18.dp,
+        bottomEnd = 18.dp,
+        bottomStart = if (nextSame) 4.dp else 18.dp
+      )
+    }
+  }
+
+  val bubbleGradient = remember(isMe, themeAccent) {
+    if (isMe) {
+      Brush.linearGradient(
+        colors = listOf(
+          themeAccent,
+          themeAccent.copy(alpha = 0.88f)
+        )
+      )
+    } else {
+      null
+    }
+  }
+
+  val replyDragThreshold = 90f
+
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(top = if (prevSame) 3.dp else 10.dp)
+  ) {
+    val currentDrag = dragOffsetX.value
+    if (currentDrag > 10f) {
+      val progress = (currentDrag / replyDragThreshold).coerceIn(0f, 1f)
+      Box(
+        modifier = Modifier
+          .align(Alignment.CenterStart)
+          .padding(start = 8.dp)
+      ) {
+        Icon(
+          imageVector = Icons.AutoMirrored.Filled.Reply,
+          contentDescription = "Reply",
+          tint = themeAccent.copy(alpha = progress),
+          modifier = Modifier
+            .size(22.dp)
+            .graphicsLayer {
+              scaleX = 0.6f + (0.4f * progress)
+              scaleY = 0.6f + (0.4f * progress)
+              alpha = progress
+            }
+        )
+      }
+    }
+
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .offset { IntOffset(dragOffsetX.value.roundToInt(), 0) }
+        .pointerInput(msg.id) {
+          detectHorizontalDragGestures(
+            onDragEnd = {
+              coroutineScope.launch {
+                if (dragOffsetX.value >= replyDragThreshold) {
+                  onReply(msg)
+                }
+                dragOffsetX.animateTo(0f, animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
+                hasTriggeredReplyHaptic = false
+              }
+            },
+            onDragCancel = {
+              coroutineScope.launch {
+                dragOffsetX.animateTo(0f)
+                hasTriggeredReplyHaptic = false
+              }
+            },
+            onHorizontalDrag = { _, dragAmount ->
+              coroutineScope.launch {
+                val nextOffset = (dragOffsetX.value + dragAmount).coerceIn(0f, 150f)
+                if (nextOffset >= replyDragThreshold && !hasTriggeredReplyHaptic) {
+                  haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                  hasTriggeredReplyHaptic = true
+                }
+                dragOffsetX.snapTo(nextOffset)
+              }
+            }
+          )
+        },
+      horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start,
+      verticalAlignment = Alignment.Bottom
+    ) {
+      if (!isMe) {
+        if (!nextSame) {
+          VybeAvatar(user = peerUser, size = 26.dp)
+        } else {
+          Spacer(modifier = Modifier.width(26.dp))
+        }
+        Spacer(modifier = Modifier.width(6.dp))
+      }
+
+      Column(
+        horizontalAlignment = if (isMe) Alignment.End else Alignment.Start,
+        modifier = Modifier.widthIn(max = 290.dp)
+      ) {
+        if (!msg.replyToText.isNullOrEmpty()) {
+          Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier
+              .padding(bottom = 2.dp)
+              .widthIn(max = 260.dp)
+          ) {
+            Row(modifier = Modifier.padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
+              Box(
+                modifier = Modifier
+                  .width(3.dp)
+                  .height(20.dp)
+                  .background(themeAccent)
+              )
+              Spacer(modifier = Modifier.width(6.dp))
+              Column {
+                Text(
+                  text = msg.replyToSenderName ?: "Reply",
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = themeAccent
+                )
+                Text(
+                  text = msg.replyToText,
+                  fontSize = 11.sp,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+              }
+            }
+          }
+        }
+
+        Box(
+          modifier = Modifier
+            .clip(bubbleShape)
+            .then(
+              if (bubbleGradient != null && !msg.isDeletedForEveryone) {
+                Modifier.background(bubbleGradient)
+              } else {
+                Modifier.background(
+                  if (msg.isDeletedForEveryone) {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                  } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
+                  }
+                )
+              }
+            )
+            .pointerInput(msg.id) {
+              detectTapGestures(
+                onTap = { onSelectActions(msg) },
+                onLongPress = {
+                  haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                  onSelectActions(msg)
+                },
+                onDoubleTap = { showHeartAnim = true }
+              )
+            }
+            .testTag("chat_bubble_${msg.id}")
+        ) {
+          Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            if (!msg.isDeletedForEveryone && !msg.mediaUrl.isNullOrEmpty()) {
+              if (msg.mediaType == "IMAGE" || msg.mediaType == "GIF") {
+                AsyncImage(
+                  model = msg.mediaUrl,
+                  contentDescription = "Shared photo",
+                  contentScale = ContentScale.Crop,
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .height(170.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+              } else if (msg.mediaType == "VIDEO") {
+                VybeVideoPlayer(
+                  videoUrl = msg.mediaUrl,
+                  autoPlay = false,
+                  isLooping = false,
+                  fitMode = VideoFitMode.FIT_CONTAIN,
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .height(190.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black)
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+              }
+            }
+
+            if (!msg.isDeletedForEveryone && (msg.locationCoordinates != null || msg.mediaType == "LOCATION")) {
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Icon(
+                  Icons.Default.LocationOn,
+                  contentDescription = null,
+                  tint = if (isMe) Color.White else VybeMagenta
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Column {
+                  Text(
+                    text = msg.fileName ?: "Shared Location",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    color = if (isMe) Color.White else MaterialTheme.colorScheme.onSurface
+                  )
+                  if (!msg.locationCoordinates.isNullOrBlank()) {
+                    Text(
+                      text = msg.locationCoordinates,
+                      fontSize = 10.sp,
+                      color = if (isMe) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                  }
+                }
+              }
+            }
+
+            if (msg.text.isNotEmpty()) {
+              Text(
+                text = msg.text,
+                color = if (msg.isDeletedForEveryone) MaterialTheme.colorScheme.onSurfaceVariant
+                  else if (isMe) Color.White else MaterialTheme.colorScheme.onSurface,
+                fontSize = 14.sp,
+                fontStyle = if (msg.isDeletedForEveryone) FontStyle.Italic else FontStyle.Normal
+              )
+
+              val sharedPostId = if (!msg.isDeletedForEveryone) {
+                QrCodeGenerator.extractPostIdFromText(msg.text)
+              } else null
+
+              if (!sharedPostId.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Surface(
+                  color = if (isMe) Color.White.copy(alpha = 0.16f) else VybeViolet.copy(alpha = 0.14f),
+                  shape = RoundedCornerShape(10.dp),
+                  border = BorderStroke(
+                    1.dp,
+                    if (isMe) Color.White.copy(alpha = 0.3f) else VybeViolet.copy(alpha = 0.4f)
+                  ),
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { onOpenSharedPost(sharedPostId) }
+                    .testTag("open_shared_post_chip_${msg.id}")
+                ) {
+                  Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                  ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                      Icon(
+                        imageVector = Icons.Outlined.OpenInNew,
+                        contentDescription = "Open shared post",
+                        tint = if (isMe) Color.White else VybeViolet,
+                        modifier = Modifier.size(15.dp)
+                      )
+                      Spacer(modifier = Modifier.width(6.dp))
+                      Text(
+                        text = "Open Shared Post",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isMe) Color.White else VybeViolet
+                      )
+                    }
+                    Icon(
+                      imageVector = Icons.Default.ChevronRight,
+                      contentDescription = null,
+                      tint = if (isMe) Color.White else VybeViolet,
+                      modifier = Modifier.size(16.dp)
+                    )
+                  }
+                }
+              }
+            }
+
+            Row(
+              modifier = Modifier
+                .align(Alignment.End)
+                .padding(top = 4.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              if (msg.isEdited) {
+                Text(
+                  text = "edited • ",
+                  color = if (isMe) Color.White.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                  fontSize = 9.sp
+                )
+              }
+              val dynamicMsgTimestamp = rememberMessageTimestamp(msg.createdAtIso, msg.timestamp)
+              Text(
+                text = dynamicMsgTimestamp,
+                color = if (isMe) Color.White.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 9.sp
+              )
+            }
+          }
+
+          if (showHeartAnim || heartAlpha.value > 0f) {
+            Box(
+              modifier = Modifier
+                .matchParentSize()
+                .graphicsLayer {
+                  scaleX = heartScale.value
+                  scaleY = heartScale.value
+                  alpha = heartAlpha.value
+                },
+              contentAlignment = Alignment.Center
+            ) {
+              Icon(
+                imageVector = Icons.Filled.Favorite,
+                contentDescription = "Heart reaction",
+                tint = Color(0xFFFF2B56),
+                modifier = Modifier.size(46.dp)
+              )
+            }
+          }
+        }
+
+        if (msg.reactions.isNotEmpty()) {
+          Row(
+            modifier = Modifier
+              .padding(top = 2.dp)
+              .offset(y = (-4).dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+          ) {
+            msg.reactions.forEach { emoji ->
+              Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                modifier = Modifier.clickable {
+                  onDoubleTapHeart(msg)
+                }
+              ) {
+                Text(
+                  text = emoji,
+                  fontSize = 11.sp,
+                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+              }
+            }
+          }
+        }
+
+        if (isLastSentByMe) {
+          InstagramMessageDeliveryFooter(
+            status = msg.status,
+            isRead = msg.isRead,
+            peerUser = peerUser,
+            themeAccent = themeAccent,
+            onRetry = onRetry
+          )
+        } else if (isMe && msg.status == MessageStatus.FAILED) {
+          InstagramMessageDeliveryFooter(
+            status = msg.status,
+            isRead = msg.isRead,
+            peerUser = peerUser,
+            themeAccent = themeAccent,
+            onRetry = onRetry
+          )
+        }
+      }
+    }
+  }
+}
+
+@Composable
+fun InstagramMessageDeliveryFooter(
+  status: MessageStatus,
+  isRead: Boolean,
+  peerUser: com.example.data.model.User,
+  themeAccent: Color,
+  onRetry: () -> Unit,
+  modifier: Modifier = Modifier
+) {
+  Row(
+    modifier = modifier
+      .padding(top = 3.dp, end = 4.dp)
+      .testTag("chat_delivery_status_footer"),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.End
+  ) {
+    when (status) {
+      MessageStatus.SENDING -> {
+        CircularProgressIndicator(
+          modifier = Modifier.size(10.dp),
+          strokeWidth = 1.5.dp,
+          color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+          text = "Sending...",
+          fontSize = 11.sp,
+          color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+      }
+      MessageStatus.FAILED -> {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .clickable { onRetry() }
+            .padding(horizontal = 2.dp)
+        ) {
+          Icon(
+            imageVector = Icons.Default.ErrorOutline,
+            contentDescription = "Failed. Tap to retry",
+            tint = Color(0xFFFF6B6B),
+            modifier = Modifier.size(13.dp)
+          )
+          Spacer(modifier = Modifier.width(3.dp))
+          Text(
+            text = "Not delivered • Tap to retry",
+            color = Color(0xFFFF6B6B),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold
+          )
+        }
+      }
+      MessageStatus.SENT -> {
+        if (isRead) {
+          Text(
+            text = "Seen",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.Medium
+          )
+          Spacer(modifier = Modifier.width(4.dp))
+          VybeAvatar(
+            user = peerUser,
+            size = 14.dp
+          )
+        } else {
+          Icon(
+            imageVector = Icons.Default.Done,
+            contentDescription = "Delivered",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+            modifier = Modifier.size(13.dp)
+          )
+          Spacer(modifier = Modifier.width(3.dp))
+          Text(
+            text = "Delivered",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.Normal
+          )
+        }
+      }
+    }
+  }
+}
+
+@Composable
+fun InstagramTypingBubble(
+  peerUser: com.example.data.model.User,
+  themeAccent: Color,
+  modifier: Modifier = Modifier
+) {
+  val infiniteTransition = rememberInfiniteTransition(label = "typing_dots")
+
+  val dot1Alpha by infiniteTransition.animateFloat(
+    initialValue = 0.3f,
+    targetValue = 1f,
+    animationSpec = infiniteRepeatable(
+      animation = keyframes {
+        durationMillis = 1200
+        0.3f at 0
+        1f at 300
+        0.3f at 600
+        0.3f at 1200
+      },
+      repeatMode = RepeatMode.Restart
+    ),
+    label = "dot1_alpha"
+  )
+  val dot1Offset by infiniteTransition.animateFloat(
+    initialValue = 0f,
+    targetValue = -5f,
+    animationSpec = infiniteRepeatable(
+      animation = keyframes {
+        durationMillis = 1200
+        0f at 0
+        -5f at 300
+        0f at 600
+        0f at 1200
+      },
+      repeatMode = RepeatMode.Restart
+    ),
+    label = "dot1_offset"
+  )
+
+  val dot2Alpha by infiniteTransition.animateFloat(
+    initialValue = 0.3f,
+    targetValue = 1f,
+    animationSpec = infiniteRepeatable(
+      animation = keyframes {
+        durationMillis = 1200
+        0.3f at 0
+        0.3f at 200
+        1f at 500
+        0.3f at 800
+        0.3f at 1200
+      },
+      repeatMode = RepeatMode.Restart
+    ),
+    label = "dot2_alpha"
+  )
+  val dot2Offset by infiniteTransition.animateFloat(
+    initialValue = 0f,
+    targetValue = -5f,
+    animationSpec = infiniteRepeatable(
+      animation = keyframes {
+        durationMillis = 1200
+        0f at 0
+        0f at 200
+        -5f at 500
+        0f at 800
+        0f at 1200
+      },
+      repeatMode = RepeatMode.Restart
+    ),
+    label = "dot2_offset"
+  )
+
+  val dot3Alpha by infiniteTransition.animateFloat(
+    initialValue = 0.3f,
+    targetValue = 1f,
+    animationSpec = infiniteRepeatable(
+      animation = keyframes {
+        durationMillis = 1200
+        0.3f at 0
+        0.3f at 400
+        1f at 700
+        0.3f at 1000
+        0.3f at 1200
+      },
+      repeatMode = RepeatMode.Restart
+    ),
+    label = "dot3_alpha"
+  )
+  val dot3Offset by infiniteTransition.animateFloat(
+    initialValue = 0f,
+    targetValue = -5f,
+    animationSpec = infiniteRepeatable(
+      animation = keyframes {
+        durationMillis = 1200
+        0f at 0
+        0f at 400
+        -5f at 700
+        0f at 1000
+        0f at 1200
+      },
+      repeatMode = RepeatMode.Restart
+    ),
+    label = "dot3_offset"
+  )
+
+  Row(
+    modifier = modifier
+      .fillMaxWidth()
+      .padding(vertical = 4.dp)
+      .testTag("chat_typing_indicator_bubble"),
+    verticalAlignment = Alignment.Bottom,
+    horizontalArrangement = Arrangement.Start
+  ) {
+    VybeAvatar(user = peerUser, size = 26.dp)
+    Spacer(modifier = Modifier.width(8.dp))
+    Surface(
+      shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomEnd = 18.dp, bottomStart = 4.dp),
+      color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+      border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+    ) {
+      Row(
+        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Box(
+          modifier = Modifier
+            .offset(y = dot1Offset.dp)
+            .size(7.dp)
+            .clip(CircleShape)
+            .background(themeAccent.copy(alpha = dot1Alpha))
+        )
+        Box(
+          modifier = Modifier
+            .offset(y = dot2Offset.dp)
+            .size(7.dp)
+            .clip(CircleShape)
+            .background(themeAccent.copy(alpha = dot2Alpha))
+        )
+        Box(
+          modifier = Modifier
+            .offset(y = dot3Offset.dp)
+            .size(7.dp)
+            .clip(CircleShape)
+            .background(themeAccent.copy(alpha = dot3Alpha))
+        )
+      }
+    }
+  }
 }
