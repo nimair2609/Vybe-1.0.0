@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -618,48 +619,68 @@ fun FeedScreen(viewModel: VybeViewModel) {
             }
           }
         } else {
-          items(filteredPosts, key = { it.id }) { post ->
-            Box(
+          itemsIndexed(filteredPosts, key = { _, post -> post.id }) { index, post ->
+            Column(
               modifier = Modifier.fillMaxWidth(),
-              contentAlignment = Alignment.Center
+              horizontalAlignment = Alignment.CenterHorizontally
             ) {
-              PostCard(
-                post = post,
-                onLikeClick = { viewModel.toggleLike(post.id) },
-                onDoubleTapLike = { viewModel.ensurePostLoved(post.id) },
-                onReact = { rx -> viewModel.reactToPost(post.id, rx) },
-                onSaveClick = { viewModel.toggleSave(post.id) },
-                onCommentClick = { viewModel.loadCommentsForPost(post.id) },
-                onAddComment = { text -> viewModel.addComment(post.id, text) },
-                onLoadComments = { viewModel.loadCommentsForPost(post.id) },
-                onReactComment = { commentId, rx -> viewModel.reactToComment(post.id, commentId, rx) },
-                onShareClick = { viewModel.openPostShareSheet(post) },
-                onUserClick = { user -> viewModel.openUserProfile(user) },
-                onRemixClick = { viewModel.openReelViewer(post.id) },
-                onDeleteClick = { viewModel.deletePost(post.id) },
-                onReportPost = { reason ->
-                  coroutineScope.launch {
-                    viewModel.submitReport("POST", post.id, reason)
-                    viewModel.postBannerMessage("Report submitted for review.")
-                  }
-                },
-                onPostViewed = { viewModel.recordPostView(it) },
-                currentUserId = currentUser?.id,
-                shouldAutoPlay = (post.id == activeAutoPlayPostId),
-                isAudioEnabled = isFeedAudioEnabled,
-                shouldPlayAudio = (isFeedAudioEnabled && post.id == activeAudioPostId),
-                isHighlighted = (post.id == highlightedPostId),
-                isFollowing = followingUserIds.contains(post.author.id),
-                isFollowRequested = requestedFollowUserIds.contains(post.author.id) || post.author.isFollowRequestedByMe,
-                followsMe = post.author.followsMe,
-                onFollowClick = if (post.author.id != currentUser?.id) {
-                  { viewModel.toggleFollowUser(post.author.id) }
-                } else {
-                  null
-                },
-                onToggleAudio = { enabled -> viewModel.setFeedAudioEnabled(enabled) },
-                modifier = Modifier.widthIn(max = 600.dp)
-              )
+              Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
+              ) {
+                PostCard(
+                  post = post,
+                  onLikeClick = { viewModel.toggleLike(post.id) },
+                  onDoubleTapLike = { viewModel.ensurePostLoved(post.id) },
+                  onReact = { rx -> viewModel.reactToPost(post.id, rx) },
+                  onSaveClick = { viewModel.toggleSave(post.id) },
+                  onCommentClick = { viewModel.loadCommentsForPost(post.id) },
+                  onAddComment = { text -> viewModel.addComment(post.id, text) },
+                  onLoadComments = { viewModel.loadCommentsForPost(post.id) },
+                  onReactComment = { commentId, rx -> viewModel.reactToComment(post.id, commentId, rx) },
+                  onShareClick = { viewModel.openPostShareSheet(post) },
+                  onUserClick = { user -> viewModel.openUserProfile(user) },
+                  onRemixClick = { viewModel.openReelViewer(post.id) },
+                  onDeleteClick = { viewModel.deletePost(post.id) },
+                  onReportPost = { reason ->
+                    coroutineScope.launch {
+                      viewModel.submitReport("POST", post.id, reason)
+                      viewModel.postBannerMessage("Report submitted for review.")
+                    }
+                  },
+                  onPostViewed = { viewModel.recordPostView(it) },
+                  currentUserId = currentUser?.id,
+                  shouldAutoPlay = (post.id == activeAutoPlayPostId),
+                  isAudioEnabled = isFeedAudioEnabled,
+                  shouldPlayAudio = (isFeedAudioEnabled && post.id == activeAudioPostId),
+                  isHighlighted = (post.id == highlightedPostId),
+                  isFollowing = followingUserIds.contains(post.author.id),
+                  isFollowRequested = requestedFollowUserIds.contains(post.author.id) || post.author.isFollowRequestedByMe,
+                  followsMe = post.author.followsMe,
+                  onFollowClick = if (post.author.id != currentUser?.id) {
+                    { viewModel.toggleFollowUser(post.author.id) }
+                  } else {
+                    null
+                  },
+                  onToggleAudio = { enabled -> viewModel.setFeedAudioEnabled(enabled) },
+                  modifier = Modifier.widthIn(max = 600.dp)
+                )
+              }
+
+              // Embed Find Your Vybe carousel seamlessly in the Home Feed flow
+              if (index == 1 && feedTab != "Discover") {
+                Box(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                  contentAlignment = Alignment.Center
+                ) {
+                  FindYourVybeSection(
+                    viewModel = viewModel,
+                    modifier = Modifier.widthIn(max = 600.dp)
+                  )
+                }
+              }
             }
           }
         }

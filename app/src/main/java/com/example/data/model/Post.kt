@@ -5,7 +5,7 @@ enum class MediaType {
 }
 
 enum class VybeReaction(val label: String, val emoji: String) {
-  LOVE("VYBE", "⚡"),
+  LOVE("VYBE", "🫰"),
   FLAME("Fire", "🔥"),
   LAUGH("Laugh", "😂"),
   WOW("Wow", "😮"),
