@@ -100,7 +100,12 @@ data class User(
   val hasPendingDeletion: Boolean = false,
   val isOnboardingCompleted: Boolean = false,
   val isSpiritualMode: Boolean = false,
-  val goalType: String = "Creator Journey"
+  val goalType: String = "Creator Journey",
+  val location: String = "India",
+  val website: String = "",
+  val interestTags: List<String> = listOf("Travel", "Tech", "Music", "Fitness", "Lifestyle"),
+  val profileViewsCount: Long = 0L,
+  val pinnedPostIds: List<String> = emptyList()
 ) {
   val isFullyVerifiedAccount: Boolean
     get() = isEmailVerified && isPhoneVerified

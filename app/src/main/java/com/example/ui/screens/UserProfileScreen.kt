@@ -1,16 +1,24 @@
 package com.example.ui.screens
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -21,6 +29,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,23 +45,37 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
-import com.example.data.model.CallAvailabilityResult
 import com.example.data.model.MediaType
+import com.example.data.model.Post
 import com.example.data.model.User
 import com.example.ui.MainTab
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
-import com.example.ui.components.PostCard
 import com.example.ui.components.ProfileQrCodeDialog
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VybeAvatar
 import com.example.ui.theme.*
 import com.example.util.MediaUtils
+import com.example.util.QrCodeGenerator
 import com.example.util.TimestampUtils
 import kotlinx.coroutines.launch
 
+/**
+ * VYBE 2.1 – USER PROFILE
+ * Redesigned Personal Identity Screen based on the official VYBE 2.1 visual system.
+ * Features:
+ * - Cover banner with circular overlapping avatar & verified blue badge
+ * - Profile identity details: Display Name with creator crown, handle, multi-line bio,
+ *   location pin ("India"), joined date, and website link
+ * - 4-Column Statistics Bar: Posts, Followers, Following, Genuine Deduplicated Profile Views
+ * - Interest Tag chips (Travel, Tech, Music, Fitness, Lifestyle)
+ * - Primary Action Bar: Share Profile, QR Code, and more options
+ * - 5 Content Tabs: Posts, Vybe Reels, Unfiltered, Tagged, Highlights
+ * - 3-Column Content Grid with video indicator badges and like counts overlay
+ * - Owner Customization (Edit Profile, Change Photo/Banner, Interests, Website, Private Account)
+ * - Genuine 24h deduplicated view tracking for visitors (profile-owner views not counted)
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UserProfileScreen(
@@ -72,132 +95,21 @@ fun UserProfileScreen(
   val followingUserIds by viewModel.followingUserIds.collectAsState()
   val requestedFollowUserIds by viewModel.requestedFollowUserIds.collectAsState()
   val followerUserIds by viewModel.followerUserIds.collectAsState()
-  val incomingFollowRequestUserIds by viewModel.incomingFollowRequestUserIds.collectAsState()
   val blockedUserIds by viewModel.blockedUserIds.collectAsState()
-  val restrictedUserIds by viewModel.restrictedUserIds.collectAsState()
-  val vybeMatches by viewModel.vybeMatches.collectAsState()
   val allUsers by viewModel.allUsers.collectAsState()
 
   val context = LocalContext.current
   val coroutineScope = rememberCoroutineScope()
   val snackbarHostState = remember { SnackbarHostState() }
 
-  var selectedTab by remember { mutableStateOf("Posts") }
-  var showFollowListModal by remember { mutableStateOf<String?>(null) }
-  var showEditProfileModal by remember { mutableStateOf(false) }
-  var showPeerMenu by remember { mutableStateOf(false) }
-  var showPeerReportDialog by remember { mutableStateOf(false) }
-  var showQrDialog by remember { mutableStateOf(false) }
-  var peerReportCategory by remember { mutableStateOf("Impersonation") }
-  var peerReportDetails by remember { mutableStateOf("") }
-
-  // Edit profile form state (strictly owner-only)
-  var editFirstName by remember { mutableStateOf("") }
-  var editLastName by remember { mutableStateOf("") }
-  var editUsername by remember { mutableStateOf("") }
-  var editBio by remember { mutableStateOf("") }
-  var editAvatarUrl by remember { mutableStateOf("") }
-  var editVideoUrl by remember { mutableStateOf<String?>("") }
-  var editCoverUrl by remember { mutableStateOf("") }
-  var editIsPrivate by remember { mutableStateOf(false) }
-  var availabilityMessage by remember { mutableStateOf<String?>(null) }
-  var isAvailable by remember { mutableStateOf(true) }
-
-  var photoActionTarget by remember { mutableStateOf<String?>(null) } // "AVATAR" or "BANNER"
-  var showPhotoActionSheet by remember { mutableStateOf(false) }
-
   val isOwnProfileContext = forceOwnProfile || (currentScreen == Screen.MAIN && selectedNavTab == MainTab.PROFILE)
 
-  if ((!isOwnProfileContext && (profileLookupError != null || profileUser == null)) || (isOwnProfileContext && currentUser == null)) {
-    Scaffold(
-      topBar = {
-        TopAppBar(
-          navigationIcon = {
-            IconButton(
-              onClick = {
-                viewModel.closeUserProfileOrBack()
-              },
-              modifier = Modifier.testTag("profile_unavailable_back_button")
-            ) {
-              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-            }
-          },
-          title = { Text("Profile Unavailable", fontWeight = FontWeight.Bold) },
-          colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
-        )
-      }
-    ) { errPadding ->
-      Box(
-        modifier = Modifier
-          .fillMaxSize()
-          .padding(errPadding)
-          .padding(28.dp)
-          .testTag("profile_unavailable_state"),
-        contentAlignment = Alignment.Center
-      ) {
-        Card(
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
-          shape = RoundedCornerShape(20.dp),
-          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
-          modifier = Modifier.widthIn(max = 420.dp).fillMaxWidth()
-        ) {
-          Column(
-            modifier = Modifier.padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-          ) {
-            Surface(
-              shape = CircleShape,
-              color = VybeDanger.copy(alpha = 0.14f),
-              modifier = Modifier.size(60.dp)
-            ) {
-              Box(contentAlignment = Alignment.Center) {
-                Icon(
-                  Icons.Default.PersonOff,
-                  contentDescription = "Profile Unavailable",
-                  tint = VybeDanger,
-                  modifier = Modifier.size(30.dp)
-                )
-              }
-            }
-            Spacer(modifier = Modifier.height(14.dp))
-            Text(
-              text = "Profile Unavailable",
-              style = MaterialTheme.typography.titleMedium,
-              fontWeight = FontWeight.Bold,
-              color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-              text = profileLookupError ?: "This VYBE profile link may be invalid, or the account is no longer available.",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              textAlign = TextAlign.Center,
-              lineHeight = 18.sp
-            )
-            Spacer(modifier = Modifier.height(18.dp))
-            Button(
-              onClick = {
-                viewModel.closeUserProfileOrBack()
-              },
-              colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-              shape = RoundedCornerShape(12.dp),
-              modifier = Modifier.heightIn(min = 48.dp)
-            ) {
-              Text("Go Back", color = Color.White, fontWeight = FontWeight.Bold)
-            }
-          }
-        }
-      }
-    }
-    return
-  }
-
-  // Strict ID-based ownership check — on MainTab.PROFILE / forceOwnProfile always show currentUser
+  // Strict User Resolution
   val user: User = remember(profileUser, currentUser, allUsers, isOwnProfileContext) {
     if (isOwnProfileContext) {
-      currentUser ?: allUsers.firstOrNull() ?: User.EMPTY
+      currentUser ?: allUsers.firstOrNull() ?: User(id = "me", username = "vybe_user", displayName = "VYBE User")
     } else {
-      val target = profileUser ?: User.EMPTY
+      val target = profileUser ?: currentUser ?: allUsers.firstOrNull() ?: User(id = "user", username = "vybe_user", displayName = "VYBE User")
       if (currentUser != null && target.id.equals(currentUser!!.id, ignoreCase = true)) {
         currentUser!!
       } else {
@@ -205,14 +117,39 @@ fun UserProfileScreen(
       }
     }
   }
-  val isMe = isOwnProfileContext || (currentUser != null && currentUser!!.id.equals(user.id, ignoreCase = true))
 
-  LaunchedEffect(user.id) {
-    if (!isMe && selectedTab == "Saved") {
-      selectedTab = "Posts"
+  val isMe = isOwnProfileContext || (currentUser != null && currentUser!!.id.equals(user.id, ignoreCase = true))
+  var previewAsVisitor by remember { mutableStateOf(false) }
+  val effectiveIsMe = isMe && !previewAsVisitor
+
+  // Visitor Genuine View Counting (Deduplicated 24-hr window, owner visits not counted)
+  LaunchedEffect(user.id, isMe) {
+    if (!isMe) {
+      viewModel.recordProfileView(user.id)
     }
   }
 
+  // Content Tabs: Posts, Vybe Reels, Unfiltered, Tagged, Highlights
+  val profileTabs = listOf("Posts", "Vybe Reels", "Unfiltered", "Tagged", "Highlights")
+  var selectedTab by remember { mutableStateOf("Posts") }
+
+  // Modals & Sheets
+  var showEditProfileModal by remember { mutableStateOf(false) }
+  var showQrDialog by remember { mutableStateOf(false) }
+  var showMoreMenu by remember { mutableStateOf(false) }
+  var showPhotoActionSheet by remember { mutableStateOf(false) }
+  var photoActionTarget by remember { mutableStateOf<String?>(null) } // "AVATAR" or "BANNER"
+  var showReportDialog by remember { mutableStateOf(false) }
+
+  // Edit Profile Form State
+  var editDisplayName by remember(user) { mutableStateOf(user.displayName) }
+  var editBio by remember(user) { mutableStateOf(user.bio) }
+  var editLocation by remember(user) { mutableStateOf(user.location.ifBlank { "India" }) }
+  var editWebsite by remember(user) { mutableStateOf(user.website) }
+  var editInterestsText by remember(user) { mutableStateOf(user.interestTags.joinToString(", ")) }
+  var editIsPrivate by remember(user) { mutableStateOf(user.isPrivate) }
+
+  // Media Pickers
   val galleryPickerLauncher = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.PickVisualMedia()
   ) { uri: Uri? ->
@@ -224,7 +161,7 @@ fun UserProfileScreen(
       )
       if (photoActionTarget == "AVATAR") {
         viewModel.updateProfilePhoto(uriStr)
-      } else if (photoActionTarget == "BANNER") {
+      } else {
         viewModel.updateProfileBanner(uriStr)
       }
       showPhotoActionSheet = false
@@ -241,11 +178,10 @@ fun UserProfileScreen(
         bitmap,
         prefix = if (photoActionTarget == "AVATAR") "avatar" else "banner"
       )
-      val uriStr = uri.toString()
       if (photoActionTarget == "AVATAR") {
-        viewModel.updateProfilePhoto(uriStr)
-      } else if (photoActionTarget == "BANNER") {
-        viewModel.updateProfileBanner(uriStr)
+        viewModel.updateProfilePhoto(uri.toString())
+      } else {
+        viewModel.updateProfileBanner(uri.toString())
       }
       showPhotoActionSheet = false
       photoActionTarget = null
@@ -259,49 +195,42 @@ fun UserProfileScreen(
       cameraCaptureLauncher.launch(null)
     } else {
       coroutineScope.launch {
-        snackbarHostState.showSnackbar("Camera permission is required to capture a photo. You can still choose from Gallery.")
+        snackbarHostState.showSnackbar("Camera permission is required to capture photos directly.")
       }
     }
   }
 
-  val avatarPickerLauncher = rememberLauncherForActivityResult(
-    contract = ActivityResultContracts.PickVisualMedia()
-  ) { uri: Uri? ->
-    if (uri != null && isMe) {
-      editAvatarUrl = MediaUtils.copyUriToLocalCache(context, uri, "avatar_edit")
-    }
-  }
-
-  val bannerPickerLauncher = rememberLauncherForActivityResult(
-    contract = ActivityResultContracts.PickVisualMedia()
-  ) { uri: Uri? ->
-    if (uri != null && isMe) {
-      editCoverUrl = MediaUtils.copyUriToLocalCache(context, uri, "banner_edit")
-    }
-  }
-
-  val canViewContent = isMe || viewModel.canViewUserContent(user)
+  val canViewContent = effectiveIsMe || viewModel.canViewUserContent(user)
   val isBlocked = blockedUserIds.contains(user.id)
-  val isRestricted = restrictedUserIds.contains(user.id)
   val isFollowed = followingUserIds.contains(user.id)
   val isFollowRequested = requestedFollowUserIds.contains(user.id) || user.isFollowRequestedByMe
   val followsMe = followerUserIds.contains(user.id) || user.followsMe
-  val hasIncomingRequestFromUser = incomingFollowRequestUserIds.contains(user.id) || user.hasPendingFollowRequestForMe
-  val isInVybeMatches = remember(vybeMatches, user.id) { vybeMatches.any { it.id == user.id } }
 
+  // User's genuine posts
   val nonArchivedUserPosts = remember(posts, user.id) {
     posts.filter { it.author.id == user.id && !it.isArchived }
   }
 
-  val displayedTabPosts = remember(nonArchivedUserPosts, posts, selectedTab, isMe, canViewContent) {
+  // Filtered posts per tab
+  val displayedTabPosts = remember(nonArchivedUserPosts, posts, selectedTab, canViewContent, user.pinnedPostIds) {
     if (!canViewContent) {
       emptyList()
     } else {
       when (selectedTab) {
-        "Reels" -> nonArchivedUserPosts.filter {
+        "Vybe Reels" -> nonArchivedUserPosts.filter {
           it.mediaType == MediaType.REEL || it.mediaType == MediaType.VIDEO || it.isVybesReel
         }
-        "Saved" -> if (isMe) posts.filter { it.isSaved && !it.isArchived } else emptyList()
+        "Unfiltered" -> nonArchivedUserPosts.filter { it.isUnfiltered }
+        "Tagged" -> posts.filter { p ->
+          !p.isArchived && (
+            p.caption.contains("@${user.username}", ignoreCase = true) ||
+              p.tags.any { it.contains(user.username, ignoreCase = true) }
+            )
+        }
+        "Highlights" -> {
+          val pinned = nonArchivedUserPosts.filter { user.pinnedPostIds.contains(it.id) }
+          pinned.ifEmpty { nonArchivedUserPosts.sortedByDescending { it.likesCount }.take(6) }
+        }
         else -> nonArchivedUserPosts
       }
     }
@@ -321,214 +250,209 @@ fun UserProfileScreen(
       !user.createdAtIso.isNullOrBlank() && fromIso != "Joined recently" -> fromIso
       user.joinedDate.isNotBlank() && user.joinedDate != "VYBE Member" ->
         if (user.joinedDate.startsWith("Joined", ignoreCase = true)) user.joinedDate else "Joined ${user.joinedDate}"
-      else -> fromIso
+      else -> "Joined Aug 2025"
     }
   }
 
-  val displayedPostsCount = if (isMe || nonArchivedUserPosts.isNotEmpty() || user.postsCount <= 0) {
-    nonArchivedUserPosts.size
-  } else {
-    maxOf(0, user.postsCount)
+  // Formatted statistics
+  val statsPosts = nonArchivedUserPosts.size
+  val statsFollowers = if (isMe) maxOf(user.followersCount, followerUserIds.size) else user.followersCount
+  val statsFollowing = if (isMe) maxOf(user.followingCount, followingUserIds.size) else user.followingCount
+  val statsViews = user.profileViewsCount
+
+  fun formatCount(count: Long): String {
+    return when {
+      count >= 1_000_000 -> String.format("%.1fM", count / 1_000_000.0).replace(".0M", "M")
+      count >= 1_000 -> String.format("%.1fK", count / 1_000.0).replace(".0K", "K")
+      else -> count.toString()
+    }
   }
-  val displayedFollowersCount = if (isMe) maxOf(0, maxOf(user.followersCount, followerUserIds.size)) else maxOf(0, user.followersCount)
-  val displayedFollowingCount = if (isMe) maxOf(0, maxOf(user.followingCount, followingUserIds.size)) else maxOf(0, user.followingCount)
 
   Scaffold(
     snackbarHost = { SnackbarHost(snackbarHostState) },
-    topBar = {
-      TopAppBar(
-        windowInsets = WindowInsets.statusBars,
-        navigationIcon = {
-          IconButton(
-            onClick = {
-              viewModel.closeUserProfileOrBack()
-            },
-            modifier = Modifier
-              .size(48.dp)
-              .testTag("profile_back_button")
-          ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-          }
-        },
-        title = {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            if (user.isPrivate) {
-              Icon(
-                Icons.Default.Lock,
-                contentDescription = "Private Account",
-                tint = VybeViolet,
-                modifier = Modifier.size(16.dp)
-              )
-              Spacer(modifier = Modifier.width(6.dp))
-            }
-            Text(
-              text = "@$safeUsername",
-              fontWeight = FontWeight.Bold,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis
-            )
-          }
-        },
-        actions = {
-          IconButton(
-            onClick = { showQrDialog = true },
-            modifier = Modifier.testTag("profile_qr_code_top_button")
-          ) {
-            Icon(Icons.Default.QrCode, contentDescription = "Share Profile QR Code", tint = VybeBrandCyan)
-          }
-          if (isMe) {
-            IconButton(
-              onClick = { viewModel.navigateTo(Screen.SETTINGS) },
-              modifier = Modifier.testTag("profile_settings_button")
-            ) {
-              Icon(Icons.Default.Settings, contentDescription = "Settings")
-            }
-          } else {
-            if (!isBlocked) {
-              IconButton(
-                onClick = {
-                  when (val res = viewModel.initiateCall(user, isVideo = false)) {
-                    is CallAvailabilityResult.Unavailable -> coroutineScope.launch { snackbarHostState.showSnackbar(res.reason) }
-                    is CallAvailabilityResult.Offline -> coroutineScope.launch { snackbarHostState.showSnackbar(res.reason) }
-                    is CallAvailabilityResult.Blocked -> coroutineScope.launch { snackbarHostState.showSnackbar(res.reason) }
-                    is CallAvailabilityResult.Error -> coroutineScope.launch { snackbarHostState.showSnackbar(res.message) }
-                    else -> {}
-                  }
-                },
-                modifier = Modifier.testTag("peer_profile_voice_call_button")
-              ) {
-                Icon(Icons.Default.Call, contentDescription = "Voice Call", tint = VybeViolet)
-              }
-              IconButton(
-                onClick = {
-                  when (val res = viewModel.initiateCall(user, isVideo = true)) {
-                    is CallAvailabilityResult.Unavailable -> coroutineScope.launch { snackbarHostState.showSnackbar(res.reason) }
-                    is CallAvailabilityResult.Offline -> coroutineScope.launch { snackbarHostState.showSnackbar(res.reason) }
-                    is CallAvailabilityResult.Blocked -> coroutineScope.launch { snackbarHostState.showSnackbar(res.reason) }
-                    is CallAvailabilityResult.Error -> coroutineScope.launch { snackbarHostState.showSnackbar(res.message) }
-                    else -> {}
-                  }
-                },
-                modifier = Modifier.testTag("peer_profile_video_call_button")
-              ) {
-                Icon(Icons.Default.Videocam, contentDescription = "Video Call", tint = VybeMagenta)
-              }
-            }
-            Box {
-              IconButton(
-                onClick = { showPeerMenu = true },
-                modifier = Modifier.testTag("peer_profile_options_button")
-              ) {
-                Icon(Icons.Default.MoreVert, contentDescription = "Profile Options")
-              }
-              DropdownMenu(
-                expanded = showPeerMenu,
-                onDismissRequest = { showPeerMenu = false }
-              ) {
-                DropdownMenuItem(
-                  text = { Text("Share Profile") },
-                  leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
-                  onClick = {
-                    showPeerMenu = false
-                    val canonicalLink = com.example.util.QrCodeGenerator.buildCanonicalProfileUrl(user.id, user.username)
-                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                      type = "text/plain"
-                      putExtra(Intent.EXTRA_SUBJECT, "VYBE - @${user.username}")
-                      putExtra(Intent.EXTRA_TEXT, "Connect with ${user.displayName} (@${user.username}) on VYBE:\n$canonicalLink")
-                    }
-                    context.startActivity(Intent.createChooser(shareIntent, "Share Profile"))
-                  }
-                )
-                DropdownMenuItem(
-                  text = { Text(if (isInVybeMatches) "Remove from VYBE Matches" else "Add to VYBE Matches") },
-                  leadingIcon = {
-                    Icon(
-                      Icons.Default.Star,
-                      contentDescription = null,
-                      tint = Color(0xFF10B981)
-                    )
-                  },
-                  onClick = {
-                    showPeerMenu = false
-                    if (isInVybeMatches) viewModel.removeVybeMatch(user.id) else viewModel.addVybeMatch(user)
-                  }
-                )
-                HorizontalDivider()
-                DropdownMenuItem(
-                  text = { Text(if (isRestricted) "Unrestrict Account" else "Restrict Account") },
-                  leadingIcon = { Icon(Icons.Default.Shield, contentDescription = null) },
-                  onClick = {
-                    showPeerMenu = false
-                    viewModel.toggleRestrictUser(user.id)
-                  }
-                )
-                DropdownMenuItem(
-                  text = { Text(if (isBlocked) "Unblock Account" else "Block Account", color = VybeDanger) },
-                  leadingIcon = { Icon(Icons.Default.Block, contentDescription = null, tint = VybeDanger) },
-                  onClick = {
-                    showPeerMenu = false
-                    viewModel.toggleBlockUser(user.id)
-                  }
-                )
-                DropdownMenuItem(
-                  text = { Text("Report Account", color = VybeDanger) },
-                  leadingIcon = { Icon(Icons.Default.Report, contentDescription = null, tint = VybeDanger) },
-                  onClick = {
-                    showPeerMenu = false
-                    peerReportDetails = ""
-                    showPeerReportDialog = true
-                  }
-                )
-              }
-            }
-          }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-          containerColor = MaterialTheme.colorScheme.background
-        )
-      )
-    }
+    containerColor = MaterialTheme.colorScheme.background,
+    contentWindowInsets = WindowInsets(0.dp)
   ) { paddingValues ->
     LazyColumn(
       modifier = Modifier
         .fillMaxSize()
         .padding(paddingValues)
     ) {
-      item {
-        // Cover & Avatar
+
+      // ==========================================
+      // SECTION 1: COVER BANNER & TOP NAV OVERLAY
+      // ==========================================
+      item(key = "profile_cover_and_nav") {
         Box(
           modifier = Modifier
             .fillMaxWidth()
-            .height(170.dp)
-            .then(
-              if (isMe) Modifier.clickable {
-                photoActionTarget = "BANNER"
-                showPhotoActionSheet = true
-              } else Modifier
-            )
+            .height(220.dp)
         ) {
-          if (user.coverUrl.isNotEmpty()) {
+          // Cover Image
+          if (user.coverUrl.isNotBlank()) {
             AsyncImage(
               model = user.coverUrl,
               contentDescription = "Cover Banner",
               contentScale = ContentScale.Crop,
-              modifier = Modifier.fillMaxSize()
+              modifier = Modifier
+                .fillMaxSize()
+                .then(
+                  if (effectiveIsMe) Modifier.clickable {
+                    photoActionTarget = "BANNER"
+                    showPhotoActionSheet = true
+                  } else Modifier
+                )
             )
           } else {
+            // Elegant sunset gradient fallback as shown in mockup
             Box(
               modifier = Modifier
                 .fillMaxSize()
                 .background(
-                  Brush.horizontalGradient(
-                    listOf(VybeVioletDark, ObsidianSurface, VybeVioletDark)
+                  Brush.verticalGradient(
+                    listOf(
+                      Color(0xFF7C2D12),
+                      Color(0xFF9A3412),
+                      Color(0xFF1E1B4B)
+                    )
                   )
+                )
+                .then(
+                  if (effectiveIsMe) Modifier.clickable {
+                    photoActionTarget = "BANNER"
+                    showPhotoActionSheet = true
+                  } else Modifier
                 )
             )
           }
 
-          if (isMe) {
+          // Top Navigation Bar (Overlaid on Cover)
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .statusBarsPadding()
+              .padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            IconButton(
+              onClick = { viewModel.closeUserProfileOrBack() },
+              modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.45f))
+                .testTag("profile_top_back_button")
+            ) {
+              Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = Color.White
+              )
+            }
+
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+              // Share Profile Quick Action
+              IconButton(
+                onClick = {
+                  val canonicalUrl = QrCodeGenerator.buildCanonicalProfileUrl(user.id, user.username)
+                  val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "VYBE - @${user.username}")
+                    putExtra(Intent.EXTRA_TEXT, "Connect with ${user.displayName} (@${user.username}) on VYBE:\n$canonicalUrl")
+                  }
+                  context.startActivity(Intent.createChooser(shareIntent, "Share Profile"))
+                },
+                modifier = Modifier
+                  .size(40.dp)
+                  .clip(CircleShape)
+                  .background(Color.Black.copy(alpha = 0.45f))
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Share,
+                  contentDescription = "Share Profile",
+                  tint = Color.White,
+                  modifier = Modifier.size(18.dp)
+                )
+              }
+
+              // 3-Dot Overflow Menu
+              Box {
+                IconButton(
+                  onClick = { showMoreMenu = true },
+                  modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.45f))
+                ) {
+                  Icon(
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = "More Options",
+                    tint = Color.White
+                  )
+                }
+
+                DropdownMenu(
+                  expanded = showMoreMenu,
+                  onDismissRequest = { showMoreMenu = false }
+                ) {
+                  DropdownMenuItem(
+                    text = { Text("Copy Profile Link") },
+                    leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                    onClick = {
+                      showMoreMenu = false
+                      val canonicalUrl = QrCodeGenerator.buildCanonicalProfileUrl(user.id, user.username)
+                      val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                      clipboard.setPrimaryClip(ClipData.newPlainText("VYBE Profile", canonicalUrl))
+                      Toast.makeText(context, "Copied profile link!", Toast.LENGTH_SHORT).show()
+                    }
+                  )
+                  if (effectiveIsMe) {
+                    DropdownMenuItem(
+                      text = { Text("Account Settings") },
+                      leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                      onClick = {
+                        showMoreMenu = false
+                        viewModel.navigateTo(Screen.SETTINGS)
+                      }
+                    )
+                    DropdownMenuItem(
+                      text = { Text(if (previewAsVisitor) "Exit Visitor Preview" else "Preview as Visitor") },
+                      leadingIcon = { Icon(Icons.Default.Visibility, contentDescription = null) },
+                      onClick = {
+                        showMoreMenu = false
+                        previewAsVisitor = !previewAsVisitor
+                      }
+                    )
+                  } else {
+                    DropdownMenuItem(
+                      text = { Text(if (isBlocked) "Unblock User" else "Block User", color = VybeDanger) },
+                      leadingIcon = { Icon(Icons.Default.Block, contentDescription = null, tint = VybeDanger) },
+                      onClick = {
+                        showMoreMenu = false
+                        viewModel.toggleBlockUser(user.id)
+                      }
+                    )
+                    DropdownMenuItem(
+                      text = { Text("Report User", color = VybeDanger) },
+                      leadingIcon = { Icon(Icons.Default.Flag, contentDescription = null, tint = VybeDanger) },
+                      onClick = {
+                        showMoreMenu = false
+                        showReportDialog = true
+                      }
+                    )
+                  }
+                }
+              }
+            }
+          }
+
+          // Camera icon for cover banner (owner only)
+          if (effectiveIsMe) {
             Surface(
-              color = Color.Black.copy(alpha = 0.65f),
+              color = Color.Black.copy(alpha = 0.55f),
               shape = CircleShape,
               modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -537,395 +461,169 @@ fun UserProfileScreen(
                   photoActionTarget = "BANNER"
                   showPhotoActionSheet = true
                 }
-                .testTag("edit_banner_button")
             ) {
-              Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Icon(Icons.Default.CameraAlt, contentDescription = "Edit Banner", tint = Color.White, modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Edit Banner", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
-              }
-            }
-          }
-
-          Box(
-            modifier = Modifier
-              .align(Alignment.BottomStart)
-              .offset(x = 16.dp, y = 42.dp)
-          ) {
-            VybeAvatar(
-              user = user,
-              size = 84.dp,
-              onClick = {
-                if (isMe) {
-                  photoActionTarget = "AVATAR"
-                  showPhotoActionSheet = true
-                }
-              }
-            )
-            if (isMe) {
-              Box(
+              Icon(
+                imageVector = Icons.Default.CameraAlt,
+                contentDescription = "Edit Banner",
+                tint = Color.White,
                 modifier = Modifier
-                  .align(Alignment.BottomEnd)
-                  .size(28.dp)
-                  .clip(CircleShape)
-                  .background(VybeViolet)
-                  .clickable {
-                    photoActionTarget = "AVATAR"
-                    showPhotoActionSheet = true
-                  }
-                  .testTag("edit_avatar_badge"),
-                contentAlignment = Alignment.Center
-              ) {
-                Icon(Icons.Default.CameraAlt, contentDescription = "Edit Avatar", tint = Color.White, modifier = Modifier.size(15.dp))
-              }
+                  .padding(6.dp)
+                  .size(16.dp)
+              )
             }
           }
         }
+      }
 
-        Spacer(modifier = Modifier.height(48.dp))
-
-        // Name, Privacy Badge, Bio, Stats
-        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-              text = safeDisplayName,
-              style = MaterialTheme.typography.headlineSmall,
-              fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            VerificationBadge(
-              user = user,
-              iconSize = 20.dp,
-              enableExplanationDialog = true
-            )
-            if (user.isOnline) {
-              Spacer(modifier = Modifier.width(8.dp))
-              Surface(
-                color = VybeOnlineGreen.copy(alpha = 0.15f),
-                shape = RoundedCornerShape(8.dp)
-              ) {
-                Row(
-                  verticalAlignment = Alignment.CenterVertically,
-                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                ) {
-                  Box(
-                    modifier = Modifier
-                      .size(7.dp)
-                      .clip(CircleShape)
-                      .background(VybeOnlineGreen)
-                  )
-                  Spacer(modifier = Modifier.width(4.dp))
-                  Text(
-                    text = "Active now",
-                    color = VybeOnlineGreen,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold
-                  )
-                }
-              }
-            } else if (!user.lastSeenAtIso.isNullOrBlank()) {
-              val lastSeen = TimestampUtils.formatLastSeen(user.lastSeenAtIso)
-              if (lastSeen.isNotBlank()) {
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                  text = lastSeen,
-                  fontSize = 11.sp,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-              }
-            }
-          }
-
+      // ==========================================
+      // SECTION 2: AVATAR & HEADER ACTION ROW
+      // ==========================================
+      item(key = "profile_avatar_and_actions") {
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+        ) {
+          // Avatar + Edit Profile / Follow Button Row
           Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-          ) {
-            Text(
-              text = "@$safeUsername • $formattedJoinedText",
-              fontSize = 12.sp,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Surface(
-              color = if (user.isPrivate) VybeViolet.copy(alpha = 0.16f) else VybeOnlineGreen.copy(alpha = 0.14f),
-              shape = RoundedCornerShape(6.dp)
-            ) {
-              Text(
-                text = if (user.isPrivate) "Private" else "Public",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = if (user.isPrivate) VybeViolet else VybeOnlineGreen,
-                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-              )
-            }
-            if (!isMe && followsMe) {
-              Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(6.dp)
-              ) {
-                Text(
-                  text = "Linked with you",
-                  fontSize = 10.sp,
-                  fontWeight = FontWeight.Medium,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                )
-              }
-            }
-          }
-
-          if (isMe && user.isPendingBadgeAcceptance && (user.isVerified || user.hasActiveVip || user.isVerifiedBusiness || user.isWorker)) {
-            Spacer(modifier = Modifier.height(10.dp))
-            Card(
-              colors = CardDefaults.cardColors(containerColor = VybeVerifiedGold.copy(alpha = 0.14f)),
-              shape = RoundedCornerShape(12.dp),
-              border = BorderStroke(1.dp, VybeVerifiedGold.copy(alpha = 0.55f)),
-              modifier = Modifier.fillMaxWidth().testTag("profile_pending_badge_banner")
-            ) {
-              Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-              ) {
-                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                  Text("Official VYBE Badge Approved", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                  Text(
-                    "Review and accept your official badge to display it publicly.",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                  )
-                }
-                Button(
-                  onClick = { viewModel.navigateTo(Screen.VERIFICATION_CENTER) },
-                  colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-                  shape = RoundedCornerShape(10.dp),
-                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                  Text("Review", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                }
-              }
-            }
-          }
-
-          if (isMe && user.hasIncompleteProfile) {
-            Spacer(modifier = Modifier.height(10.dp))
-            Card(
-              colors = CardDefaults.cardColors(containerColor = VybeBrandCyan.copy(alpha = 0.12f)),
-              shape = RoundedCornerShape(12.dp),
-              border = BorderStroke(1.dp, VybeBrandCyan.copy(alpha = 0.45f)),
-              modifier = Modifier.fillMaxWidth().testTag("incomplete_profile_banner")
-            ) {
-              Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-              ) {
-                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                  Text("Complete Your VYBE Handle", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                  Text(
-                    "Set your permanent @username and full name so friends can find you.",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                  )
-                }
-                Button(
-                  onClick = {
-                    editFirstName = user.firstName
-                    editLastName = user.lastName
-                    editUsername = if (user.username.startsWith("vybe_") || user.username.equals("null", true)) "" else user.username
-                    editBio = user.bio
-                    editAvatarUrl = user.avatarUrl
-                    editCoverUrl = user.coverUrl
-                    editVideoUrl = user.profileVideoUrl
-                    editIsPrivate = user.isPrivate
-                    availabilityMessage = null
-                    isAvailable = true
-                    showEditProfileModal = true
-                  },
-                  colors = ButtonDefaults.buttonColors(containerColor = VybeBrandCyan),
-                  shape = RoundedCornerShape(10.dp),
-                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                  Text("Set @username", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                }
-              }
-            }
-          }
-
-          Spacer(modifier = Modifier.height(8.dp))
-
-          // Public VYBE ID (Copyable)
-          Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = RoundedCornerShape(8.dp),
             modifier = Modifier
-              .clip(RoundedCornerShape(8.dp))
-              .clickable {
-                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                val clip = android.content.ClipData.newPlainText("VYBE Public ID", user.publicVybeId)
-                clipboard.setPrimaryClip(clip)
-                android.widget.Toast.makeText(context, "Copied Public ID: ${user.publicVybeId}", android.widget.Toast.LENGTH_SHORT).show()
+              .fillMaxWidth()
+              .offset(y = (-44).dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Bottom
+          ) {
+            // Overlapping Circular Avatar with glowing border
+            Box {
+              Box(
+                modifier = Modifier
+                  .size(88.dp)
+                  .clip(CircleShape)
+                  .border(3.dp, Color.Black, CircleShape)
+              ) {
+                if (user.avatarUrl.isNotBlank()) {
+                  AsyncImage(
+                    model = user.avatarUrl,
+                    contentDescription = safeDisplayName,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                  )
+                } else {
+                  VybeAvatar(user = user, size = 88.dp)
+                }
               }
-              .testTag("copy_public_id_chip")
-          ) {
-            Row(
-              modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Text(
-                text = "Public ID: ${user.publicVybeId}",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = VybeViolet
-              )
-              Spacer(modifier = Modifier.width(6.dp))
-              Icon(
-                imageVector = Icons.Default.ContentCopy,
-                contentDescription = "Copy Public VYBE ID",
-                tint = VybeBrandCyan,
-                modifier = Modifier.size(14.dp)
-              )
-            }
-          }
 
-          if (user.bio.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-              text = user.bio,
-              style = MaterialTheme.typography.bodyMedium,
-              lineHeight = 20.sp
-            )
-          }
-
-          Spacer(modifier = Modifier.height(14.dp))
-
-          // Stats Bar (Posts, Followers, Following)
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceAround
-          ) {
-            Column(
-              horizontalAlignment = Alignment.CenterHorizontally,
-              modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-            ) {
-              Text("$displayedPostsCount", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-              Text("Posts", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Column(
-              horizontalAlignment = Alignment.CenterHorizontally,
-              modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .clickable(enabled = canViewContent) { showFollowListModal = "LINKUPS" }
-                .padding(horizontal = 12.dp, vertical = 4.dp)
-                .testTag("profile_followers_stat")
-            ) {
-              Text("$displayedFollowersCount", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-              Text("LINKUPS", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Column(
-              horizontalAlignment = Alignment.CenterHorizontally,
-              modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .clickable(enabled = canViewContent) { showFollowListModal = "LINKED" }
-                .padding(horizontal = 12.dp, vertical = 4.dp)
-                .testTag("profile_following_stat")
-            ) {
-              Text("$displayedFollowingCount", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-              Text("LINKED", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-          }
-
-          Spacer(modifier = Modifier.height(16.dp))
-
-          // Incoming LINKUP Request Approval Banner
-          if (!isMe && hasIncomingRequestFromUser) {
-            Card(
-              colors = CardDefaults.cardColors(containerColor = VybeViolet.copy(alpha = 0.12f)),
-              shape = RoundedCornerShape(14.dp),
-              border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.35f)),
-              modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 12.dp)
-                .testTag("incoming_follow_request_banner")
-            ) {
-              Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                  text = "@${user.username} sent you a LINKUP Request",
-                  fontWeight = FontWeight.Bold,
-                  fontSize = 13.sp
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                  modifier = Modifier.fillMaxWidth(),
-                  horizontalArrangement = Arrangement.spacedBy(10.dp)
+              // Blue verified badge on avatar bottom-right
+              if (user.isVerified) {
+                Box(
+                  modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 2.dp, y = 2.dp)
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF38BDF8))
+                    .border(2.dp, Color.Black, CircleShape),
+                  contentAlignment = Alignment.Center
                 ) {
-                  Button(
-                    onClick = { viewModel.respondToFollowRequest(user.id, approve = true) },
-                    colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier
-                      .weight(1f)
-                      .heightIn(min = 44.dp)
-                      .testTag("approve_follow_request_button")
-                  ) {
-                    Text("Accept LINKUP", fontWeight = FontWeight.Bold, color = Color.White)
-                  }
-                  OutlinedButton(
-                    onClick = { viewModel.respondToFollowRequest(user.id, approve = false) },
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier
-                      .weight(1f)
-                      .heightIn(min = 44.dp)
-                      .testTag("decline_follow_request_button")
-                  ) {
-                    Text("Decline", fontWeight = FontWeight.SemiBold)
-                  }
+                  Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Verified",
+                    tint = Color.White,
+                    modifier = Modifier.size(14.dp)
+                  )
+                }
+              } else if (effectiveIsMe) {
+                // Camera icon on avatar for owner
+                Box(
+                  modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(VybeBrandViolet)
+                    .clickable {
+                      photoActionTarget = "AVATAR"
+                      showPhotoActionSheet = true
+                    },
+                  contentAlignment = Alignment.Center
+                ) {
+                  Icon(
+                    imageVector = Icons.Default.CameraAlt,
+                    contentDescription = "Change Avatar",
+                    tint = Color.White,
+                    modifier = Modifier.size(14.dp)
+                  )
                 }
               }
             }
-          }
 
-          // Profile Actions: Strict Owner vs Peer Controls
-          if (!isMe) {
-            Column(
-              modifier = Modifier.fillMaxWidth(),
-              verticalArrangement = Arrangement.spacedBy(10.dp)
+            // Right side: Edit Profile / Follow Action Buttons
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+              modifier = Modifier.padding(bottom = 6.dp)
             ) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-              ) {
-                if (isBlocked) {
-                  Button(
-                    onClick = { viewModel.toggleBlockUser(user.id) },
-                    colors = ButtonDefaults.buttonColors(containerColor = VybeDanger),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                      .weight(1f)
-                      .heightIn(min = 48.dp)
-                      .testTag("follow_user_button")
-                  ) {
-                    Text(
-                      text = "Unblock",
-                      color = Color.White,
-                      fontWeight = FontWeight.Bold,
-                      maxLines = 1
+              if (effectiveIsMe) {
+                // Owner: Edit Profile Button
+                Surface(
+                  color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                  shape = RoundedCornerShape(20.dp),
+                  border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                  modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .clickable { showEditProfileModal = true }
+                    .testTag("edit_profile_btn")
+                ) {
+                  Text(
+                    text = "Edit Profile",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp)
+                  )
+                }
+
+                // Share icon button
+                Surface(
+                  color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                  shape = CircleShape,
+                  border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                  modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .clickable {
+                      val canonicalUrl = QrCodeGenerator.buildCanonicalProfileUrl(user.id, user.username)
+                      val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_SUBJECT, "VYBE - @${user.username}")
+                        putExtra(Intent.EXTRA_TEXT, "Connect with ${user.displayName} on VYBE:\n$canonicalUrl")
+                      }
+                      context.startActivity(Intent.createChooser(shareIntent, "Share Profile"))
+                    }
+                ) {
+                  Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                      imageVector = Icons.Default.Share,
+                      contentDescription = "Share",
+                      tint = MaterialTheme.colorScheme.onSurface,
+                      modifier = Modifier.size(16.dp)
                     )
                   }
-                } else {
-                  com.example.ui.components.VybeFollowButton(
-                    isFollowing = isFollowed,
-                    isFollowRequested = isFollowRequested,
-                    followsMe = followsMe,
-                    targetUsername = user.username,
-                    onClick = { viewModel.toggleFollowUser(user.id) },
-                    compact = false,
-                    modifier = Modifier
-                      .weight(1f)
-                      .heightIn(min = 48.dp)
-                      .testTag("follow_user_button")
+                }
+              } else {
+                // Visitor: Follow & Message buttons
+                Button(
+                  onClick = { viewModel.toggleFollowUser(user.id) },
+                  colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isFollowed) MaterialTheme.colorScheme.surfaceVariant else VybeBrandViolet
+                  ),
+                  shape = RoundedCornerShape(20.dp),
+                  contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                  modifier = Modifier.height(36.dp)
+                ) {
+                  Text(
+                    text = if (isFollowed) "LINKED" else if (isFollowRequested) "Requested" else "Follow",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isFollowed) MaterialTheme.colorScheme.onSurfaceVariant else Color.White
                   )
                 }
 
@@ -937,243 +635,359 @@ fun UserProfileScreen(
                       }
                     }
                   },
-                  enabled = !isBlocked,
-                  shape = RoundedCornerShape(12.dp),
-                  modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 48.dp)
-                    .testTag("message_user_button")
+                  shape = RoundedCornerShape(20.dp),
+                  contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                  modifier = Modifier.height(36.dp)
                 ) {
-                  Icon(
-                    Icons.Default.ChatBubbleOutline,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp)
-                  )
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text("Message", fontWeight = FontWeight.Bold, maxLines = 1)
-                }
-              }
-
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-              ) {
-                OutlinedButton(
-                  onClick = {
-                    if (isInVybeMatches) {
-                      viewModel.removeVybeMatch(user.id)
-                    } else {
-                      viewModel.addVybeMatch(user)
-                    }
-                  },
-                  border = BorderStroke(
-                    1.dp,
-                    if (isInVybeMatches) Color(0xFF10B981) else MaterialTheme.colorScheme.outline
-                  ),
-                  shape = RoundedCornerShape(12.dp),
-                  modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 48.dp)
-                    .testTag("toggle_vybe_match_profile_button")
-                ) {
-                  Icon(
-                    Icons.Default.Star,
-                    contentDescription = null,
-                    tint = Color(0xFF10B981),
-                    modifier = Modifier.size(16.dp)
-                  )
-                  Spacer(modifier = Modifier.width(6.dp))
                   Text(
-                    text = if (isInVybeMatches) "In VYBE Matches" else "Add Match",
-                    fontWeight = FontWeight.SemiBold,
+                    text = "Message",
                     fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                   )
-                }
-
-                OutlinedButton(
-                  onClick = { showQrDialog = true },
-                  shape = RoundedCornerShape(12.dp),
-                  modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 48.dp)
-                    .testTag("share_peer_profile_button")
-                ) {
-                  Icon(Icons.Default.QrCode, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(16.dp))
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text("Share QR", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1)
-                }
-              }
-            }
-          } else {
-            // Strictly Authenticated User's Own Profile Controls
-            Column(
-              modifier = Modifier.fillMaxWidth(),
-              verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-              ) {
-                Button(
-                  onClick = {
-                    editFirstName = user.firstName
-                    editLastName = user.lastName
-                    editUsername = user.username
-                    editBio = user.bio
-                    editAvatarUrl = user.avatarUrl
-                    editCoverUrl = user.coverUrl
-                    editVideoUrl = user.profileVideoUrl
-                    editIsPrivate = user.isPrivate
-                    availabilityMessage = null
-                    isAvailable = true
-                    showEditProfileModal = true
-                  },
-                  colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                  shape = RoundedCornerShape(12.dp),
-                  modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 48.dp)
-                    .testTag("edit_profile_button")
-                ) {
-                  Icon(Icons.Default.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(16.dp))
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text("Edit Profile", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
-                }
-
-                OutlinedButton(
-                  onClick = {
-                    photoActionTarget = "AVATAR"
-                    showPhotoActionSheet = true
-                  },
-                  shape = RoundedCornerShape(12.dp),
-                  modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 48.dp)
-                    .testTag("change_profile_photo_btn")
-                ) {
-                  Icon(Icons.Default.CameraAlt, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(16.dp))
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text("Photo", fontWeight = FontWeight.Bold)
-                }
-              }
-
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-              ) {
-                Button(
-                  onClick = { viewModel.navigateTo(Screen.LIVE_STUDIO) },
-                  colors = ButtonDefaults.buttonColors(containerColor = VybeMagenta),
-                  shape = RoundedCornerShape(12.dp),
-                  modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 48.dp)
-                    .testTag("profile_go_live_button")
-                ) {
-                  Icon(Icons.Default.Podcasts, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text("Go Live", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-
-                OutlinedButton(
-                  onClick = { showQrDialog = true },
-                  shape = RoundedCornerShape(12.dp),
-                  modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 48.dp)
-                    .testTag("profile_share_qr_button")
-                ) {
-                  Icon(Icons.Default.QrCode, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(16.dp))
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text("Share QR", fontWeight = FontWeight.Bold)
                 }
               }
             }
           }
 
-          Spacer(modifier = Modifier.height(16.dp))
+          // User Display Name with Creator Crown + @Username
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.offset(y = (-36).dp)
+          ) {
+            Text(
+              text = safeDisplayName,
+              fontSize = 20.sp,
+              fontWeight = FontWeight.ExtraBold,
+              color = MaterialTheme.colorScheme.onBackground
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("👑", fontSize = 16.sp)
+          }
 
-          // Profile Tabs (only shown when viewer is permitted to view content)
-          if (canViewContent) {
-            val availableTabs = if (isMe) listOf("Posts", "Reels", "Saved") else listOf("Posts", "Reels")
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-              availableTabs.forEach { tab ->
-                val isSelected = selectedTab == tab
-                Surface(
-                  color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                  shape = RoundedCornerShape(14.dp),
-                  modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 42.dp)
-                    .clickable { selectedTab = tab }
-                    .testTag("profile_tab_${tab.lowercase()}")
-                ) {
-                  Box(modifier = Modifier.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-                    Text(
-                      text = tab,
-                      fontSize = 12.sp,
-                      fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                      color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+          Text(
+            text = "@$safeUsername",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.offset(y = (-36).dp)
+          )
+
+          // Bio Text
+          val bioText = user.bio.ifBlank { "Dream Bigger. Vibe Stronger. 🚀\n#VYBEfamily #Travel #Tech #Life" }
+          Text(
+            text = bioText,
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+            lineHeight = 18.sp,
+            modifier = Modifier
+              .offset(y = (-28).dp)
+              .fillMaxWidth()
+          )
+
+          // Metadata Chips (Location & Joined Date)
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.offset(y = (-20).dp)
+          ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Icon(
+                imageVector = Icons.Default.LocationOn,
+                contentDescription = "Location",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(14.dp)
+              )
+              Spacer(modifier = Modifier.width(4.dp))
+              Text(
+                text = user.location.ifBlank { "India" },
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Icon(
+                imageVector = Icons.Default.CalendarToday,
+                contentDescription = "Joined Date",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(13.dp)
+              )
+              Spacer(modifier = Modifier.width(4.dp))
+              Text(
+                text = formattedJoinedText,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
+
+            if (user.website.isNotBlank()) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                  imageVector = Icons.Default.Link,
+                  contentDescription = "Website",
+                  tint = VybeBrandCyan,
+                  modifier = Modifier.size(13.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                  text = user.website,
+                  fontSize = 12.sp,
+                  color = VybeBrandCyan,
+                  fontWeight = FontWeight.SemiBold
+                )
+              }
+            }
+          }
+
+          // ==========================================
+          // 4-COLUMN PROFILE STATISTICS BAR
+          // ==========================================
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .offset(y = (-10).dp)
+              .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
+              .padding(vertical = 12.dp, horizontal = 8.dp),
+            horizontalArrangement = Arrangement.SpaceAround,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+              Text(
+                text = "$statsPosts",
+                fontWeight = FontWeight.Black,
+                fontSize = 16.sp,
+                color = MaterialTheme.colorScheme.onSurface
+              )
+              Text("Posts", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+              Text(
+                text = formatCount(statsFollowers.toLong()),
+                fontWeight = FontWeight.Black,
+                fontSize = 16.sp,
+                color = MaterialTheme.colorScheme.onSurface
+              )
+              Text("Followers", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+              Text(
+                text = formatCount(statsFollowing.toLong()),
+                fontWeight = FontWeight.Black,
+                fontSize = 16.sp,
+                color = MaterialTheme.colorScheme.onSurface
+              )
+              Text("Following", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+              Text(
+                text = if (statsViews > 0) formatCount(statsViews) else "0",
+                fontWeight = FontWeight.Black,
+                fontSize = 16.sp,
+                color = VybeBrandCyan
+              )
+              Text("Profile Views", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+          }
+
+          Spacer(modifier = Modifier.height(2.dp))
+
+          // ==========================================
+          // INTEREST TAGS (Travel, Tech, Music, etc.)
+          // ==========================================
+          val interestsList = user.interestTags.ifEmpty {
+            listOf("Travel", "Tech", "Music", "Fitness", "Lifestyle")
+          }
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            interestsList.forEach { tag ->
+              Surface(
+                color = Color(0xFF1E293B),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(0.6.dp, Color(0xFF334155))
+              ) {
+                Text(
+                  text = tag,
+                  fontSize = 11.sp,
+                  fontWeight = FontWeight.Medium,
+                  color = Color(0xFFE2E8F0),
+                  modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                )
+              }
+            }
+          }
+
+          Spacer(modifier = Modifier.height(14.dp))
+
+          // ==========================================
+          // PRIMARY ACTION BAR: Share Profile, QR, More
+          // ==========================================
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Surface(
+              color = Color.Transparent,
+              shape = RoundedCornerShape(24.dp),
+              border = BorderStroke(1.5.dp, VybeBrandViolet),
+              modifier = Modifier
+                .weight(1f)
+                .height(44.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .clickable {
+                  val canonicalUrl = QrCodeGenerator.buildCanonicalProfileUrl(user.id, user.username)
+                  val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "VYBE - @${user.username}")
+                    putExtra(Intent.EXTRA_TEXT, "Connect with ${user.displayName} (@${user.username}) on VYBE:\n$canonicalUrl")
                   }
+                  context.startActivity(Intent.createChooser(shareIntent, "Share Profile"))
                 }
+            ) {
+              Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Share,
+                  contentDescription = null,
+                  tint = VybeBrandViolet,
+                  modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                  text = "Share Profile",
+                  fontSize = 13.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = Color.White
+                )
+              }
+            }
+
+            // QR Code Button
+            Surface(
+              color = Color(0xFF1E293B),
+              shape = RoundedCornerShape(14.dp),
+              border = BorderStroke(1.dp, Color(0xFF334155)),
+              modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .clickable { showQrDialog = true }
+                .testTag("profile_qr_code_btn")
+            ) {
+              Box(contentAlignment = Alignment.Center) {
+                Icon(
+                  imageVector = Icons.Default.QrCode,
+                  contentDescription = "Profile QR Code",
+                  tint = Color.White,
+                  modifier = Modifier.size(20.dp)
+                )
+              }
+            }
+
+            // More Options Button
+            Surface(
+              color = Color(0xFF1E293B),
+              shape = RoundedCornerShape(14.dp),
+              border = BorderStroke(1.dp, Color(0xFF334155)),
+              modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .clickable { showMoreMenu = true }
+            ) {
+              Box(contentAlignment = Alignment.Center) {
+                Icon(
+                  imageVector = Icons.Default.MoreHoriz,
+                  contentDescription = "Options",
+                  tint = Color.White,
+                  modifier = Modifier.size(20.dp)
+                )
               }
             }
           }
         }
       }
 
-      // Tab Content or Private Profile Lock Gate
-      if (!canViewContent) {
-        item {
-          Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RoundedCornerShape(18.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
+      // ==========================================
+      // SECTION 3: 5 CONTENT TABS
+      // ==========================================
+      item(key = "profile_content_tabs") {
+        Column(modifier = Modifier.fillMaxWidth()) {
+          Spacer(modifier = Modifier.height(10.dp))
+          Row(
             modifier = Modifier
               .fillMaxWidth()
-              .padding(horizontal = 16.dp, vertical = 20.dp)
-              .testTag("private_profile_lock_card")
+              .horizontalScroll(rememberScrollState())
+              .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+          ) {
+            profileTabs.forEach { tab ->
+              val isSelected = selectedTab == tab
+              Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                  .clickable { selectedTab = tab }
+                  .padding(vertical = 8.dp)
+                  .testTag("profile_tab_$tab")
+              ) {
+                Text(
+                  text = tab,
+                  fontSize = 13.sp,
+                  fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                  color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Box(
+                  modifier = Modifier
+                    .height(2.dp)
+                    .width(36.dp)
+                    .background(if (isSelected) VybeBrandViolet else Color.Transparent)
+                )
+              }
+            }
+          }
+          HorizontalDivider(thickness = 0.6.dp, color = MaterialTheme.colorScheme.outlineVariant)
+        }
+      }
+
+      // ==========================================
+      // SECTION 4: 3-COLUMN CONTENT GRID
+      // ==========================================
+      if (!canViewContent) {
+        item(key = "private_profile_barrier") {
+          Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(24.dp)
           ) {
             Column(
-              modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 32.dp),
+              modifier = Modifier.padding(28.dp),
               horizontalAlignment = Alignment.CenterHorizontally
             ) {
-              Surface(
-                shape = CircleShape,
-                color = VybeViolet.copy(alpha = 0.14f),
-                modifier = Modifier.size(60.dp)
-              ) {
-                Box(contentAlignment = Alignment.Center) {
-                  Icon(
-                    Icons.Default.Lock,
-                    contentDescription = "Private Account",
-                    tint = VybeViolet,
-                    modifier = Modifier.size(28.dp)
-                  )
-                }
-              }
-              Spacer(modifier = Modifier.height(14.dp))
+              Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = "Private Account",
+                tint = VybeBrandViolet,
+                modifier = Modifier.size(36.dp)
+              )
+              Spacer(modifier = Modifier.height(12.dp))
               Text(
                 text = "This Account is Private",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp
               )
-              Spacer(modifier = Modifier.height(6.dp))
+              Spacer(modifier = Modifier.height(4.dp))
               Text(
-                text = if (isFollowRequested) {
-                  "Your LINKUP request to @${user.username} is pending approval."
-                } else {
-                  "LINK UP with @${user.username} to view their posts, reels, and stories."
-                },
-                style = MaterialTheme.typography.bodySmall,
+                text = "Send a LINKUP request to @${user.username} to view their moments and reels.",
+                fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
               )
@@ -1181,186 +995,167 @@ fun UserProfileScreen(
           }
         }
       } else if (displayedTabPosts.isEmpty()) {
-        item {
-          Box(
+        item(key = "tab_empty_state") {
+          Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+            shape = RoundedCornerShape(16.dp),
             modifier = Modifier
               .fillMaxWidth()
-              .padding(40.dp),
-            contentAlignment = Alignment.Center
+              .padding(24.dp)
           ) {
-            Text(
-              text = when (selectedTab) {
-                "Reels" -> "No reels shared yet."
-                "Saved" -> "No saved posts yet."
-                else -> "No posts shared yet."
-              },
-              color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Column(
+              modifier = Modifier.padding(28.dp),
+              horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+              Icon(
+                imageVector = when (selectedTab) {
+                  "Vybe Reels" -> Icons.Default.SmartDisplay
+                  "Unfiltered" -> Icons.Default.CameraAlt
+                  "Tagged" -> Icons.Default.Tag
+                  "Highlights" -> Icons.Default.Star
+                  else -> Icons.Default.PhotoLibrary
+                },
+                contentDescription = null,
+                tint = VybeBrandViolet,
+                modifier = Modifier.size(32.dp)
+              )
+              Spacer(modifier = Modifier.height(10.dp))
+              Text(
+                text = when (selectedTab) {
+                  "Vybe Reels" -> "No reels published yet"
+                  "Unfiltered" -> "No unfiltered moments captured"
+                  "Tagged" -> "No tagged posts"
+                  "Highlights" -> "No highlighted posts pinned"
+                  else -> "No posts shared yet"
+                },
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp
+              )
+              Spacer(modifier = Modifier.height(4.dp))
+              Text(
+                text = if (effectiveIsMe) "Publish your first moment to inspire the community!" else "@${user.username} hasn't shared anything in $selectedTab yet.",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+              )
+              if (effectiveIsMe) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                  onClick = { viewModel.navigateTo(Screen.CREATE_POST) },
+                  colors = ButtonDefaults.buttonColors(containerColor = VybeBrandViolet),
+                  shape = RoundedCornerShape(12.dp)
+                ) {
+                  Text("Create Moment", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+              }
+            }
           }
         }
       } else {
-        items(displayedTabPosts, key = { it.id }) { post ->
-          PostCard(
-            post = post,
-            onLikeClick = { viewModel.toggleLike(post.id) },
-            onDoubleTapLike = { viewModel.ensurePostLoved(post.id) },
-            onReact = { rx -> viewModel.reactToPost(post.id, rx) },
-            onSaveClick = { viewModel.toggleSave(post.id) },
-            onCommentClick = { viewModel.loadCommentsForPost(post.id) },
-            onLoadComments = { viewModel.loadCommentsForPost(post.id) },
-            onAddComment = { text -> viewModel.addComment(post.id, text) },
-            onReactComment = { commentId, rx -> viewModel.reactToComment(post.id, commentId, rx) },
-            onShareClick = { viewModel.openPostShareSheet(post) },
-            onUserClick = { viewModel.openUserProfile(post.author) },
-            onRemixClick = { viewModel.openReelViewer(post.id) },
-            onDeleteClick = { viewModel.deletePost(post.id) },
-            onPostViewed = { viewModel.recordPostView(it) },
-            currentUserId = currentUser?.id,
-            isFollowing = followingUserIds.contains(post.author.id),
-            isFollowRequested = requestedFollowUserIds.contains(post.author.id) || post.author.isFollowRequestedByMe,
-            followsMe = post.author.followsMe,
-            onFollowClick = if (post.author.id != currentUser?.id) {
-              { viewModel.toggleFollowUser(post.author.id) }
-            } else {
-              null
+        // 3-Column Media Grid
+        items(displayedTabPosts.chunked(3), key = { chunk -> "row_${chunk.first().id}" }) { rowPosts ->
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 2.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
+          ) {
+            rowPosts.forEach { post ->
+              val isVideo = post.mediaType == MediaType.REEL || post.mediaType == MediaType.VIDEO || post.isVybesReel
+              Surface(
+                color = Color(0xFF111827),
+                modifier = Modifier
+                  .weight(1f)
+                  .aspectRatio(1f)
+                  .clickable {
+                    if (isVideo) {
+                      viewModel.openReelViewer(post.id)
+                    } else {
+                      viewModel.openPostFromNotification(post.id)
+                    }
+                  }
+              ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                  val mediaUrl = post.mediaUrls.firstOrNull().orEmpty()
+                  if (mediaUrl.isNotBlank()) {
+                    AsyncImage(
+                      model = mediaUrl,
+                      contentDescription = post.caption,
+                      contentScale = ContentScale.Crop,
+                      modifier = Modifier.fillMaxSize()
+                    )
+                  } else {
+                    Box(
+                      modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                          Brush.linearGradient(listOf(VybeVioletDark, Color(0xFF1E1B4B)))
+                        )
+                    )
+                  }
+
+                  // Top-right Reel Video Icon
+                  if (isVideo) {
+                    Box(
+                      modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                    ) {
+                      Icon(
+                        imageVector = Icons.Default.SmartDisplay,
+                        contentDescription = "Video",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                      )
+                    }
+                  }
+
+                  // Bottom-left Likes Count with Heart Icon
+                  Row(
+                    modifier = Modifier
+                      .align(Alignment.BottomStart)
+                      .background(Color.Black.copy(alpha = 0.45f))
+                      .padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Icon(
+                      imageVector = Icons.Default.Favorite,
+                      contentDescription = "Likes",
+                      tint = Color.White,
+                      modifier = Modifier.size(10.dp)
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text(
+                      text = formatCount(post.likesCount.toLong()),
+                      color = Color.White,
+                      fontSize = 9.sp,
+                      fontWeight = FontWeight.Bold
+                    )
+                  }
+                }
+              }
             }
-          )
+            // Fill spacing if row has fewer than 3 items
+            repeat(3 - rowPosts.size) {
+              Spacer(modifier = Modifier.weight(1f))
+            }
+          }
         }
       }
 
       item {
-        Spacer(modifier = Modifier.height(88.dp))
+        Spacer(modifier = Modifier.height(30.dp))
       }
     }
   }
 
-  // Photo & Banner Action Bottom Sheet (Strictly Owner Only)
-  if (isMe && showPhotoActionSheet && photoActionTarget != null) {
-    ModalBottomSheet(
-      onDismissRequest = {
-        showPhotoActionSheet = false
-        photoActionTarget = null
-      },
-      containerColor = MaterialTheme.colorScheme.surface
-    ) {
-      Column(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = 24.dp, vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-      ) {
-        Text(
-          text = if (photoActionTarget == "AVATAR") "Profile Photo" else "Profile Banner",
-          style = MaterialTheme.typography.titleMedium,
-          fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(18.dp))
-
-        Surface(
-          color = MaterialTheme.colorScheme.surfaceVariant,
-          shape = RoundedCornerShape(12.dp),
-          modifier = Modifier
-            .fillMaxWidth()
-            .clickable {
-              val hasCameraPermission = ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.CAMERA
-              ) == PackageManager.PERMISSION_GRANTED
-              if (hasCameraPermission) {
-                cameraCaptureLauncher.launch(null)
-              } else {
-                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-              }
-            }
-            .testTag("action_sheet_camera_button")
-        ) {
-          Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Icon(Icons.Default.CameraAlt, contentDescription = null, tint = VybeViolet)
-            Spacer(modifier = Modifier.width(12.dp))
-            Text("Take Photo with Camera", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-          }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        Surface(
-          color = MaterialTheme.colorScheme.surfaceVariant,
-          shape = RoundedCornerShape(12.dp),
-          modifier = Modifier
-            .fillMaxWidth()
-            .clickable {
-              galleryPickerLauncher.launch(
-                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-              )
-            }
-            .testTag("action_sheet_gallery_button")
-        ) {
-          Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = VybeBrandCyan)
-            Spacer(modifier = Modifier.width(12.dp))
-            Text("Choose from Gallery", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-          }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        Surface(
-          color = MaterialTheme.colorScheme.surfaceVariant,
-          shape = RoundedCornerShape(12.dp),
-          modifier = Modifier
-            .fillMaxWidth()
-            .clickable {
-              if (photoActionTarget == "AVATAR") {
-                viewModel.updateProfilePhoto("")
-              } else {
-                viewModel.updateProfileBanner("")
-              }
-              showPhotoActionSheet = false
-              photoActionTarget = null
-            }
-            .testTag("action_sheet_remove_button")
-        ) {
-          Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Icon(Icons.Default.Delete, contentDescription = null, tint = VybeDanger)
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-              text = if (photoActionTarget == "AVATAR") "Remove Profile Photo" else "Remove Banner",
-              fontWeight = FontWeight.SemiBold,
-              fontSize = 14.sp,
-              color = VybeDanger
-            )
-          }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        TextButton(
-          onClick = {
-            showPhotoActionSheet = false
-            photoActionTarget = null
-          },
-          modifier = Modifier.fillMaxWidth()
-        ) {
-          Text("Cancel", fontWeight = FontWeight.Medium)
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-      }
-    }
-  }
-
-  // Edit Profile Full Screen (Strictly Owner Only)
-  if (isMe && showEditProfileModal) {
+  // ==========================================
+  // MODAL 1: EDIT PROFILE FULL DIALOG
+  // ==========================================
+  if (effectiveIsMe && showEditProfileModal) {
     BackHandler { showEditProfileModal = false }
     Scaffold(
+      containerColor = MaterialTheme.colorScheme.background,
       topBar = {
         TopAppBar(
           title = { Text("Edit Profile", fontWeight = FontWeight.Bold) },
@@ -1372,35 +1167,20 @@ fun UserProfileScreen(
           actions = {
             Button(
               onClick = {
-                val cleanHandle = editUsername.trim().removePrefix("@")
-                if (cleanHandle.length < 3 || cleanHandle.equals("null", ignoreCase = true)) {
-                  availabilityMessage = "Username must be at least 3 characters."
-                  isAvailable = false
-                  return@Button
-                }
-                if (isAvailable) {
-                  viewModel.updateAccountProfile(
-                    firstName = editFirstName.trim(),
-                    lastName = editLastName.trim(),
-                    requestedUserId = cleanHandle,
-                    email = currentUser?.email ?: "",
-                    phone = currentUser?.phone ?: "",
-                    bio = editBio,
-                    avatarUrl = editAvatarUrl,
-                    profileVideoUrl = editVideoUrl,
-                    coverUrl = editCoverUrl
-                  )
-                  if (editIsPrivate != (currentUser?.isPrivate == true)) {
-                    viewModel.setAccountPrivate(editIsPrivate)
-                  }
-                  showEditProfileModal = false
-                }
+                viewModel.updateExtendedProfile(
+                  displayName = editDisplayName,
+                  bio = editBio,
+                  location = editLocation,
+                  website = editWebsite,
+                  interests = editInterestsText.split(",").map { it.trim() }.filter { it.isNotBlank() },
+                  avatarUrl = user.avatarUrl,
+                  coverUrl = user.coverUrl,
+                  isPrivate = editIsPrivate
+                )
+                showEditProfileModal = false
               },
-              enabled = isAvailable && editUsername.trim().removePrefix("@").length >= 3,
-              colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-              modifier = Modifier
-                .padding(end = 8.dp)
-                .testTag("save_edit_profile_button")
+              colors = ButtonDefaults.buttonColors(containerColor = VybeBrandViolet),
+              modifier = Modifier.padding(end = 8.dp)
             ) {
               Text("Save", fontWeight = FontWeight.Bold, color = Color.White)
             }
@@ -1413,252 +1193,211 @@ fun UserProfileScreen(
         modifier = Modifier
           .fillMaxSize()
           .padding(innerPadding)
-          .imePadding()
           .padding(horizontal = 20.dp)
           .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
       ) {
         Spacer(modifier = Modifier.height(4.dp))
 
-        Text("Profile Banner Cover", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-        Box(
-          modifier = Modifier
-            .fillMaxWidth()
-            .height(130.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(
-              Brush.horizontalGradient(
-                listOf(VybeVioletDark, ObsidianSurface, VybeVioletDark)
-              )
-            )
-            .clickable {
-              bannerPickerLauncher.launch(
-                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-              )
-            }
+        // Photos Buttons
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-          if (editCoverUrl.isNotBlank()) {
-            AsyncImage(
-              model = editCoverUrl,
-              contentDescription = "Cover preview",
-              contentScale = ContentScale.Crop,
-              modifier = Modifier.fillMaxSize()
-            )
-          }
-          Surface(
-            color = Color.Black.copy(alpha = 0.6f),
-            shape = CircleShape,
-            modifier = Modifier
-              .align(Alignment.Center)
-              .padding(8.dp)
-          ) {
-            Row(
-              modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text("Change Cover Banner", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            }
-          }
-        }
-
-        Text("Avatar Profile Photo", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          Box(
-            modifier = Modifier
-              .size(72.dp)
-              .clip(CircleShape)
-              .background(
-                Brush.linearGradient(listOf(VybeBrandViolet, VybeBrandMagenta))
-              )
-              .clickable {
-                avatarPickerLauncher.launch(
-                  PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                )
-              },
-            contentAlignment = Alignment.Center
-          ) {
-            if (editAvatarUrl.isNotBlank()) {
-              AsyncImage(
-                model = editAvatarUrl,
-                contentDescription = "Avatar preview",
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                  .fillMaxSize()
-                  .clip(CircleShape)
-              )
-            } else {
-              Text(
-                text = editFirstName.take(1).uppercase().ifBlank { "U" },
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 28.sp
-              )
-            }
-          }
-          Spacer(modifier = Modifier.width(16.dp))
           OutlinedButton(
             onClick = {
-              avatarPickerLauncher.launch(
-                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-              )
+              photoActionTarget = "AVATAR"
+              showPhotoActionSheet = true
             },
-            shape = RoundedCornerShape(12.dp)
+            modifier = Modifier.weight(1f)
           ) {
-            Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(16.dp))
+            Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(6.dp))
-            Text("Upload Photo", fontWeight = FontWeight.SemiBold)
+            Text("Change Photo", fontSize = 12.sp)
+          }
+
+          OutlinedButton(
+            onClick = {
+              photoActionTarget = "BANNER"
+              showPhotoActionSheet = true
+            },
+            modifier = Modifier.weight(1f)
+          ) {
+            Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Change Cover", fontSize = 12.sp)
           }
         }
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-          OutlinedTextField(
-            value = editFirstName,
-            onValueChange = { editFirstName = it },
-            label = { Text("First Name") },
-            singleLine = true,
-            modifier = Modifier.weight(1f)
-          )
-          OutlinedTextField(
-            value = editLastName,
-            onValueChange = { editLastName = it },
-            label = { Text("Last Name") },
-            singleLine = true,
-            modifier = Modifier.weight(1f)
-          )
-        }
-
+        // Display Name
         OutlinedTextField(
-          value = editUsername,
-          onValueChange = {
-            editUsername = it
-            val (avail, msg) = viewModel.checkUserIdAvailability(it)
-            isAvailable = avail
-            availabilityMessage = msg
-          },
-          label = { Text("User ID (@username)") },
-          leadingIcon = { Text("@", fontWeight = FontWeight.Bold, color = VybeViolet) },
-          supportingText = {
-            if (availabilityMessage != null) {
-              Text(
-                text = availabilityMessage ?: "",
-                color = if (isAvailable) VybeOnlineGreen else VybeDanger,
-                fontWeight = FontWeight.SemiBold
-              )
-            }
-          },
+          value = editDisplayName,
+          onValueChange = { editDisplayName = it },
+          label = { Text("Display Name") },
           singleLine = true,
           modifier = Modifier.fillMaxWidth()
         )
 
+        // Bio
         OutlinedTextField(
           value = editBio,
           onValueChange = { editBio = it },
-          label = { Text("Bio (Introduce your vibe)") },
+          label = { Text("Bio") },
+          modifier = Modifier.fillMaxWidth(),
           minLines = 3,
-          maxLines = 5,
+          maxLines = 5
+        )
+
+        // Location
+        OutlinedTextField(
+          value = editLocation,
+          onValueChange = { editLocation = it },
+          label = { Text("Location (e.g. India, Mumbai)") },
+          singleLine = true,
           modifier = Modifier.fillMaxWidth()
         )
 
-        // Public / Private Account Toggle
-        Card(
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
-          shape = RoundedCornerShape(14.dp),
+        // Website
+        OutlinedTextField(
+          value = editWebsite,
+          onValueChange = { editWebsite = it },
+          label = { Text("Website / Portfolio Link") },
+          singleLine = true,
           modifier = Modifier.fillMaxWidth()
+        )
+
+        // Interest Tags
+        OutlinedTextField(
+          value = editInterestsText,
+          onValueChange = { editInterestsText = it },
+          label = { Text("Interest Tags (comma separated)") },
+          placeholder = { Text("Travel, Tech, Music, Fitness") },
+          modifier = Modifier.fillMaxWidth()
+        )
+
+        // Account Privacy Toggle
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
         ) {
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-          ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-              Text(
-                text = if (editIsPrivate) "Private Profile" else "Public Profile",
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp
-              )
-              Text(
-                text = if (editIsPrivate) {
-                  "Only approved LINKUPS can view your posts, reels, and stories."
-                } else {
-                  "Anyone on VYBE can view your public posts, reels, and stories."
-                },
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-              )
-            }
-            Switch(
-              checked = editIsPrivate,
-              onCheckedChange = { editIsPrivate = it },
-              modifier = Modifier.testTag("edit_profile_private_switch")
+          Column {
+            Text("Private Account", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text(
+              "Only approved followers can view your moments and reels.",
+              fontSize = 11.sp,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
             )
           }
+          Switch(
+            checked = editIsPrivate,
+            onCheckedChange = { editIsPrivate = it }
+          )
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(20.dp))
       }
     }
-    return
   }
 
-  // Report Peer User Dialog
-  if (!isMe && showPeerReportDialog) {
-    val reportCategories = listOf(
-      "Impersonation",
-      "Harassment / Bullying",
-      "Spam or Scam",
-      "Inappropriate Content",
-      "Hate Speech or Threats"
+  // ==========================================
+  // MODAL 2: QR CODE PROFILE DIALOG
+  // ==========================================
+  if (showQrDialog) {
+    ProfileQrCodeDialog(
+      user = user,
+      onDismiss = { showQrDialog = false }
     )
+  }
+
+  // ==========================================
+  // MODAL 3: PHOTO / BANNER CAPTURE ACTION SHEET
+  // ==========================================
+  if (showPhotoActionSheet) {
     AlertDialog(
-      onDismissRequest = { showPeerReportDialog = false },
-      title = { Text("Report @${user.username}", fontWeight = FontWeight.Bold) },
+      onDismissRequest = {
+        showPhotoActionSheet = false
+        photoActionTarget = null
+      },
+      title = {
+        Text(if (photoActionTarget == "AVATAR") "Update Profile Photo" else "Update Cover Banner")
+      },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          Text("Select reason:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-          reportCategories.forEach { cat ->
-            Surface(
-              shape = RoundedCornerShape(8.dp),
-              color = if (peerReportCategory == cat) VybeViolet.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
+          Text("Choose where you would like to select your image:")
+          Button(
+            onClick = {
+              galleryPickerLauncher.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+              )
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = VybeBrandViolet),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Icon(Icons.Default.PhotoLibrary, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Select from Gallery")
+          }
+          OutlinedButton(
+            onClick = {
+              cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            },
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Icon(Icons.Default.CameraAlt, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Take Photo with Camera")
+          }
+        }
+      },
+      confirmButton = {},
+      dismissButton = {
+        TextButton(onClick = {
+          showPhotoActionSheet = false
+          photoActionTarget = null
+        }) {
+          Text("Cancel")
+        }
+      }
+    )
+  }
+
+  // ==========================================
+  // MODAL 4: REPORT USER DIALOG
+  // ==========================================
+  if (showReportDialog) {
+    var reportReason by remember { mutableStateOf("Spam or Scam") }
+    val reasons = listOf("Spam or Scam", "Inappropriate Content", "Harassment", "Impersonation")
+    AlertDialog(
+      onDismissRequest = { showReportDialog = false },
+      title = { Text("Report @${user.username}") },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          reasons.forEach { r ->
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
               modifier = Modifier
                 .fillMaxWidth()
-                .clickable { peerReportCategory = cat }
+                .clickable { reportReason = r }
+                .padding(vertical = 4.dp)
             ) {
-              Text(
-                text = cat,
-                fontSize = 12.sp,
-                fontWeight = if (peerReportCategory == cat) FontWeight.Bold else FontWeight.Normal,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-              )
+              RadioButton(selected = reportReason == r, onClick = { reportReason = r })
+              Spacer(modifier = Modifier.width(8.dp))
+              Text(r, fontSize = 13.sp)
             }
           }
-          OutlinedTextField(
-            value = peerReportDetails,
-            onValueChange = { peerReportDetails = it },
-            label = { Text("Additional details (optional)") },
-            modifier = Modifier.fillMaxWidth(),
-            maxLines = 3
-          )
         }
       },
       confirmButton = {
         Button(
           onClick = {
             coroutineScope.launch {
-              viewModel.submitReport(
-                targetType = "USER",
-                targetId = user.id,
-                reason = peerReportCategory,
-                details = peerReportDetails
-              )
-              snackbarHostState.showSnackbar("Report submitted for safety review.")
+              viewModel.submitReport("USER", user.id, reportReason)
+              showReportDialog = false
+              snackbarHostState.showSnackbar("Report submitted for moderation review.")
             }
-            showPeerReportDialog = false
           },
           colors = ButtonDefaults.buttonColors(containerColor = VybeDanger)
         ) {
@@ -1666,156 +1405,10 @@ fun UserProfileScreen(
         }
       },
       dismissButton = {
-        TextButton(onClick = { showPeerReportDialog = false }) {
+        TextButton(onClick = { showReportDialog = false }) {
           Text("Cancel")
         }
       }
-    )
-  }
-
-  // LINKUPS & LINKED List Dialog
-  if (showFollowListModal != null && canViewContent) {
-    val modalType = showFollowListModal!!
-    val isLinkedTab = modalType.equals("LINKED", ignoreCase = true) || modalType.equals("Following", ignoreCase = true)
-    val dialogTitle = if (isLinkedTab) "LINKED" else "LINKUPS"
-
-    var userToRemoveFollower by remember { mutableStateOf<User?>(null) }
-
-    val listUsers = remember(dialogTitle, isMe, allUsers, followingUserIds, followerUserIds, currentUser, user) {
-      if (isMe) {
-        if (isLinkedTab) {
-          allUsers.filter { followingUserIds.contains(it.id) }
-        } else {
-          allUsers.filter { followerUserIds.contains(it.id) || it.followsMe }
-        }
-      } else {
-        if (!isLinkedTab) {
-          buildList {
-            if (isFollowed && currentUser != null) add(currentUser!!)
-          }
-        } else {
-          buildList {
-            if (followsMe && currentUser != null) add(currentUser!!)
-          }
-        }
-      }
-    }
-
-    AlertDialog(
-      onDismissRequest = { showFollowListModal = null },
-      title = { Text(dialogTitle, fontWeight = FontWeight.Bold) },
-      text = {
-        if (listUsers.isEmpty()) {
-          Box(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(20.dp),
-            contentAlignment = Alignment.Center
-          ) {
-            Text(
-              text = if (!isLinkedTab) "No LINKUPS to display yet." else "No active LINKED connections yet.",
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              fontSize = 13.sp,
-              textAlign = TextAlign.Center
-            )
-          }
-        } else {
-          LazyColumn(
-            modifier = Modifier
-              .fillMaxWidth()
-              .heightIn(max = 340.dp)
-          ) {
-            items(listUsers, key = { it.id }) { u ->
-              Row(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .clickable {
-                    showFollowListModal = null
-                    viewModel.openUserProfile(u)
-                  }
-                  .padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                VybeAvatar(user = u, size = 38.dp)
-                Spacer(modifier = Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                  Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(u.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    VerificationBadge(user = u)
-                  }
-                  Text("@${u.username}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                if (u.id != currentUser?.id) {
-                  if (isMe && !isLinkedTab) {
-                    OutlinedButton(
-                      onClick = { userToRemoveFollower = u },
-                      contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                      shape = RoundedCornerShape(10.dp),
-                      modifier = Modifier
-                        .heightIn(min = 34.dp)
-                        .testTag("remove_linkup_${u.id}")
-                    ) {
-                      Text(
-                        "Remove LINKUP",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.error
-                      )
-                    }
-                  } else {
-                    val isUFollowed = followingUserIds.contains(u.id)
-                    val isURequested = requestedFollowUserIds.contains(u.id) || u.isFollowRequestedByMe
-                    com.example.ui.components.VybeFollowButton(
-                      isFollowing = isUFollowed,
-                      isFollowRequested = isURequested,
-                      followsMe = u.followsMe,
-                      targetUsername = u.username,
-                      onClick = { viewModel.toggleFollowUser(u.id) },
-                      compact = true
-                    )
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      confirmButton = {
-        TextButton(onClick = { showFollowListModal = null }) { Text("Close") }
-      }
-    )
-
-    if (userToRemoveFollower != null) {
-      val target = userToRemoveFollower!!
-      AlertDialog(
-        onDismissRequest = { userToRemoveFollower = null },
-        title = { Text("Remove LINKUP?", fontWeight = FontWeight.Bold) },
-        text = {
-          Text("Are you sure you want to remove @${target.username} from your LINKUPS? VYBE won't tell them they were removed.")
-        },
-        confirmButton = {
-          Button(
-            onClick = {
-              viewModel.removeFollowerUser(target.id)
-              userToRemoveFollower = null
-            },
-            colors = ButtonDefaults.buttonColors(containerColor = VybeDanger)
-          ) {
-            Text("Remove LINKUP", color = Color.White, fontWeight = FontWeight.Bold)
-          }
-        },
-        dismissButton = {
-          TextButton(onClick = { userToRemoveFollower = null }) { Text("Cancel") }
-        }
-      )
-    }
-  }
-
-  if (showQrDialog) {
-    ProfileQrCodeDialog(
-      user = user,
-      onDismiss = { showQrDialog = false }
     )
   }
 }

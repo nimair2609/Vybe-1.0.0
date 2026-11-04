@@ -1596,6 +1596,43 @@ class VybeViewModel : ViewModel() {
     return track
   }
 
+  // --- VYBE 2.1: Explore & Profile 2.1 Delegations ---
+  val searchHistory = repository.searchHistory
+  fun addSearchQueryToHistory(query: String) = repository.addSearchQueryToHistory(query)
+  fun removeSearchQueryFromHistory(query: String) = repository.removeSearchQueryFromHistory(query)
+  fun clearSearchHistory() = repository.clearSearchHistory()
+  fun recordProfileView(targetUserId: String) {
+    repository.recordProfileView(targetUserId)
+    if (_selectedUserProfile.value?.id == targetUserId) {
+      _selectedUserProfile.value = repository.allUsers.value.firstOrNull { it.id == targetUserId }
+    }
+  }
+  fun updateExtendedProfile(
+    displayName: String,
+    bio: String,
+    location: String,
+    website: String,
+    interests: List<String>,
+    avatarUrl: String?,
+    coverUrl: String?,
+    isPrivate: Boolean
+  ) {
+    repository.updateExtendedProfile(
+      displayName, bio, location, website, interests, avatarUrl, coverUrl, isPrivate
+    )
+    val meId = repository.currentUser.value?.id
+    if (_selectedUserProfile.value?.id == meId) {
+      _selectedUserProfile.value = repository.currentUser.value
+    }
+  }
+  fun togglePinPost(postId: String) {
+    repository.togglePinPost(postId)
+    val meId = repository.currentUser.value?.id
+    if (_selectedUserProfile.value?.id == meId) {
+      _selectedUserProfile.value = repository.currentUser.value
+    }
+  }
+
   override fun onCleared() {
     com.example.util.music.MusicPreviewController.stop()
     super.onCleared()

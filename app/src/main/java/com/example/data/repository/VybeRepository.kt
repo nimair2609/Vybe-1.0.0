@@ -8350,4 +8350,87 @@ class VybeRepository private constructor() {
     _growReflections.value = listOf(ref) + _growReflections.value
     advanceGrowJourneyDay(journeyId)
   }
+
+  // --- VYBE 2.1: Search History ---
+  private val _searchHistory = MutableStateFlow<List<String>>(
+    listOf("#VYBEfamily", "rahul", "#TravelDiaries", "techvibes", "#MusicVibes")
+  )
+  val searchHistory: StateFlow<List<String>> = _searchHistory.asStateFlow()
+
+  fun addSearchQueryToHistory(query: String) {
+    val clean = query.trim()
+    if (clean.isBlank()) return
+    val current = _searchHistory.value.filter { !it.equals(clean, ignoreCase = true) }
+    _searchHistory.value = (listOf(clean) + current).take(12)
+  }
+
+  fun removeSearchQueryFromHistory(query: String) {
+    _searchHistory.value = _searchHistory.value.filter { !it.equals(query, ignoreCase = true) }
+  }
+
+  fun clearSearchHistory() {
+    _searchHistory.value = emptyList()
+  }
+
+  // --- VYBE 2.1: Genuine Profile Views Tracking (Deduplicated 24-hour window) ---
+  private val profileViewLedger = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+  fun recordProfileView(targetUserId: String) {
+    val currentId = _currentUser.value?.id
+    if (currentId == null || currentId == targetUserId) return
+
+    val viewKey = "$currentId->$targetUserId"
+    val now = System.currentTimeMillis()
+    val lastView = profileViewLedger[viewKey] ?: 0L
+
+    if (now - lastView < 86_400_000L) {
+      return
+    }
+    profileViewLedger[viewKey] = now
+
+    _allUsers.value = _allUsers.value.map { u ->
+      if (u.id == targetUserId) u.copy(profileViewsCount = u.profileViewsCount + 1) else u
+    }
+    if (_currentUser.value?.id == targetUserId) {
+      _currentUser.value = _currentUser.value?.let { it.copy(profileViewsCount = it.profileViewsCount + 1) }
+    }
+  }
+
+  fun updateExtendedProfile(
+    displayName: String,
+    bio: String,
+    location: String,
+    website: String,
+    interests: List<String>,
+    avatarUrl: String?,
+    coverUrl: String?,
+    isPrivate: Boolean
+  ) {
+    val me = _currentUser.value ?: return
+    val updated = me.copy(
+      displayName = displayName.ifBlank { me.displayName },
+      bio = bio,
+      location = location,
+      website = website,
+      interestTags = interests,
+      avatarUrl = avatarUrl?.ifBlank { me.avatarUrl } ?: me.avatarUrl,
+      coverUrl = coverUrl?.ifBlank { me.coverUrl } ?: me.coverUrl,
+      isPrivate = isPrivate
+    )
+    _currentUser.value = updated
+    _allUsers.value = _allUsers.value.map { if (it.id == me.id) updated else it }
+  }
+
+  fun togglePinPost(postId: String) {
+    val me = _currentUser.value ?: return
+    val currentPinned = me.pinnedPostIds.toMutableList()
+    if (currentPinned.contains(postId)) {
+      currentPinned.remove(postId)
+    } else {
+      if (currentPinned.size < 3) currentPinned.add(0, postId)
+    }
+    val updated = me.copy(pinnedPostIds = currentPinned)
+    _currentUser.value = updated
+    _allUsers.value = _allUsers.value.map { if (it.id == me.id) updated else it }
+  }
 }
