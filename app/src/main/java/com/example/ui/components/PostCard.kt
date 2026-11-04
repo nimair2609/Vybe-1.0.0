@@ -251,9 +251,9 @@ fun PostCard(
               modifier = Modifier.testTag("post_timestamp_${post.id}")
             )
             Text(
-              text = if (post.isPrivate) "Private" else "Public",
+              text = if (post.author.isPrivate) "Private" else "Public",
               fontSize = 12.sp,
-              color = if (post.isPrivate) VybeViolet else mutedText,
+              color = if (post.author.isPrivate) VybeViolet else mutedText,
               maxLines = 1
             )
             Spacer(modifier = Modifier.width(4.dp))
