@@ -88,6 +88,8 @@ fun HomeScreen(viewModel: VybeViewModel) {
   val requestedFollowUserIds by viewModel.requestedFollowUserIds.collectAsState()
   val hiddenPostIds by viewModel.hiddenPostIds.collectAsState()
   val mutedCreatorIds by viewModel.mutedCreatorIds.collectAsState()
+  val isFeedAudioEnabled by viewModel.isFeedAudioEnabled.collectAsState()
+  val coroutineScope = rememberCoroutineScope()
 
   var showMatchesDialog by remember { mutableStateOf(false) }
   var showStoryCreateSheet by remember { mutableStateOf(false) }
@@ -268,8 +270,43 @@ fun HomeScreen(viewModel: VybeViewModel) {
             currentUser = currentUser,
             onAddStoryClick = { showStoryCreateSheet = true },
             onStoryClick = { story -> viewModel.openStory(story) },
-            modifier = Modifier.padding(bottom = 6.dp)
+            modifier = Modifier.padding(bottom = 2.dp)
           )
+
+          // VYBE Home Feed 2.0 Mode Switcher (FOR YOU, FOLLOWING, TRENDING)
+          val feedModes = listOf(
+            "FOR_YOU" to "For You",
+            "FOLLOWING" to "Following",
+            "TRENDING" to "Trending"
+          )
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 16.dp, vertical = 6.dp)
+              .testTag("home_feed_mode_selector"),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            feedModes.forEach { (modeKey, label) ->
+              val isSelected = (feedMode == modeKey) || (feedMode.isBlank() && modeKey == "FOR_YOU")
+              Surface(
+                color = if (isSelected) VybeBrandViolet else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                shape = RoundedCornerShape(20.dp),
+                border = if (isSelected) null else BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier
+                  .clip(RoundedCornerShape(20.dp))
+                  .clickable { viewModel.setFeedMode(modeKey) }
+                  .testTag("feed_mode_$modeKey")
+              ) {
+                Text(
+                  text = label,
+                  fontSize = 12.sp,
+                  fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                  color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                  modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                )
+              }
+            }
+          }
         }
       }
     }
@@ -281,6 +318,399 @@ fun HomeScreen(viewModel: VybeViewModel) {
       contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+
+      // --- QUICK DISCOVERY GATEWAYS ---
+      item(key = "home_quick_gateways") {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+          horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          // 1. VYBE Circle
+          Surface(
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, VybeBrandViolet.copy(alpha = 0.5f)),
+            modifier = Modifier
+              .clickable { viewModel.navigateTo(Screen.VYBE_CIRCLE) }
+              .testTag("gateway_vybe_circle")
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Box(
+                modifier = Modifier
+                  .size(24.dp)
+                  .clip(CircleShape)
+                  .background(VybeBrandViolet.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Group,
+                  contentDescription = null,
+                  tint = VybeBrandViolet,
+                  modifier = Modifier.size(14.dp)
+                )
+              }
+              Spacer(modifier = Modifier.width(8.dp))
+              Column {
+                Text("VYBE Circle", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("${circles.size} communities", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              }
+            }
+          }
+
+          // 2. VYBE Grow
+          Surface(
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, VybeBrandCyan.copy(alpha = 0.5f)),
+            modifier = Modifier
+              .clickable { viewModel.navigateTo(Screen.VYBE_GROW) }
+              .testTag("gateway_vybe_grow")
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Box(
+                modifier = Modifier
+                  .size(24.dp)
+                  .clip(CircleShape)
+                  .background(VybeBrandCyan.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+              ) {
+                Icon(
+                  imageVector = Icons.Default.TrendingUp,
+                  contentDescription = null,
+                  tint = VybeBrandCyan,
+                  modifier = Modifier.size(14.dp)
+                )
+              }
+              Spacer(modifier = Modifier.width(8.dp))
+              Column {
+                Text("VYBE Grow", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("${growJourneys.size} journeys", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              }
+            }
+          }
+
+          // 3. Spiritual Mode
+          val isSpiritual by viewModel.isSpiritualMode.collectAsState()
+          Surface(
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.5f)),
+            modifier = Modifier
+              .clickable { viewModel.navigateTo(Screen.SPIRITUAL_MODE) }
+              .testTag("gateway_spiritual_mode")
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Box(
+                modifier = Modifier
+                  .size(24.dp)
+                  .clip(CircleShape)
+                  .background(Color(0xFF10B981).copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+              ) {
+                Icon(
+                  imageVector = Icons.Default.SelfImprovement,
+                  contentDescription = null,
+                  tint = Color(0xFF10B981),
+                  modifier = Modifier.size(14.dp)
+                )
+              }
+              Spacer(modifier = Modifier.width(8.dp))
+              Column {
+                Text("Spiritual Mode", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text(if (isSpiritual) "Active" else "Mindful Space", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              }
+            }
+          }
+
+          // 4. VYBE Unload
+          Surface(
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, VybeDanger.copy(alpha = 0.5f)),
+            modifier = Modifier
+              .clickable { viewModel.navigateTo(Screen.UNLOAD_VIEW) }
+              .testTag("gateway_vybe_unload")
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Box(
+                modifier = Modifier
+                  .size(24.dp)
+                  .clip(CircleShape)
+                  .background(VybeDanger.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+              ) {
+                Icon(
+                  imageVector = Icons.Default.GraphicEq,
+                  contentDescription = null,
+                  tint = VybeDanger,
+                  modifier = Modifier.size(14.dp)
+                )
+              }
+              Spacer(modifier = Modifier.width(8.dp))
+              Column {
+                Text("Live Audio", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("${unloadRooms.count { it.isActive }} rooms", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              }
+            }
+          }
+        }
+      }
+
+      // --- SOMETHING NEW FOR YOU (Personalized Hybrid Discovery) ---
+      item(key = "home_something_new") {
+        Surface(
+          color = MaterialTheme.colorScheme.surface,
+          tonalElevation = 3.dp,
+          shape = RoundedCornerShape(18.dp),
+          border = BorderStroke(1.dp, VybeBrandViolet.copy(alpha = 0.35f)),
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Column(
+            modifier = Modifier
+              .fillMaxWidth()
+              .background(
+                Brush.linearGradient(
+                  listOf(
+                    VybeBrandViolet.copy(alpha = 0.12f),
+                    MaterialTheme.colorScheme.surface
+                  )
+                )
+              )
+              .padding(14.dp)
+          ) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+              ) {
+                Icon(
+                  imageVector = Icons.Default.AutoAwesome,
+                  contentDescription = null,
+                  tint = VybeBrandViolet,
+                  modifier = Modifier.size(18.dp)
+                )
+                Text(
+                  text = "Something New For You",
+                  fontWeight = FontWeight.Bold,
+                  fontSize = 14.sp,
+                  color = MaterialTheme.colorScheme.onSurface
+                )
+              }
+              Text(
+                text = "Discovery",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = VybeBrandCyan
+              )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+
+            val recommendedCircle = circles.firstOrNull()
+            val recommendedJourney = growJourneys.firstOrNull()
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+              if (recommendedCircle != null) {
+                Surface(
+                  color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                  shape = RoundedCornerShape(12.dp),
+                  modifier = Modifier
+                    .weight(1f)
+                    .clickable { viewModel.navigateTo(Screen.VYBE_CIRCLE) }
+                ) {
+                  Column(modifier = Modifier.padding(10.dp)) {
+                    Text(
+                      text = "Circle to Join",
+                      fontSize = 10.sp,
+                      color = VybeBrandViolet,
+                      fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                      text = recommendedCircle.name,
+                      fontSize = 13.sp,
+                      fontWeight = FontWeight.Bold,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                      text = "${recommendedCircle.membersCount} members",
+                      fontSize = 10.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                  }
+                }
+              }
+              if (recommendedJourney != null) {
+                Surface(
+                  color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                  shape = RoundedCornerShape(12.dp),
+                  modifier = Modifier
+                    .weight(1f)
+                    .clickable { viewModel.navigateTo(Screen.VYBE_GROW) }
+                ) {
+                  Column(modifier = Modifier.padding(10.dp)) {
+                    Text(
+                      text = "Habit Journey",
+                      fontSize = 10.sp,
+                      color = VybeBrandCyan,
+                      fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                      text = recommendedJourney.title,
+                      fontSize = 13.sp,
+                      fontWeight = FontWeight.Bold,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                      text = "${recommendedJourney.durationDays}-day streak",
+                      fontSize = 10.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // --- VYBE REELS PREVIEW RAIL ---
+      if (videoReels.isNotEmpty()) {
+        item(key = "home_reels_preview") {
+          Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(
+                  imageVector = Icons.Default.PlayArrow,
+                  contentDescription = null,
+                  tint = VybeBrandMagenta,
+                  modifier = Modifier.size(18.dp)
+                )
+                Text(
+                  text = "Trending Vybe Reels",
+                  fontSize = 15.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = MaterialTheme.colorScheme.onSurface
+                )
+              }
+              Text(
+                text = "Watch All",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = VybeBrandMagenta,
+                modifier = Modifier.clickable { viewModel.selectTab(MainTab.VYBES) }
+              )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            LazyRow(
+              horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+              items(videoReels.take(8), key = { "reel_rail_${it.id}" }) { reel ->
+                Surface(
+                  color = Color(0xFF111827),
+                  shape = RoundedCornerShape(14.dp),
+                  border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant),
+                  modifier = Modifier
+                    .width(120.dp)
+                    .height(180.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable { viewModel.openReelViewer(reel.id) }
+                ) {
+                  Box(modifier = Modifier.fillMaxSize()) {
+                    val mediaUrl = reel.mediaUrls.firstOrNull().orEmpty()
+                    if (mediaUrl.isNotBlank()) {
+                      AsyncImage(
+                        model = mediaUrl,
+                        contentDescription = reel.caption,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                      )
+                    }
+                    Box(
+                      modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                          Brush.verticalGradient(
+                            listOf(
+                              Color.Transparent,
+                              Color.Black.copy(alpha = 0.75f)
+                            )
+                          )
+                        )
+                    )
+                    Box(
+                      modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.5f)),
+                      contentAlignment = Alignment.Center
+                    ) {
+                      Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Play Reel",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                      )
+                    }
+                    Column(
+                      modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(8.dp)
+                    ) {
+                      Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                      ) {
+                        VybeAvatar(user = reel.author, size = 18.dp)
+                        Text(
+                          text = reel.author.username,
+                          color = Color.White,
+                          fontSize = 10.sp,
+                          fontWeight = FontWeight.Bold,
+                          maxLines = 1,
+                          overflow = TextOverflow.Ellipsis
+                        )
+                      }
+                      if (reel.viewsCount > 0) {
+                        Text(
+                          text = "${reel.viewsCount} views",
+                          color = Color.White.copy(alpha = 0.75f),
+                          fontSize = 9.sp
+                        )
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
 
       // --- SECTION 1: VYBE UNLOAD HERO CARD ---
       item {
@@ -792,43 +1222,129 @@ fun HomeScreen(viewModel: VybeViewModel) {
         }
       }
 
-      // --- SECTION 6: DIRECT FEED EXPLORATION BANNER ---
-      item {
-        Surface(
-          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-          shape = RoundedCornerShape(16.dp),
-          border = BorderStroke(1.dp, VybeBrandViolet.copy(alpha = 0.3f)),
+      // --- SECTION 6: INTELLIGENT HOME FEED 2.0 POST STREAM ---
+      item(key = "home_feed_header") {
+        Row(
           modifier = Modifier
             .fillMaxWidth()
-            .clickable { viewModel.selectTab(MainTab.EXPLORE) }
+            .padding(top = 4.dp),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
         ) {
           Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
           ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Icon(
+              imageVector = Icons.Default.FilterList,
+              contentDescription = null,
+              tint = VybeBrandViolet,
+              modifier = Modifier.size(18.dp)
+            )
+            Text(
+              text = when (feedMode) {
+                "FOLLOWING" -> "From Followed Creators"
+                "TRENDING" -> "Trending Across VYBE"
+                else -> "Personal Discovery Feed"
+              },
+              fontSize = 15.sp,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.onSurface
+            )
+          }
+          Text(
+            text = "${modePosts.size} posts",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+          )
+        }
+      }
+
+      if (modePosts.isEmpty()) {
+        item(key = "home_feed_empty") {
+          Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Column(
+              modifier = Modifier.padding(24.dp),
+              horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+              Box(
+                modifier = Modifier
+                  .size(54.dp)
+                  .clip(CircleShape)
+                  .background(VybeBrandViolet.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Group,
+                  contentDescription = null,
+                  tint = VybeBrandViolet,
+                  modifier = Modifier.size(28.dp)
+                )
+              }
+              Spacer(modifier = Modifier.height(12.dp))
               Text(
-                text = "Looking for Traditional Feed?",
+                text = if (feedMode == "FOLLOWING") "No posts from followed creators yet" else "No posts to show right now",
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp
               )
+              Spacer(modifier = Modifier.height(4.dp))
               Text(
-                text = "Browse photo carousels, videos & creator mood zones in Explore.",
-                fontSize = 11.sp,
+                text = if (feedMode == "FOLLOWING") {
+                  "LINK UP with creators in Explore or VYBE Grow to see their moments here."
+                } else {
+                  "Share your first story or post to inspire the community!"
+                },
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
               )
-            }
-            Button(
-              onClick = { viewModel.selectTab(MainTab.EXPLORE) },
-              colors = ButtonDefaults.buttonColors(containerColor = VybeBrandViolet),
-              shape = RoundedCornerShape(12.dp)
-            ) {
-              Text("Go to Feed", fontSize = 12.sp)
+              Spacer(modifier = Modifier.height(14.dp))
+              Button(
+                onClick = { viewModel.setFeedMode("FOR_YOU") },
+                colors = ButtonDefaults.buttonColors(containerColor = VybeBrandViolet),
+                shape = RoundedCornerShape(12.dp)
+              ) {
+                Text("Explore For You Feed", fontSize = 12.sp)
+              }
             }
           }
+        }
+      } else {
+        items(modePosts, key = { "home_post_${it.id}" }) { post ->
+          PostCard(
+            post = post,
+            onLikeClick = { viewModel.toggleLike(post.id) },
+            onDoubleTapLike = { viewModel.ensurePostLoved(post.id) },
+            onReact = { rx -> viewModel.reactToPost(post.id, rx) },
+            onSaveClick = { viewModel.toggleSave(post.id) },
+            onCommentClick = { viewModel.loadCommentsForPost(post.id) },
+            onAddComment = { text -> viewModel.addComment(post.id, text) },
+            onLoadComments = { viewModel.loadCommentsForPost(post.id) },
+            onReactComment = { commentId, rx -> viewModel.reactToComment(post.id, commentId, rx) },
+            onShareClick = { viewModel.openPostShareSheet(post) },
+            onUserClick = { user -> viewModel.openUserProfile(user) },
+            onRemixClick = { viewModel.openReelViewer(post.id) },
+            onDeleteClick = { viewModel.deletePost(post.id) },
+            onHidePost = { viewModel.hidePost(post.id) },
+            onMuteCreator = { viewModel.muteCreator(post.author.id) },
+            onReportPost = { reason ->
+              coroutineScope.launch {
+                viewModel.submitReport("POST", post.id, reason)
+                viewModel.postBannerMessage("Report submitted for review.")
+              }
+            },
+            onPostViewed = { viewModel.recordPostView(it) },
+            currentUserId = currentUser?.id,
+            isFollowing = followingUserIds.contains(post.author.id),
+            isFollowRequested = requestedFollowUserIds.contains(post.author.id) || post.author.isFollowRequestedByMe,
+            followsMe = post.author.followsMe,
+            onFollowClick = if (post.author.id != currentUser?.id) { { viewModel.toggleFollowUser(post.author.id) } } else null
+          )
         }
       }
 

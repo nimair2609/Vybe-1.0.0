@@ -692,6 +692,14 @@ class VybeViewModel : ViewModel() {
         destination == "NOTIFICATIONS" -> {
           navigateTo(Screen.NOTIFICATIONS)
         }
+        // VYBE Circle Community Hub
+        destination == "VYBE_CIRCLE" || (type != null && type.contains("CIRCLE", ignoreCase = true)) -> {
+          navigateTo(Screen.VYBE_CIRCLE)
+        }
+        // VYBE Grow Social Expansion Hub
+        destination == "VYBE_GROW" || (type != null && type.contains("GROW", ignoreCase = true)) -> {
+          navigateTo(Screen.VYBE_GROW)
+        }
         // User Profile
         destination == "USER_PROFILE" && !targetId.isNullOrBlank() -> {
           val targetUser = repository.allUsers.value.firstOrNull { it.id == targetId }

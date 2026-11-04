@@ -83,6 +83,8 @@ fun PostCard(
   onOpenMusicTrack: ((MusicAttachment) -> Unit)? = null,
   onDoubleTapLike: (() -> Unit)? = null,
   onReactComment: ((String, VybeReaction) -> Unit)? = null,
+  onHidePost: (() -> Unit)? = null,
+  onMuteCreator: (() -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
   var showCommentDialog by remember { mutableStateOf(false) }
@@ -343,15 +345,37 @@ fun PostCard(
                 },
                 leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = VybeDanger) }
               )
-            } else if (onReportPost != null) {
-              DropdownMenuItem(
-                text = { Text("Report Post", color = VybeDanger) },
-                onClick = {
-                  showOptionsMenu = false
-                  showReportDialog = true
-                },
-                leadingIcon = { Icon(Icons.Default.Flag, contentDescription = null, tint = VybeDanger) }
-              )
+            } else {
+              if (onHidePost != null) {
+                DropdownMenuItem(
+                  text = { Text("Hide Post") },
+                  onClick = {
+                    showOptionsMenu = false
+                    onHidePost()
+                  },
+                  leadingIcon = { Icon(Icons.Default.VisibilityOff, contentDescription = null) }
+                )
+              }
+              if (onMuteCreator != null) {
+                DropdownMenuItem(
+                  text = { Text("Mute @${post.author.username}") },
+                  onClick = {
+                    showOptionsMenu = false
+                    onMuteCreator()
+                  },
+                  leadingIcon = { Icon(Icons.Default.VolumeOff, contentDescription = null) }
+                )
+              }
+              if (onReportPost != null) {
+                DropdownMenuItem(
+                  text = { Text("Report Post", color = VybeDanger) },
+                  onClick = {
+                    showOptionsMenu = false
+                    showReportDialog = true
+                  },
+                  leadingIcon = { Icon(Icons.Default.Flag, contentDescription = null, tint = VybeDanger) }
+                )
+              }
             }
           }
         }
