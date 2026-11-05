@@ -8352,9 +8352,7 @@ class VybeRepository private constructor() {
   }
 
   // --- VYBE 2.1: Search History ---
-  private val _searchHistory = MutableStateFlow<List<String>>(
-    listOf("#VYBEfamily", "rahul", "#TravelDiaries", "techvibes", "#MusicVibes")
-  )
+  private val _searchHistory = MutableStateFlow<List<String>>(emptyList())
   val searchHistory: StateFlow<List<String>> = _searchHistory.asStateFlow()
 
   fun addSearchQueryToHistory(query: String) {

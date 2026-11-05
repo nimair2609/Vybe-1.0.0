@@ -674,16 +674,18 @@ fun UserProfileScreen(
           )
 
           // Bio Text
-          val bioText = user.bio.ifBlank { "Dream Bigger. Vibe Stronger. 🚀\n#VYBEfamily #Travel #Tech #Life" }
-          Text(
-            text = bioText,
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurface,
-            lineHeight = 18.sp,
-            modifier = Modifier
-              .offset(y = (-28).dp)
-              .fillMaxWidth()
-          )
+          val bioText = user.bio
+          if (bioText.isNotBlank()) {
+            Text(
+              text = bioText,
+              fontSize = 13.sp,
+              color = MaterialTheme.colorScheme.onSurface,
+              lineHeight = 18.sp,
+              modifier = Modifier
+                .offset(y = (-28).dp)
+                .fillMaxWidth()
+            )
+          }
 
           // Metadata Chips (Location & Joined Date)
           Row(

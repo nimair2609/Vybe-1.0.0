@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Search, Sparkles, TrendingUp, Radio, Store,
   Mic, Camera, Compass, Clock, Layers, MapPin
@@ -77,14 +77,26 @@ export const ExploreView: React.FC = () => {
     }
   ];
 
-  const trendingTags = [
-    { tag: 'lofibits', count: '14.2K' },
-    { tag: 'mumbairain', count: '28.9K' },
-    { tag: 'specialtycoffee', count: '9.4K' },
-    { tag: 'indierock', count: '18.1K' },
-    { tag: 'mindfulness', count: '31.5K' },
-    { tag: 'cyberluxe', count: '7.8K' }
-  ];
+  const calculatedTrending = useMemo(() => {
+    const counts: Record<string, number> = {};
+    const regex = /#([A-Za-z0-9_]{2,30})/g;
+    posts.forEach(p => {
+      if (p.isArchived) return;
+      let match;
+      while ((match = regex.exec(p.caption || '')) !== null) {
+        const tag = match[1].toLowerCase();
+        counts[tag] = (counts[tag] || 0) + 1;
+      }
+      (p.tags || []).forEach(t => {
+        const clean = t.replace(/^#/, '').trim().toLowerCase();
+        if (clean) counts[clean] = (counts[clean] || 0) + 1;
+      });
+    });
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([tag, count]) => ({ tag, count: `${count}` }));
+  }, [posts]);
 
   const filteredPosts = posts.filter(p => {
     if (unfilteredOnly && !p.isUnfiltered) return false;
@@ -192,19 +204,25 @@ export const ExploreView: React.FC = () => {
           <TrendingUp className="w-4 h-4 text-[#00C6FF]" />
           Trending Frequencies
         </h3>
-        <div className="flex flex-wrap gap-2">
-          {trendingTags.map(t => (
-            <button
-              key={t.tag}
-              type="button"
-              onClick={() => setSearch(t.tag)}
-              className="px-3.5 py-2 rounded-xl bg-[#101322] border border-[#262E4A] hover:border-[#00C6FF]/40 text-xs text-gray-200 transition-colors flex items-center gap-2"
-            >
-              <span className="font-bold text-[#00C6FF]">#{t.tag}</span>
-              <span className="text-[10px] text-gray-400">{t.count} vibes</span>
-            </button>
-          ))}
-        </div>
+        {calculatedTrending.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {calculatedTrending.map(t => (
+              <button
+                key={t.tag}
+                type="button"
+                onClick={() => setSearch(t.tag)}
+                className="px-3.5 py-2 rounded-xl bg-[#101322] border border-[#262E4A] hover:border-[#00C6FF]/40 text-xs text-gray-200 transition-colors flex items-center gap-2"
+              >
+                <span className="font-bold text-[#00C6FF]">#{t.tag}</span>
+                <span className="text-[10px] text-gray-400">{t.count} {parseInt(t.count) === 1 ? 'post' : 'posts'}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="p-3.5 rounded-xl bg-[#101322] border border-[#262E4A] text-xs text-gray-400">
+            No trending topics yet. Start a conversation and make something trend.
+          </div>
+        )}
       </div>
 
       {/* Verified Shops Section */}

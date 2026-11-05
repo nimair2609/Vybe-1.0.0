@@ -35,6 +35,8 @@ data class CommunityPost(
   val commentsCount: Int = 0,
   val isLikedByMe: Boolean = false,
   val isEdited: Boolean = false,
+  val taggedUserIds: List<String> = emptyList(),
+  val taggedUsernames: List<String> = emptyList(),
   val createdAtIso: String? = null,
   val updatedAtIso: String? = null
 )

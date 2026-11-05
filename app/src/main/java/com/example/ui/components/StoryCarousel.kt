@@ -112,10 +112,10 @@ fun StoryCarousel(
       LazyRow(
         modifier = Modifier
           .fillMaxWidth()
-          .padding(top = 10.dp, bottom = 10.dp)
+          .padding(top = 4.dp, bottom = 4.dp)
           .testTag("story_carousel_row"),
-        contentPadding = PaddingValues(horizontal = 14.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically
       ) {
         // 1. Current user "Your Story" bubble
@@ -123,12 +123,12 @@ fun StoryCarousel(
           Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
-              .width(74.dp)
+              .width(60.dp)
               .testTag("your_story_item")
           ) {
             Box(
               modifier = Modifier
-                .size(68.dp)
+                .size(54.dp)
                 .clickable {
                   if (userHasStory && userOwnStory != null) {
                     onStoryClick(userOwnStory)
@@ -142,43 +142,43 @@ fun StoryCarousel(
                 if (hasUnviewedOwnStory) {
                   Box(
                     modifier = Modifier
-                      .size(68.dp)
+                      .size(54.dp)
                       .clip(CircleShape)
                       .background(VybeStoryRingGradient)
-                      .padding(2.5.dp)
+                      .padding(2.dp)
                       .clip(CircleShape)
                       .background(MaterialTheme.colorScheme.surface)
-                      .padding(2.dp)
+                      .padding(1.5.dp)
                       .clip(CircleShape),
                     contentAlignment = Alignment.Center
                   ) {
-                    AvatarContent(currentUser?.avatarUrl, currentUser?.displayName ?: "Me", 58.dp)
+                    AvatarContent(currentUser?.avatarUrl, currentUser?.displayName ?: "Me", 46.dp)
                   }
                 } else {
                   Box(
                     modifier = Modifier
-                      .size(66.dp)
+                      .size(52.dp)
                       .clip(CircleShape)
                       .border(
-                        width = 1.5.dp,
+                        width = 1.2.dp,
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f),
                         shape = CircleShape
                       )
-                      .padding(3.dp)
+                      .padding(2.dp)
                       .clip(CircleShape),
                     contentAlignment = Alignment.Center
                   ) {
-                    AvatarContent(currentUser?.avatarUrl, currentUser?.displayName ?: "Me", 58.dp)
+                    AvatarContent(currentUser?.avatarUrl, currentUser?.displayName ?: "Me", 46.dp)
                   }
                 }
 
                 Box(
                   modifier = Modifier
-                    .size(22.dp)
+                    .size(18.dp)
                     .align(Alignment.BottomEnd)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surface)
-                    .padding(1.5.dp)
+                    .padding(1.2.dp)
                     .clip(CircleShape)
                     .background(VybeViolet)
                     .clickable { onAddStoryClick() },
@@ -188,13 +188,13 @@ fun StoryCarousel(
                     imageVector = Icons.Default.Add,
                     contentDescription = "Add another story",
                     tint = Color.White,
-                    modifier = Modifier.size(13.dp)
+                    modifier = Modifier.size(11.dp)
                   )
                 }
               } else {
                 Box(
                   modifier = Modifier
-                    .size(64.dp)
+                    .size(50.dp)
                     .clip(CircleShape)
                     .border(
                       width = 1.dp,
@@ -203,16 +203,16 @@ fun StoryCarousel(
                     ),
                   contentAlignment = Alignment.Center
                 ) {
-                  AvatarContent(currentUser?.avatarUrl, currentUser?.displayName ?: "Me", 62.dp)
+                  AvatarContent(currentUser?.avatarUrl, currentUser?.displayName ?: "Me", 48.dp)
                 }
 
                 Box(
                   modifier = Modifier
-                    .size(22.dp)
+                    .size(18.dp)
                     .align(Alignment.BottomEnd)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surface)
-                    .padding(2.dp)
+                    .padding(1.5.dp)
                     .clip(CircleShape)
                     .background(VybeViolet),
                   contentAlignment = Alignment.Center
@@ -221,19 +221,19 @@ fun StoryCarousel(
                     imageVector = Icons.Default.Add,
                     contentDescription = "Add story",
                     tint = Color.White,
-                    modifier = Modifier.size(14.dp)
+                    modifier = Modifier.size(11.dp)
                   )
                 }
               }
             }
 
-            Spacer(modifier = Modifier.height(5.dp))
+            Spacer(modifier = Modifier.height(3.dp))
             Text(
               text = "Your Story",
               style = MaterialTheme.typography.labelSmall,
               color = if (userHasStory) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
               fontWeight = if (userHasStory) FontWeight.SemiBold else FontWeight.Normal,
-              fontSize = 11.sp,
+              fontSize = 10.5.sp,
               maxLines = 1,
               textAlign = TextAlign.Center,
               overflow = TextOverflow.Ellipsis
@@ -259,17 +259,17 @@ fun StoryCarousel(
           Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
-              .width(74.dp)
+              .width(60.dp)
               .clickable { onJoinLiveStream?.invoke(stream) }
               .testTag("carousel_live_stream_${stream.id}")
           ) {
             Box(
-              modifier = Modifier.size(68.dp),
+              modifier = Modifier.size(54.dp),
               contentAlignment = Alignment.Center
             ) {
               Box(
                 modifier = Modifier
-                  .size(68.dp)
+                  .size(54.dp)
                   .clip(CircleShape)
                   .background(
                     Brush.sweepGradient(
@@ -281,14 +281,14 @@ fun StoryCarousel(
                       )
                     )
                   )
-                  .padding(2.5.dp)
+                  .padding(2.dp)
                   .clip(CircleShape)
                   .background(MaterialTheme.colorScheme.surface)
-                  .padding(2.dp)
+                  .padding(1.5.dp)
                   .clip(CircleShape),
                 contentAlignment = Alignment.Center
               ) {
-                AvatarContent(stream.host.avatarUrl, stream.host.displayName, 58.dp)
+                AvatarContent(stream.host.avatarUrl, stream.host.displayName, 46.dp)
               }
 
               // Glowing Red "LIVE" Badge
@@ -297,22 +297,22 @@ fun StoryCarousel(
                 shape = RoundedCornerShape(4.dp),
                 modifier = Modifier
                   .align(Alignment.BottomCenter)
-                  .offset(y = 4.dp)
+                  .offset(y = 3.dp)
               ) {
                 Text(
                   text = "LIVE",
                   color = Color.White,
-                  fontSize = 9.sp,
+                  fontSize = 8.sp,
                   fontWeight = FontWeight.ExtraBold,
-                  modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                  modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                 )
               }
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(3.dp))
             Text(
               text = stream.host.displayName.ifBlank { stream.title },
-              fontSize = 11.sp,
+              fontSize = 10.5.sp,
               fontWeight = FontWeight.Bold,
               color = Color(0xFFEF4444),
               maxLines = 1,
@@ -329,18 +329,18 @@ fun StoryCarousel(
             Column(
               horizontalAlignment = Alignment.CenterHorizontally,
               modifier = Modifier
-                .width(74.dp)
+                .width(60.dp)
                 .clickable { onJoinLiveRoom?.invoke(firstActiveRoom) }
                 .testTag("live_highlight_item")
             ) {
               Box(
-                modifier = Modifier.size(68.dp),
+                modifier = Modifier.size(54.dp),
                 contentAlignment = Alignment.Center
               ) {
                 // Pulsing Gradient Ring for Active Live Session
                 Box(
                   modifier = Modifier
-                    .size(68.dp)
+                    .size(54.dp)
                     .clip(CircleShape)
                     .background(
                       Brush.sweepGradient(
@@ -353,10 +353,10 @@ fun StoryCarousel(
                         )
                       )
                     )
-                    .padding(2.5.dp)
+                    .padding(2.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surface)
-                    .padding(2.dp)
+                    .padding(1.5.dp)
                     .clip(CircleShape)
                     .background(VybeMagenta.copy(alpha = 0.2f)),
                   contentAlignment = Alignment.Center
@@ -365,7 +365,7 @@ fun StoryCarousel(
                     imageVector = Icons.Default.GraphicEq,
                     contentDescription = "Active Live Room",
                     tint = VybeMagenta,
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(24.dp)
                   )
                 }
 
@@ -375,22 +375,22 @@ fun StoryCarousel(
                   shape = RoundedCornerShape(4.dp),
                   modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .offset(y = 4.dp)
+                    .offset(y = 3.dp)
                 ) {
                   Text(
                     text = "LIVE",
                     color = Color.White,
-                    fontSize = 9.sp,
+                    fontSize = 8.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                   )
                 }
               }
 
-              Spacer(modifier = Modifier.height(6.dp))
+              Spacer(modifier = Modifier.height(3.dp))
               Text(
                 text = firstActiveRoom.topicTag.ifBlank { "Live Room" },
-                fontSize = 11.sp,
+                fontSize = 10.5.sp,
                 fontWeight = FontWeight.Bold,
                 color = VybeMagenta,
                 maxLines = 1,
@@ -407,15 +407,15 @@ fun StoryCarousel(
             Column(
               horizontalAlignment = Alignment.CenterHorizontally,
               modifier = Modifier
-                .width(76.dp)
+                .width(60.dp)
                 .clickable { onManageVybeMatchesClick() }
                 .testTag("story_tray_vybe_matches_button")
             ) {
               Box(
                 modifier = Modifier
-                  .size(64.dp)
+                  .size(50.dp)
                   .clip(CircleShape)
-                  .border(1.5.dp, Color(0xFF10B981).copy(alpha = 0.7f), CircleShape)
+                  .border(1.2.dp, Color(0xFF10B981).copy(alpha = 0.7f), CircleShape)
                   .background(Color(0xFF10B981).copy(alpha = 0.1f)),
                 contentAlignment = Alignment.Center
               ) {
@@ -423,31 +423,31 @@ fun StoryCarousel(
                   imageVector = Icons.Default.Group,
                   contentDescription = "Manage VYBE Matches",
                   tint = Color(0xFF10B981),
-                  modifier = Modifier.size(26.dp)
+                  modifier = Modifier.size(22.dp)
                 )
                 if (vybeMatchesCount > 0) {
                   Surface(
                     color = Color(0xFF10B981),
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.align(Alignment.BottomEnd)
                   ) {
                     Text(
                       text = vybeMatchesCount.toString(),
                       color = Color.White,
-                      fontSize = 10.sp,
+                      fontSize = 9.sp,
                       fontWeight = FontWeight.Bold,
-                      modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                      modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                     )
                   }
                 }
               }
-              Spacer(modifier = Modifier.height(5.dp))
+              Spacer(modifier = Modifier.height(3.dp))
               Text(
-                text = "VYBE Matches",
+                text = "Matches",
                 style = MaterialTheme.typography.labelSmall,
                 color = Color(0xFF10B981),
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 11.sp,
+                fontSize = 10.5.sp,
                 maxLines = 1,
                 textAlign = TextAlign.Center,
                 overflow = TextOverflow.Ellipsis
@@ -470,37 +470,37 @@ fun StoryCarousel(
           Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
-              .width(74.dp)
+              .width(60.dp)
               .clickable { onStoryClick(representativeStory) }
               .testTag("story_user_${representativeStory.author.id}")
           ) {
             Box(
-              modifier = Modifier.size(68.dp),
+              modifier = Modifier.size(54.dp),
               contentAlignment = Alignment.Center
             ) {
               Box(
                 modifier = Modifier
-                  .size(68.dp)
+                  .size(54.dp)
                   .clip(CircleShape)
                   .background(ringBrush)
-                  .padding(2.5.dp)
+                  .padding(2.dp)
                   .clip(CircleShape)
                   .background(MaterialTheme.colorScheme.surface)
-                  .padding(2.5.dp)
+                  .padding(1.5.dp)
                   .clip(CircleShape),
                 contentAlignment = Alignment.Center
               ) {
-                AvatarContent(representativeStory.author.avatarUrl, representativeStory.author.displayName, 56.dp)
+                AvatarContent(representativeStory.author.avatarUrl, representativeStory.author.displayName, 46.dp)
               }
 
               if (isMatchesStory) {
                 Box(
                   modifier = Modifier
-                    .size(18.dp)
+                    .size(16.dp)
                     .align(Alignment.BottomEnd)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surface)
-                    .padding(1.5.dp)
+                    .padding(1.2.dp)
                     .clip(CircleShape)
                     .background(Color(0xFF10B981)),
                   contentAlignment = Alignment.Center
@@ -509,19 +509,19 @@ fun StoryCarousel(
                     imageVector = Icons.Default.Star,
                     contentDescription = "VYBE Matches",
                     tint = Color.White,
-                    modifier = Modifier.size(10.dp)
+                    modifier = Modifier.size(9.dp)
                   )
                 }
               }
             }
 
-            Spacer(modifier = Modifier.height(5.dp))
+            Spacer(modifier = Modifier.height(3.dp))
             Text(
               text = representativeStory.author.displayName.split(" ").firstOrNull()?.takeIf { it.isNotBlank() } ?: representativeStory.author.username,
               style = MaterialTheme.typography.labelSmall,
               color = MaterialTheme.colorScheme.onSurface,
               fontWeight = FontWeight.SemiBold,
-              fontSize = 11.sp,
+              fontSize = 10.5.sp,
               maxLines = 1,
               textAlign = TextAlign.Center,
               overflow = TextOverflow.Ellipsis

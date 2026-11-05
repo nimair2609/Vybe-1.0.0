@@ -151,12 +151,7 @@ fun ExploreScreen(viewModel: VybeViewModel) {
         Triple(entry.key, entry.value, samplePost?.mediaUrls?.firstOrNull().orEmpty())
       }
     } else {
-      listOf(
-        Triple("VYBEfamily", 245, ""),
-        Triple("TravelDiaries", 189, ""),
-        Triple("MusicVibes", 142, ""),
-        Triple("TechNext", 98, "")
-      )
+      emptyList()
     }
   }
 
@@ -796,67 +791,83 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                 }
                 Spacer(modifier = Modifier.height(10.dp))
 
-                LazyRow(
-                  horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                  items(trendingHashtags) { (tag, count, thumbnail) ->
-                    Surface(
-                      color = Color(0xFF131B2E),
-                      shape = RoundedCornerShape(14.dp),
-                      border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant),
-                      modifier = Modifier
-                        .width(135.dp)
-                        .height(84.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .clickable { viewModel.setSearchQuery("#$tag") }
-                    ) {
-                      Box(modifier = Modifier.fillMaxSize()) {
-                        if (thumbnail.isNotBlank()) {
-                          AsyncImage(
-                            model = thumbnail,
-                            contentDescription = tag,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                          )
-                        } else {
+                if (trendingHashtags.isNotEmpty()) {
+                  LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                  ) {
+                    items(trendingHashtags) { (tag, count, thumbnail) ->
+                      Surface(
+                        color = Color(0xFF131B2E),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier
+                          .width(135.dp)
+                          .height(84.dp)
+                          .clip(RoundedCornerShape(14.dp))
+                          .clickable { viewModel.setSearchQuery("#$tag") }
+                      ) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                          if (thumbnail.isNotBlank()) {
+                            AsyncImage(
+                              model = thumbnail,
+                              contentDescription = tag,
+                              contentScale = ContentScale.Crop,
+                              modifier = Modifier.fillMaxSize()
+                            )
+                          } else {
+                            Box(
+                              modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                  Brush.linearGradient(listOf(VybeVioletDark, Color(0xFF1E1B4B)))
+                                )
+                            )
+                          }
                           Box(
                             modifier = Modifier
                               .fillMaxSize()
                               .background(
-                                Brush.linearGradient(listOf(VybeVioletDark, Color(0xFF1E1B4B)))
+                                Brush.verticalGradient(
+                                  listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
+                                )
                               )
                           )
-                        }
-                        Box(
-                          modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                              Brush.verticalGradient(
-                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
-                              )
+                          Column(
+                            modifier = Modifier
+                              .align(Alignment.BottomStart)
+                              .padding(8.dp)
+                          ) {
+                            Text(
+                              text = "#$tag",
+                              color = Color.White,
+                              fontSize = 11.sp,
+                              fontWeight = FontWeight.Bold,
+                              maxLines = 1,
+                              overflow = TextOverflow.Ellipsis
                             )
-                        )
-                        Column(
-                          modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(8.dp)
-                        ) {
-                          Text(
-                            text = "#$tag",
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                          )
-                          Text(
-                            text = "$count posts",
-                            color = VybeBrandCyan,
-                            fontSize = 10.sp
-                          )
+                            Text(
+                              text = "$count posts",
+                              color = VybeBrandCyan,
+                              fontSize = 10.sp
+                            )
+                          }
                         }
                       }
                     }
+                  }
+                } else {
+                  Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth()
+                  ) {
+                    Text(
+                      text = "No trending topics yet. Start a conversation and make something trend.",
+                      fontSize = 12.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+                    )
                   }
                 }
               }

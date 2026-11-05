@@ -43,6 +43,7 @@ import com.example.data.model.LivePulseStatus
 import com.example.data.model.MoodType
 import com.example.data.model.TimeCapsule
 import com.example.data.model.UnloadRoom
+import com.example.ui.theme.SyneFontFamily
 import com.example.ui.MainTab
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
@@ -93,6 +94,7 @@ fun HomeScreen(viewModel: VybeViewModel) {
 
   var showMatchesDialog by remember { mutableStateOf(false) }
   var showStoryCreateSheet by remember { mutableStateOf(false) }
+  var showLivePulseDialog by remember { mutableStateOf(false) }
 
   val unreadNotificationsCount = remember(notifications) {
     notifications.count { !it.isRead }
@@ -155,27 +157,42 @@ fun HomeScreen(viewModel: VybeViewModel) {
               verticalAlignment = Alignment.CenterVertically,
               modifier = Modifier.clickable { viewModel.selectTab(MainTab.FEED) }
             ) {
-              Image(
-                painter = painterResource(id = R.drawable.vybe_main_logo),
-                contentDescription = "VYBE Logo",
+              Box(
                 modifier = Modifier
-                  .size(36.dp)
-                  .clip(RoundedCornerShape(10.dp))
-              )
+                  .size(34.dp)
+                  .clip(RoundedCornerShape(9.dp))
+                  .background(
+                    Brush.linearGradient(
+                      listOf(VybeVioletDark.copy(alpha = 0.5f), Color(0xFF131127))
+                    )
+                  )
+                  .border(1.dp, VybeBrandViolet.copy(alpha = 0.35f), RoundedCornerShape(9.dp)),
+                contentAlignment = Alignment.Center
+              ) {
+                Image(
+                  painter = painterResource(id = R.drawable.vybe_app_icon_clean),
+                  contentDescription = "VYBE Logo",
+                  modifier = Modifier
+                    .size(26.dp)
+                    .clip(RoundedCornerShape(6.dp)),
+                  contentScale = ContentScale.Fit
+                )
+              }
               Spacer(modifier = Modifier.width(10.dp))
               Column {
                 Text(
                   text = "VYBE",
+                  fontFamily = SyneFontFamily,
                   fontSize = 20.sp,
                   fontWeight = FontWeight.Black,
-                  letterSpacing = 1.5.sp,
+                  letterSpacing = 1.6.sp,
                   color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                   text = "NR NEXT",
                   fontSize = 8.sp,
                   fontWeight = FontWeight.Bold,
-                  letterSpacing = 1.sp,
+                  letterSpacing = 1.2.sp,
                   color = VybeBrandViolet
                 )
               }
@@ -186,30 +203,33 @@ fun HomeScreen(viewModel: VybeViewModel) {
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-              // Current User Live Pulse Badge
+              // Current User Live Pulse Badge (Interactive Selector)
               val pulse = currentUser?.livePulse ?: LivePulseStatus.OPEN_TO_CHAT
               Surface(
-                color = VybeVioletDark.copy(alpha = 0.25f),
-                border = BorderStroke(1.dp, VybeBrandViolet.copy(alpha = 0.4f)),
+                color = VybeVioletDark.copy(alpha = 0.3f),
+                border = BorderStroke(1.dp, VybeBrandViolet.copy(alpha = 0.45f)),
                 shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.clickable { viewModel.navigateTo(Screen.SETTINGS) }
+                modifier = Modifier
+                  .clickable { showLivePulseDialog = true }
+                  .testTag("home_live_pulse_badge")
               ) {
                 Row(
-                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                  modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
                   verticalAlignment = Alignment.CenterVertically
                 ) {
                   Box(
                     modifier = Modifier
                       .size(7.dp)
                       .clip(CircleShape)
-                      .background(VybeOnlineGreen)
+                      .background(if (pulse != LivePulseStatus.NONE && pulse != LivePulseStatus.QUIET_TIME) VybeOnlineGreen else Color.Gray)
                   )
-                  Spacer(modifier = Modifier.width(4.dp))
+                  Spacer(modifier = Modifier.width(5.dp))
                   Text(
-                    text = pulse.name.take(6),
+                    text = if (pulse.icon.isNotBlank()) "${pulse.icon} ${pulse.label.take(12)}" else pulse.label.take(12),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = VybeBrandCyan
+                    color = VybeBrandCyan,
+                    maxLines = 1
                   )
                 }
               }
@@ -1164,33 +1184,33 @@ fun HomeScreen(viewModel: VybeViewModel) {
       }
 
       // --- SECTION 5: WHAT'S HAPPENING / TRENDING PULSE ---
-      if (trendingTags.isNotEmpty()) {
-        item {
-          Surface(
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 3.dp,
-            shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant),
-            modifier = Modifier.fillMaxWidth()
-          ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-              Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-              ) {
-                Icon(
-                  imageVector = Icons.Default.TrendingUp,
-                  contentDescription = null,
-                  tint = VybeBrandCyan,
-                  modifier = Modifier.size(18.dp)
-                )
-                Text(
-                  text = "What's Happening on VYBE",
-                  fontWeight = FontWeight.Bold,
-                  fontSize = 14.sp
-                )
-              }
-              Spacer(modifier = Modifier.height(10.dp))
+      item {
+        Surface(
+          color = MaterialTheme.colorScheme.surface,
+          tonalElevation = 3.dp,
+          shape = RoundedCornerShape(16.dp),
+          border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant),
+          modifier = Modifier.fillMaxWidth().testTag("home_trending_pulse_section")
+        ) {
+          Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+              Icon(
+                imageVector = Icons.Default.TrendingUp,
+                contentDescription = null,
+                tint = VybeBrandCyan,
+                modifier = Modifier.size(18.dp)
+              )
+              Text(
+                text = "What's Happening on VYBE",
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp
+              )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            if (trendingTags.isNotEmpty()) {
               Row(
                 modifier = Modifier
                   .fillMaxWidth()
@@ -1217,6 +1237,13 @@ fun HomeScreen(viewModel: VybeViewModel) {
                   }
                 }
               }
+            } else {
+              Text(
+                text = "No trending topics yet. Start a conversation and make something trend.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = 4.dp)
+              )
             }
           }
         }
@@ -1370,6 +1397,80 @@ fun HomeScreen(viewModel: VybeViewModel) {
       onAddMatch = { viewModel.addVybeMatch(it) },
       onRemoveMatch = { viewModel.removeVybeMatch(it) },
       onDismiss = { showMatchesDialog = false }
+    )
+  }
+
+  if (showLivePulseDialog) {
+    AlertDialog(
+      onDismissRequest = { showLivePulseDialog = false },
+      title = {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Box(
+            modifier = Modifier
+              .size(10.dp)
+              .clip(CircleShape)
+              .background(VybeOnlineGreen)
+          )
+          Spacer(modifier = Modifier.width(8.dp))
+          Text("Set Your Live Pulse", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        }
+      },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text(
+            text = "Broadcast your real-time presence to friends and the VYBE network.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+          )
+          Spacer(modifier = Modifier.height(4.dp))
+          LivePulseStatus.values().forEach { status ->
+            val isCurrent = (currentUser?.livePulse ?: LivePulseStatus.OPEN_TO_CHAT) == status
+            Surface(
+              color = if (isCurrent) VybeBrandViolet.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+              shape = RoundedCornerShape(12.dp),
+              border = if (isCurrent) BorderStroke(1.dp, VybeBrandCyan) else null,
+              modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                  viewModel.updateUserMoodAndPulse(currentUser?.currentMood, status)
+                  showLivePulseDialog = false
+                }
+            ) {
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                if (status.icon.isNotBlank()) {
+                  Text(status.icon, fontSize = 18.sp)
+                  Spacer(modifier = Modifier.width(10.dp))
+                }
+                Text(
+                  text = status.label,
+                  fontSize = 13.sp,
+                  fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                  color = if (isCurrent) VybeBrandCyan else MaterialTheme.colorScheme.onSurface,
+                  modifier = Modifier.weight(1f)
+                )
+                if (isCurrent) {
+                  Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Selected",
+                    tint = VybeBrandCyan,
+                    modifier = Modifier.size(16.dp)
+                  )
+                }
+              }
+            }
+          }
+        }
+      },
+      confirmButton = {
+        TextButton(onClick = { showLivePulseDialog = false }) {
+          Text("Done", color = VybeBrandCyan, fontWeight = FontWeight.Bold)
+        }
+      }
     )
   }
 }
