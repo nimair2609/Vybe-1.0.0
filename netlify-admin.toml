@@ -1,0 +1,27 @@
+# VYBE Dedicated Admin Subdomain Configuration (admin.your-domain.com)
+# Deploy this site with Netlify CLI or Netlify Dashboard connected to the same repo
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Direct all root traffic on admin subdomain to admin.html
+[[redirects]]
+  from = "/*"
+  to = "/admin.html"
+  status = 200

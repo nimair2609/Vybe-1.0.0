@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   MessageCircle, Bookmark, MapPin,
   Music, Volume2, VolumeX, Send, Link2, Share2, X, Lock
@@ -40,11 +40,32 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
   const [commentInput, setCommentInput] = useState('');
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setNowTick(Date.now()), 30_000);
     return () => clearInterval(timer);
   }, []);
+
+  // Performance & Egress: auto-pause video when scrolled out of viewport
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting && el && !el.paused) {
+            el.pause();
+          }
+        });
+      },
+      { threshold: 0.25 }
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [post.mediaUrls]);
 
   const moodConfig = post.moodZone ? MOOD_DEFINITIONS[post.moodZone] : null;
   const canonicalPostUrl = `${window.location.origin}/post/${encodeURIComponent(post.id)}`;
@@ -101,6 +122,8 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
             <img
               src={post.author.avatarUrl}
               alt={post.author.displayName}
+              loading="lazy"
+              decoding="async"
               className="w-11 h-11 rounded-full object-cover border border-[#8B5CF6]/60"
             />
             {post.author.isOnline && (
@@ -174,15 +197,19 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
         >
           {post.mediaType === 'VIDEO' || post.mediaType === 'REEL' ? (
             <video
+              ref={videoRef}
               src={post.mediaUrls[0]}
               controls
               playsInline
+              preload="none"
               className="w-full h-full object-cover max-h-[500px]"
             />
           ) : (
             <img
               src={post.mediaUrls[0]}
               alt="Post content"
+              loading="lazy"
+              decoding="async"
               className="w-full h-full object-cover max-h-[500px]"
             />
           )}

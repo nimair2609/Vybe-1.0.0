@@ -4,6 +4,7 @@ import {
   Video, Type, AlertCircle, Users
 } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
+import { compressImageToDataUrl } from '../utils/imageCompressor';
 
 type StoryTabMode = 'PHOTO' | 'VIDEO' | 'TEXT';
 
@@ -55,6 +56,19 @@ export const CreateStoryModal: React.FC = () => {
     }
     if (isVideo && file.size > MAX_STORY_VIDEO_BYTES) {
       setValidationError('Video exceeds the 50 MB story limit.');
+      return;
+    }
+
+    if (isImage) {
+      compressImageToDataUrl(file, { maxWidth: 1080, maxHeight: 1920, quality: 0.82 })
+        .then(compressedUrl => setMediaPreviewUrl(compressedUrl))
+        .catch(() => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            if (typeof reader.result === 'string') setMediaPreviewUrl(reader.result);
+          };
+          reader.readAsDataURL(file);
+        });
       return;
     }
 

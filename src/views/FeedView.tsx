@@ -10,7 +10,7 @@ export const FeedView: React.FC = () => {
   const { 
     posts, selectedMoodFilter, setSelectedMoodFilter, 
     openModal, hasAvailableUpdate, inAppNotificationBanner, 
-    dismissBanner 
+    dismissBanner, hasMorePosts, loadMorePosts, isLoadingMorePosts 
   } = useVybe();
 
   const filteredPosts = posts.filter(post => {
@@ -104,9 +104,35 @@ export const FeedView: React.FC = () => {
             </button>
           </div>
         ) : (
-          filteredPosts.map(post => (
-            <PostCard key={post.id} post={post} />
-          ))
+          <>
+            {filteredPosts.map(post => (
+              <PostCard key={post.id} post={post} />
+            ))}
+
+            {/* Pagination Controls */}
+            {hasMorePosts ? (
+              <div className="pt-4 pb-2 text-center">
+                <button
+                  onClick={() => loadMorePosts()}
+                  disabled={isLoadingMorePosts}
+                  className="px-6 py-2.5 rounded-full bg-[#101322] border border-[#262E4A] hover:border-[#8B5CF6] text-xs font-semibold text-gray-300 hover:text-white transition-all shadow-md disabled:opacity-50 flex items-center gap-2 mx-auto"
+                >
+                  {isLoadingMorePosts ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#00C6FF]" />
+                      <span>Loading more vibes...</span>
+                    </>
+                  ) : (
+                    <span>Load More Posts</span>
+                  )}
+                </button>
+              </div>
+            ) : (
+              <div className="pt-6 pb-2 text-center text-xs text-gray-500 font-mono">
+                ✦ You're all caught up with the live frequency ✦
+              </div>
+            )}
+          </>
         )}
       </main>
 

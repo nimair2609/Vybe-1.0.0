@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { 
-  X, Image, Music, MapPin, Sparkles, Send, PlaySquare 
+  X, Image, Music, MapPin, Sparkles, Send, PlaySquare, Upload, Loader2 
 } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
 import { MOOD_DEFINITIONS, MoodType } from '../types';
+import { compressImageToDataUrl } from '../utils/imageCompressor';
 
 export const CreatePostModal: React.FC = () => {
   const { closeModal, createPost, currentUser } = useVybe();
@@ -15,6 +16,7 @@ export const CreatePostModal: React.FC = () => {
   const [audioTrackTitle, setAudioTrackTitle] = useState('');
   const [isVybesReel, setIsVybesReel] = useState(false);
   const [tagsInput, setTagsInput] = useState('');
+  const [isCompressing, setIsCompressing] = useState(false);
 
   const sampleImages = [
     'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=1000&q=80',
@@ -22,6 +24,28 @@ export const CreatePostModal: React.FC = () => {
     'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=1000&q=80',
     'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=1000&q=80',
   ];
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsCompressing(true);
+      const optimizedDataUrl = await compressImageToDataUrl(file, {
+        maxWidth: 1440,
+        maxHeight: 1440,
+        quality: 0.82
+      });
+      setImageUrl(optimizedDataUrl);
+    } catch (err) {
+      console.warn('Image compression fallback:', err);
+      const reader = new FileReader();
+      reader.onload = () => setImageUrl(reader.result as string);
+      reader.readAsDataURL(file);
+    } finally {
+      setIsCompressing(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,19 +121,53 @@ export const CreatePostModal: React.FC = () => {
             </div>
           </div>
 
-          {/* Image URL & Quick Picker */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-gray-300 flex items-center gap-1.5">
-              <Image className="w-3.5 h-3.5 text-[#00C6FF]" />
-              Image URL / Preset Photo
-            </label>
+          {/* Image URL, File Upload & Quick Picker */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-gray-300 flex items-center gap-1.5">
+                <Image className="w-3.5 h-3.5 text-[#00C6FF]" />
+                Media Attachment (Auto-Compressed)
+              </label>
+              <label className="cursor-pointer text-[11px] font-semibold text-[#00C6FF] hover:text-white flex items-center gap-1 px-2.5 py-1 bg-[#1A1F36] rounded-lg border border-[#262E4A] hover:border-[#00C6FF] transition-all">
+                {isCompressing ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin text-[#00C6FF]" />
+                    <span>Compressing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-3 h-3" />
+                    <span>Upload Device Photo</span>
+                  </>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileSelect}
+                  disabled={isCompressing}
+                  className="hidden"
+                />
+              </label>
+            </div>
             <input 
               type="text"
               value={imageUrl}
               onChange={(e) => setImageUrl(e.target.value)}
-              placeholder="Paste image link or click a preset below..."
+              placeholder="Or paste direct image URL..."
               className="w-full px-3 py-2 bg-[#060714] border border-[#262E4A] rounded-xl text-xs text-white focus:outline-none focus:border-[#8B5CF6]"
             />
+            {imageUrl && (
+              <div className="relative w-full max-h-40 rounded-xl overflow-hidden border border-[#262E4A] bg-[#060714] flex items-center justify-center">
+                <img src={imageUrl} alt="preview" className="max-h-40 object-contain" />
+                <button
+                  type="button"
+                  onClick={() => setImageUrl('')}
+                  className="absolute top-2 right-2 p-1 rounded-full bg-black/70 hover:bg-black text-white text-xs"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
             <div className="flex gap-2 pt-1">
               {sampleImages.map((src, i) => (
                 <button

@@ -81,7 +81,7 @@ export const ExploreView: React.FC = () => {
     const counts: Record<string, number> = {};
     const regex = /#([A-Za-z0-9_]{2,30})/g;
     posts.forEach(p => {
-      if (p.isArchived) return;
+      if ((p as any).isArchived) return;
       let match;
       while ((match = regex.exec(p.caption || '')) !== null) {
         const tag = match[1].toLowerCase();

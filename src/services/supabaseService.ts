@@ -1,7 +1,11 @@
 import { User, Post, Story, PostComment, MoodType, OfficialVybeBadge } from '../types';
+import { vybeCache, CACHE_TTL } from '../utils/indexedDbCache';
+import { vybeDiagnostics } from '../utils/performanceDiagnostics';
 
-export const SUPABASE_URL = 'https://cppwadedazpbevkfrchg.supabase.co';
-export const SUPABASE_ANON_KEY = 'sb_publishable_MI-UdOqfccHVZIHjQq9vrw_IjEzeR7H';
+// Dynamic environment variables with production defaults
+const metaEnv = (typeof import.meta !== 'undefined' ? (import.meta as any).env : {}) || {};
+export const SUPABASE_URL = metaEnv.VITE_SUPABASE_URL || 'https://cppwadedazpbevkfrchg.supabase.co';
+export const SUPABASE_ANON_KEY = metaEnv.VITE_SUPABASE_ANON_KEY || 'sb_publishable_MI-UdOqfccHVZIHjQq9vrw_IjEzeR7H';
 
 const headers: Record<string, string> = {
   'apikey': SUPABASE_ANON_KEY,
@@ -9,6 +13,84 @@ const headers: Record<string, string> = {
   'Content-Type': 'application/json',
   'Prefer': 'return=representation'
 };
+
+// In-flight request deduplication map to prevent parallel duplicate requests
+const inFlightRequests = new Map<string, Promise<any>>();
+
+function deduplicatedFetch<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+  if (inFlightRequests.has(key)) {
+    vybeDiagnostics.recordDeduplication(key);
+    return inFlightRequests.get(key) as Promise<T>;
+  }
+
+  const promise = fetcher().finally(() => {
+    inFlightRequests.delete(key);
+  });
+
+  inFlightRequests.set(key, promise);
+  return promise;
+}
+
+// -------------------------------------------------------------
+// Explicit Column Selections (Eliminating `select=*` Egress Waste)
+// -------------------------------------------------------------
+const PROFILE_SELECT_COLUMNS = [
+  'id',
+  'username',
+  'display_name',
+  'avatar_url',
+  'cover_url',
+  'bio',
+  'is_verified',
+  'is_vip',
+  'is_worker',
+  'is_verified_business',
+  'followers_count',
+  'following_count',
+  'posts_count',
+  'current_mood',
+  'live_pulse',
+  'last_seen_at',
+  'created_at',
+  'is_private_account'
+].join(',');
+
+const POST_SELECT_COLUMNS = [
+  'id',
+  'author_id',
+  'caption',
+  'media_type',
+  'media_url',
+  'media_urls',
+  'is_vybes_reel',
+  'is_unfiltered',
+  'likes_count',
+  'comments_count',
+  'saves_count',
+  'shares_count',
+  'views_count',
+  'mood_zone',
+  'love_count',
+  'flame_count',
+  'laugh_count',
+  'wow_count',
+  'sad_count',
+  'created_at',
+  `profiles:author_id(${PROFILE_SELECT_COLUMNS})`,
+  'post_media(id,media_url,media_type,display_order)'
+].join(',');
+
+const STORY_SELECT_COLUMNS = [
+  'id',
+  'author_id',
+  'media_url',
+  'caption',
+  'media_type',
+  'story_type',
+  'created_at',
+  'expires_at',
+  `profiles:author_id(id,username,display_name,avatar_url,is_verified,is_vip,is_worker,is_verified_business)`
+].join(',');
 
 export function mapSupabaseProfileToUser(p: any): User {
   const isVerified = Boolean(p.is_verified || p.is_verified_public_figure);
@@ -170,110 +252,236 @@ export function mapSupabaseStory(row: any, userMap?: Map<string, User>): Story {
   };
 }
 
-// 1. Fetch live profiles from Supabase
-export async function fetchLiveProfiles(): Promise<User[]> {
-  try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?select=*&order=created_at.desc&limit=60`, {
-      headers
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (Array.isArray(data)) {
-      return data.map(mapSupabaseProfileToUser);
+// -------------------------------------------------------------
+// 1. Fetch live profiles (Cached via IndexedDB + explicit columns)
+// -------------------------------------------------------------
+export async function fetchLiveProfiles(options: { forceRefresh?: boolean } = {}): Promise<User[]> {
+  const cacheKey = 'live_profiles_v2';
+
+  if (!options.forceRefresh) {
+    const cached = await vybeCache.get<User[]>(cacheKey, { allowStale: true });
+    if (cached && cached.data && cached.data.length > 0) {
+      vybeDiagnostics.recordCacheHit(cacheKey);
+      if (!cached.isStale) {
+        return cached.data;
+      }
     }
-  } catch (err) {
-    console.warn('[Supabase] Failed to fetch profiles:', err);
   }
-  return [];
+
+  return deduplicatedFetch<User[]>(cacheKey, async () => {
+    const startTime = Date.now();
+    try {
+      const url = `${SUPABASE_URL}/rest/v1/profiles?select=${encodeURIComponent(PROFILE_SELECT_COLUMNS)}&order=created_at.desc&limit=50`;
+      const res = await fetch(url, { headers });
+      const duration = Date.now() - startTime;
+
+      if (!res.ok) {
+        vybeDiagnostics.recordNetworkRequest(url, duration, res.status);
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      vybeDiagnostics.recordNetworkRequest(url, duration, 200, JSON.stringify(data).length);
+
+      if (Array.isArray(data)) {
+        const users = data.map(mapSupabaseProfileToUser);
+        vybeCache.set(cacheKey, users, CACHE_TTL.PROFILES);
+        return users;
+      }
+    } catch (err) {
+      console.warn('[Supabase] Failed to fetch profiles:', err);
+    }
+
+    const fallback = await vybeCache.get<User[]>(cacheKey, { allowStale: true });
+    return fallback?.data || [];
+  });
 }
 
-// 2. Fetch live posts with joined profiles & post_media
-export async function fetchLivePosts(userMap?: Map<string, User>): Promise<Post[]> {
-  try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/posts?select=*,profiles:author_id(*),post_media(*)&order=created_at.desc&limit=60`,
-      { headers }
-    );
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (Array.isArray(data) && data.length > 0) {
-      return data.map(row => mapSupabasePost(row, userMap));
+// -------------------------------------------------------------
+// 2. Fetch live posts with pagination & explicit columns
+// -------------------------------------------------------------
+export async function fetchLivePosts(
+  userMap?: Map<string, User>,
+  options: {
+    limit?: number;
+    cursorCreatedAt?: string;
+    forceRefresh?: boolean;
+  } = {}
+): Promise<Post[]> {
+  const limit = options.limit || 20; // 20 posts per batch instead of 60
+  const isFirstPage = !options.cursorCreatedAt;
+  const cacheKey = isFirstPage ? `live_posts_first_page_${limit}` : `live_posts_cursor_${options.cursorCreatedAt}_${limit}`;
+
+  if (!options.forceRefresh && isFirstPage) {
+    const cached = await vybeCache.get<Post[]>(cacheKey, { allowStale: true });
+    if (cached && cached.data && cached.data.length > 0) {
+      vybeDiagnostics.recordCacheHit(cacheKey);
+      if (!cached.isStale) {
+        return cached.data;
+      }
     }
-  } catch (err) {
-    console.warn('[Supabase] Failed to fetch posts:', err);
   }
-  return [];
+
+  return deduplicatedFetch<Post[]>(cacheKey, async () => {
+    const startTime = Date.now();
+    try {
+      let queryParams = `select=${encodeURIComponent(POST_SELECT_COLUMNS)}&order=created_at.desc&limit=${limit}`;
+      if (options.cursorCreatedAt) {
+        queryParams += `&created_at=lt.${encodeURIComponent(options.cursorCreatedAt)}`;
+      }
+
+      const url = `${SUPABASE_URL}/rest/v1/posts?${queryParams}`;
+      const res = await fetch(url, { headers });
+      const duration = Date.now() - startTime;
+
+      if (!res.ok) {
+        vybeDiagnostics.recordNetworkRequest(url, duration, res.status);
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      vybeDiagnostics.recordNetworkRequest(url, duration, 200, JSON.stringify(data).length);
+
+      if (Array.isArray(data) && data.length > 0) {
+        const posts = data.map(row => mapSupabasePost(row, userMap));
+        if (isFirstPage) {
+          vybeCache.set(cacheKey, posts, CACHE_TTL.POSTS_FEED);
+        }
+        return posts;
+      }
+    } catch (err) {
+      console.warn('[Supabase] Failed to fetch posts:', err);
+    }
+
+    if (isFirstPage) {
+      const fallback = await vybeCache.get<Post[]>(cacheKey, { allowStale: true });
+      return fallback?.data || [];
+    }
+    return [];
+  });
 }
 
-// 3. Fetch live stories with joined profiles
-export async function fetchLiveStories(userMap?: Map<string, User>): Promise<Story[]> {
-  try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/stories?select=*,profiles:author_id(*)&order=created_at.desc&limit=40`,
-      { headers }
-    );
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (Array.isArray(data) && data.length > 0) {
-      return data.map(row => mapSupabaseStory(row, userMap));
+// -------------------------------------------------------------
+// 3. Fetch live stories with caching
+// -------------------------------------------------------------
+export async function fetchLiveStories(
+  userMap?: Map<string, User>,
+  options: { forceRefresh?: boolean } = {}
+): Promise<Story[]> {
+  const cacheKey = 'live_stories_v2';
+
+  if (!options.forceRefresh) {
+    const cached = await vybeCache.get<Story[]>(cacheKey, { allowStale: true });
+    if (cached && cached.data && cached.data.length > 0) {
+      vybeDiagnostics.recordCacheHit(cacheKey);
+      if (!cached.isStale) {
+        return cached.data;
+      }
     }
-  } catch (err) {
-    console.warn('[Supabase] Failed to fetch stories:', err);
   }
-  return [];
+
+  return deduplicatedFetch<Story[]>(cacheKey, async () => {
+    const startTime = Date.now();
+    try {
+      const url = `${SUPABASE_URL}/rest/v1/stories?select=${encodeURIComponent(STORY_SELECT_COLUMNS)}&order=created_at.desc&limit=25`;
+      const res = await fetch(url, { headers });
+      const duration = Date.now() - startTime;
+
+      if (!res.ok) {
+        vybeDiagnostics.recordNetworkRequest(url, duration, res.status);
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      vybeDiagnostics.recordNetworkRequest(url, duration, 200, JSON.stringify(data).length);
+
+      if (Array.isArray(data) && data.length > 0) {
+        const stories = data.map(row => mapSupabaseStory(row, userMap));
+        vybeCache.set(cacheKey, stories, CACHE_TTL.STORIES);
+        return stories;
+      }
+    } catch (err) {
+      console.warn('[Supabase] Failed to fetch stories:', err);
+    }
+
+    const fallback = await vybeCache.get<Story[]>(cacheKey, { allowStale: true });
+    return fallback?.data || [];
+  });
 }
 
-// 4. Fetch comments for a post
-export async function fetchCommentsForPost(postId: string, userMap?: Map<string, User>): Promise<PostComment[]> {
-  try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/comments?post_id=eq.${encodeURIComponent(postId)}&select=*,profiles:author_id(*)&order=created_at.asc&limit=50`,
-      { headers }
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    if (Array.isArray(data)) {
-      return data.map(c => {
-        const author = c.profiles ? mapSupabaseProfileToUser(c.profiles) : (userMap?.get(c.author_id) || {
-          id: c.author_id || 'unknown',
-          username: 'user',
-          displayName: 'Member',
-          publicVybeId: 'VYBE-USER',
-          bio: '',
-          avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${c.author_id || 'c'}`,
-          coverUrl: '',
-          isVerified: false,
-          isVip: false,
-          isVerifiedBusiness: false,
-          isWorker: false,
-          followersCount: 0,
-          followingCount: 0,
-          postsCount: 0,
-          livePulse: 'Open to chatting',
-          isOnline: false,
-          badges: [],
-          joinedDate: 'Recently'
+// -------------------------------------------------------------
+// 4. Fetch comments for a post (Cached)
+// -------------------------------------------------------------
+export async function fetchCommentsForPost(
+  postId: string,
+  userMap?: Map<string, User>
+): Promise<PostComment[]> {
+  if (!postId) return [];
+  const cacheKey = `comments_${postId}`;
+
+  const cached = await vybeCache.get<PostComment[]>(cacheKey, { allowStale: true });
+  if (cached && cached.data && cached.data.length > 0 && !cached.isStale) {
+    vybeDiagnostics.recordCacheHit(cacheKey);
+    return cached.data;
+  }
+
+  return deduplicatedFetch<PostComment[]>(cacheKey, async () => {
+    try {
+      const commentCols = 'id,post_id,author_id,content,created_at,likes_count,profiles:author_id(id,username,display_name,avatar_url,is_verified,is_vip)';
+      const url = `${SUPABASE_URL}/rest/v1/comments?post_id=eq.${encodeURIComponent(postId)}&select=${encodeURIComponent(commentCols)}&order=created_at.asc&limit=30`;
+      const res = await fetch(url, { headers });
+
+      if (!res.ok) return cached?.data || [];
+      const data = await res.json();
+
+      if (Array.isArray(data)) {
+        const mapped = data.map(c => {
+          const author = c.profiles ? mapSupabaseProfileToUser(c.profiles) : (userMap?.get(c.author_id) || {
+            id: c.author_id || 'unknown',
+            username: 'user',
+            displayName: 'Member',
+            publicVybeId: 'VYBE-USER',
+            bio: '',
+            avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${c.author_id || 'c'}`,
+            coverUrl: '',
+            isVerified: false,
+            isVip: false,
+            isVerifiedBusiness: false,
+            isWorker: false,
+            followersCount: 0,
+            followingCount: 0,
+            postsCount: 0,
+            livePulse: 'Open to chatting',
+            isOnline: false,
+            badges: [],
+            joinedDate: 'Recently'
+          });
+
+          return {
+            id: c.id,
+            postId: c.post_id,
+            author,
+            content: c.content || '',
+            timestamp: c.created_at ? new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+            createdAtIso: c.created_at,
+            likesCount: Number(c.likes_count || 0),
+            isLiked: false
+          };
         });
 
-        return {
-          id: c.id,
-          postId: c.post_id,
-          author,
-          content: c.content || '',
-          timestamp: c.created_at ? new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
-          createdAtIso: c.created_at,
-          likesCount: Number(c.likes_count || 0),
-          isLiked: false
-        };
-      });
+        vybeCache.set(cacheKey, mapped, CACHE_TTL.COMMENTS);
+        return mapped;
+      }
+    } catch (err) {
+      console.warn('[Supabase] Failed to fetch comments for post:', postId, err);
     }
-  } catch (err) {
-    console.warn('[Supabase] Failed to fetch comments for post:', postId, err);
-  }
-  return [];
+    return cached?.data || [];
+  });
 }
 
-// 5. Submit a real live comment
+// -------------------------------------------------------------
+// 5. Submit a real live comment (Invalidates post comment cache)
+// -------------------------------------------------------------
 export async function submitLiveComment(postId: string, authorId: string, content: string): Promise<any> {
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/comments`, {
@@ -290,6 +498,8 @@ export async function submitLiveComment(postId: string, authorId: string, conten
       return null;
     }
     const data = await res.json();
+    // Invalidate local comments cache
+    await vybeCache.delete(`comments_${postId}`);
     return Array.isArray(data) ? data[0] : data;
   } catch (err) {
     console.warn('[Supabase] Comment post error:', err);
@@ -297,7 +507,9 @@ export async function submitLiveComment(postId: string, authorId: string, conten
   }
 }
 
+// -------------------------------------------------------------
 // 6. Create a live post in Supabase
+// -------------------------------------------------------------
 export async function createLivePost(postData: {
   authorId: string;
   caption: string;
@@ -353,6 +565,9 @@ export async function createLivePost(postData: {
       }).catch(err => console.warn('[Supabase] Media insert error:', err));
     }
 
+    // Invalidate live posts cache
+    await vybeCache.invalidatePrefix('live_posts_');
+
     return created;
   } catch (err) {
     console.warn('[Supabase] createLivePost exception:', err);
@@ -360,7 +575,9 @@ export async function createLivePost(postData: {
   }
 }
 
+// -------------------------------------------------------------
 // 7. Create a live story in Supabase
+// -------------------------------------------------------------
 export async function createLiveStory(storyData: {
   authorId: string;
   mediaUrl: string;
@@ -385,6 +602,7 @@ export async function createLiveStory(storyData: {
 
     if (res.ok) {
       const data = await res.json();
+      await vybeCache.delete('live_stories_v2');
       return Array.isArray(data) ? data[0] : data;
     }
   } catch (err) {
@@ -393,7 +611,9 @@ export async function createLiveStory(storyData: {
   return null;
 }
 
+// -------------------------------------------------------------
 // 8. Sync Finger Heart reaction count to Supabase posts table
+// -------------------------------------------------------------
 export async function syncPostLikeCountToSupabase(postId: string, nextLikesCount: number): Promise<void> {
   if (!postId || postId.startsWith('post_')) return;
   try {
@@ -429,7 +649,6 @@ export async function resolveOrCreateWebDirectConversation(
   if (!authHeaders || !UUID_REGEX.test(peerUserId)) return null;
 
   try {
-    // Pass both p_peer_id and p_other_user_id to avoid PostgREST HTTP 300 PGRST203 function overload ambiguity
     const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_or_create_direct_conversation`, {
       method: 'POST',
       headers: authHeaders,
@@ -512,4 +731,3 @@ export async function sendLiveDirectMessage(params: {
     return null;
   }
 }
-

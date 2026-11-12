@@ -1706,7 +1706,11 @@ const server = http.createServer(async (req, res) => {
   }
 
   // 2. Admin Portal Route (/admin, /admin/)
-  if (cleanUrl === '/admin' || cleanUrl === '/admin/' || cleanUrl === '/admin/index.html') {
+  if (cleanUrl === '/admin' || cleanUrl === '/admin/' || cleanUrl === '/admin/index.html' || cleanUrl === '/admin.html') {
+    const distAdmin = path.join(DIST_DIR, 'admin.html');
+    if (fs.existsSync(distAdmin)) {
+      return sendStaticFile(distAdmin, { 'Content-Type': 'text/html; charset=utf-8' });
+    }
     const adminPath = path.join(WEB_DIR, 'index.html');
     if (fs.existsSync(adminPath)) {
       return sendStaticFile(adminPath, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -1740,8 +1744,12 @@ const server = http.createServer(async (req, res) => {
   }
 
   // 6. SPA Route Fallback:
-  // If requesting /admin/* fallback to web/index.html; otherwise fallback to dist/index.html (VYBE Web App)
+  // If requesting /admin/* fallback to dist/admin.html or web/index.html; otherwise fallback to dist/index.html (VYBE Web App)
   if (cleanUrl.startsWith('/admin')) {
+    const distAdmin = path.join(DIST_DIR, 'admin.html');
+    if (fs.existsSync(distAdmin)) {
+      return sendStaticFile(distAdmin, { 'Content-Type': 'text/html; charset=utf-8' });
+    }
     const adminIndex = path.join(WEB_DIR, 'index.html');
     if (fs.existsSync(adminIndex)) {
       return sendStaticFile(adminIndex, { 'Content-Type': 'text/html; charset=utf-8' });

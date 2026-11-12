@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { vybeCache } from '../utils/indexedDbCache';
 import { 
   User, Post, Story, CrossedPathEncounter, TimeCapsule, 
   UnloadRoom, VybeShop, Community, SpiritualReflection, 
@@ -100,6 +101,9 @@ interface VybeContextType {
   sharedPostModalId: string | null;
   openSharedPostModal: (postId: string) => void;
   closeSharedPostModal: () => void;
+  hasMorePosts: boolean;
+  loadMorePosts: () => Promise<void>;
+  isLoadingMorePosts: boolean;
 
   // Theme
   themeMode: 'dark' | 'light';
@@ -346,6 +350,9 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Posts & Reels
   const [posts, setPosts] = useState<Post[]>(INITIAL_POSTS);
   const [reels, setReels] = useState<Post[]>(INITIAL_REELS);
+  const [hasMorePosts, setHasMorePosts] = useState<boolean>(true);
+  const [isLoadingMorePosts, setIsLoadingMorePosts] = useState<boolean>(false);
+  const lastSyncTimeRef = useRef<number>(Date.now());
 
   // Stories (persisted across refresh with automatic 24-hour expiry pruning)
   const [stories, setStories] = useState<Story[]>(() => {
@@ -510,10 +517,18 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     checkForUpdates(undefined, true);
   }, []);
 
-  // Synchronize state with real Supabase database
-  const syncDatabase = async () => {
+  // User-isolated cache synchronization
+  useEffect(() => {
+    if (currentUser?.id) {
+      vybeCache.setUserId(currentUser.id);
+    }
+  }, [currentUser?.id]);
+
+  // Synchronize state with real Supabase database using intelligent caching
+  const syncDatabase = async (forceRefresh: boolean = false) => {
+    lastSyncTimeRef.current = Date.now();
     try {
-      const liveProfiles = await fetchLiveProfiles();
+      const liveProfiles = await fetchLiveProfiles({ forceRefresh });
       const userMap = new Map<string, User>();
       if (liveProfiles && liveProfiles.length > 0) {
         liveProfiles.forEach(u => userMap.set(u.id, u));
@@ -534,7 +549,8 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      const livePosts = await fetchLivePosts(userMap);
+      // Initial page of 20 posts instead of 60 heavy records
+      const livePosts = await fetchLivePosts(userMap, { limit: 20, forceRefresh });
       if (livePosts && livePosts.length > 0) {
         setPosts(livePosts);
         const liveReels = livePosts.filter(p => p.isVybesReel || p.mediaType === 'REEL');
@@ -543,7 +559,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      const liveStories = await fetchLiveStories(userMap);
+      const liveStories = await fetchLiveStories(userMap, { forceRefresh });
       if (liveStories && liveStories.length > 0) {
         setStories(liveStories);
       }
@@ -554,10 +570,66 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Cursor-based pagination to load subsequent batches on demand
+  const loadMorePosts = async () => {
+    if (isLoadingMorePosts || !hasMorePosts) return;
+    setIsLoadingMorePosts(true);
+    try {
+      const oldestPost = posts[posts.length - 1];
+      const cursorCreatedAt = oldestPost?.createdAtIso;
+      const userMap = new Map<string, User>();
+      allUsers.forEach(u => userMap.set(u.id, u));
+
+      const morePosts = await fetchLivePosts(userMap, {
+        limit: 20,
+        cursorCreatedAt
+      });
+
+      if (!morePosts || morePosts.length === 0) {
+        setHasMorePosts(false);
+      } else {
+        if (morePosts.length < 20) {
+          setHasMorePosts(false);
+        }
+        setPosts(prev => {
+          const existingIds = new Set(prev.map(p => p.id));
+          const uniqueNew = morePosts.filter(p => !existingIds.has(p.id));
+          return [...prev, ...uniqueNew];
+        });
+      }
+    } catch (err) {
+      console.warn('[VybeContext] loadMorePosts error:', err);
+    } finally {
+      setIsLoadingMorePosts(false);
+    }
+  };
+
+  // Intelligent lifecycle sync: Loads instantly from cache on mount,
+  // revalidates on window focus only if more than 90 seconds elapsed.
+  // NO UNCONDITIONAL 15-SECOND POLLING.
   useEffect(() => {
-    syncDatabase();
-    const timer = setInterval(syncDatabase, 15000);
-    return () => clearInterval(timer);
+    syncDatabase(false);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const elapsed = Date.now() - lastSyncTimeRef.current;
+        if (elapsed > 90_000) {
+          syncDatabase(true);
+        }
+      }
+    };
+
+    const handleOnline = () => {
+      syncDatabase(true);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('online', handleOnline);
+    };
   }, []);
 
   // Audio Handler
@@ -1258,6 +1330,9 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       sharedPostModalId,
       openSharedPostModal,
       closeSharedPostModal,
+      hasMorePosts,
+      loadMorePosts,
+      isLoadingMorePosts,
       themeMode,
       setThemeMode,
       toggleThemeMode,
