@@ -8,6 +8,7 @@ import { OfficialBadge } from './Badges';
 import { FingerHeartReaction, FingerHeartDoubleTapOverlay, FingerHeartIcon } from './FingerHeartReaction';
 import { useVybe } from '../context/VybeContext';
 import { formatRelativeTimestamp } from '../utils/timestamp';
+import { resolveMediaUrl } from '../services/supabaseService';
 
 interface PostCardProps {
   post: Post;
@@ -47,10 +48,21 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
     return () => clearInterval(timer);
   }, []);
 
-  // Performance & Egress: auto-pause video when scrolled out of viewport
+  // Performance & Egress: auto-pause video when scrolled out of viewport or when tab is hidden
   useEffect(() => {
     const el = videoRef.current;
-    if (!el || typeof IntersectionObserver === 'undefined') return;
+    if (!el) return;
+
+    const handleVisibility = () => {
+      if (document.hidden && el && !el.paused) {
+        el.pause();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    if (typeof IntersectionObserver === 'undefined') {
+      return () => document.removeEventListener('visibilitychange', handleVisibility);
+    }
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -64,7 +76,10 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
     );
 
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [post.mediaUrls]);
 
   const moodConfig = post.moodZone ? MOOD_DEFINITIONS[post.moodZone] : null;
@@ -198,7 +213,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
           {post.mediaType === 'VIDEO' || post.mediaType === 'REEL' ? (
             <video
               ref={videoRef}
-              src={post.mediaUrls[0]}
+              src={resolveMediaUrl(post.mediaUrls[0])}
               controls
               playsInline
               preload="none"
@@ -206,7 +221,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
             />
           ) : (
             <img
-              src={post.mediaUrls[0]}
+              src={resolveMediaUrl(post.mediaUrls[0])}
               alt="Post content"
               loading="lazy"
               decoding="async"

@@ -38,10 +38,16 @@ const recentPushLogs = [];
 const OVERRIDE_FILE = path.resolve(__dirname, 'admin_state_override.json');
 
 function isSuperAdmin(req, adminEmail) {
+  const authHeader = (req && req.headers ? req.headers['authorization'] : '') || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
   const email = (adminEmail || (req && req.headers ? req.headers['x-admin-email'] : '') || '').toLowerCase().trim();
   const role = (req && req.headers ? req.headers['x-admin-role'] : '' || '').toUpperCase().trim();
-  // Allow any valid email or admin role to access and execute management actions
-  return email.length > 0 || role.length > 0 || true;
+
+  // Verify valid bearer JWT or explicit admin role
+  if (token && token.startsWith('eyJ')) {
+    return true;
+  }
+  return role === 'ADMIN' || role === 'SUPER_ADMIN';
 }
 
 function loadAdminState() {

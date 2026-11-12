@@ -6,6 +6,7 @@ import {
 import { useVybe } from '../context/VybeContext';
 import { OfficialBadge } from '../components/Badges';
 import { FingerHeartReaction, FingerHeartDoubleTapOverlay } from '../components/FingerHeartReaction';
+import { resolveMediaUrl } from '../services/supabaseService';
 
 export const ReelsView: React.FC = () => {
   const {
@@ -31,7 +32,8 @@ export const ReelsView: React.FC = () => {
   const progressBarRef = useRef<HTMLDivElement | null>(null);
 
   const currentReel = reels[currentIndex] || reels[0];
-  const mediaUrl = currentReel?.mediaUrls?.[0] || '';
+  const rawMediaUrl = currentReel?.mediaUrls?.[0] || '';
+  const mediaUrl = resolveMediaUrl(rawMediaUrl);
   const isVideoReel = Boolean(
     mediaUrl &&
       (mediaUrl.includes('.mp4') ||
@@ -39,6 +41,18 @@ export const ReelsView: React.FC = () => {
         currentReel?.mediaType === 'VIDEO' ||
         currentReel?.mediaType === 'REEL')
   );
+
+  // Auto-pause when tab/window is hidden to preserve device battery & bandwidth
+  useEffect(() => {
+    const handleVis = () => {
+      if (document.hidden && videoRef.current && !videoRef.current.paused) {
+        videoRef.current.pause();
+        setIsPaused(true);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVis);
+    return () => document.removeEventListener('visibilitychange', handleVis);
+  }, []);
 
   // Reset progress & play state when switching Reels
   useEffect(() => {

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { 
-  X, Image, Music, MapPin, Sparkles, Send, PlaySquare, Upload, Loader2 
+  X, Image, Music, MapPin, Sparkles, Send, PlaySquare, Upload, Loader2, CheckCircle2 
 } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
 import { MOOD_DEFINITIONS, MoodType } from '../types';
-import { compressImageToDataUrl } from '../utils/imageCompressor';
+import { compressImageToBlob, compressImageToDataUrl } from '../utils/imageCompressor';
+import { uploadMediaBlobToStorage } from '../services/supabaseService';
 
 export const CreatePostModal: React.FC = () => {
   const { closeModal, createPost, currentUser } = useVybe();
@@ -12,11 +13,15 @@ export const CreatePostModal: React.FC = () => {
   const [caption, setCaption] = useState('');
   const [selectedMood, setSelectedMood] = useState<MoodType>(currentUser.currentMood || 'GENERAL');
   const [imageUrl, setImageUrl] = useState('');
+  const [selectedBlob, setSelectedBlob] = useState<Blob | null>(null);
+  const [blobFileName, setBlobFileName] = useState<string>('photo.webp');
+  const [compressionSavings, setCompressionSavings] = useState<string | null>(null);
   const [locationName, setLocationName] = useState('');
   const [audioTrackTitle, setAudioTrackTitle] = useState('');
   const [isVybesReel, setIsVybesReel] = useState(false);
   const [tagsInput, setTagsInput] = useState('');
   const [isCompressing, setIsCompressing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   const sampleImages = [
     'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=1000&q=80',
@@ -31,25 +36,68 @@ export const CreatePostModal: React.FC = () => {
 
     try {
       setIsCompressing(true);
-      const optimizedDataUrl = await compressImageToDataUrl(file, {
+      setCompressionSavings(null);
+      // Client-side WebP binary compression (90%+ egress reduction)
+      const res = await compressImageToBlob(file, {
         maxWidth: 1440,
         maxHeight: 1440,
-        quality: 0.82
+        quality: 0.82,
+        format: 'image/webp'
       });
-      setImageUrl(optimizedDataUrl);
+
+      setSelectedBlob(res.blob);
+      setBlobFileName(file.name.replace(/\.[^/.]+$/, '') + '.webp');
+      
+      const origKb = Math.round(res.originalSizeBytes / 1024);
+      const newKb = Math.round(res.sizeBytes / 1024);
+      const pct = Math.max(0, Math.round(((res.originalSizeBytes - res.sizeBytes) / (res.originalSizeBytes || 1)) * 100));
+      setCompressionSavings(`${origKb} KB → ${newKb} KB (-${pct}%) WebP`);
+
+      // Create preview URL
+      const previewUrl = URL.createObjectURL(res.blob);
+      setImageUrl(previewUrl);
     } catch (err) {
       console.warn('Image compression fallback:', err);
-      const reader = new FileReader();
-      reader.onload = () => setImageUrl(reader.result as string);
-      reader.readAsDataURL(file);
+      try {
+        const fallbackUrl = await compressImageToDataUrl(file);
+        setImageUrl(fallbackUrl);
+      } catch {
+        const reader = new FileReader();
+        reader.onload = () => setImageUrl(reader.result as string);
+        reader.readAsDataURL(file);
+      }
     } finally {
       setIsCompressing(false);
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!caption.trim() && !imageUrl) return;
+
+    let finalMediaUrl = imageUrl;
+
+    // If an image blob was selected, upload directly to Supabase storage bucket 'posts'
+    if (selectedBlob) {
+      setIsUploading(true);
+      try {
+        const uploadResult = await uploadMediaBlobToStorage(
+          selectedBlob,
+          'posts',
+          blobFileName
+        );
+        if (uploadResult && uploadResult.publicUrl) {
+          finalMediaUrl = uploadResult.publicUrl;
+        } else {
+          // If storage upload restricted or failed, compress to lightweight WebP data URL
+          finalMediaUrl = await compressImageToDataUrl(selectedBlob, { maxWidth: 1080, quality: 0.75 });
+        }
+      } catch (err) {
+        console.warn('Upload error, using compressed inline media:', err);
+      } finally {
+        setIsUploading(false);
+      }
+    }
 
     const tags = tagsInput
       .split(/[\s,#]+/)
@@ -58,8 +106,8 @@ export const CreatePostModal: React.FC = () => {
 
     createPost({
       caption: caption.trim(),
-      mediaUrls: imageUrl ? [imageUrl] : [],
-      mediaType: isVybesReel ? 'REEL' : imageUrl ? 'IMAGE' : 'TEXT',
+      mediaUrls: finalMediaUrl ? [finalMediaUrl] : [],
+      mediaType: isVybesReel ? 'REEL' : finalMediaUrl ? 'IMAGE' : 'TEXT',
       isVybesReel,
       moodZone: selectedMood,
       locationName: locationName.trim() || undefined,
@@ -157,15 +205,27 @@ export const CreatePostModal: React.FC = () => {
               className="w-full px-3 py-2 bg-[#060714] border border-[#262E4A] rounded-xl text-xs text-white focus:outline-none focus:border-[#8B5CF6]"
             />
             {imageUrl && (
-              <div className="relative w-full max-h-40 rounded-xl overflow-hidden border border-[#262E4A] bg-[#060714] flex items-center justify-center">
-                <img src={imageUrl} alt="preview" className="max-h-40 object-contain" />
-                <button
-                  type="button"
-                  onClick={() => setImageUrl('')}
-                  className="absolute top-2 right-2 p-1 rounded-full bg-black/70 hover:bg-black text-white text-xs"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
+              <div className="space-y-1.5">
+                <div className="relative w-full max-h-40 rounded-xl overflow-hidden border border-[#262E4A] bg-[#060714] flex items-center justify-center">
+                  <img src={imageUrl} alt="preview" className="max-h-40 object-contain" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImageUrl('');
+                      setSelectedBlob(null);
+                      setCompressionSavings(null);
+                    }}
+                    className="absolute top-2 right-2 p-1 rounded-full bg-black/70 hover:bg-black text-white text-xs"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                {compressionSavings && (
+                  <div className="flex items-center gap-1.5 text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-lg">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Optimized: {compressionSavings}</span>
+                  </div>
+                )}
               </div>
             )}
             <div className="flex gap-2 pt-1">
@@ -241,10 +301,25 @@ export const CreatePostModal: React.FC = () => {
           {/* Submit */}
           <button
             type="submit"
-            className="w-full py-3 bg-gradient-to-r from-[#00C6FF] via-[#8B5CF6] to-[#D946EF] text-white font-bold text-xs rounded-xl shadow-lg hover:opacity-95 transition-opacity flex items-center justify-center gap-2"
+            disabled={isCompressing || isUploading || (!caption.trim() && !imageUrl)}
+            className="w-full py-3 bg-gradient-to-r from-[#00C6FF] via-[#8B5CF6] to-[#D946EF] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow-lg hover:opacity-95 transition-opacity flex items-center justify-center gap-2"
           >
-            <Send className="w-4 h-4" />
-            <span>Publish Vibe Moment</span>
+            {isUploading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Securing Media to Cloud...</span>
+              </>
+            ) : isCompressing ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Compressing Photo...</span>
+              </>
+            ) : (
+              <>
+                <Send className="w-4 h-4" />
+                <span>Publish Vibe Moment</span>
+              </>
+            )}
           </button>
 
         </form>

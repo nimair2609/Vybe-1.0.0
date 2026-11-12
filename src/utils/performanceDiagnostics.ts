@@ -1,7 +1,7 @@
 /**
  * VYBE Supabase Egress & Performance Diagnostics
  * Tracks real-time network requests, cache hit ratio, deduplicated calls,
- * and estimated bandwidth saved to ensure zero egress exhaustion.
+ * storage operations, and quota status to ensure zero egress exhaustion.
  */
 
 export interface NetworkMetric {
@@ -13,6 +13,7 @@ export interface NetworkMetric {
   sizeBytes: number;
   fromCache: boolean;
   deduplicated: boolean;
+  notes?: string;
 }
 
 export interface DiagnosticsSummary {
@@ -23,6 +24,9 @@ export interface DiagnosticsSummary {
   cacheHitRatio: number;
   estimatedBytesSaved: number;
   totalBytesTransferred: number;
+  storageUploadsCount: number;
+  quotaRestricted: boolean;
+  quotaRestrictionMessage: string | null;
   recentRequests: NetworkMetric[];
 }
 
@@ -34,6 +38,9 @@ class PerformanceDiagnostics {
   private deduplicatedRequests = 0;
   private estimatedBytesSaved = 0;
   private totalBytesTransferred = 0;
+  private storageUploadsCount = 0;
+  private isQuotaRestricted = false;
+  private quotaMessage: string | null = null;
 
   /**
    * Record an actual network request.
@@ -43,11 +50,17 @@ class PerformanceDiagnostics {
     durationMs: number,
     status: number,
     sizeBytes: number = 2048,
-    method: string = 'GET'
+    method: string = 'GET',
+    notes?: string
   ) {
     this.totalRequests++;
     this.cacheMisses++;
     this.totalBytesTransferred += sizeBytes;
+
+    if (status === 402) {
+      this.isQuotaRestricted = true;
+      this.quotaMessage = 'Supabase Cached Egress Quota Reached. Operating in offline-cached & resilient local sync mode.';
+    }
 
     const metric: NetworkMetric = {
       endpoint,
@@ -57,7 +70,8 @@ class PerformanceDiagnostics {
       status,
       sizeBytes,
       fromCache: false,
-      deduplicated: false
+      deduplicated: false,
+      notes
     };
 
     this.pushMetric(metric);
@@ -106,6 +120,29 @@ class PerformanceDiagnostics {
     this.pushMetric(metric);
   }
 
+  /**
+   * Record storage upload.
+   */
+  public recordStorageUpload(bucket: string, sizeBytes: number, originalBytes: number) {
+    this.storageUploadsCount++;
+    const saved = Math.max(0, originalBytes - sizeBytes);
+    this.estimatedBytesSaved += saved;
+    this.totalBytesTransferred += sizeBytes;
+  }
+
+  /**
+   * Flag Supabase quota status.
+   */
+  public recordQuotaViolation(message: string) {
+    this.isQuotaRestricted = true;
+    this.quotaMessage = message;
+  }
+
+  public clearQuotaViolation() {
+    this.isQuotaRestricted = false;
+    this.quotaMessage = null;
+  }
+
   private pushMetric(m: NetworkMetric) {
     this.metrics.unshift(m);
     if (this.metrics.length > 50) {
@@ -125,6 +162,9 @@ class PerformanceDiagnostics {
       cacheHitRatio: hitRatio,
       estimatedBytesSaved: this.estimatedBytesSaved,
       totalBytesTransferred: this.totalBytesTransferred,
+      storageUploadsCount: this.storageUploadsCount,
+      quotaRestricted: this.isQuotaRestricted,
+      quotaRestrictionMessage: this.quotaMessage,
       recentRequests: [...this.metrics]
     };
   }
@@ -137,6 +177,9 @@ class PerformanceDiagnostics {
     this.deduplicatedRequests = 0;
     this.estimatedBytesSaved = 0;
     this.totalBytesTransferred = 0;
+    this.storageUploadsCount = 0;
+    this.isQuotaRestricted = false;
+    this.quotaMessage = null;
   }
 }
 

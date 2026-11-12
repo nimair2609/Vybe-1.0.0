@@ -5,7 +5,15 @@ import {
   TrendingUp, ArrowUpRight, Zap, Database, LogOut, Check, X,
   Radio, Award, Settings, ExternalLink, HelpCircle
 } from 'lucide-react';
-import { SUPABASE_URL, SUPABASE_ANON_KEY, fetchLiveProfiles, fetchLivePosts } from '../services/supabaseService';
+import {
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY,
+  fetchLiveProfiles,
+  fetchLivePosts,
+  adminSignInWithPassword,
+  getStoredAdminSession,
+  adminSignOut
+} from '../services/supabaseService';
 import { vybeDiagnostics, DiagnosticsSummary } from '../utils/performanceDiagnostics';
 import { vybeCache } from '../utils/indexedDbCache';
 import { User, Post, OfficialVybeBadge } from '../types';
@@ -45,11 +53,12 @@ interface AuditRecord {
 export const AdminApp: React.FC = () => {
   // Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return localStorage.getItem('vybe_admin_auth_v2') === 'true';
+    return Boolean(getStoredAdminSession().token);
   });
   const [adminKey, setAdminKey] = useState('');
-  const [adminEmail, setAdminEmail] = useState(() => localStorage.getItem('vybe_admin_email') || 'nimair2609@gmail.com');
+  const [adminEmail, setAdminEmail] = useState(() => getStoredAdminSession().email || 'nimair2609@gmail.com');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Active Tab & Data State
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
@@ -172,11 +181,10 @@ export const AdminApp: React.FC = () => {
     }
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
 
-    // Accept admin authentication key or recognized admin email
     const trimmedKey = adminKey.trim();
     const trimmedEmail = adminEmail.trim().toLowerCase();
 
@@ -184,20 +192,33 @@ export const AdminApp: React.FC = () => {
       setAuthError('Please enter a valid administrator email.');
       return;
     }
+    if (!trimmedKey) {
+      setAuthError('Please enter administrator password.');
+      return;
+    }
 
-    if (trimmedKey === 'admin123' || trimmedKey === 'vybe2026' || trimmedKey === 'nimai_vybe_master' || trimmedKey.length >= 6) {
-      setIsAuthenticated(true);
-      localStorage.setItem('vybe_admin_auth_v2', 'true');
-      localStorage.setItem('vybe_admin_email', trimmedEmail);
-      recordAudit('ADMIN_LOGIN', trimmedEmail, 'Administrator login successful');
-    } else {
-      setAuthError('Invalid administrator credentials.');
+    setIsLoggingIn(true);
+    try {
+      const res = await adminSignInWithPassword(trimmedEmail, trimmedKey);
+      if (res.success) {
+        setIsAuthenticated(true);
+        recordAudit('ADMIN_LOGIN', trimmedEmail, 'Genuine Supabase Administrator session authorized');
+        showNotification('Welcome to VYBE Admin Command Center');
+      } else {
+        setAuthError(res.error || 'Invalid administrator credentials.');
+      }
+    } catch (err: any) {
+      setAuthError(err.message || 'Error communicating with Supabase authentication service.');
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
   const handleLogout = () => {
+    adminSignOut();
     setIsAuthenticated(false);
-    localStorage.removeItem('vybe_admin_auth_v2');
+    setAdminKey('');
+    showNotification('Logged out of Admin Command Center');
   };
 
   const recordAudit = (action: string, target: string, details: string) => {
@@ -217,21 +238,49 @@ export const AdminApp: React.FC = () => {
     setTimeout(() => setFeedback(null), 3500);
   };
 
-  // Badge Management Action
+  // Badge Management Action (Syncs to Supabase profiles table)
   const toggleUserBadge = (userId: string, badge: OfficialVybeBadge) => {
+    let nextIsVerified = false;
+    let nextIsVip = false;
+    let nextIsWorker = false;
+    let nextIsBusiness = false;
+
     setUsers(prev => prev.map(u => {
       if (u.id !== userId) return u;
       const hasBadge = u.badges.includes(badge);
       const nextBadges = hasBadge ? u.badges.filter(b => b !== badge) : [...u.badges, badge];
+      nextIsVerified = badge === 'VERIFIED_BLUE' ? !hasBadge : u.isVerified;
+      nextIsVip = badge === 'VIP_GOLD' ? !hasBadge : u.isVip;
+      nextIsWorker = badge === 'WORKER_GREEN' ? !hasBadge : u.isWorker;
+      nextIsBusiness = badge === 'SHOP_GOLD' ? !hasBadge : u.isVerifiedBusiness;
       return {
         ...u,
         badges: nextBadges,
-        isVerified: badge === 'VERIFIED_BLUE' ? !hasBadge : u.isVerified,
-        isVip: badge === 'VIP_GOLD' ? !hasBadge : u.isVip,
-        isWorker: badge === 'WORKER_GREEN' ? !hasBadge : u.isWorker,
-        isVerifiedBusiness: badge === 'SHOP_GOLD' ? !hasBadge : u.isVerifiedBusiness
+        isVerified: nextIsVerified,
+        isVip: nextIsVip,
+        isWorker: nextIsWorker,
+        isVerifiedBusiness: nextIsBusiness
       };
     }));
+
+    // Real Supabase persistence
+    const token = localStorage.getItem('vybe_admin_jwt') || SUPABASE_ANON_KEY;
+    const patchBody: Record<string, boolean> = {};
+    if (badge === 'VERIFIED_BLUE') patchBody.is_verified = nextIsVerified;
+    if (badge === 'VIP_GOLD') patchBody.is_vip = nextIsVip;
+    if (badge === 'WORKER_GREEN') patchBody.is_worker = nextIsWorker;
+    if (badge === 'SHOP_GOLD') patchBody.is_verified_business = nextIsBusiness;
+
+    fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
+      method: 'PATCH',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(patchBody)
+    }).catch(err => console.warn('Supabase badge sync notice:', err));
+
     recordAudit('BADGE_TOGGLE', userId, `Toggled badge ${badge}`);
     showNotification(`Badge updated for user.`);
   };
@@ -250,9 +299,18 @@ export const AdminApp: React.FC = () => {
     showNotification(`Application for @${app.username} rejected.`);
   };
 
-  // Post Moderation Action
+  // Post Moderation Action (Syncs to Supabase posts table)
   const removePost = (postId: string) => {
     setPosts(prev => prev.filter(p => p.id !== postId));
+    const token = localStorage.getItem('vybe_admin_jwt') || SUPABASE_ANON_KEY;
+    fetch(`${SUPABASE_URL}/rest/v1/posts?id=eq.${encodeURIComponent(postId)}`, {
+      method: 'DELETE',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${token}`
+      }
+    }).catch(err => console.warn('Supabase post remove notice:', err));
+
     recordAudit('POST_REMOVED', postId, 'Removed post violating community guidelines');
     showNotification('Post removed successfully.');
   };
@@ -340,10 +398,20 @@ export const AdminApp: React.FC = () => {
 
             <button
               type="submit"
-              className="w-full py-3 bg-gradient-to-r from-[#00F0FF] to-[#8B5CF6] hover:opacity-95 text-black font-bold text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 mt-2"
+              disabled={isLoggingIn}
+              className="w-full py-3 bg-gradient-to-r from-[#00F0FF] to-[#8B5CF6] disabled:opacity-50 hover:opacity-95 text-black font-bold text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 mt-2"
             >
-              <Lock className="w-3.5 h-3.5" />
-              <span>Authorize & Enter Command Center</span>
+              {isLoggingIn ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Verifying Credentials...</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>Authorize & Enter Command Center</span>
+                </>
+              )}
             </button>
           </form>
 

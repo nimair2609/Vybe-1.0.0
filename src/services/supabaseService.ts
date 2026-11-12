@@ -629,6 +629,149 @@ export async function syncPostLikeCountToSupabase(postId: string, nextLikesCount
   }
 }
 
+export function resolveMediaUrl(rawUrl: string): string {
+  if (!rawUrl) return '';
+  // Legacy Base64 strings: preserve and display directly without modification
+  if (rawUrl.startsWith('data:')) return rawUrl;
+  // If already full http(s) URL
+  if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) return rawUrl;
+  // If it's a relative storage path (e.g. 'posts/xxx.webp' or 'stories/xxx.webp')
+  if (rawUrl.startsWith('posts/') || rawUrl.startsWith('avatars/') || rawUrl.startsWith('banners/') || rawUrl.startsWith('stories/')) {
+    return `${SUPABASE_URL}/storage/v1/object/public/${rawUrl}`;
+  }
+  return rawUrl;
+}
+
+export async function uploadMediaBlobToStorage(
+  blob: Blob,
+  bucket: 'posts' | 'avatars' | 'banners' | 'stories',
+  fileName: string = 'media',
+  originalSizeBytes?: number
+): Promise<{ publicUrl: string; storagePath: string } | null> {
+  const cleanExt = blob.type.includes('webp') ? 'webp' : (blob.type.includes('png') ? 'png' : 'jpg');
+  const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${cleanExt}`;
+  const storagePath = `${uniqueName}`;
+  const targetUrl = `${SUPABASE_URL}/storage/v1/object/${bucket}/${storagePath}`;
+
+  const token = localStorage.getItem('vybe_access_token') || localStorage.getItem('vybe_admin_jwt') || '';
+  const uploadHeaders: Record<string, string> = {
+    'apikey': SUPABASE_ANON_KEY,
+    ...(token && token.startsWith('eyJ') ? { 'Authorization': `Bearer ${token}` } : { 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }),
+    'Content-Type': blob.type || 'image/webp',
+    'x-upsert': 'true'
+  };
+
+  const startTime = Date.now();
+  try {
+    const res = await fetch(targetUrl, {
+      method: 'POST',
+      headers: uploadHeaders,
+      body: blob
+    });
+
+    const duration = Date.now() - startTime;
+    if (res.ok) {
+      vybeDiagnostics.recordNetworkRequest(targetUrl, duration, res.status, blob.size, 'POST');
+      vybeDiagnostics.recordStorageUpload(bucket, blob.size, originalSizeBytes || blob.size);
+      const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${storagePath}`;
+      return { publicUrl, storagePath: `${bucket}/${storagePath}` };
+    }
+
+    if (res.status === 402) {
+      vybeDiagnostics.recordQuotaViolation('Supabase Storage restricted due to exceed_cached_egress_quota.');
+    }
+  } catch (err) {
+    console.warn('[Supabase Storage] Upload error:', err);
+  }
+
+  return null;
+}
+
+// -------------------------------------------------------------
+// Secure Admin Authentication against Supabase Auth & profiles
+// -------------------------------------------------------------
+export async function adminSignInWithPassword(
+  email: string,
+  password: string
+): Promise<{ success: boolean; token?: string; user?: any; error?: string }> {
+  try {
+    const authUrl = `${SUPABASE_URL}/auth/v1/token?grant_type=password`;
+    const res = await fetch(authUrl, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ email: email.trim().toLowerCase(), password })
+    });
+
+    if (!res.ok) {
+      if (res.status === 402) {
+        vybeDiagnostics.recordQuotaViolation('Supabase Auth restricted by cached egress quota.');
+        return {
+          success: false,
+          error: 'Supabase Quota Restriction (402): Egress limit reached on Supabase backend.'
+        };
+      }
+      const errData = await res.json().catch(() => ({}));
+      return {
+        success: false,
+        error: errData.error_description || errData.message || 'Invalid administrator email or password.'
+      };
+    }
+
+    const data = await res.json();
+    const token = data.access_token;
+    const user = data.user;
+
+    // Verify role in profiles table
+    try {
+      const profileRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}&select=id,role,is_verified,is_vip`, {
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (profileRes.ok) {
+        const profiles = await profileRes.json();
+        const profile = Array.isArray(profiles) ? profiles[0] : profiles;
+        const role = (profile?.role || '').toUpperCase();
+        if (role && role !== 'ADMIN' && role !== 'SUPER_ADMIN' && role !== 'MODERATOR') {
+          return {
+            success: false,
+            error: 'Forbidden: Authenticated account does not hold administrator privileges.'
+          };
+        }
+      }
+    } catch {
+      // Proceed if profile query throttled
+    }
+
+    localStorage.setItem('vybe_admin_jwt', token);
+    localStorage.setItem('vybe_access_token', token);
+    localStorage.setItem('vybe_admin_email', email.trim().toLowerCase());
+    localStorage.setItem('vybe_admin_user_id', user.id);
+
+    return { success: true, token, user };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Network error during authentication.' };
+  }
+}
+
+export function getStoredAdminSession(): { token: string | null; email: string | null } {
+  return {
+    token: localStorage.getItem('vybe_admin_jwt'),
+    email: localStorage.getItem('vybe_admin_email')
+  };
+}
+
+export function adminSignOut(): void {
+  localStorage.removeItem('vybe_admin_jwt');
+  localStorage.removeItem('vybe_admin_email');
+  localStorage.removeItem('vybe_admin_user_id');
+}
+
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function getWebAuthHeaders(): Record<string, string> | null {

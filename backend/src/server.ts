@@ -58,33 +58,20 @@ app.get('/health', (req: Request, res: Response) => {
 
 // 2. Auth Verification Middleware
 const requireAdmin = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  const ownerHeader = req.headers['x-vybe-owner-console'];
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1].trim() : '';
-
-  if (!token && ownerHeader === 'owner-console-active') {
-    (req as any).user = { id: '00000000-0000-0000-0000-000000000001', role: 'ADMIN' };
-    next();
-    return;
-  }
 
   if (!token) {
     res.status(401).json({ error: 'Unauthorized: Missing bearer token.' });
     return;
   }
   if (!supabaseAdmin) {
-    (req as any).user = { id: 'admin-session', role: 'ADMIN' };
-    next();
+    res.status(503).json({ error: 'Service Unavailable: Supabase admin client not initialized.' });
     return;
   }
 
   const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
   if (error || !user) {
-    if (ownerHeader === 'owner-console-active') {
-      (req as any).user = { id: '00000000-0000-0000-0000-000000000001', role: 'ADMIN' };
-      next();
-      return;
-    }
     res.status(401).json({ error: 'Invalid authentication session.' });
     return;
   }
@@ -95,12 +82,7 @@ const requireAdmin = async (req: Request, res: Response, next: NextFunction): Pr
     .eq('id', user.id)
     .single();
 
-  if (!profile || (profile.role !== 'ADMIN' && profile.role !== 'MODERATOR')) {
-    if (ownerHeader === 'owner-console-active') {
-      (req as any).user = user;
-      next();
-      return;
-    }
+  if (!profile || (profile.role !== 'ADMIN' && profile.role !== 'SUPER_ADMIN' && profile.role !== 'MODERATOR')) {
     res.status(403).json({ error: 'Forbidden: Requires Administrator privileges.' });
     return;
   }
