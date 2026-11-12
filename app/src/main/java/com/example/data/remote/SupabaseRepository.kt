@@ -3520,8 +3520,11 @@ class SupabaseRepository {
       try {
         val payload = JSONObject().apply {
           put("user_id", cleanUserId)
+          put("userId", cleanUserId)
           put("fcm_token", cleanToken)
+          put("fcmToken", cleanToken)
           put("device_model", model)
+          put("deviceModel", model)
           put("platform", "android")
         }.toString()
 

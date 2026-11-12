@@ -341,7 +341,7 @@ fun UserProfileScreen(
                 .size(40.dp)
                 .clip(CircleShape)
                 .background(Color.Black.copy(alpha = 0.45f))
-                .testTag("profile_top_back_button")
+                .testTag("profile_back_button")
             ) {
               Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,

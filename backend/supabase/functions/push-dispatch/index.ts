@@ -255,9 +255,12 @@ Deno.serve(async (req: Request) => {
               ttl: '86400s',
               direct_boot_ok: true,
               notification: {
+                title: String(title),
+                body: String(message),
                 channel_id: String(channelId || 'vybe_activity_high_v2'),
+                icon: 'ic_vybe_notification',
+                color: '#7B2CBF',
                 visibility: 'PUBLIC',
-                priority: 'MAX',
                 default_sound: true,
                 default_vibrate_timings: true,
                 notification_priority: 'PRIORITY_MAX',

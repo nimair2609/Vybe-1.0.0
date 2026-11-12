@@ -975,7 +975,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                   verticalAlignment = Alignment.CenterVertically
                 ) {
                   Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(imageVector = Icons.Default.CloudQueue, contentDescription = null, tint = VybePurpleAccent, modifier = Modifier.size(20.dp))
+                    Icon(imageVector = Icons.Default.CloudQueue, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(20.dp))
                     Text("Device FCM Registration", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                   }
                   Surface(
@@ -1016,7 +1016,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                   }
                   Button(
                     onClick = { viewModel.navigateTo(Screen.NOTIFICATION_DIAGNOSTICS) },
-                    colors = ButtonDefaults.buttonColors(containerColor = VybePurplePrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                     modifier = Modifier.weight(1f).testTag("settings_open_fcm_diag_button")
                   ) {
                     Text("Full Diagnostics", fontSize = 12.sp, color = Color.White)

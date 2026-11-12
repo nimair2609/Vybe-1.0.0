@@ -49,6 +49,7 @@ import com.example.data.model.MediaType
 import com.example.data.model.Post
 import com.example.data.model.User
 import com.example.data.model.VybeCircle
+import com.example.ui.MainTab
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VerificationBadge
@@ -323,7 +324,147 @@ fun ExploreScreen(viewModel: VybeViewModel) {
             }
           }
 
-          Spacer(modifier = Modifier.height(12.dp))
+          Spacer(modifier = Modifier.height(10.dp))
+
+          // 6 Signature Experiences Quick Access Grid
+          Column(
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("explore_six_features_header_grid"),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+              Surface(
+                modifier = Modifier
+                  .weight(1f)
+                  .clip(RoundedCornerShape(12.dp))
+                  .clickable { viewModel.navigateTo(Screen.UNLOAD_VIEW) }
+                  .testTag("explore_header_feature_unload"),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant)
+              ) {
+                Row(
+                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                  Text("🎙️", fontSize = 13.sp)
+                  Text("UNLOAD", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                }
+              }
+
+              Surface(
+                modifier = Modifier
+                  .weight(1f)
+                  .clip(RoundedCornerShape(12.dp))
+                  .clickable { viewModel.navigateTo(Screen.UNFILTERED_VIEW) }
+                  .testTag("explore_header_feature_unfiltered"),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant)
+              ) {
+                Row(
+                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                  Text("✨", fontSize = 13.sp)
+                  Text("UNFILTERED", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                }
+              }
+
+              Surface(
+                modifier = Modifier
+                  .weight(1f)
+                  .clip(RoundedCornerShape(12.dp))
+                  .clickable { viewModel.navigateTo(Screen.WHAT_NEXT_VIEW) }
+                  .testTag("explore_header_feature_what_next"),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant)
+              ) {
+                Row(
+                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                  Text("🔮", fontSize = 13.sp)
+                  Text("WHAT NEXT", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                }
+              }
+            }
+
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+              Surface(
+                modifier = Modifier
+                  .weight(1f)
+                  .clip(RoundedCornerShape(12.dp))
+                  .clickable { viewModel.navigateTo(Screen.TIME_CAPSULES_VIEW) }
+                  .testTag("explore_header_feature_time_capsule"),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant)
+              ) {
+                Row(
+                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                  Text("⏳", fontSize = 13.sp)
+                  Text("TIME CAPSULE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                }
+              }
+
+              Surface(
+                modifier = Modifier
+                  .weight(1f)
+                  .clip(RoundedCornerShape(12.dp))
+                  .clickable { viewModel.navigateTo(Screen.DOUBLE_TAKE_VIEW) }
+                  .testTag("explore_header_feature_double_take"),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant)
+              ) {
+                Row(
+                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                  Text("📸", fontSize = 13.sp)
+                  Text("DOUBLE TAKE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                }
+              }
+
+              Surface(
+                modifier = Modifier
+                  .weight(1f)
+                  .clip(RoundedCornerShape(12.dp))
+                  .clickable { viewModel.selectTab(MainTab.CROSSED_PATHS) }
+                  .testTag("explore_header_feature_crossed_paths"),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant)
+              ) {
+                Row(
+                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                  Text("🧭", fontSize = 13.sp)
+                  Text("CROSSED PATHS", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                }
+              }
+            }
+          }
+
+          Spacer(modifier = Modifier.height(10.dp))
 
           // Filter Pills Row (For You, Trending, People, Nearby, Circles, Interests)
           LazyRow(

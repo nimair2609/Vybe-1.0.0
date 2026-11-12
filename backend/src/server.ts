@@ -453,20 +453,23 @@ app.post('/api/v1/push/register-token', async (req: Request, res: Response): Pro
     return;
   }
 
-  const { userId, fcmToken, deviceModel, platform } = req.body || {};
+  const rawBody = req.body || {};
+  const fcmToken = (rawBody.fcmToken || rawBody.fcm_token || '').toString().trim();
+  const declaredUserId = (rawBody.userId || rawBody.user_id || '').toString().trim();
+  const cleanModel = (rawBody.deviceModel || rawBody.device_model || 'Android Phone').toString().trim().slice(0, 110);
+  const cleanPlatform = (rawBody.platform || 'android').toString().trim().toLowerCase();
+
   if (!fcmToken) {
-    res.status(400).json({ error: 'fcmToken is required.' });
+    res.status(400).json({ error: 'fcmToken (or fcm_token) is required.' });
     return;
   }
 
-  if (userId && String(userId).toLowerCase() !== verifiedUserId.toLowerCase()) {
+  if (declaredUserId && declaredUserId.toLowerCase() !== verifiedUserId.toLowerCase()) {
     res.status(403).json({ error: 'Registration rejected: authenticated user ID does not match request user ID.' });
     return;
   }
 
   const nowIso = new Date().toISOString();
-  const cleanModel = (deviceModel || 'Android Phone').toString().slice(0, 110);
-  const cleanPlatform = (platform || 'android').toString().toLowerCase();
 
   let dbSuccess = false;
   let dbErrorMsg = '';
