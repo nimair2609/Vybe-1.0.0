@@ -1,3 +1,4 @@
+/api/* /.netlify/functions/api/:splat 200
 /admin /admin.html 200
 /admin/* /admin.html 200
 /download /vybe-debug.apk 200

@@ -2,6 +2,12 @@
  * VYBE Supabase Egress & Performance Diagnostics
  * Tracks real-time network requests, cache hit ratio, deduplicated calls,
  * storage operations, and quota status to ensure zero egress exhaustion.
+ *
+ * Explicitly separates:
+ * 1. Cached Storage Egress (Bandwidth saved through client-side caching & WebP compression)
+ * 2. Uncached Storage Egress (Direct binary bytes transferred from storage buckets)
+ * 3. Database Egress (Supabase REST query transfer volume)
+ * 4. Estimated Client-Side Traffic (Composite network session traffic)
  */
 
 export interface NetworkMetric {
@@ -13,21 +19,35 @@ export interface NetworkMetric {
   sizeBytes: number;
   fromCache: boolean;
   deduplicated: boolean;
+  category: 'DATABASE' | 'STORAGE_UNCACHED' | 'STORAGE_CACHED' | 'OTHER';
   notes?: string;
 }
 
 export interface DiagnosticsSummary {
+  // Primary Metrics
   totalRequests: number;
   cacheHits: number;
   cacheMisses: number;
   deduplicatedRequests: number;
   cacheHitRatio: number;
-  estimatedBytesSaved: number;
-  totalBytesTransferred: number;
+  
+  // Egress Categories
+  cachedStorageEgressBytes: number;   // Egress prevented via local cache/compression
+  uncachedStorageEgressBytes: number; // Actual storage bucket data transferred
+  databaseEgressBytes: number;        // Actual database REST response bytes
+  estimatedClientTrafficBytes: number;// Total client-side traffic
+  estimatedBytesSaved: number;        // Alias for cachedStorageEgressBytes
+  
+  // Storage operations
   storageUploadsCount: number;
+  
+  // Quota & Health
   quotaRestricted: boolean;
   quotaRestrictionMessage: string | null;
+  
+  // Stream & Disclaimer
   recentRequests: NetworkMetric[];
+  disclaimer: string;
 }
 
 class PerformanceDiagnostics {
@@ -36,8 +56,13 @@ class PerformanceDiagnostics {
   private cacheHits = 0;
   private cacheMisses = 0;
   private deduplicatedRequests = 0;
-  private estimatedBytesSaved = 0;
-  private totalBytesTransferred = 0;
+  
+  // Detailed Egress Tracking
+  private cachedStorageEgressBytes = 0;
+  private uncachedStorageEgressBytes = 0;
+  private databaseEgressBytes = 0;
+  private estimatedClientTrafficBytes = 0;
+  
   private storageUploadsCount = 0;
   private isQuotaRestricted = false;
   private quotaMessage: string | null = null;
@@ -55,7 +80,17 @@ class PerformanceDiagnostics {
   ) {
     this.totalRequests++;
     this.cacheMisses++;
-    this.totalBytesTransferred += sizeBytes;
+    this.estimatedClientTrafficBytes += sizeBytes;
+
+    const isStorage = endpoint.includes('/storage/v1/');
+    const isDb = endpoint.includes('/rest/v1/') || endpoint.includes('/auth/v1/');
+    const category = isStorage ? 'STORAGE_UNCACHED' : (isDb ? 'DATABASE' : 'OTHER');
+
+    if (isStorage) {
+      this.uncachedStorageEgressBytes += sizeBytes;
+    } else if (isDb) {
+      this.databaseEgressBytes += sizeBytes;
+    }
 
     if (status === 402) {
       this.isQuotaRestricted = true;
@@ -71,6 +106,7 @@ class PerformanceDiagnostics {
       sizeBytes,
       fromCache: false,
       deduplicated: false,
+      category,
       notes
     };
 
@@ -83,7 +119,13 @@ class PerformanceDiagnostics {
   public recordCacheHit(endpoint: string, estimatedPayloadBytes: number = 3500) {
     this.totalRequests++;
     this.cacheHits++;
-    this.estimatedBytesSaved += estimatedPayloadBytes;
+    
+    const isStorage = endpoint.includes('/storage/v1/') || endpoint.includes('image') || endpoint.includes('media');
+    if (isStorage) {
+      this.cachedStorageEgressBytes += estimatedPayloadBytes;
+    } else {
+      this.cachedStorageEgressBytes += estimatedPayloadBytes;
+    }
 
     const metric: NetworkMetric = {
       endpoint,
@@ -93,7 +135,8 @@ class PerformanceDiagnostics {
       status: 200,
       sizeBytes: 0,
       fromCache: true,
-      deduplicated: false
+      deduplicated: false,
+      category: 'STORAGE_CACHED'
     };
 
     this.pushMetric(metric);
@@ -104,7 +147,7 @@ class PerformanceDiagnostics {
    */
   public recordDeduplication(endpoint: string, estimatedPayloadBytes: number = 3500) {
     this.deduplicatedRequests++;
-    this.estimatedBytesSaved += estimatedPayloadBytes;
+    this.cachedStorageEgressBytes += estimatedPayloadBytes;
 
     const metric: NetworkMetric = {
       endpoint,
@@ -114,7 +157,8 @@ class PerformanceDiagnostics {
       status: 200,
       sizeBytes: 0,
       fromCache: false,
-      deduplicated: true
+      deduplicated: true,
+      category: 'STORAGE_CACHED'
     };
 
     this.pushMetric(metric);
@@ -126,8 +170,9 @@ class PerformanceDiagnostics {
   public recordStorageUpload(bucket: string, sizeBytes: number, originalBytes: number) {
     this.storageUploadsCount++;
     const saved = Math.max(0, originalBytes - sizeBytes);
-    this.estimatedBytesSaved += saved;
-    this.totalBytesTransferred += sizeBytes;
+    this.cachedStorageEgressBytes += saved;
+    this.uncachedStorageEgressBytes += sizeBytes;
+    this.estimatedClientTrafficBytes += sizeBytes;
   }
 
   /**
@@ -160,12 +205,16 @@ class PerformanceDiagnostics {
       cacheMisses: this.cacheMisses,
       deduplicatedRequests: this.deduplicatedRequests,
       cacheHitRatio: hitRatio,
-      estimatedBytesSaved: this.estimatedBytesSaved,
-      totalBytesTransferred: this.totalBytesTransferred,
+      cachedStorageEgressBytes: this.cachedStorageEgressBytes,
+      uncachedStorageEgressBytes: this.uncachedStorageEgressBytes,
+      databaseEgressBytes: this.databaseEgressBytes,
+      estimatedClientTrafficBytes: this.estimatedClientTrafficBytes,
+      estimatedBytesSaved: this.cachedStorageEgressBytes,
       storageUploadsCount: this.storageUploadsCount,
       quotaRestricted: this.isQuotaRestricted,
       quotaRestrictionMessage: this.quotaMessage,
-      recentRequests: [...this.metrics]
+      recentRequests: [...this.metrics],
+      disclaimer: 'Actual Measured Client Session Usage vs Browser Heuristics. Browser estimates reflect active client tab network traffic and are not official Supabase billing meter readings.'
     };
   }
 
@@ -175,8 +224,10 @@ class PerformanceDiagnostics {
     this.cacheHits = 0;
     this.cacheMisses = 0;
     this.deduplicatedRequests = 0;
-    this.estimatedBytesSaved = 0;
-    this.totalBytesTransferred = 0;
+    this.cachedStorageEgressBytes = 0;
+    this.uncachedStorageEgressBytes = 0;
+    this.databaseEgressBytes = 0;
+    this.estimatedClientTrafficBytes = 0;
     this.storageUploadsCount = 0;
     this.isQuotaRestricted = false;
     this.quotaMessage = null;

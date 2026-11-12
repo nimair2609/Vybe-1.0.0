@@ -4,6 +4,7 @@
 [build]
   command = "npm run build"
   publish = "dist"
+  functions = "netlify/functions"
 
 [build.environment]
   NODE_VERSION = "20"
@@ -27,6 +28,12 @@
   for = "/brand/*"
   [headers.values]
     Cache-Control = "public, max-age=86400"
+
+# Netlify Serverless API & Privileged Admin Routes
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
 
 # Admin Command Center Routes (/admin, /admin/*)
 [[redirects]]

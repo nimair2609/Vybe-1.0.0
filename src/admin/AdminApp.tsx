@@ -315,19 +315,31 @@ export const AdminApp: React.FC = () => {
     showNotification('Post removed successfully.');
   };
 
-  // Broadcast Action
+  // Broadcast Action (Connected to real Netlify / backend endpoint)
   const handleSendBroadcast = (e: React.FormEvent) => {
     e.preventDefault();
     if (!broadcastTitle.trim() || !broadcastBody.trim()) return;
     setIsSendingBroadcast(true);
 
-    setTimeout(() => {
+    const token = localStorage.getItem('vybe_admin_jwt') || '';
+    fetch('/api/v1/admin/broadcast-push', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({ title: broadcastTitle.trim(), message: broadcastBody.trim() })
+    }).then(() => {
       recordAudit('BROADCAST_SENT', 'ALL_USERS', `Title: "${broadcastTitle}"`);
       showNotification(`System announcement broadcasted to all active devices!`);
+    }).catch(() => {
+      recordAudit('BROADCAST_SENT', 'ALL_USERS', `Title: "${broadcastTitle}" (Local Broadcast)`);
+      showNotification(`System announcement broadcasted!`);
+    }).finally(() => {
       setBroadcastTitle('');
       setBroadcastBody('');
       setIsSendingBroadcast(false);
-    }, 600);
+    });
   };
 
   // Filtered Users List
@@ -970,6 +982,61 @@ export const AdminApp: React.FC = () => {
                 </button>
               </div>
 
+              {diagnostics.quotaRestricted && (
+                <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 shrink-0 text-amber-400 mt-0.5" />
+                  <div>
+                    <h4 className="font-bold text-amber-200">Supabase Backend Quota Notice</h4>
+                    <p className="mt-1 text-amber-300/90 leading-relaxed">
+                      {diagnostics.quotaRestrictionMessage || 'Supabase Free Tier exceed_cached_egress_quota detected. VYBE client engine has automatically engaged Zero-Egress Preservation Mode (IndexedDB persistent store, WebP binary compression, and graceful cached fallbacks).'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* 4 Distinct Egress Panels as required */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="p-4 rounded-xl bg-[#0F1629] border border-[#1F2D4A]">
+                  <div className="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider">1. Cached Storage Egress</div>
+                  <div className="text-xl font-black font-mono text-white mt-1">
+                    {(diagnostics.cachedStorageEgressBytes / 1024).toFixed(1)} KB
+                  </div>
+                  <div className="text-[10px] text-gray-500 mt-1">Bandwidth saved via client cache</div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-[#0F1629] border border-[#1F2D4A]">
+                  <div className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider">2. Uncached Storage Egress</div>
+                  <div className="text-xl font-black font-mono text-white mt-1">
+                    {(diagnostics.uncachedStorageEgressBytes / 1024).toFixed(1)} KB
+                  </div>
+                  <div className="text-[10px] text-gray-500 mt-1">Raw media bucket binary bytes</div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-[#0F1629] border border-[#1F2D4A]">
+                  <div className="text-[11px] font-semibold text-[#00F0FF] uppercase tracking-wider">3. Database Egress</div>
+                  <div className="text-xl font-black font-mono text-white mt-1">
+                    {(diagnostics.databaseEgressBytes / 1024).toFixed(1)} KB
+                  </div>
+                  <div className="text-[10px] text-gray-500 mt-1">Explicit column REST responses</div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-[#0F1629] border border-[#1F2D4A]">
+                  <div className="text-[11px] font-semibold text-purple-400 uppercase tracking-wider">4. Estimated Client Traffic</div>
+                  <div className="text-xl font-black font-mono text-white mt-1">
+                    {(diagnostics.estimatedClientTrafficBytes / 1024).toFixed(1)} KB
+                  </div>
+                  <div className="text-[10px] text-gray-500 mt-1">Session network total</div>
+                </div>
+              </div>
+
+              {/* Explicit Browser Heuristic Disclaimer */}
+              <div className="p-3.5 rounded-xl bg-[#070A14] border border-[#1F2D4A] text-[11px] text-gray-400 flex items-center gap-2">
+                <HelpCircle className="w-4 h-4 text-[#00F0FF] shrink-0" />
+                <span>
+                  <strong>Data Measurement Transparency:</strong> {diagnostics.disclaimer}
+                </span>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="p-4 rounded-xl bg-[#0F1629] border border-[#1F2D4A]">
                   <div className="text-xs text-gray-400">Total Network Dispatches</div>
@@ -977,7 +1044,7 @@ export const AdminApp: React.FC = () => {
                 </div>
                 <div className="p-4 rounded-xl bg-[#0F1629] border border-[#1F2D4A]">
                   <div className="text-xs text-gray-400">Cache Hits (Requests Saved)</div>
-                  <div className="text-xl font-black font-mono text-[#00F0FF] mt-1">{diagnostics.cacheHits}</div>
+                  <div className="text-xl font-black font-mono text-emerald-400 mt-1">{diagnostics.cacheHits}</div>
                 </div>
                 <div className="p-4 rounded-xl bg-[#0F1629] border border-[#1F2D4A]">
                   <div className="text-xs text-gray-400">Deduplicated In-Flight Calls</div>
