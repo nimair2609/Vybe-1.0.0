@@ -185,13 +185,20 @@ Deno.serve(async (req: Request) => {
 
     const tokens = Array.from(new Set((tokenRows || []).map((r: { fcm_token: string }) => r.fcm_token).filter(Boolean)));
     if (!saRaw || (tokens.length === 0 && !isBroadcast)) {
+      const errReason = !saRaw
+        ? 'FIREBASE_SERVICE_ACCOUNT secret not configured in Supabase Edge Functions'
+        : `No active device tokens registered for recipient ${recipientId}`;
       return new Response(
         JSON.stringify({
-          success: true,
+          success: isBroadcast,
           notificationId,
           eventKey: canonicalEventKey,
+          registeredTokens: tokens.length,
+          attempted: 0,
           delivered: 0,
+          failed: 0,
           fcmConfigured: Boolean(saRaw),
+          error: errReason,
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -199,7 +206,7 @@ Deno.serve(async (req: Request) => {
 
     const sa: ServiceAccount = JSON.parse(saRaw);
     const accessToken = await getFcmAccessToken(sa);
-    const projectId = sa.project_id || 'vybe-1c966';
+    const projectId = sa.project_id || 'vybe-social-app';
 
     let delivered = 0;
     let failed = 0;
@@ -274,13 +281,18 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    const overallSuccess = delivered > 0 || (isBroadcast && tokens.length === 0);
     return new Response(
       JSON.stringify({
-        success: true,
+        success: overallSuccess,
         notificationId,
         eventKey: canonicalEventKey,
+        registeredTokens: tokens.length,
+        attempted: fcmTargets.length,
         delivered,
         failed,
+        fcmConfigured: true,
+        error: overallSuccess ? undefined : 'FCM dispatch was unable to deliver message to any registered device token',
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

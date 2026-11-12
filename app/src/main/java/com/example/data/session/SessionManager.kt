@@ -42,6 +42,12 @@ class SessionManager private constructor(context: Context) {
     private const val KEY_JOINED_DATE = "joined_date"
     private const val KEY_CREATED_AT_ISO = "created_at_iso"
     private const val KEY_FCM_TOKEN = "device_fcm_token"
+    private const val KEY_LAST_REGISTERED_FCM_TOKEN = "last_registered_fcm_token"
+    private const val KEY_LAST_REGISTRATION_USER_ID = "last_registration_user_id"
+    private const val KEY_LAST_REGISTRATION_TIME_MS = "last_registration_time_ms"
+    private const val KEY_LAST_REGISTRATION_SUCCESS = "last_registration_success"
+    private const val KEY_LAST_REGISTRATION_STATUS_CODE = "last_registration_status_code"
+    private const val KEY_LAST_REGISTRATION_ERROR = "last_registration_error"
 
     @Volatile
     private var instance: SessionManager? = null
@@ -73,10 +79,63 @@ class SessionManager private constructor(context: Context) {
   val fcmToken: String?
     get() = prefs.getString(KEY_FCM_TOKEN, null)?.takeIf { it.isNotBlank() }
 
+  val lastRegisteredFcmToken: String?
+    get() = prefs.getString(KEY_LAST_REGISTERED_FCM_TOKEN, null)?.takeIf { it.isNotBlank() }
+
+  val lastRegistrationUserId: String?
+    get() = prefs.getString(KEY_LAST_REGISTRATION_USER_ID, null)?.takeIf { it.isNotBlank() }
+
+  val lastRegistrationTimeMs: Long
+    get() = prefs.getLong(KEY_LAST_REGISTRATION_TIME_MS, 0L)
+
+  val lastRegistrationSuccess: Boolean
+    get() = prefs.getBoolean(KEY_LAST_REGISTRATION_SUCCESS, false)
+
+  val lastRegistrationStatusCode: Int
+    get() = prefs.getInt(KEY_LAST_REGISTRATION_STATUS_CODE, 0)
+
+  val lastRegistrationError: String?
+    get() = prefs.getString(KEY_LAST_REGISTRATION_ERROR, null)
+
   fun saveFcmToken(token: String) {
     val clean = token.trim()
     if (clean.isBlank()) return
     prefs.edit().putString(KEY_FCM_TOKEN, clean).apply()
+  }
+
+  fun recordFcmRegistrationResult(
+    userId: String,
+    token: String,
+    success: Boolean,
+    statusCode: Int? = null,
+    error: String? = null
+  ) {
+    prefs.edit().apply {
+      putLong(KEY_LAST_REGISTRATION_TIME_MS, System.currentTimeMillis())
+      putBoolean(KEY_LAST_REGISTRATION_SUCCESS, success)
+      putInt(KEY_LAST_REGISTRATION_STATUS_CODE, statusCode ?: if (success) 200 else 0)
+      putString(KEY_LAST_REGISTRATION_ERROR, error?.take(255))
+      if (success) {
+        putString(KEY_LAST_REGISTERED_FCM_TOKEN, token.trim())
+        putString(KEY_LAST_REGISTRATION_USER_ID, userId.trim())
+      }
+      apply()
+    }
+  }
+
+  fun isRegistrationNeeded(currentUserId: String, currentToken: String): Boolean {
+    if (currentUserId.isBlank() || currentToken.isBlank()) return false
+    val lastToken = lastRegisteredFcmToken
+    val lastUid = lastRegistrationUserId
+    val lastSuccess = lastRegistrationSuccess
+    val lastTime = lastRegistrationTimeMs
+    val elapsed = System.currentTimeMillis() - lastTime
+
+    // Re-register if never successfully registered, token changed, user changed, or > 24 hours have passed
+    return !lastSuccess ||
+      lastToken != currentToken.trim() ||
+      lastUid != currentUserId.trim() ||
+      elapsed > (24 * 60 * 60 * 1000L)
   }
 
   fun saveSession(

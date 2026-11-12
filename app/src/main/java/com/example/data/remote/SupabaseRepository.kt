@@ -3411,46 +3411,165 @@ class SupabaseRepository {
     userId: String,
     fcmToken: String,
     accessToken: String = ""
-  ): Boolean = withContext(Dispatchers.IO) {
-    if (!isConfigured || userId.isBlank() || fcmToken.isBlank()) return@withContext false
-    val authHeader = authHeaderFor(accessToken) ?: return@withContext false
+  ): DeviceTokenRegistrationResult = withContext(Dispatchers.IO) {
+    val cleanUserId = userId.trim()
+    val cleanToken = fcmToken.trim()
+    val masked = maskToken(cleanToken)
+
+    if (cleanUserId.isBlank() || cleanToken.isBlank()) {
+      Log.w(TAG, "[FCM] Registration rejected: empty userId or fcmToken")
+      val fail = DeviceTokenRegistrationResult.Failure(
+        errorType = DeviceTokenErrorType.EMPTY_CREDENTIALS,
+        message = "User ID and FCM token must not be empty",
+        tokenMasked = masked
+      )
+      SessionManager.get()?.recordFcmRegistrationResult(cleanUserId, cleanToken, success = false, error = fail.message)
+      return@withContext fail
+    }
+
+    if (!isConfigured) {
+      Log.w(TAG, "[FCM] Registration aborted: Supabase backend is not configured")
+      val fail = DeviceTokenRegistrationResult.Failure(
+        errorType = DeviceTokenErrorType.UNAUTHENTICATED,
+        message = "Supabase backend not configured",
+        tokenMasked = masked
+      )
+      SessionManager.get()?.recordFcmRegistrationResult(cleanUserId, cleanToken, success = false, error = fail.message)
+      return@withContext fail
+    }
+
+    val resolvedToken = resolveValidAccessToken(accessToken.ifBlank { SessionManager.get()?.accessToken.orEmpty() })
+    if (resolvedToken.isNullOrBlank()) {
+      Log.w(TAG, "[FCM] Registration failed: no valid access token available")
+      val fail = DeviceTokenRegistrationResult.Failure(
+        errorType = DeviceTokenErrorType.UNAUTHENTICATED,
+        statusCode = 401,
+        message = "Authentication required to register device token",
+        tokenMasked = masked
+      )
+      SessionManager.get()?.recordFcmRegistrationResult(cleanUserId, cleanToken, success = false, statusCode = 401, error = fail.message)
+      return@withContext fail
+    }
+
+    // Verify authenticated JWT subject matches the target user UUID to satisfy RLS requirement
+    val jwtSubject = SupabaseConfig.extractJwtSubject(resolvedToken)
+    if (!jwtSubject.isNullOrBlank() && !jwtSubject.equals(cleanUserId, ignoreCase = true)) {
+      Log.e(TAG, "[FCM] Auth mismatch: JWT sub ($jwtSubject) does not match registration userId ($cleanUserId)")
+      val fail = DeviceTokenRegistrationResult.Failure(
+        errorType = DeviceTokenErrorType.AUTH_MISMATCH,
+        statusCode = 403,
+        message = "Session user mismatch: token sub does not match userId",
+        tokenMasked = masked
+      )
+      SessionManager.get()?.recordFcmRegistrationResult(cleanUserId, cleanToken, success = false, statusCode = 403, error = fail.message)
+      return@withContext fail
+    }
+
+    val authHeader = "Bearer $resolvedToken"
     val nowIso = TimestampUtils.currentIsoTimestamp()
-    val model = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".trim().take(110)
+    val model = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".trim().take(110).ifBlank { "Android Phone" }
+
+    // Attempt 1: Direct PostgREST upsert with unique (user_id, fcm_token)
     try {
       val resp = SupabaseNetworkClient.restApi.upsertDeviceToken(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
         body = SupabaseDeviceTokenDto(
-          userId = userId,
-          fcmToken = fcmToken,
-          deviceModel = model.ifBlank { "Android Phone" },
+          userId = cleanUserId,
+          fcmToken = cleanToken,
+          deviceModel = model,
           platform = "android",
           isActive = true,
           lastSeenAt = nowIso,
           updatedAt = nowIso
         )
       )
+
+      val code = resp.code()
       if (resp.isSuccessful) {
-        return@withContext true
+        val returnedRecords = resp.body().orEmpty()
+        val hasConfirmedRecord = returnedRecords.any {
+          it.userId.equals(cleanUserId, ignoreCase = true) && it.fcmToken == cleanToken
+        } || returnedRecords.isNotEmpty() || code in 200..204
+
+        if (hasConfirmedRecord) {
+          Log.i(TAG, "[FCM] Device token registered in Supabase successfully: user=$cleanUserId, token=$masked, HTTP $code")
+          val success = DeviceTokenRegistrationResult.Success(
+            userId = cleanUserId,
+            tokenMasked = masked,
+            deviceModel = model
+          )
+          SessionManager.get()?.recordFcmRegistrationResult(cleanUserId, cleanToken, success = true, statusCode = code)
+          return@withContext success
+        }
       }
+
+      // If REST upsert returned a non-success status code, parse sanitized error body
+      val rawErr = resp.errorBody()?.string().orEmpty()
+      val sanitizedErr = parseErrorMessage(rawErr, "Device token registration failed (HTTP $code)")
+      val errorType = when {
+        code == 401 || code == 403 || rawErr.contains("42501") || rawErr.contains("policy", ignoreCase = true) -> DeviceTokenErrorType.RLS_VIOLATION
+        code == 404 || rawErr.contains("42P01") || rawErr.contains("user_device_tokens", ignoreCase = true) -> DeviceTokenErrorType.TABLE_MISSING
+        code >= 500 -> DeviceTokenErrorType.SERVER_ERROR
+        else -> DeviceTokenErrorType.UNKNOWN
+      }
+
+      Log.w(TAG, "[FCM] Supabase REST upsert failed: HTTP $code, errorType=$errorType, msg=$sanitizedErr")
+
+      // Attempt 2: Fallback to verified backend endpoint /api/v1/push/register-token
+      try {
+        val payload = JSONObject().apply {
+          put("user_id", cleanUserId)
+          put("fcm_token", cleanToken)
+          put("device_model", model)
+          put("platform", "android")
+        }.toString()
+
+        val req = okhttp3.Request.Builder()
+          .url("${SupabaseConfig.vybeBackendBaseUrl}/api/v1/push/register-token")
+          .addHeader("Authorization", authHeader)
+          .post(payload.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull()))
+          .build()
+
+        val backendResp = SupabaseNetworkClient.okHttpClient.newCall(req).execute()
+        backendResp.use { bResp ->
+          val bCode = bResp.code
+          val bBody = bResp.body?.string().orEmpty()
+          if (bResp.isSuccessful && (bBody.contains("\"success\":true") || bBody.contains("\"registered\":true"))) {
+            Log.i(TAG, "[FCM] Device token registered via verified backend gateway: user=$cleanUserId, token=$masked")
+            val success = DeviceTokenRegistrationResult.Success(cleanUserId, masked, model)
+            SessionManager.get()?.recordFcmRegistrationResult(cleanUserId, cleanToken, success = true, statusCode = bCode)
+            return@withContext success
+          } else {
+            Log.w(TAG, "[FCM] Backend fallback registration failed: HTTP $bCode, body=${bBody.take(150)}")
+          }
+        }
+      } catch (be: Exception) {
+        Log.w(TAG, "[FCM] Backend fallback network failure: ${be.message}")
+      }
+
+      val fail = DeviceTokenRegistrationResult.Failure(
+        errorType = errorType,
+        statusCode = code,
+        message = sanitizedErr,
+        tokenMasked = masked
+      )
+      SessionManager.get()?.recordFcmRegistrationResult(cleanUserId, cleanToken, success = false, statusCode = code, error = sanitizedErr)
+      fail
     } catch (e: Exception) {
-      Log.w(TAG, "registerDeviceToken REST upsert notice: ${e.message}")
-    }
-    // Also notify backend /api/v1/push/register-token when reachable
-    try {
-      val payload = JSONObject().apply {
-        put("user_id", userId)
-        put("fcm_token", fcmToken)
-        put("device_model", model)
-      }.toString()
-      val req = okhttp3.Request.Builder()
-        .url("${SupabaseConfig.vybeBackendBaseUrl}/api/v1/push/register-token")
-        .addHeader("Authorization", authHeader)
-        .post(payload.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull()))
-        .build()
-      SupabaseNetworkClient.okHttpClient.newCall(req).execute().use { return@withContext it.isSuccessful }
-    } catch (_: Exception) {
-      return@withContext false
+      val isNetwork = e is java.io.IOException || e is java.net.SocketException || e is java.net.UnknownHostException
+      val errType = if (isNetwork) DeviceTokenErrorType.NETWORK_ERROR else DeviceTokenErrorType.UNKNOWN
+      val cleanMsg = friendlyNetworkMessage(e, "Network error during device token registration")
+      Log.w(TAG, "[FCM] Exception registering device token: type=$errType, msg=$cleanMsg")
+
+      val fail = DeviceTokenRegistrationResult.Failure(
+        errorType = errType,
+        statusCode = null,
+        message = cleanMsg,
+        tokenMasked = masked
+      )
+      SessionManager.get()?.recordFcmRegistrationResult(cleanUserId, cleanToken, success = false, statusCode = null, error = cleanMsg)
+      fail
     }
   }
 

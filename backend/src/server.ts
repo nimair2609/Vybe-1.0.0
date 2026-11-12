@@ -309,7 +309,7 @@ async function dispatchFcmPush(payload: PushDispatchPayload): Promise<{ successC
     try {
       const accessToken = await getGoogleAccessToken(sa);
       if (accessToken) {
-        const projectId = sa.project_id || 'vybe-1c966';
+        const projectId = sa.project_id || 'vybe-social-app';
         let success = 0;
         let fail = 0;
 
@@ -415,38 +415,128 @@ async function dispatchFcmPush(payload: PushDispatchPayload): Promise<{ successC
   return { successCount: Math.max(tokens.length, 1), failureCount: 0 };
 }
 
-// Device FCM Token Mirror Registration Route
+// Device FCM Token Registration Route (Authenticated & Database Verified)
 app.post('/api/v1/push/register-token', async (req: Request, res: Response): Promise<void> => {
-  const { userId, fcmToken, deviceModel, platform } = req.body || {};
-  if (!userId || !fcmToken) {
-    res.status(400).json({ error: 'userId and fcmToken are required.' });
+  const authHeader = (req.headers.authorization || '').trim();
+  if (!authHeader.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Authentication required. Missing Bearer JWT in Authorization header.' });
     return;
   }
+
+  const token = authHeader.slice(7).trim();
+  let verifiedUserId: string | null = null;
+
+  if (supabaseAdmin) {
+    const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
+    if (!userError && userData?.user?.id) {
+      verifiedUserId = userData.user.id;
+    }
+  }
+
+  if (!verifiedUserId) {
+    try {
+      const authResp = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: authHeader
+        }
+      });
+      if (authResp.ok) {
+        const u = await authResp.json();
+        verifiedUserId = u && u.id;
+      }
+    } catch {}
+  }
+
+  if (!verifiedUserId) {
+    res.status(401).json({ error: 'Invalid or expired Supabase authentication token.' });
+    return;
+  }
+
+  const { userId, fcmToken, deviceModel, platform } = req.body || {};
+  if (!fcmToken) {
+    res.status(400).json({ error: 'fcmToken is required.' });
+    return;
+  }
+
+  if (userId && String(userId).toLowerCase() !== verifiedUserId.toLowerCase()) {
+    res.status(403).json({ error: 'Registration rejected: authenticated user ID does not match request user ID.' });
+    return;
+  }
+
   const nowIso = new Date().toISOString();
-  inMemoryDeviceTokens.set(fcmToken, {
-    userId,
-    fcmToken,
-    deviceModel: deviceModel || 'Android Phone',
-    platform: platform || 'android',
-    lastSeenAt: nowIso,
-    isActive: true
-  });
+  const cleanModel = (deviceModel || 'Android Phone').toString().slice(0, 110);
+  const cleanPlatform = (platform || 'android').toString().toLowerCase();
+
+  let dbSuccess = false;
+  let dbErrorMsg = '';
 
   if (supabaseAdmin) {
     try {
-      await supabaseAdmin.from('user_device_tokens').upsert({
-        user_id: userId,
+      const { error: upsertErr } = await supabaseAdmin.from('user_device_tokens').upsert({
+        user_id: verifiedUserId,
         fcm_token: fcmToken,
-        device_model: deviceModel || 'Android Phone',
-        platform: platform || 'android',
+        device_model: cleanModel,
+        platform: cleanPlatform,
         is_active: true,
         last_seen_at: nowIso,
         updated_at: nowIso
       }, { onConflict: 'user_id,fcm_token' });
-    } catch {}
+
+      if (!upsertErr) {
+        dbSuccess = true;
+      } else {
+        dbErrorMsg = upsertErr.message;
+      }
+    } catch (e: any) {
+      dbErrorMsg = e.message;
+    }
+  } else {
+    try {
+      const restResp = await fetch(`${SUPABASE_URL}/rest/v1/user_device_tokens?on_conflict=user_id,fcm_token`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: authHeader,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates,return=representation'
+        },
+        body: JSON.stringify({
+          user_id: verifiedUserId,
+          fcm_token: fcmToken,
+          device_model: cleanModel,
+          platform: cleanPlatform,
+          is_active: true,
+          last_seen_at: nowIso,
+          updated_at: nowIso
+        })
+      });
+      if (restResp.ok) {
+        dbSuccess = true;
+      } else {
+        dbErrorMsg = await restResp.text();
+      }
+    } catch (e: any) {
+      dbErrorMsg = e.message;
+    }
   }
 
-  res.status(200).json({ success: true });
+  if (!dbSuccess) {
+    console.error(`[PushRegister] DB write failed for user=${verifiedUserId}:`, dbErrorMsg);
+    res.status(500).json({ error: `Database write failed: ${dbErrorMsg}` });
+    return;
+  }
+
+  inMemoryDeviceTokens.set(fcmToken, {
+    userId: verifiedUserId,
+    fcmToken,
+    deviceModel: cleanModel,
+    platform: cleanPlatform,
+    lastSeenAt: nowIso,
+    isActive: true
+  });
+
+  res.status(200).json({ success: true, registered: true, user_id: verifiedUserId });
 });
 
 // Push Dispatch Route (from app actions or web triggers)

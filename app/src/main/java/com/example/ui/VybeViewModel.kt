@@ -50,7 +50,8 @@ enum class Screen {
   MUSIC_TRACK_DETAIL,
   VERIFICATION_CENTER,
   VYBE_CIRCLE,
-  VYBE_GROW
+  VYBE_GROW,
+  NOTIFICATION_DIAGNOSTICS
 }
 
 class VybeViewModel : ViewModel() {
@@ -141,6 +142,24 @@ class VybeViewModel : ViewModel() {
 
   private val _targetFeedPostId = MutableStateFlow<String?>(null)
   val targetFeedPostId: StateFlow<String?> = _targetFeedPostId.asStateFlow()
+
+  val deviceNotificationDiagnostics: StateFlow<com.example.data.repository.DeviceNotificationDiagnosticState> =
+    repository.deviceNotificationDiagnostics
+
+  fun refreshDeviceNotificationDiagnostics() {
+    repository.refreshDeviceNotificationDiagnostics()
+  }
+
+  fun retryDeviceTokenRegistration() {
+    val session = com.example.data.session.SessionManager.get()
+    val uid = session?.userId
+    val token = session?.fcmToken
+    if (!uid.isNullOrBlank() && !token.isNullOrBlank()) {
+      repository.syncDeviceFcmToken(uid, token)
+    } else {
+      repository.refreshDeviceNotificationDiagnostics()
+    }
+  }
 
   private val _sharingPost = MutableStateFlow<Post?>(null)
   val sharingPost: StateFlow<Post?> = _sharingPost.asStateFlow()

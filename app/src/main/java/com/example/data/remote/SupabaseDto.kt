@@ -977,6 +977,44 @@ data class SupabaseDeviceTokenPatchDto(
   @Json(name = "updated_at") val updatedAt: String
 )
 
+sealed class DeviceTokenRegistrationResult {
+  data class Success(
+    val userId: String,
+    val tokenMasked: String,
+    val deviceModel: String,
+    val timestampMs: Long = System.currentTimeMillis()
+  ) : DeviceTokenRegistrationResult()
+
+  data class Failure(
+    val errorType: DeviceTokenErrorType,
+    val statusCode: Int? = null,
+    val message: String,
+    val tokenMasked: String? = null,
+    val timestampMs: Long = System.currentTimeMillis()
+  ) : DeviceTokenRegistrationResult()
+}
+
+enum class DeviceTokenErrorType {
+  EMPTY_CREDENTIALS,
+  AUTH_MISMATCH,
+  UNAUTHENTICATED,
+  RLS_VIOLATION,
+  TABLE_MISSING,
+  NETWORK_ERROR,
+  SERVER_ERROR,
+  UNKNOWN
+}
+
+fun maskToken(token: String?): String {
+  if (token.isNullOrBlank()) return "(none)"
+  val clean = token.trim()
+  return if (clean.length > 12) {
+    "${clean.take(6)}...${clean.takeLast(4)}"
+  } else {
+    "***"
+  }
+}
+
 // --- VERIFICATION REQUESTS & OFFICIAL VYBE BADGE RPCs ---
 data class SupabaseVerificationRequestDto(
   val id: String,

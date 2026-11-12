@@ -59,6 +59,59 @@ class MainActivity : ComponentActivity() {
   private val pendingNotificationPayload = MutableStateFlow<Bundle?>(null)
   private var activeViewModel: VybeViewModel? = null
 
+  private val requestPermissionLauncher = registerForActivityResult(
+    androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+  ) { isGranted: Boolean ->
+    Log.i("MainActivity", "POST_NOTIFICATIONS permission result: $isGranted")
+    try {
+      VybeRepository.get().refreshDeviceNotificationDiagnostics()
+    } catch (_: Exception) {}
+  }
+
+  private fun requestNotificationPermissionIfEligible() {
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+      val perm = android.Manifest.permission.POST_NOTIFICATIONS
+      if (androidx.core.content.ContextCompat.checkSelfPermission(this, perm) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+        requestPermissionLauncher.launch(perm)
+      }
+    }
+  }
+
+  private fun checkAndRegisterDeviceToken() {
+    try {
+      val session = SessionManager.getInstance(applicationContext)
+      val userId = session.userId
+      VybeFirebaseMessagingService.subscribeStandardTopics(userId)
+
+      com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+        .addOnCompleteListener { task ->
+          if (task.isSuccessful) {
+            val token = task.result
+            if (!token.isNullOrBlank()) {
+              session.saveFcmToken(token)
+              val cleanUserId = session.userId
+              if (session.isLoggedIn && !cleanUserId.isNullOrBlank()) {
+                val needed = session.isRegistrationNeeded(cleanUserId, token)
+                if (needed) {
+                  Log.i("MainActivity", "[FCM] Registration required on startup/resume: user=$cleanUserId, token=${com.example.data.remote.maskToken(token)}")
+                  VybeRepository.get().syncDeviceFcmToken(cleanUserId, token)
+                } else {
+                  Log.d("MainActivity", "[FCM] Device token is fresh and already registered: user=$cleanUserId")
+                }
+              }
+            }
+          } else {
+            Log.w("MainActivity", "[FCM] Token fetch error: ${task.exception?.message}")
+          }
+          try {
+            VybeRepository.get().refreshDeviceNotificationDiagnostics()
+          } catch (_: Exception) {}
+        }
+    } catch (e: Exception) {
+      Log.w("MainActivity", "[FCM] checkAndRegisterDeviceToken notice: ${e.message}")
+    }
+  }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     try {
@@ -100,29 +153,8 @@ class MainActivity : ComponentActivity() {
       }
     }
 
-    try {
-      val initialSession = SessionManager.getInstance(applicationContext)
-      VybeFirebaseMessagingService.subscribeStandardTopics(initialSession.userId)
-      com.google.firebase.messaging.FirebaseMessaging.getInstance().token
-        .addOnCompleteListener { task ->
-          if (task.isSuccessful) {
-            val token = task.result
-            if (!token.isNullOrBlank()) {
-              Log.d("MainActivity", "Firebase Messaging Token obtained: ${token.take(12)}...")
-              val session = SessionManager.getInstance(applicationContext)
-              session.saveFcmToken(token)
-              val userId = session.userId
-              if (session.isLoggedIn && !userId.isNullOrBlank()) {
-                VybeRepository.get().syncDeviceFcmToken(userId, token)
-              }
-            }
-          } else {
-            Log.w("MainActivity", "FCM token fetch warning: ${task.exception?.message}")
-          }
-        }
-    } catch (e: Exception) {
-      Log.w("MainActivity", "FirebaseMessaging initialization notice: ${e.message}")
-    }
+    checkAndRegisterDeviceToken()
+    requestNotificationPermissionIfEligible()
 
     enableEdgeToEdge()
     setContent {
@@ -272,6 +304,7 @@ class MainActivity : ComponentActivity() {
                 Screen.VERIFICATION_CENTER -> VerificationCenterScreen(viewModel)
                 Screen.VYBE_CIRCLE -> CircleScreen(viewModel)
                 Screen.VYBE_GROW -> GrowScreen(viewModel)
+                Screen.NOTIFICATION_DIAGNOSTICS -> NotificationDiagnosticScreen(viewModel)
               }
 
               // Floating Upload Status Banner positioned cleanly below the top header
@@ -404,6 +437,7 @@ class MainActivity : ComponentActivity() {
     super.onResume()
     VybeNotificationHelper.isAppInForeground = true
     com.example.notifications.VybeRealtimePushManager.ensureConnected(applicationContext)
+    checkAndRegisterDeviceToken()
   }
 
   override fun onPause() {

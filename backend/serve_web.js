@@ -308,7 +308,7 @@ async function dispatchFcmIfConfigured({ tokens = [], topic, title, body, data =
   const accessToken = await getGoogleAccessToken(sa);
   if (!accessToken) return { dispatchedFcm: false, count: Math.max(tokens.length, 1) };
 
-  const projectId = sa.project_id || 'vybe-1c966';
+  const projectId = sa.project_id || 'vybe-social-app';
   const targets = tokens.length > 0 ? tokens.map(t => ({ token: t })) : (topic ? [{ topic }] : []);
   let ok = 0;
 
@@ -414,25 +414,123 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (cleanUrl === '/api/v1/push/register-token' && req.method === 'POST') {
-    const body = await readJsonBody(req);
-    const userId = body.userId || body.user_id;
-    const fcmToken = body.fcmToken || body.fcm_token;
-    if (!userId || !fcmToken) {
-      sendJson(res, 400, { error: 'userId and fcmToken required' });
+    const authHeader = (req.headers['authorization'] || '').trim();
+    if (!authHeader.startsWith('Bearer ')) {
+      sendJson(res, 401, { error: 'Authentication required. Missing Bearer JWT in Authorization header.' });
       return;
     }
-    const tokenRecord = {
-      userId,
-      user_id: userId,
+
+    // Verify JWT against Supabase Auth to extract authoritative user UUID
+    let verifiedUid = null;
+    try {
+      const authResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/user`, {
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': authHeader
+        }
+      });
+      if (authResp.ok) {
+        const u = await authResp.json();
+        verifiedUid = u && u.id;
+      }
+    } catch (authErr) {
+      console.warn('[PushRegister] Supabase token verification error:', authErr.message);
+    }
+
+    if (!verifiedUid) {
+      sendJson(res, 401, { error: 'Invalid or expired Supabase authentication token.' });
+      return;
+    }
+
+    const body = await readJsonBody(req);
+    const fcmToken = (body.fcmToken || body.fcm_token || '').trim();
+    const declaredUserId = (body.userId || body.user_id || '').trim();
+
+    if (!fcmToken) {
+      sendJson(res, 400, { error: 'fcmToken is required.' });
+      return;
+    }
+
+    if (declaredUserId && declaredUserId.toLowerCase() !== verifiedUid.toLowerCase()) {
+      sendJson(res, 403, { error: 'Registration rejected: authenticated user ID does not match request user ID.' });
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const deviceModel = (body.deviceModel || body.device_model || 'Android Phone').trim().slice(0, 110);
+    const platform = (body.platform || 'android').trim().toLowerCase();
+
+    const record = {
+      user_id: verifiedUid,
+      fcm_token: fcmToken,
+      device_model: deviceModel,
+      platform: platform,
+      is_active: true,
+      last_seen_at: nowIso,
+      updated_at: nowIso
+    };
+
+    // Persist directly to Supabase public.user_device_tokens using user JWT (satisfies RLS auth.uid() = user_id)
+    let dbSuccess = false;
+    let dbErrorMsg = '';
+
+    try {
+      const upsertResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/user_device_tokens?on_conflict=user_id,fcm_token`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': authHeader,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates,return=representation'
+        },
+        body: JSON.stringify(record)
+      });
+
+      if (upsertResp.ok) {
+        dbSuccess = true;
+      } else {
+        dbErrorMsg = await upsertResp.text();
+        // Fallback to service role if available
+        if (SUPABASE_SERVICE_ROLE_KEY) {
+          const adminResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/user_device_tokens?on_conflict=user_id,fcm_token`, {
+            method: 'POST',
+            headers: {
+              'apikey': SUPABASE_SERVICE_ROLE_KEY,
+              'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+              'Content-Type': 'application/json',
+              'Prefer': 'resolution=merge-duplicates,return=representation'
+            },
+            body: JSON.stringify(record)
+          });
+          if (adminResp.ok) {
+            dbSuccess = true;
+          }
+        }
+      }
+    } catch (e) {
+      dbErrorMsg = e.message;
+    }
+
+    if (!dbSuccess) {
+      console.warn(`[PushRegister] Database write failed for user=${verifiedUid}: ${dbErrorMsg.slice(0, 200)}`);
+      sendJson(res, 500, { error: 'Failed to write device token to Supabase database: ' + dbErrorMsg.slice(0, 150) });
+      return;
+    }
+
+    // Only update memory cache AFTER successful database persistence
+    deviceRegistry.set(fcmToken, {
+      userId: verifiedUid,
+      user_id: verifiedUid,
       fcmToken,
       fcm_token: fcmToken,
-      device_model: body.deviceModel || body.device_model || 'Android Phone',
-      platform: body.platform || 'android',
-      last_seen_at: new Date().toISOString(),
+      device_model: deviceModel,
+      platform: platform,
+      last_seen_at: nowIso,
       is_active: true
-    };
-    deviceRegistry.set(fcmToken, tokenRecord);
-    sendJson(res, 200, { success: true });
+    });
+
+    console.log(`[PushRegister] Successfully persisted device token for user=${verifiedUid}`);
+    sendJson(res, 200, { success: true, registered: true, user_id: verifiedUid });
     return;
   }
 
@@ -559,7 +657,7 @@ const server = http.createServer(async (req, res) => {
     const activeTokens = await getAllActiveTokens();
     sendJson(res, 200, {
       configured: Boolean(sa),
-      projectId: sa?.project_id || (process.env.FIREBASE_PROJECT_ID || 'vybe-1c966'),
+      projectId: sa?.project_id || (process.env.FIREBASE_PROJECT_ID || 'vybe-social-app'),
       clientEmail: sa?.client_email || 'Not Configured (Standby Mode)',
       activeTokensCount: activeTokens.length
     });
@@ -597,7 +695,7 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 200, {
       success: true,
       configured: Boolean(testToken),
-      projectId: saObj.project_id || 'vybe-1c966',
+      projectId: saObj.project_id || 'vybe-social-app',
       clientEmail: saObj.client_email,
       message: testToken ? 'FCM Service Account verified and actively authenticated!' : 'Saved, but OAuth token minting returned null. Please verify private_key.'
     });

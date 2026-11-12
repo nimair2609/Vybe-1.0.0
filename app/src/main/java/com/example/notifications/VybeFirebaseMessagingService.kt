@@ -51,7 +51,7 @@ class VybeFirebaseMessagingService : FirebaseMessagingService() {
 
   override fun onNewToken(token: String) {
     super.onNewToken(token)
-    Log.i(TAG, "New FCM registration token received: ${token.take(12)}... (len=${token.length})")
+    Log.i(TAG, "New FCM registration token received: ${com.example.data.remote.maskToken(token)}")
 
     try {
       val userManager = applicationContext.getSystemService(android.content.Context.USER_SERVICE) as? android.os.UserManager
@@ -69,8 +69,10 @@ class VybeFirebaseMessagingService : FirebaseMessagingService() {
       subscribeStandardTopics(userId)
 
       if (session.isLoggedIn && !userId.isNullOrBlank()) {
-        Log.i(TAG, "User $userId is logged in. Registering updated FCM token with Supabase...")
+        Log.i(TAG, "User $userId is logged in. Registering refreshed FCM token with Supabase...")
         VybeRepository.get().syncDeviceFcmToken(userId, token)
+      } else {
+        VybeRepository.get().refreshDeviceNotificationDiagnostics()
       }
     } catch (e: Exception) {
       Log.w(TAG, "FCM token refresh warning: ${e.message}")

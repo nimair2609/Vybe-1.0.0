@@ -78,6 +78,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
   val vybeMatches by viewModel.vybeMatches.collectAsState()
   val allUsers by viewModel.allUsers.collectAsState()
   val isOnline by viewModel.isOnline.collectAsState()
+  val diagState by viewModel.deviceNotificationDiagnostics.collectAsState()
 
   var showDeactivateModal by remember { mutableStateOf(false) }
   var showVybeMatchesDialog by remember { mutableStateOf(false) }
@@ -947,6 +948,78 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                     modifier = Modifier.weight(1f).testTag("send_test_phone_notif_button")
                   ) {
                     Text("Test Alert", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                  }
+                }
+              }
+            }
+          }
+          item {
+            val isReg = diagState.registrationStatus.equals("REGISTERED", ignoreCase = true)
+            val isFail = diagState.registrationStatus.equals("FAILED", ignoreCase = true)
+            val isPend = diagState.registrationStatus.equals("PENDING", ignoreCase = true) || diagState.isSyncing
+            val badgeColor = when {
+              isReg -> VybeOnlineGreen
+              isPend -> Color(0xFFF59E0B)
+              isFail -> VybeDanger
+              else -> MaterialTheme.colorScheme.onSurfaceVariant
+            }
+
+            Card(
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+              shape = RoundedCornerShape(16.dp)
+            ) {
+              Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(imageVector = Icons.Default.CloudQueue, contentDescription = null, tint = VybePurpleAccent, modifier = Modifier.size(20.dp))
+                    Text("Device FCM Registration", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                  }
+                  Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = badgeColor.copy(alpha = 0.15f),
+                    border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.4f))
+                  ) {
+                    Text(
+                      text = diagState.registrationStatus,
+                      fontSize = 11.sp,
+                      fontWeight = FontWeight.Bold,
+                      color = badgeColor,
+                      modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                  }
+                }
+
+                Text(
+                  text = "FCM Token: ${diagState.fcmTokenMasked} • Supabase: ${if (diagState.supabaseAuthenticated) "Authenticated" else "Pending"}",
+                  fontSize = 12.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                  OutlinedButton(
+                    onClick = { viewModel.retryDeviceTokenRegistration() },
+                    enabled = !diagState.isSyncing,
+                    modifier = Modifier.weight(1f).testTag("settings_sync_fcm_token_button")
+                  ) {
+                    if (diagState.isSyncing) {
+                      CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                      Spacer(modifier = Modifier.width(6.dp))
+                    }
+                    Text("Sync Token", fontSize = 12.sp)
+                  }
+                  Button(
+                    onClick = { viewModel.navigateTo(Screen.NOTIFICATION_DIAGNOSTICS) },
+                    colors = ButtonDefaults.buttonColors(containerColor = VybePurplePrimary),
+                    modifier = Modifier.weight(1f).testTag("settings_open_fcm_diag_button")
+                  ) {
+                    Text("Full Diagnostics", fontSize = 12.sp, color = Color.White)
                   }
                 }
               }

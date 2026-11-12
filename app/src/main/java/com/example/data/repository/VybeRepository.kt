@@ -4,10 +4,13 @@ import android.content.Context
 import android.util.Log
 import com.example.data.local.VybeLocalStore
 import com.example.data.model.*
+import com.example.data.remote.DeviceTokenErrorType
+import com.example.data.remote.DeviceTokenRegistrationResult
 import com.example.data.remote.SupabaseConfig
 import com.example.data.remote.SupabaseExploreAndLiveRemote
 import com.example.data.remote.SupabaseRepository
 import com.example.data.remote.SupabaseRoomsAndCallsRemote
+import com.example.data.remote.maskToken
 import com.example.data.session.SessionManager
 import com.example.notifications.VybeFirebaseMessagingService
 import com.example.notifications.VybeNotificationHelper
@@ -281,6 +284,10 @@ class VybeRepository private constructor() {
 
   private val _activeCall = MutableStateFlow<CallSession?>(null)
   val activeCall: StateFlow<CallSession?> = _activeCall.asStateFlow()
+
+  // --- FCM Device & Notification Diagnostics ---
+  private val _deviceNotificationDiagnostics = MutableStateFlow(DeviceNotificationDiagnosticState())
+  val deviceNotificationDiagnostics: StateFlow<DeviceNotificationDiagnosticState> = _deviceNotificationDiagnostics.asStateFlow()
 
   private val _creatorStats = MutableStateFlow(CreatorStats())
   val creatorStats: StateFlow<CreatorStats> = _creatorStats.asStateFlow()
@@ -4565,16 +4572,121 @@ class VybeRepository private constructor() {
     logout()
   }
 
+  suspend fun syncDeviceFcmTokenSuspending(
+    userId: String,
+    token: String,
+    accessToken: String? = null
+  ): DeviceTokenRegistrationResult {
+    val cleanUserId = userId.trim()
+    val cleanToken = token.trim()
+    if (cleanUserId.isBlank() || cleanToken.isBlank()) {
+      return DeviceTokenRegistrationResult.Failure(
+        errorType = DeviceTokenErrorType.EMPTY_CREDENTIALS,
+        message = "User ID and FCM token must not be empty"
+      )
+    }
+
+    _deviceNotificationDiagnostics.value = _deviceNotificationDiagnostics.value.copy(
+      isSyncing = true,
+      registrationStatus = "PENDING"
+    )
+
+    var attempt = 0
+    val maxAttempts = 3
+    var backoffMs = 1000L
+    var lastResult: DeviceTokenRegistrationResult = DeviceTokenRegistrationResult.Failure(
+      errorType = DeviceTokenErrorType.UNKNOWN,
+      message = "Registration not started"
+    )
+
+    while (attempt < maxAttempts) {
+      attempt++
+      val validToken = accessToken ?: supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
+      val result = supabaseRepo.registerDeviceToken(
+        userId = cleanUserId,
+        fcmToken = cleanToken,
+        accessToken = validToken
+      )
+      lastResult = result
+
+      if (result is DeviceTokenRegistrationResult.Success) {
+        _deviceNotificationDiagnostics.value = _deviceNotificationDiagnostics.value.copy(
+          isSyncing = false,
+          registrationStatus = "REGISTERED",
+          lastRegistrationTimeMs = result.timestampMs,
+          lastRegistrationStatusCode = 200,
+          lastError = null,
+          fcmTokenAvailable = true,
+          fcmTokenMasked = result.tokenMasked,
+          tokenSavedLocally = true,
+          supabaseAuthenticated = true,
+          authenticatedUserIdMasked = maskToken(cleanUserId)
+        )
+        return result
+      } else if (result is DeviceTokenRegistrationResult.Failure) {
+        if (result.errorType == DeviceTokenErrorType.NETWORK_ERROR && attempt < maxAttempts) {
+          Log.i("VybeRepository", "[FCM] Network error on registration attempt $attempt/$maxAttempts. Retrying in ${backoffMs}ms...")
+          kotlinx.coroutines.delay(backoffMs)
+          backoffMs *= 2
+        } else {
+          // Terminal failure (auth mismatch, RLS policy error, missing table) or retries exhausted
+          break
+        }
+      }
+    }
+
+    val fail = lastResult as? DeviceTokenRegistrationResult.Failure
+    _deviceNotificationDiagnostics.value = _deviceNotificationDiagnostics.value.copy(
+      isSyncing = false,
+      registrationStatus = "FAILED",
+      lastRegistrationTimeMs = System.currentTimeMillis(),
+      lastRegistrationStatusCode = fail?.statusCode ?: 0,
+      lastError = fail?.message ?: "Device token registration failed"
+    )
+    return lastResult
+  }
+
   fun syncDeviceFcmToken(userId: String, token: String, accessToken: String? = null) {
     if (userId.isBlank() || token.isBlank()) return
     ioScope.launch {
-      val validToken = accessToken ?: supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken).orEmpty()
-      supabaseRepo.registerDeviceToken(
-        userId = userId,
-        fcmToken = token,
-        accessToken = validToken
-      )
+      syncDeviceFcmTokenSuspending(userId, token, accessToken)
     }
+  }
+
+  fun refreshDeviceNotificationDiagnostics() {
+    val session = SessionManager.get()
+    val token = session?.fcmToken
+    val uid = session?.userId
+    val isAuthed = session?.isLoggedIn == true && !uid.isNullOrBlank()
+    val isSaved = !token.isNullOrBlank()
+    val lastSuccess = session?.lastRegistrationSuccess ?: false
+    val lastTime = session?.lastRegistrationTimeMs ?: 0L
+    val lastCode = session?.lastRegistrationStatusCode ?: 0
+    val lastErr = session?.lastRegistrationError
+    val isFirebaseInit = try {
+      val ctx = appContext
+      if (ctx != null) com.google.firebase.FirebaseApp.getApps(ctx).isNotEmpty() else true
+    } catch (_: Exception) { true }
+
+    val status = when {
+      lastSuccess -> "REGISTERED"
+      !lastErr.isNullOrBlank() -> "FAILED"
+      session?.isRegistrationNeeded(uid.orEmpty(), token.orEmpty()) == true -> "PENDING"
+      else -> "IDLE"
+    }
+
+    _deviceNotificationDiagnostics.value = _deviceNotificationDiagnostics.value.copy(
+      firebaseInitialized = isFirebaseInit,
+      fcmTokenAvailable = !token.isNullOrBlank(),
+      fcmTokenMasked = maskToken(token),
+      tokenSavedLocally = isSaved,
+      supabaseAuthenticated = isAuthed,
+      authenticatedUserIdMasked = maskToken(uid),
+      registrationStatus = status,
+      lastRegistrationTimeMs = lastTime,
+      lastRegistrationStatusCode = lastCode,
+      lastError = lastErr
+    )
   }
 
   fun refreshNotifications() {
@@ -8432,3 +8544,17 @@ class VybeRepository private constructor() {
     _allUsers.value = _allUsers.value.map { if (it.id == me.id) updated else it }
   }
 }
+
+data class DeviceNotificationDiagnosticState(
+  val firebaseInitialized: Boolean = false,
+  val fcmTokenAvailable: Boolean = false,
+  val fcmTokenMasked: String = "(none)",
+  val tokenSavedLocally: Boolean = false,
+  val supabaseAuthenticated: Boolean = false,
+  val authenticatedUserIdMasked: String = "(none)",
+  val registrationStatus: String = "IDLE", // REGISTERED, PENDING, FAILED, IDLE
+  val lastRegistrationTimeMs: Long = 0L,
+  val lastRegistrationStatusCode: Int = 0,
+  val lastError: String? = null,
+  val isSyncing: Boolean = false
+)
