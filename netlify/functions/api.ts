@@ -31,17 +31,33 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey, x-admin-email',
   'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-  'Content-Type': 'application/json'
+  'Content-Type': 'application/json',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'no-referrer'
 };
 
-async function verifyCallerAdmin(authHeader: string | undefined): Promise<{ authorized: boolean; userId?: string; error?: string }> {
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ADMIN_ROLES = new Set(['ADMIN', 'SUPER_ADMIN', 'OWNER_ADMIN', 'MODERATOR']);
+const SUPER_ADMIN_ROLES = new Set(['SUPER_ADMIN', 'OWNER_ADMIN']);
+
+async function verifyCallerAdmin(authHeader: string | undefined): Promise<{
+  authorized: boolean;
+  userId?: string;
+  email?: string;
+  token?: string;
+  role?: string;
+  isSuperAdmin?: boolean;
+  statusCode?: number;
+  error?: string;
+}> {
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return { authorized: false, error: 'Missing Bearer authentication token.' };
+    return { authorized: false, statusCode: 401, error: 'Missing Bearer authentication token.' };
   }
 
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
   if (!token || !token.startsWith('eyJ')) {
-    return { authorized: false, error: 'Invalid Bearer JWT token format.' };
+    return { authorized: false, statusCode: 401, error: 'Invalid Bearer JWT token format.' };
   }
 
   try {
@@ -54,45 +70,95 @@ async function verifyCallerAdmin(authHeader: string | undefined): Promise<{ auth
     });
 
     if (!userRes.ok) {
-      return { authorized: false, error: 'Supabase authentication failed or token expired.' };
+      return { authorized: false, statusCode: 401, error: 'Supabase authentication failed or token expired.' };
     }
 
     const userData = await userRes.json();
     const userId = userData?.id;
     if (!userId) {
-      return { authorized: false, error: 'User identity could not be verified.' };
+      return { authorized: false, statusCode: 401, error: 'User identity could not be verified.' };
     }
 
-    // 2. Query profiles table for role
-    const profileRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&select=id,role`, {
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${token}`
-      }
-    });
+    // 2. Verify administrator role in profiles and active admin_users (fail closed; no hardcoded email bypasses)
+    const activeAuthKey = SUPABASE_SERVICE_ROLE_KEY || token;
+    const roleHeaders: Record<string, string> = {
+      'apikey': SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${activeAuthKey}`
+    };
+
+    const [profileRes, adminUserRes] = await Promise.all([
+      fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=id,role&limit=1`, { headers: roleHeaders }),
+      fetch(`${SUPABASE_URL}/rest/v1/admin_users?user_id=eq.${encodeURIComponent(userId)}&is_active=eq.true&select=role&limit=1`, { headers: roleHeaders }).catch(() => null)
+    ]);
+
+    let resolvedRole = '';
+    let checkOk = false;
 
     if (profileRes.ok) {
+      checkOk = true;
       const rows = await profileRes.json();
       const profile = Array.isArray(rows) ? rows[0] : rows;
-      const role = (profile?.role || '').toUpperCase();
-      if (role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'MODERATOR') {
-        return { authorized: true, userId };
+      const role = String(profile?.role || '').toUpperCase().trim();
+      if (ADMIN_ROLES.has(role)) resolvedRole = role;
+    }
+
+    if (adminUserRes && adminUserRes.ok) {
+      checkOk = true;
+      const aRows = await adminUserRes.json();
+      const adminRec = Array.isArray(aRows) ? aRows[0] : aRows;
+      const adminRole = String(adminRec?.role || '').toUpperCase().trim();
+      if (ADMIN_ROLES.has(adminRole)) {
+        if (!resolvedRole || SUPER_ADMIN_ROLES.has(adminRole)) resolvedRole = adminRole;
       }
     }
 
-    // Fallback: Check if user is known project administrator
-    if (userData.email && userData.email.toLowerCase() === 'nimair2609@gmail.com') {
-      return { authorized: true, userId };
+    if (!checkOk) {
+      return { authorized: false, statusCode: 503, error: 'Unable to verify administrator role against Supabase.' };
     }
 
-    return { authorized: false, error: 'Forbidden: Account does not possess administrator privileges.' };
+    if (!ADMIN_ROLES.has(resolvedRole)) {
+      return { authorized: false, statusCode: 403, error: 'Forbidden: Account does not possess administrator privileges.' };
+    }
+
+    return {
+      authorized: true,
+      userId,
+      email: typeof userData?.email === 'string' ? userData.email.toLowerCase() : 'admin',
+      token,
+      role: resolvedRole,
+      isSuperAdmin: SUPER_ADMIN_ROLES.has(resolvedRole)
+    };
   } catch (err: any) {
-    return { authorized: false, error: err.message || 'Error validating administrator authorization.' };
+    return { authorized: false, statusCode: 502, error: err.message || 'Error validating administrator authorization.' };
   }
 }
 
+async function recordNetlifyAuditLog(params: {
+  dbHeaders: Record<string, string>;
+  adminId: string;
+  adminEmail?: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  details?: Record<string, any>;
+}): Promise<void> {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/admin_audit_logs`, {
+      method: 'POST',
+      headers: { ...params.dbHeaders, 'Prefer': 'return=minimal' },
+      body: JSON.stringify({
+        admin_id: UUID_RE.test(params.adminId) ? params.adminId : null,
+        admin_email: params.adminEmail || 'admin',
+        action: params.action,
+        target_type: params.targetType,
+        target_id: params.targetId,
+        details: params.details || {}
+      })
+    });
+  } catch {}
+}
+
 export async function handler(event: NetlifyEvent): Promise<NetlifyResponse> {
-  // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers: CORS_HEADERS, body: '' };
   }
@@ -100,7 +166,6 @@ export async function handler(event: NetlifyEvent): Promise<NetlifyResponse> {
   const urlPath = event.path.replace(/^\/\.netlify\/functions\/api/, '').replace(/^\/api/, '');
   const authHeader = event.headers.authorization || event.headers.Authorization;
 
-  // Public health check
   if (urlPath === '/v1/health' || urlPath === '/health') {
     return {
       statusCode: 200,
@@ -117,48 +182,74 @@ export async function handler(event: NetlifyEvent): Promise<NetlifyResponse> {
   // All /v1/admin/* operations require verified admin JWT
   if (urlPath.startsWith('/v1/admin/')) {
     const authCheck = await verifyCallerAdmin(authHeader);
-    if (!authCheck.authorized) {
+    if (!authCheck.authorized || !authCheck.userId || !authCheck.token) {
       return {
-        statusCode: authCheck.error?.includes('Forbidden') ? 403 : 401,
+        statusCode: authCheck.statusCode || 401,
         headers: CORS_HEADERS,
         body: JSON.stringify({ error: authCheck.error || 'Unauthorized' })
       };
     }
 
-    const activeKey = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
-    const dbHeaders: Record<string, string> = {
-      'apikey': activeKey,
-      'Authorization': `Bearer ${activeKey}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=representation'
-    };
+    // Never fall back to SUPABASE_ANON_KEY as Bearer Authorization for privileged DB calls
+    const dbHeaders: Record<string, string> = SUPABASE_SERVICE_ROLE_KEY
+      ? {
+          'apikey': SUPABASE_SERVICE_ROLE_KEY,
+          'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
+        }
+      : {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${authCheck.token}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
+        };
 
-    // 1. Admin badge assignment
+    // 1. Admin badge assignment via audited RPC (no direct unguarded profile patches)
     if (urlPath === '/v1/admin/assign-badge' && event.httpMethod === 'POST') {
       try {
         const body = JSON.parse(event.body || '{}');
         const { userId, badge, enabled } = body;
-        if (!userId || !badge) {
-          return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: 'userId and badge required' }) };
+        if (!userId || !UUID_RE.test(String(userId)) || !badge) {
+          return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Valid UUID userId and badge required' }) };
         }
 
-        const patchData: Record<string, boolean> = {};
-        if (badge === 'VERIFIED_BLUE') patchData.is_verified = Boolean(enabled);
-        if (badge === 'VIP_GOLD') patchData.is_vip = Boolean(enabled);
-        if (badge === 'WORKER_GREEN') patchData.is_worker = Boolean(enabled);
-        if (badge === 'SHOP_GOLD') patchData.is_verified_business = Boolean(enabled);
+        if (String(authCheck.userId).toLowerCase() === String(userId).toLowerCase()) {
+          return { statusCode: 403, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Forbidden: Self-assignment or self-revocation of badges is prohibited.' }) };
+        }
 
-        const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
-          method: 'PATCH',
+        const badgeMap: Record<string, string> = {
+          VERIFIED_BLUE: 'VERIFIED',
+          VIP_GOLD: 'VIP',
+          WORKER_GREEN: 'WORKER',
+          SHOP_GOLD: 'SHOP'
+        };
+        const rpcCategory = badgeMap[String(badge).toUpperCase()];
+        if (!rpcCategory) {
+          return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Unsupported badge value.' }) };
+        }
+        if (rpcCategory === 'WORKER' && !authCheck.isSuperAdmin) {
+          return { statusCode: 403, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Forbidden: WORKER badge requires Owner / Super Admin.' }) };
+        }
+
+        const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_assign_badge`, {
+          method: 'POST',
           headers: dbHeaders,
-          body: JSON.stringify(patchData)
+          body: JSON.stringify({
+            p_target_user_id: userId,
+            p_badge_category: rpcCategory,
+            p_is_grant: Boolean(enabled),
+            p_admin_id: authCheck.userId,
+            p_reason: `Netlify Admin API ${Boolean(enabled) ? 'grant' : 'revoke'}`
+          })
         });
 
-        if (!patchRes.ok) {
-          return { statusCode: patchRes.status, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Failed to update badge in database' }) };
+        if (!rpcRes.ok) {
+          const errText = await rpcRes.text().catch(() => '');
+          return { statusCode: rpcRes.status, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Failed to update badge via audited RPC', details: errText.slice(0, 200) }) };
         }
 
-        return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ success: true, userId, badge, enabled }) };
+        return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ success: true, userId, badge, enabled: Boolean(enabled) }) };
       } catch (err: any) {
         return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ error: err.message }) };
       }
@@ -169,8 +260,8 @@ export async function handler(event: NetlifyEvent): Promise<NetlifyResponse> {
       try {
         const body = JSON.parse(event.body || '{}');
         const { postId, action } = body;
-        if (!postId) {
-          return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: 'postId required' }) };
+        if (!postId || !UUID_RE.test(String(postId))) {
+          return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Valid UUID postId required' }) };
         }
 
         if (action === 'DELETE' || action === 'REMOVE') {
@@ -178,28 +269,97 @@ export async function handler(event: NetlifyEvent): Promise<NetlifyResponse> {
             method: 'DELETE',
             headers: dbHeaders
           });
+          if (delRes.ok) {
+            await recordNetlifyAuditLog({
+              dbHeaders,
+              adminId: authCheck.userId,
+              adminEmail: authCheck.email,
+              action: 'CONTENT_DELETE',
+              targetType: 'POST',
+              targetId: String(postId),
+              details: { action }
+            });
+          }
           return { statusCode: delRes.ok ? 200 : delRes.status, headers: CORS_HEADERS, body: JSON.stringify({ success: delRes.ok, postId }) };
         }
 
-        return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ success: true, postId, action }) };
+        if (action === 'ARCHIVE' || action === 'HIDE') {
+          const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/posts?id=eq.${encodeURIComponent(postId)}`, {
+            method: 'PATCH',
+            headers: dbHeaders,
+            body: JSON.stringify({ is_archived: true })
+          });
+          if (patchRes.ok) {
+            await recordNetlifyAuditLog({
+              dbHeaders,
+              adminId: authCheck.userId,
+              adminEmail: authCheck.email,
+              action: `CONTENT_${action}`,
+              targetType: 'POST',
+              targetId: String(postId),
+              details: { action }
+            });
+          }
+          return { statusCode: patchRes.ok ? 200 : patchRes.status, headers: CORS_HEADERS, body: JSON.stringify({ success: patchRes.ok, postId, action }) };
+        }
+
+        return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Unsupported content moderation action.' }) };
       } catch (err: any) {
         return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ error: err.message }) };
       }
     }
 
-    // 3. Admin broadcast push
+    // 3. Admin broadcast push via Supabase push-dispatch Edge Function
     if (urlPath === '/v1/admin/broadcast-push' && event.httpMethod === 'POST') {
       try {
         const body = JSON.parse(event.body || '{}');
-        const { title, message } = body;
+        const { title, message, body: msgBody, destination, targetId } = body;
+        const resolvedMessage = message || msgBody;
+        if (!title || !resolvedMessage) {
+          return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: 'title and message are required.' }) };
+        }
+
+        const edgeRes = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/functions/v1/push-dispatch`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${authCheck.token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            broadcast: true,
+            title,
+            message: resolvedMessage,
+            destination: destination || 'NOTIFICATIONS',
+            targetId
+          })
+        });
+
+        const edgePayload = await edgeRes.json().catch(() => ({}));
+        if (!edgeRes.ok) {
+          return {
+            statusCode: edgeRes.status,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ error: edgePayload?.error || 'Broadcast dispatch failed.' })
+          };
+        }
+
+        await recordNetlifyAuditLog({
+          dbHeaders,
+          adminId: authCheck.userId,
+          adminEmail: authCheck.email,
+          action: 'SYSTEM_BROADCAST',
+          targetType: 'PLATFORM',
+          targetId: 'ALL_USERS',
+          details: { title, destination: destination || 'NOTIFICATIONS' }
+        });
+
         return {
           statusCode: 200,
           headers: CORS_HEADERS,
           body: JSON.stringify({
             success: true,
-            broadcastId: `bc_${Date.now()}`,
-            title,
-            message,
+            ...edgePayload,
             deliveredAt: new Date().toISOString()
           })
         };

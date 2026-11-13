@@ -39,7 +39,34 @@ app.use('/api/', generalLimiter);
 
 // Supabase Service Client (Using SERVICE_ROLE_KEY securely on the server only)
 const supabaseUrl = process.env.SUPABASE_URL || 'https://cppwadedazpbevkfrchg.supabase.co';
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || 'sb_publishable_MI-UdOqfccHVZIHjQq9vrw_IjEzeR7H';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ADMIN_ROLES = new Set(['ADMIN', 'SUPER_ADMIN', 'OWNER_ADMIN', 'MODERATOR']);
+const SUPER_ADMIN_ROLES = new Set(['SUPER_ADMIN', 'OWNER_ADMIN']);
+
+async function recordServerAuditLog(params: {
+  adminId: string;
+  adminEmail?: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  details?: Record<string, any>;
+}): Promise<void> {
+  if (!supabaseAdmin) return;
+  try {
+    await supabaseAdmin.from('admin_audit_logs').insert({
+      admin_id: UUID_RE.test(params.adminId) ? params.adminId : null,
+      admin_email: params.adminEmail || 'admin',
+      action: params.action,
+      target_type: params.targetType,
+      target_id: params.targetId,
+      details: params.details || {}
+    });
+  } catch (err: any) {
+    console.warn('[AuditLog] Failed persisting audit record:', err?.message);
+  }
+}
 
 const supabaseAdmin = (supabaseUrl && supabaseServiceKey) 
   ? createClient(supabaseUrl, supabaseServiceKey)
@@ -56,7 +83,38 @@ app.get('/health', (req: Request, res: Response) => {
   });
 });
 
-// 2. Auth Verification Middleware
+// 2. Auth Verification Middlewares
+const requireAuth = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const authHeader = (req.headers.authorization || '').trim();
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  if (!token) {
+    res.status(401).json({ error: 'Unauthorized: Missing bearer token.' });
+    return;
+  }
+
+  let verifiedUser: any = null;
+  if (supabaseAdmin) {
+    const { data, error } = await supabaseAdmin.auth.getUser(token);
+    if (!error && data?.user) verifiedUser = data.user;
+  } else {
+    try {
+      const resp = await fetch(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/user`, {
+        headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${token}` }
+      });
+      if (resp.ok) verifiedUser = await resp.json();
+    } catch {}
+  }
+
+  if (!verifiedUser || !verifiedUser.id) {
+    res.status(401).json({ error: 'Invalid or expired authentication session.' });
+    return;
+  }
+
+  (req as any).user = verifiedUser;
+  (req as any).accessToken = token;
+  next();
+};
+
 const requireAdmin = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1].trim() : '';
@@ -76,31 +134,53 @@ const requireAdmin = async (req: Request, res: Response, next: NextFunction): Pr
     return;
   }
 
-  const { data: profile } = await supabaseAdmin
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single();
+  const [{ data: profile }, { data: adminRec }] = await Promise.all([
+    supabaseAdmin.from('profiles').select('role').eq('id', user.id).maybeSingle(),
+    supabaseAdmin.from('admin_users').select('role, is_active').eq('user_id', user.id).eq('is_active', true).maybeSingle()
+  ]);
 
-  if (!profile || (profile.role !== 'ADMIN' && profile.role !== 'SUPER_ADMIN' && profile.role !== 'MODERATOR')) {
+  const profileRole = String(profile?.role || '').toUpperCase().trim();
+  const adminRole = String(adminRec?.role || '').toUpperCase().trim();
+  const resolvedRole = ADMIN_ROLES.has(adminRole) ? adminRole : (ADMIN_ROLES.has(profileRole) ? profileRole : '');
+
+  if (!ADMIN_ROLES.has(resolvedRole)) {
     res.status(403).json({ error: 'Forbidden: Requires Administrator privileges.' });
     return;
   }
 
   (req as any).user = user;
+  (req as any).adminRole = resolvedRole;
+  (req as any).isSuperAdmin = SUPER_ADMIN_ROLES.has(resolvedRole);
   next();
 };
 
 // 3. Privileged Admin Route: Business Verification Decision
 app.post('/api/v1/business/verify', requireAdmin, async (req: Request, res: Response): Promise<void> => {
-  const { businessId, status, notes } = req.body;
-  if (!businessId || !['APPROVED', 'REJECTED', 'MORE_INFO_REQUIRED'].includes(status)) {
-    res.status(400).json({ error: 'Invalid business verification request.' });
+  const adminUser = (req as any).user;
+  const { businessId, status, notes } = req.body || {};
+  if (!businessId || !UUID_RE.test(String(businessId)) || !['APPROVED', 'REJECTED', 'MORE_INFO_REQUIRED'].includes(status)) {
+    res.status(400).json({ error: 'Valid UUID businessId and status (APPROVED, REJECTED, MORE_INFO_REQUIRED) required.' });
     return;
   }
 
   if (!supabaseAdmin) {
     res.status(503).json({ error: 'Database service unavailable.' });
+    return;
+  }
+
+  const { data: existingBiz, error: fetchBizErr } = await supabaseAdmin
+    .from('business_profiles')
+    .select('id, owner_id, business_name')
+    .eq('id', businessId)
+    .maybeSingle();
+
+  if (fetchBizErr || !existingBiz) {
+    res.status(404).json({ error: 'Business profile not found.' });
+    return;
+  }
+
+  if (String(existingBiz.owner_id || '').toLowerCase() === String(adminUser?.id || '').toLowerCase()) {
+    res.status(403).json({ error: 'Forbidden: Administrators cannot approve or verify their own business profile.' });
     return;
   }
 
@@ -130,19 +210,30 @@ app.post('/api/v1/business/verify', requireAdmin, async (req: Request, res: Resp
     // Notify business owner
     await supabaseAdmin.from('notifications').insert({
       recipient_id: business.owner_id,
+      actor_id: adminUser.id,
       type: 'BUSINESS_VERIFIED',
       title: 'Shop Verified! 🏪',
       message: `Congratulations! Your business shop "${business.business_name}" has been officially verified by NR Next.`
     });
   }
 
+  await recordServerAuditLog({
+    adminId: String(adminUser?.id || ''),
+    adminEmail: String(adminUser?.email || 'admin'),
+    action: `BUSINESS_VERIFY_${status}`,
+    targetType: 'business_profiles',
+    targetId: String(businessId),
+    details: { ownerId: business.owner_id, notes: notes || null }
+  });
+
   res.status(200).json({ success: true, status, businessId });
 });
 
 // 4. Time Capsule Expiry & Release Service (Scheduled Runner)
 app.post('/api/v1/capsules/expire', async (req: Request, res: Response): Promise<void> => {
-  const apiKey = req.headers['x-cron-key'];
-  if (apiKey !== process.env.CRON_SECRET_KEY && process.env.NODE_ENV === 'production') {
+  const apiKey = String(req.headers['x-cron-key'] || '');
+  const expectedKey = String(process.env.CRON_SECRET_KEY || '');
+  if (!expectedKey || apiKey !== expectedKey) {
     res.status(401).json({ error: 'Unauthorized cron key.' });
     return;
   }
@@ -198,8 +289,6 @@ const inMemoryDeviceTokens = new Map<string, {
   lastSeenAt: string;
   isActive: boolean;
 }>();
-
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || 'sb_publishable_MI-UdOqfccHVZIHjQq9vrw_IjEzeR7H';
 
 async function relayRealtimeBroadcast(topic: string, payload: Record<string, any>): Promise<boolean> {
   try {
@@ -435,9 +524,9 @@ app.post('/api/v1/push/register-token', async (req: Request, res: Response): Pro
 
   if (!verifiedUserId) {
     try {
-      const authResp = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      const authResp = await fetch(`${supabaseUrl}/auth/v1/user`, {
         headers: {
-          apikey: SUPABASE_ANON_KEY,
+          apikey: supabaseAnonKey,
           Authorization: authHeader
         }
       });
@@ -496,10 +585,10 @@ app.post('/api/v1/push/register-token', async (req: Request, res: Response): Pro
     }
   } else {
     try {
-      const restResp = await fetch(`${SUPABASE_URL}/rest/v1/user_device_tokens?on_conflict=user_id,fcm_token`, {
+      const restResp = await fetch(`${supabaseUrl}/rest/v1/user_device_tokens?on_conflict=user_id,fcm_token`, {
         method: 'POST',
         headers: {
-          apikey: SUPABASE_ANON_KEY,
+          apikey: supabaseAnonKey,
           Authorization: authHeader,
           'Content-Type': 'application/json',
           Prefer: 'resolution=merge-duplicates,return=representation'
@@ -542,15 +631,29 @@ app.post('/api/v1/push/register-token', async (req: Request, res: Response): Pro
   res.status(200).json({ success: true, registered: true, user_id: verifiedUserId });
 });
 
-// Push Dispatch Route (from app actions or web triggers)
-app.post('/api/v1/push/send', async (req: Request, res: Response): Promise<void> => {
-  const { recipientId, title, body, data } = req.body || {};
-  if (!recipientId || !title || !body) {
-    res.status(400).json({ error: 'recipientId, title, and body are required.' });
+// Push Dispatch Route (Authenticated; locks actor_id and enforces blocks)
+app.post('/api/v1/push/send', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const callerId = String((req as any).user?.id || '');
+  const { recipientId, title, body, message, data } = req.body || {};
+  const resolvedBody = String(body || message || '').trim();
+  if (!recipientId || !UUID_RE.test(String(recipientId)) || !title || !resolvedBody) {
+    res.status(400).json({ error: 'Valid UUID recipientId, title, and body are required.' });
     return;
   }
 
   try {
+    if (supabaseAdmin && String(recipientId).toLowerCase() !== callerId.toLowerCase()) {
+      const { data: blockRows } = await supabaseAdmin
+        .from('blocks')
+        .select('blocker_id')
+        .or(`and(blocker_id.eq.${callerId},blocked_id.eq.${recipientId}),and(blocker_id.eq.${recipientId},blocked_id.eq.${callerId})`)
+        .limit(1);
+      if (blockRows && blockRows.length > 0) {
+        res.status(200).json({ success: true, skipped: 'blocked', delivered: 0, failed: 0, recipientId });
+        return;
+      }
+    }
+
     const tokenSet = new Set<string>();
     for (const entry of inMemoryDeviceTokens.values()) {
       if (entry.isActive && entry.userId === recipientId) {
@@ -569,11 +672,12 @@ app.post('/api/v1/push/send', async (req: Request, res: Response): Promise<void>
       });
     }
 
+    const safeData = { ...(data || {}), actor_id: callerId, recipient_id: recipientId };
+
     await relayRealtimeBroadcast(`vybe_user_push:${recipientId}`, {
-      ...(data || {}),
-      recipient_id: recipientId,
+      ...safeData,
       title,
-      body
+      body: resolvedBody
     });
 
     const sanitizedUserTopic = `vybe_user_${String(recipientId).replace(/[^a-zA-Z0-9-_.~%]/g, '_')}`;
@@ -582,8 +686,8 @@ app.post('/api/v1/push/send', async (req: Request, res: Response): Promise<void>
       tokens,
       topic: sanitizedUserTopic,
       title,
-      body,
-      data
+      body: resolvedBody,
+      data: safeData
     });
 
     res.status(200).json({
@@ -597,10 +701,12 @@ app.post('/api/v1/push/send', async (req: Request, res: Response): Promise<void>
   }
 });
 
-// Admin Broadcast Push Route
-app.post('/api/v1/admin/broadcast-push', requireAdmin, async (req: Request, res: Response): Promise<void> => {
-  const { title, body, destination, targetId } = req.body || {};
-  if (!title || !body) {
+// Admin Broadcast Push Route (+ /api/v1/push/broadcast alias, strictly requireAdmin)
+const handleAdminBroadcastPush = async (req: Request, res: Response): Promise<void> => {
+  const adminUser = (req as any).user;
+  const { title, body, message, destination, targetId } = req.body || {};
+  const resolvedBody = String(body || message || '').trim();
+  if (!title || !resolvedBody) {
     res.status(400).json({ error: 'Title and body are required.' });
     return;
   }
@@ -634,7 +740,7 @@ app.post('/api/v1/admin/broadcast-push', requireAdmin, async (req: Request, res:
     await relayRealtimeBroadcast('vybe_global_broadcast', {
       ...pushData,
       title,
-      body
+      body: resolvedBody
     });
 
     // 2. Dispatch over FCM HTTP v1 (registered device tokens + vybe_all_users topic)
@@ -643,9 +749,18 @@ app.post('/api/v1/admin/broadcast-push', requireAdmin, async (req: Request, res:
       tokens,
       topic: 'vybe_all_users',
       title,
-      body,
+      body: resolvedBody,
       data: pushData,
       channelId: 'vybe_broadcast_high_v2'
+    });
+
+    await recordServerAuditLog({
+      adminId: String(adminUser?.id || ''),
+      adminEmail: String(adminUser?.email || 'admin'),
+      action: 'SYSTEM_BROADCAST',
+      targetType: 'PLATFORM',
+      targetId: 'ALL_USERS',
+      details: { title, destination: destination || 'NOTIFICATIONS', eventKey }
     });
 
     res.status(200).json({
@@ -657,7 +772,10 @@ app.post('/api/v1/admin/broadcast-push', requireAdmin, async (req: Request, res:
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
-});
+};
+
+app.post('/api/v1/admin/broadcast-push', requireAdmin, handleAdminBroadcastPush);
+app.post('/api/v1/push/broadcast', requireAdmin, handleAdminBroadcastPush);
 
 // Admin Push Stats & Device Health Route
 app.get('/api/v1/admin/push-stats', requireAdmin, async (req: Request, res: Response): Promise<void> => {
@@ -697,13 +815,25 @@ app.get('/api/v1/admin/push-stats', requireAdmin, async (req: Request, res: Resp
 
 // Admin Official Badge Assignment & Revocation
 app.post('/api/v1/admin/badges/assign', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  const adminUser = (req as any).user;
+  const isSuper = Boolean((req as any).isSuperAdmin);
   const { userId, badgeCategory, isGrant, vipExpiresAt, reason, requireAcceptance } = req.body || {};
-  if (!userId || !badgeCategory) {
-    res.status(400).json({ error: 'userId and badgeCategory are required.' });
+  if (!userId || !UUID_RE.test(String(userId)) || !badgeCategory) {
+    res.status(400).json({ error: 'Valid UUID userId and badgeCategory are required.' });
+    return;
+  }
+
+  if (String(adminUser?.id || '').toLowerCase() === String(userId).toLowerCase()) {
+    res.status(403).json({ error: 'Forbidden: Self-assignment or self-revocation of verification badges is strictly prohibited.' });
     return;
   }
 
   const categoryUpper = String(badgeCategory).toUpperCase();
+  if (categoryUpper === 'WORKER' && !isSuper) {
+    res.status(403).json({ error: 'Forbidden: Only Owner / Super Admin can assign or revoke WORKER badges.' });
+    return;
+  }
+
   const grantBool = isGrant !== false;
   const needsAccept = Boolean(requireAcceptance) && grantBool;
 
@@ -746,6 +876,7 @@ app.post('/api/v1/admin/badges/assign', requireAdmin, async (req: Request, res: 
       const eventKey = `badge_${categoryUpper}_${grantBool ? 'grant' : 'revoke'}_${Date.now()}`;
       await supabaseAdmin.from('notifications').insert({
         recipient_id: userId,
+        actor_id: adminUser.id,
         type: 'BUSINESS_VERIFICATION_UPDATE',
         title: grantBool ? 'Official Badge Approved' : 'Official Badge Updated',
         message: grantBool
@@ -755,6 +886,15 @@ app.post('/api/v1/admin/badges/assign', requireAdmin, async (req: Request, res: 
           : `Your ${badgeLabel} status was revoked.${reason ? ` Reason: ${reason}` : ''}`,
         target_id: userId,
         event_key: eventKey
+      });
+
+      await supabaseAdmin.from('admin_audit_logs').insert({
+        admin_id: adminUser.id,
+        admin_email: adminUser.email || 'admin',
+        action: grantBool ? 'ASSIGN_BADGE' : 'REVOKE_BADGE',
+        target_type: 'profiles',
+        target_id: userId,
+        details: { badgeCategory: categoryUpper, isGrant: grantBool, reason: reason || null }
       });
     }
 
@@ -779,7 +919,7 @@ app.get('/api/v1/admin/verification-requests', requireAdmin, async (req: Request
     }
     const { data: requests, error } = await supabaseAdmin
       .from('verification_requests')
-      .select('*, profiles:user_id(id, username, display_name, avatar_url, email)')
+      .select('*, profiles:user_id(id, username, display_name, avatar_url)')
       .order('created_at', { ascending: false })
       .limit(100);
 
@@ -792,8 +932,15 @@ app.get('/api/v1/admin/verification-requests', requireAdmin, async (req: Request
 
 // Admin Review Verification Application
 app.post('/api/v1/admin/verification-requests/:id/review', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  const adminUser = (req as any).user;
+  const isSuper = Boolean((req as any).isSuperAdmin);
   const { id } = req.params;
   const { decision, notes } = req.body || {};
+
+  if (!id || !UUID_RE.test(String(id))) {
+    res.status(400).json({ error: 'Valid UUID verification request id is required.' });
+    return;
+  }
 
   const decisionUpper = String(decision || '').toUpperCase();
   if (!['APPROVED', 'REJECTED', 'MORE_INFO_REQUIRED'].includes(decisionUpper)) {
@@ -803,7 +950,7 @@ app.post('/api/v1/admin/verification-requests/:id/review', requireAdmin, async (
 
   try {
     if (!supabaseAdmin) {
-      res.status(200).json({ success: true, id, status: decisionUpper });
+      res.status(503).json({ error: 'Database service unavailable.' });
       return;
     }
 
@@ -818,9 +965,21 @@ app.post('/api/v1/admin/verification-requests/:id/review', requireAdmin, async (
       return;
     }
 
+    if (String(request.user_id).toLowerCase() === String(adminUser?.id || '').toLowerCase()) {
+      res.status(403).json({ error: 'Forbidden: Self-review of verification applications is prohibited.' });
+      return;
+    }
+
+    const reqType = String(request.request_type).toUpperCase();
+    if (decisionUpper === 'APPROVED' && reqType.includes('WORKER') && !isSuper) {
+      res.status(403).json({ error: 'Forbidden: Only Owner / Super Admin can approve WORKER verification requests.' });
+      return;
+    }
+
     const updatePayload: Record<string, any> = {
       status: decisionUpper,
       admin_notes: notes || null,
+      reviewed_by: adminUser.id,
       reviewed_at: new Date().toISOString()
     };
     if (decisionUpper === 'REJECTED') {
@@ -830,9 +989,9 @@ app.post('/api/v1/admin/verification-requests/:id/review', requireAdmin, async (
     await supabaseAdmin.from('verification_requests').update(updatePayload).eq('id', id);
 
     if (decisionUpper === 'APPROVED') {
-      const reqType = String(request.request_type).toUpperCase();
       const profileUpdates: Record<string, any> = {
         badge_display_status: 'ACCEPTED',
+        badge_approval_status: 'ACCEPTED',
         updated_at: new Date().toISOString()
       };
       if (reqType.includes('WORKER')) {
@@ -854,6 +1013,7 @@ app.post('/api/v1/admin/verification-requests/:id/review', requireAdmin, async (
 
       await supabaseAdmin.from('notifications').insert({
         recipient_id: request.user_id,
+        actor_id: adminUser.id,
         type: 'BADGE_APPROVAL',
         title: '🎉 Verification Approved!',
         message: 'Your application for VYBE verification has been approved! Manage badge display in Settings.',
@@ -862,6 +1022,7 @@ app.post('/api/v1/admin/verification-requests/:id/review', requireAdmin, async (
     } else {
       await supabaseAdmin.from('notifications').insert({
         recipient_id: request.user_id,
+        actor_id: adminUser.id,
         type: 'VERIFICATION_UPDATE',
         title: 'Verification Update',
         message: decisionUpper === 'REJECTED'
@@ -871,60 +1032,81 @@ app.post('/api/v1/admin/verification-requests/:id/review', requireAdmin, async (
       });
     }
 
+    await supabaseAdmin.from('admin_audit_logs').insert({
+      admin_id: adminUser.id,
+      admin_email: adminUser.email || 'admin',
+      action: `VERIFICATION_${decisionUpper}`,
+      target_type: 'verification_requests',
+      target_id: String(id),
+      details: { userId: request.user_id, requestType: reqType, notes: notes || null }
+    });
+
     res.status(200).json({ success: true, id, status: decisionUpper });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// User Verification Application Submission
-app.post('/api/v1/user/verification/apply', async (req: Request, res: Response): Promise<void> => {
+// User Verification Application Submission (Authenticated caller only)
+app.post('/api/v1/user/verification/apply', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const callerId = String((req as any).user?.id || '');
   const { userId, requestType, fullName, category, identityUrl, supportingLinks } = req.body || {};
-  if (!userId || !fullName || !category) {
-    res.status(400).json({ error: 'userId, fullName, and category are required.' });
+  if (!fullName || !category) {
+    res.status(400).json({ error: 'fullName and category are required.' });
+    return;
+  }
+  if (userId && String(userId).toLowerCase() !== callerId.toLowerCase()) {
+    res.status(403).json({ error: 'Forbidden: Cannot submit verification application for another user.' });
     return;
   }
 
   try {
-    if (supabaseAdmin) {
-      const { data, error } = await supabaseAdmin.from('verification_requests').insert({
-        user_id: userId,
-        request_type: requestType || 'VERIFIED',
-        full_name: fullName,
-        category,
-        identity_document_url: identityUrl || null,
-        supporting_links: supportingLinks || [],
-        status: 'PENDING'
-      }).select().single();
-
-      if (error) throw error;
-      res.status(200).json({ success: true, request: data });
-    } else {
-      res.status(200).json({ success: true, message: 'Application recorded' });
+    if (!supabaseAdmin) {
+      res.status(503).json({ error: 'Database service unavailable.' });
+      return;
     }
+    const { data, error } = await supabaseAdmin.from('verification_requests').insert({
+      user_id: callerId,
+      request_type: requestType || 'VERIFIED',
+      full_name: fullName,
+      category,
+      identity_document_url: identityUrl || null,
+      supporting_links: supportingLinks || [],
+      status: 'PENDING'
+    }).select().single();
+
+    if (error) throw error;
+    res.status(200).json({ success: true, request: data });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// User Badge Display Status Toggle (Accept, Decline, Hide)
-app.post('/api/v1/user/verification/badge-display', async (req: Request, res: Response): Promise<void> => {
+// User Badge Display Status Toggle (Accept, Decline, Hide — caller own profile only)
+app.post('/api/v1/user/verification/badge-display', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const callerId = String((req as any).user?.id || '');
   const { userId, displayStatus } = req.body || {};
   const statusUpper = String(displayStatus || '').toUpperCase();
   if (!['ACCEPTED', 'DECLINED', 'HIDDEN'].includes(statusUpper)) {
     res.status(400).json({ error: 'displayStatus must be ACCEPTED, DECLINED, or HIDDEN.' });
     return;
   }
+  if (userId && String(userId).toLowerCase() !== callerId.toLowerCase()) {
+    res.status(403).json({ error: 'Forbidden: Cannot modify badge display preferences for another user.' });
+    return;
+  }
 
   try {
-    if (supabaseAdmin) {
-      const { error } = await supabaseAdmin
-        .from('profiles')
-        .update({ badge_display_status: statusUpper, updated_at: new Date().toISOString() })
-        .eq('id', userId);
-      if (error) throw error;
+    if (!supabaseAdmin) {
+      res.status(503).json({ error: 'Database service unavailable.' });
+      return;
     }
-    res.status(200).json({ success: true, userId, displayStatus: statusUpper });
+    const { error } = await supabaseAdmin
+      .from('profiles')
+      .update({ badge_display_status: statusUpper, updated_at: new Date().toISOString() })
+      .eq('id', callerId);
+    if (error) throw error;
+    res.status(200).json({ success: true, userId: callerId, displayStatus: statusUpper });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

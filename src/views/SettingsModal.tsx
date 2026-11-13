@@ -9,6 +9,7 @@ import {
   DEFAULT_GITHUB_REPO, INSTALLED_VERSION, INSTALLED_VERSION_CODE, 
   formatFileSize 
 } from '../services/githubUpdater';
+import { isVerifiedAdminSession } from '../services/supabaseService';
 
 export const SettingsModal: React.FC = () => {
   const { 
@@ -215,25 +216,27 @@ export const SettingsModal: React.FC = () => {
           </button>
         </div>
 
-        {/* Admin Console Shortcut */}
-        <div className="p-4 rounded-2xl bg-[#060714] border border-[#262E4A] flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Sparkles className="w-4 h-4 text-[#D946EF]" />
-            <div>
-              <p className="text-xs font-semibold text-white">Platform Admin Console</p>
-              <p className="text-[10px] text-gray-400">Review verifications, metrics & reports</p>
+        {/* Admin Console Shortcut (Verified Admin Session Only) */}
+        {isVerifiedAdminSession(currentUser) && (
+          <div className="p-4 rounded-2xl bg-[#060714] border border-[#262E4A] flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Sparkles className="w-4 h-4 text-[#D946EF]" />
+              <div>
+                <p className="text-xs font-semibold text-white">Platform Admin Console</p>
+                <p className="text-[10px] text-gray-400">Review verifications, metrics & reports</p>
+              </div>
             </div>
+            <button
+              onClick={() => {
+                closeModal();
+                openModal('ADMIN_CONSOLE');
+              }}
+              className="px-3 py-1.5 rounded-xl bg-[#1A1F36] hover:bg-[#262E4A] text-xs font-bold text-white transition-colors"
+            >
+              Open Console
+            </button>
           </div>
-          <button
-            onClick={() => {
-              closeModal();
-              openModal('ADMIN_CONSOLE');
-            }}
-            className="px-3 py-1.5 rounded-xl bg-[#1A1F36] hover:bg-[#262E4A] text-xs font-bold text-white transition-colors"
-          >
-            Open Console
-          </button>
-        </div>
+        )}
 
       </div>
     </div>

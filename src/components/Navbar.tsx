@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
 import { MOOD_DEFINITIONS, MoodType } from '../types';
+import { isVerifiedAdminSession } from '../services/supabaseService';
 
 export const Navbar: React.FC = () => {
   const { 
@@ -175,14 +176,16 @@ export const Navbar: React.FC = () => {
             <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#D946EF]" />
           </button>
 
-          {/* Admin Console Shortcut */}
-          <button
-            onClick={() => openModal('ADMIN_CONSOLE')}
-            title="Admin & Verification Console"
-            className="p-2 rounded-xl bg-[#101322] border border-[#262E4A] text-gray-400 hover:text-[#FFB703] hover:border-[#FFB703]/40 transition-colors"
-          >
-            <Shield className="w-4 h-4" />
-          </button>
+          {/* Admin Console Shortcut (Verified Admin Session Only) */}
+          {isVerifiedAdminSession(currentUser) && (
+            <button
+              onClick={() => openModal('ADMIN_CONSOLE')}
+              title="Admin & Verification Console"
+              className="p-2 rounded-xl bg-[#101322] border border-[#262E4A] text-gray-400 hover:text-[#FFB703] hover:border-[#FFB703]/40 transition-colors"
+            >
+              <Shield className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
       </div>

@@ -12,11 +12,13 @@ const SUPABASE_URL = process.env.SUPABASE_URL || 'https://cppwadedazpbevkfrchg.s
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_MI-UdOqfccHVZIHjQq9vrw_IjEzeR7H';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
-function buildSupabaseHeaders(extra = {}, useServiceRoleIfPresent = true) {
+function buildSupabaseHeaders(extra = {}, useServiceRoleIfPresent = true, userJwt = '') {
   const activeKey = (useServiceRoleIfPresent && SUPABASE_SERVICE_ROLE_KEY) ? SUPABASE_SERVICE_ROLE_KEY : SUPABASE_ANON_KEY;
   const hdrs = { 'apikey': activeKey, ...extra };
   if (typeof activeKey === 'string' && activeKey.startsWith('eyJ')) {
     hdrs['Authorization'] = `Bearer ${activeKey}`;
+  } else if (typeof userJwt === 'string' && userJwt.startsWith('eyJ')) {
+    hdrs['Authorization'] = `Bearer ${userJwt}`;
   }
   return hdrs;
 }
@@ -37,17 +39,109 @@ const deviceRegistry = new Map();
 const recentPushLogs = [];
 const OVERRIDE_FILE = path.resolve(__dirname, 'admin_state_override.json');
 
-function isSuperAdmin(req, adminEmail) {
-  const authHeader = (req && req.headers ? req.headers['authorization'] : '') || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-  const email = (adminEmail || (req && req.headers ? req.headers['x-admin-email'] : '') || '').toLowerCase().trim();
-  const role = (req && req.headers ? req.headers['x-admin-role'] : '' || '').toUpperCase().trim();
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ADMIN_ROLES = new Set(['ADMIN', 'SUPER_ADMIN', 'OWNER_ADMIN', 'MODERATOR']);
+const SUPER_ADMIN_ROLES = new Set(['SUPER_ADMIN', 'OWNER_ADMIN']);
+const rateLimitBuckets = new Map();
 
-  // Verify valid bearer JWT or explicit admin role
-  if (token && token.startsWith('eyJ')) {
-    return true;
+function checkRateLimit(req, isPrivileged = false) {
+  const ip = String(req?.headers?.['x-forwarded-for'] || req?.socket?.remoteAddress || 'unknown').split(',')[0].trim();
+  const key = `${isPrivileged ? 'admin' : 'api'}:${ip}`;
+  const now = Date.now();
+  const windowMs = 60 * 1000;
+  const maxReqs = isPrivileged ? 60 : 180;
+  const recent = (rateLimitBuckets.get(key) || []).filter(ts => now - ts < windowMs);
+  if (recent.length >= maxReqs) {
+    rateLimitBuckets.set(key, recent);
+    return false;
   }
-  return role === 'ADMIN' || role === 'SUPER_ADMIN';
+  recent.push(now);
+  rateLimitBuckets.set(key, recent);
+  return true;
+}
+
+async function verifyUserAuth(req) {
+  const authHeader = String(req?.headers?.['authorization'] || '').trim();
+  if (!authHeader.startsWith('Bearer ')) {
+    return { ok: false, status: 401, error: 'Missing Bearer JWT in Authorization header.' };
+  }
+  const token = authHeader.slice(7).trim();
+  if (!token || !token.startsWith('eyJ')) {
+    return { ok: false, status: 401, error: 'Invalid Bearer JWT format.' };
+  }
+  try {
+    const authResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/user`, {
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    if (!authResp.ok) {
+      return { ok: false, status: 401, error: 'Invalid or expired Supabase authentication token.' };
+    }
+    const user = await authResp.json();
+    if (!user || !user.id) {
+      return { ok: false, status: 401, error: 'Authenticated user identity could not be resolved.' };
+    }
+    return { ok: true, user, token };
+  } catch (err) {
+    return { ok: false, status: 502, error: err?.message || 'Failed verifying user token with Supabase Auth.' };
+  }
+}
+
+async function verifyAdminAuth(req) {
+  const userAuth = await verifyUserAuth(req);
+  if (!userAuth.ok) return userAuth;
+  const userId = userAuth.user.id;
+  const email = String(userAuth.user.email || '').trim().toLowerCase();
+  const hdrs = buildSupabaseHeaders({}, true, userAuth.token);
+
+  let resolvedRole = '';
+  let roleQuerySucceeded = false;
+
+  try {
+    const [pResp, aResp] = await Promise.all([
+      fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=id,role&limit=1`, { headers: hdrs }),
+      fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/admin_users?user_id=eq.${encodeURIComponent(userId)}&is_active=eq.true&select=role&limit=1`, { headers: hdrs }).catch(() => null)
+    ]);
+
+    if (pResp && pResp.ok) {
+      roleQuerySucceeded = true;
+      const rows = await pResp.json();
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      const r = String(row?.role || '').toUpperCase().trim();
+      if (ADMIN_ROLES.has(r)) resolvedRole = r;
+    }
+
+    if (aResp && aResp.ok) {
+      roleQuerySucceeded = true;
+      const aRows = await aResp.json();
+      const aRow = Array.isArray(aRows) ? aRows[0] : aRows;
+      const ar = String(aRow?.role || '').toUpperCase().trim();
+      if (ADMIN_ROLES.has(ar)) {
+        if (!resolvedRole || SUPER_ADMIN_ROLES.has(ar)) resolvedRole = ar;
+      }
+    }
+  } catch {
+    roleQuerySucceeded = false;
+  }
+
+  if (!roleQuerySucceeded) {
+    return { ok: false, status: 503, error: 'Unable to verify administrator role from Supabase.' };
+  }
+
+  if (!ADMIN_ROLES.has(resolvedRole)) {
+    return { ok: false, status: 403, error: 'Forbidden: Administrator role required.' };
+  }
+
+  return {
+    ok: true,
+    userId,
+    email,
+    role: resolvedRole,
+    isSuperAdmin: SUPER_ADMIN_ROLES.has(resolvedRole),
+    token: userAuth.token
+  };
 }
 
 function loadAdminState() {
@@ -155,20 +249,54 @@ function saveAdminState(state) {
   }
 }
 
-async function patchSupabaseProfile(userId, patchData) {
+async function patchSupabaseProfile(userId, patchData, callerJwt = '') {
+  if (!UUID_RE.test(String(userId || ''))) return false;
   try {
-    const url = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?id=eq.${userId}`;
+    const url = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`;
     const resp = await fetch(url, {
       method: 'PATCH',
       headers: buildSupabaseHeaders({
         'Content-Type': 'application/json',
         'Prefer': 'return=representation'
-      }),
+      }, true, callerJwt),
       body: JSON.stringify(patchData)
     });
     return resp.ok;
   } catch (err) {
     console.warn('[SupabaseProfile] Patch warning:', err.message);
+    return false;
+  }
+}
+
+async function recordSupabaseAuditLog({
+  adminId,
+  adminEmail,
+  action,
+  targetType,
+  targetId,
+  details = {},
+  callerJwt = ''
+}) {
+  try {
+    const payload = {
+      admin_id: UUID_RE.test(String(adminId || '')) ? adminId : null,
+      admin_email: adminEmail || 'admin',
+      action: String(action || 'ADMIN_ACTION').slice(0, 100),
+      target_type: String(targetType || 'SYSTEM').slice(0, 50),
+      target_id: String(targetId || 'UNKNOWN').slice(0, 100),
+      details: details || {}
+    };
+    const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/admin_audit_logs`, {
+      method: 'POST',
+      headers: buildSupabaseHeaders({
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      }, true, callerJwt),
+      body: JSON.stringify(payload)
+    });
+    return resp.ok;
+  } catch (err) {
+    console.warn('[AuditLog] Persist warning:', err.message);
     return false;
   }
 }
@@ -391,10 +519,20 @@ function sendJson(res, status, obj) {
   res.end(JSON.stringify(obj));
 }
 
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+
 const server = http.createServer(async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const reqOrigin = String(req.headers['origin'] || '').trim();
+  const corsOrigin = ALLOWED_ORIGINS.length === 0
+    ? '*'
+    : (ALLOWED_ORIGINS.includes(reqOrigin) ? reqOrigin : ALLOWED_ORIGINS[0]);
+
+  res.setHeader('Access-Control-Allow-Origin', corsOrigin);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Vybe-Owner-Console');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -411,6 +549,24 @@ const server = http.createServer(async (req, res) => {
       timestamp: new Date().toISOString()
     });
     return;
+  }
+
+  if (cleanUrl.startsWith('/api/')) {
+    const isPrivilegedApi = cleanUrl.startsWith('/api/v1/admin/') || cleanUrl === '/api/v1/push/broadcast';
+    if (!checkRateLimit(req, isPrivilegedApi)) {
+      sendJson(res, 429, { error: 'Too many requests. Please slow down and try again shortly.' });
+      return;
+    }
+  }
+
+  // Global Zero-Trust Admin Verification Gate for ALL /api/v1/admin/* endpoints and /api/v1/push/broadcast
+  let adminAuth = null;
+  if (cleanUrl.startsWith('/api/v1/admin/') || cleanUrl === '/api/v1/push/broadcast') {
+    adminAuth = await verifyAdminAuth(req);
+    if (!adminAuth.ok) {
+      sendJson(res, adminAuth.status || 401, { error: adminAuth.error || 'Unauthorized' });
+      return;
+    }
   }
 
   if (cleanUrl === '/api/v1/push/register-token' && req.method === 'POST') {
@@ -535,25 +691,48 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (cleanUrl === '/api/v1/push/send' && req.method === 'POST') {
+    const authCheck = await verifyUserAuth(req);
+    if (!authCheck.ok) {
+      sendJson(res, authCheck.status || 401, { error: authCheck.error || 'Unauthorized' });
+      return;
+    }
+    const callerId = authCheck.user.id;
     const body = await readJsonBody(req);
     const recipientId = body.recipientId || body.recipient_id;
     const title = body.title;
     const msgBody = body.body || body.message;
     const rawData = body.data || {};
     const channelId = body.channelId || body.channel_id || rawData.channel_id || 'vybe_activity_high_v2';
-    const data = {
-      ...rawData,
-      type: body.type || rawData.type || 'ACTIVITY',
-      event_key: body.eventKey || body.event_key || rawData.event_key || `evt_${Date.now()}`,
-      ...(body.actorId || body.actor_id ? { actor_id: body.actorId || body.actor_id } : {}),
-      ...(body.targetId || body.target_id ? { target_id: body.targetId || body.target_id } : {}),
-      ...(body.conversationId || body.conversation_id ? { conversation_id: body.conversationId || body.conversation_id } : {}),
-      recipient_id: recipientId
-    };
     if (!recipientId || !title || !msgBody) {
       sendJson(res, 400, { error: 'recipientId, title, and body are required.' });
       return;
     }
+
+    if (String(recipientId).toLowerCase() !== String(callerId).toLowerCase()) {
+      try {
+        const blockResp = await fetch(
+          `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/blocks?select=blocker_id&or=(and(blocker_id.eq.${encodeURIComponent(callerId)},blocked_id.eq.${encodeURIComponent(recipientId)}),and(blocker_id.eq.${encodeURIComponent(recipientId)},blocked_id.eq.${encodeURIComponent(callerId)}))&limit=1`,
+          { headers: buildSupabaseHeaders({}, true, authCheck.token) }
+        );
+        if (blockResp.ok) {
+          const blockRows = await blockResp.json();
+          if (Array.isArray(blockRows) && blockRows.length > 0) {
+            sendJson(res, 200, { success: true, skipped: 'blocked', delivered: 0 });
+            return;
+          }
+        }
+      } catch {}
+    }
+
+    const data = {
+      ...rawData,
+      type: body.type || rawData.type || 'ACTIVITY',
+      event_key: body.eventKey || body.event_key || rawData.event_key || `evt_${Date.now()}`,
+      actor_id: callerId,
+      ...(body.targetId || body.target_id ? { target_id: body.targetId || body.target_id } : {}),
+      ...(body.conversationId || body.conversation_id ? { conversation_id: body.conversationId || body.conversation_id } : {}),
+      recipient_id: recipientId
+    };
     const tokens = await getTokensForUser(recipientId);
 
     await relayRealtimeBroadcast(`vybe_user_push:${recipientId}`, {
@@ -586,7 +765,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (cleanUrl === '/api/v1/admin/broadcast-push' && req.method === 'POST') {
+  if ((cleanUrl === '/api/v1/admin/broadcast-push' || cleanUrl === '/api/v1/push/broadcast') && req.method === 'POST') {
     const body = await readJsonBody(req);
     const title = body.title;
     const msgBody = body.body || body.message;
@@ -632,6 +811,16 @@ const server = http.createServer(async (req, res) => {
     });
     if (recentPushLogs.length > 50) recentPushLogs.pop();
 
+    await recordSupabaseAuditLog({
+      adminId: adminAuth.userId,
+      adminEmail: adminAuth.email,
+      action: 'SYSTEM_BROADCAST',
+      targetType: 'PLATFORM',
+      targetId: 'ALL_USERS',
+      details: { title, destination, eventKey },
+      callerJwt: adminAuth.token
+    });
+
     sendJson(res, 200, {
       success: true,
       totalDevices: Math.max(tokens.length, 1),
@@ -665,6 +854,14 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (cleanUrl === '/api/v1/admin/fcm-config' && req.method === 'POST') {
+    if (!adminAuth.isSuperAdmin) {
+      sendJson(res, 403, { error: 'Forbidden: Only Super Admin / Owner Admin may update FCM configuration.' });
+      return;
+    }
+    if (process.env.ALLOW_DISK_FCM_CONFIG !== 'true') {
+      sendJson(res, 403, { error: 'Runtime disk write for FCM credentials is disabled. Configure FIREBASE_SERVICE_ACCOUNT via environment secrets.' });
+      return;
+    }
     const body = await readJsonBody(req);
     let saObj = null;
     if (body.serviceAccountJson) {
@@ -682,8 +879,8 @@ const server = http.createServer(async (req, res) => {
       saObj = body;
     }
 
-    if (!saObj || !saObj.client_email || !saObj.private_key) {
-      sendJson(res, 400, { error: 'Service account must contain client_email and private_key.' });
+    if (!saObj || saObj.type !== 'service_account' || !saObj.client_email || !saObj.private_key) {
+      sendJson(res, 400, { error: 'Service account must have type=service_account, client_email, and private_key.' });
       return;
     }
 
@@ -702,13 +899,13 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 1. GET ALL USERS (MERGED WITH ADMIN OVERRIDES)
+  // 1. GET ALL USERS (MERGED WITH ADMIN OVERRIDES — PII stripped)
   if (cleanUrl === '/api/v1/admin/users' && req.method === 'GET') {
     const state = loadAdminState();
     let users = [];
     try {
-      const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?select=*&order=created_at.desc&limit=100`, {
-        headers: buildSupabaseHeaders()
+      const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?select=id,username,display_name,avatar_url,role,is_verified,is_vip,is_worker,is_verified_business,is_banned,is_suspended,suspended_until,created_at&order=created_at.desc&limit=100`, {
+        headers: buildSupabaseHeaders({}, true, adminAuth.token)
       });
       if (resp.ok) {
         users = await resp.json();
@@ -722,10 +919,7 @@ const server = http.createServer(async (req, res) => {
       const rOverride = state.roles && state.roles[u.id];
       const sOverride = state.statuses && state.statuses[u.id];
 
-      // Auto-elevate owner emails if not specifically set
-      const isOwnerEmail = (u.email === 'renukadas083@gmail.com' || u.email === 'nrnexthq@gmail.com');
-      const defaultRole = isOwnerEmail ? 'ADMIN' : (u.role || 'USER');
-
+      const defaultRole = u.role || 'USER';
       const isWorker = bOverride?.is_worker !== undefined ? bOverride.is_worker : Boolean(u.is_worker);
       const isVip = bOverride?.is_vip !== undefined ? bOverride.is_vip : Boolean(u.is_vip);
       const isVerified = bOverride?.is_verified !== undefined ? bOverride.is_verified : Boolean(u.is_verified);
@@ -742,8 +936,6 @@ const server = http.createServer(async (req, res) => {
         role: rOverride || defaultRole,
         is_banned: sOverride?.is_banned !== undefined ? sOverride.is_banned : Boolean(u.is_banned),
         is_suspended: sOverride?.is_suspended !== undefined ? sOverride.is_suspended : Boolean(u.is_suspended),
-        ban_reason: sOverride?.ban_reason || u.ban_reason || null,
-        suspension_reason: sOverride?.suspension_reason || u.suspension_reason || null,
         suspended_until: sOverride?.suspended_until || u.suspended_until || null
       };
     });
@@ -755,54 +947,79 @@ const server = http.createServer(async (req, res) => {
   // 2. ASSIGN / REVOKE BADGE (THREE-TIER BADGE SYSTEM)
   if (cleanUrl === '/api/v1/admin/assign-badge' && req.method === 'POST') {
     const body = await readJsonBody(req);
-    const { userId, badgeType, value, username, adminEmail, adminUserId } = body;
-    if (!userId || !badgeType) {
-      sendJson(res, 400, { error: 'userId and badgeType required' });
+    const { userId, badgeType, value, username } = body;
+    if (!userId || !UUID_RE.test(String(userId)) || !badgeType) {
+      sendJson(res, 400, { error: 'Valid UUID userId and badgeType required' });
       return;
     }
 
-    const normalizedType = badgeType.toLowerCase().trim();
+    const normalizedType = String(badgeType).toLowerCase().trim();
+    const callerId = adminAuth.userId;
 
     // Security Check 1: Self-assignment prohibition
-    const callerId = adminUserId || req.headers['x-admin-user-id'];
-    if (callerId && callerId === userId) {
-      sendJson(res, 403, { error: 'Security Policy: Self-assignment of verification badges is strictly forbidden. Another administrator must review and grant badges.' });
+    if (String(callerId).toLowerCase() === String(userId).toLowerCase()) {
+      sendJson(res, 403, { error: 'Security Policy: Self-assignment or self-revocation of verification badges is strictly forbidden.' });
       return;
     }
 
     // Security Check 2: Super Admin authorization required for Green Official badge
-    const isSuperAdmin = (
-      adminEmail === 'renukadas083@gmail.com' ||
-      adminEmail === 'nrnexthq@gmail.com' ||
-      req.headers['x-admin-role'] === 'SUPER_ADMIN' ||
-      req.headers['x-admin-role'] === 'OWNER_ADMIN'
-    );
+    if ((normalizedType === 'official' || normalizedType === 'worker') && !adminAuth.isSuperAdmin) {
+      sendJson(res, 403, { error: 'Security Policy: VYBE Official badges can only be assigned or revoked by the Super Admin / Owner Admin.' });
+      return;
+    }
 
-    if ((normalizedType === 'official' || normalizedType === 'worker') && !isSuperAdmin) {
-      sendJson(res, 403, { error: 'Security Policy: VYBE Official badges can only be assigned or revoked by the Super Admin.' });
+    let rpcCategory = 'VERIFIED';
+    let dbKey = 'is_verified';
+    let badgeDisplayLabel = 'VYBE Verified (Electric Blue)';
+    if (normalizedType === 'verified') {
+      rpcCategory = 'VERIFIED';
+      dbKey = 'is_verified';
+      badgeDisplayLabel = 'VYBE Verified (Electric Blue)';
+    } else if (normalizedType === 'vip') {
+      rpcCategory = 'VIP';
+      dbKey = 'is_vip';
+      badgeDisplayLabel = 'VYBE VIP (Metallic Gold)';
+    } else if (normalizedType === 'official' || normalizedType === 'worker') {
+      rpcCategory = 'WORKER';
+      dbKey = 'is_worker';
+      badgeDisplayLabel = 'VYBE Official (Emerald Green)';
+    } else if (normalizedType === 'business' || normalizedType === 'shop') {
+      rpcCategory = 'SHOP';
+      dbKey = 'is_verified_business';
+      badgeDisplayLabel = 'VYBE Storefront Shop';
+    } else {
+      sendJson(res, 400, { error: 'Unsupported badgeType.' });
+      return;
+    }
+
+    try {
+      const rpcResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/rpc/admin_assign_badge`, {
+        method: 'POST',
+        headers: buildSupabaseHeaders({ 'Content-Type': 'application/json' }, true, adminAuth.token),
+        body: JSON.stringify({
+          p_target_user_id: userId,
+          p_badge_category: rpcCategory,
+          p_is_grant: Boolean(value),
+          p_admin_id: callerId,
+          p_reason: `Admin console ${value ? 'grant' : 'revoke'}`
+        })
+      });
+      if (!rpcResp.ok) {
+        const errText = await rpcResp.text().catch(() => '');
+        sendJson(res, rpcResp.status === 403 || rpcResp.status === 401 ? rpcResp.status : 502, {
+          error: 'Supabase admin_assign_badge RPC failed',
+          details: errText.slice(0, 200)
+        });
+        return;
+      }
+    } catch (rpcErr) {
+      sendJson(res, 502, { error: 'Failed communicating with Supabase badge RPC: ' + rpcErr.message });
       return;
     }
 
     const state = loadAdminState();
     state.badges = state.badges || {};
     state.badges[userId] = state.badges[userId] || {};
-
-    let dbKey = 'is_verified';
-    let badgeDisplayLabel = 'VYBE Verified';
-    if (normalizedType === 'verified') {
-      dbKey = 'is_verified';
-      badgeDisplayLabel = 'VYBE Verified (Electric Blue)';
-    } else if (normalizedType === 'vip') {
-      dbKey = 'is_vip';
-      badgeDisplayLabel = 'VYBE VIP (Metallic Gold)';
-    } else if (normalizedType === 'official' || normalizedType === 'worker') {
-      dbKey = 'is_worker';
-      badgeDisplayLabel = 'VYBE Official (Emerald Green)';
-    } else if (normalizedType === 'business' || normalizedType === 'shop') {
-      dbKey = 'is_verified_business';
-      badgeDisplayLabel = 'VYBE Storefront Shop';
-    }
-
     state.badges[userId][dbKey] = Boolean(value);
 
     state.auditLogs = state.auditLogs || [];
@@ -811,40 +1028,12 @@ const server = http.createServer(async (req, res) => {
       action: value ? `GRANT_${normalizedType.toUpperCase()}` : `REVOKE_${normalizedType.toUpperCase()}`,
       userId,
       username: username || 'User',
-      adminEmail: adminEmail || (isSuperAdmin ? 'Super Admin' : 'Platform Admin'),
+      adminEmail: adminAuth.email || 'Admin',
       details: { badgeType: normalizedType, label: badgeDisplayLabel, value: Boolean(value) }
     });
     if (state.auditLogs.length > 200) state.auditLogs.pop();
 
     saveAdminState(state);
-
-    // Sync directly to Supabase profiles table via secure admin RPC
-    let rpcCategory = 'VERIFIED';
-    if (normalizedType === 'vip') rpcCategory = 'VIP';
-    else if (normalizedType === 'official' || normalizedType === 'worker') rpcCategory = 'WORKER';
-    else if (normalizedType === 'business' || normalizedType === 'shop') rpcCategory = 'SHOP';
-
-    try {
-      const rpcResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/rpc/admin_assign_badge`, {
-        method: 'POST',
-        headers: {
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          p_target_user_id: userId,
-          p_badge_category: rpcCategory,
-          p_is_grant: Boolean(value),
-          p_admin_id: '9ed36206-3eaf-411a-8aec-694962965567',
-          p_reason: `Admin console ${value ? 'grant' : 'revoke'}`
-        })
-      });
-      const rpcText = await rpcResp.text();
-      console.log('[AdminBadge] Supabase RPC response:', rpcResp.status, rpcText);
-    } catch (rpcErr) {
-      console.warn('[AdminBadge] Supabase RPC error:', rpcErr.message);
-    }
 
     // DISPATCH PROFESSIONAL IN-APP & PUSH NOTIFICATION TO USER
     try {
@@ -915,18 +1104,13 @@ const server = http.createServer(async (req, res) => {
           channelId: 'vybe_activity_high_v2'
         });
 
-        // 3. Insert into Supabase notifications table
+        // 3. Insert into Supabase notifications table using verified admin token or service role
         fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/notifications`, {
           method: 'POST',
-          headers: {
-            'apikey': SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=minimal'
-          },
+          headers: buildSupabaseHeaders({ 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }, true, adminAuth.token),
           body: JSON.stringify({
             recipient_id: userId,
-            actor_id: '00000000-0000-0000-0000-000000000001',
+            actor_id: callerId,
             type: 'SYSTEM',
             title: notifTitle,
             message: notifBody,
@@ -949,18 +1133,92 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 3. SET USER ROLE
+  // 3. SET USER ROLE (Super Admin only, prevents self-mutation, syncs profiles + admin_users + audit log)
   if (cleanUrl === '/api/v1/admin/set-role' && req.method === 'POST') {
-    const body = await readJsonBody(req);
-    const { userId, role, username, adminEmail } = body;
-    if (!userId || !role) {
-      sendJson(res, 400, { error: 'userId and role required' });
+    if (!adminAuth.isSuperAdmin) {
+      sendJson(res, 403, { error: 'Forbidden: Only Super Admin / Owner Admin may modify platform roles.' });
       return;
+    }
+
+    const body = await readJsonBody(req);
+    const { userId, role, username } = body;
+    if (!userId || !UUID_RE.test(String(userId)) || !role) {
+      sendJson(res, 400, { error: 'Valid UUID userId and role required.' });
+      return;
+    }
+
+    if (String(adminAuth.userId).toLowerCase() === String(userId).toLowerCase()) {
+      sendJson(res, 403, { error: 'Security Policy: Administrators cannot modify their own platform role.' });
+      return;
+    }
+
+    const requestedRole = String(role).toUpperCase().trim();
+    const ALLOWED_PROFILE_ROLES = new Set(['USER', 'CREATOR', 'BUSINESS_OWNER', 'VERIFIED_PUBLIC_FIGURE', 'MODERATOR', 'ADMIN']);
+    const ADMIN_SUB_ROLE_MAP = {
+      OWNER_ADMIN: { profileRole: 'ADMIN', adminSubRole: 'OWNER_ADMIN' },
+      SUPER_ADMIN: { profileRole: 'ADMIN', adminSubRole: 'OWNER_ADMIN' },
+      ADMIN: { profileRole: 'ADMIN', adminSubRole: 'MODERATOR' },
+      SUPPORT_ADMIN: { profileRole: 'MODERATOR', adminSubRole: 'SUPPORT_ADMIN' },
+      ANALYST: { profileRole: 'MODERATOR', adminSubRole: 'ANALYST' },
+      MODERATOR: { profileRole: 'MODERATOR', adminSubRole: 'MODERATOR' }
+    };
+
+    let targetProfileRole = '';
+    let targetAdminSubRole = null;
+    if (ADMIN_SUB_ROLE_MAP[requestedRole]) {
+      targetProfileRole = ADMIN_SUB_ROLE_MAP[requestedRole].profileRole;
+      targetAdminSubRole = ADMIN_SUB_ROLE_MAP[requestedRole].adminSubRole;
+    } else if (ALLOWED_PROFILE_ROLES.has(requestedRole)) {
+      targetProfileRole = requestedRole;
+      targetAdminSubRole = null;
+    } else {
+      sendJson(res, 400, { error: 'Unsupported role specified.' });
+      return;
+    }
+
+    const dbUpdated = await patchSupabaseProfile(userId, { role: targetProfileRole }, adminAuth.token);
+    if (!dbUpdated) {
+      sendJson(res, 502, { error: 'Failed updating user role in Supabase database.' });
+      return;
+    }
+
+    // Keep public.admin_users synchronized with role grant/revocation
+    try {
+      if (targetAdminSubRole) {
+        await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/admin_users?on_conflict=user_id`, {
+          method: 'POST',
+          headers: buildSupabaseHeaders({
+            'Content-Type': 'application/json',
+            'Prefer': 'resolution=merge-duplicates,return=minimal'
+          }, true, adminAuth.token),
+          body: JSON.stringify({
+            user_id: userId,
+            role: targetAdminSubRole,
+            is_active: true,
+            assigned_by: adminAuth.userId,
+            updated_at: new Date().toISOString()
+          })
+        });
+      } else {
+        await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/admin_users?user_id=eq.${encodeURIComponent(userId)}`, {
+          method: 'PATCH',
+          headers: buildSupabaseHeaders({
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal'
+          }, true, adminAuth.token),
+          body: JSON.stringify({
+            is_active: false,
+            updated_at: new Date().toISOString()
+          })
+        });
+      }
+    } catch (syncErr) {
+      console.warn('[SetRole] admin_users sync notice:', syncErr.message);
     }
 
     const state = loadAdminState();
     state.roles = state.roles || {};
-    state.roles[userId] = role;
+    state.roles[userId] = targetAdminSubRole || targetProfileRole;
 
     state.auditLogs = state.auditLogs || [];
     state.auditLogs.unshift({
@@ -968,21 +1226,30 @@ const server = http.createServer(async (req, res) => {
       action: 'UPDATE_ROLE',
       userId,
       username: username || 'User',
-      adminEmail: adminEmail || 'Owner Admin',
-      details: { role }
+      adminEmail: adminAuth.email || 'Admin',
+      details: { requestedRole, profileRole: targetProfileRole, adminSubRole: targetAdminSubRole }
     });
     if (state.auditLogs.length > 200) state.auditLogs.pop();
 
     saveAdminState(state);
-    patchSupabaseProfile(userId, { role });
+
+    await recordSupabaseAuditLog({
+      adminId: adminAuth.userId,
+      adminEmail: adminAuth.email,
+      action: 'UPDATE_ROLE',
+      targetType: 'profiles',
+      targetId: userId,
+      details: { requestedRole, profileRole: targetProfileRole, adminSubRole: targetAdminSubRole },
+      callerJwt: adminAuth.token
+    });
 
     // Broadcast role update & send push
     relayRealtimeBroadcast(`vybe_user_push:${userId}`, {
       type: 'ROLE_UPDATE',
-      role,
+      role: targetAdminSubRole || targetProfileRole,
       recipient_id: userId,
       title: '👑 Account Role Updated',
-      body: `Your platform role has been updated to ${role}.`
+      body: `Your platform role has been updated to ${targetAdminSubRole || targetProfileRole}.`
     });
 
     getTokensForUser(userId).then(tokens => {
@@ -990,17 +1257,18 @@ const server = http.createServer(async (req, res) => {
         tokens,
         topic: `vybe_user_${String(userId).replace(/[^a-zA-Z0-9-_.~%]/g, '_')}`,
         title: '👑 Account Role Updated',
-        body: `Your platform role has been updated to ${role}.`,
-        data: { type: 'ROLE_UPDATE', role },
+        body: `Your platform role has been updated to ${targetAdminSubRole || targetProfileRole}.`,
+        data: { type: 'ROLE_UPDATE', role: targetAdminSubRole || targetProfileRole },
         channelId: 'vybe_system_high_v2'
       });
     }).catch(() => {});
 
     sendJson(res, 200, {
       success: true,
-      message: `Role updated to ${role} for ${username || userId}`,
+      message: `Role updated to ${targetAdminSubRole || targetProfileRole} for ${username || userId}`,
       userId,
-      role
+      role: targetAdminSubRole || targetProfileRole,
+      profileRole: targetProfileRole
     });
     return;
   }
@@ -1008,68 +1276,78 @@ const server = http.createServer(async (req, res) => {
   // 4. SUSPEND / BAN / RESTORE USER STATUS
   if (cleanUrl === '/api/v1/admin/user-status' && req.method === 'POST') {
     const body = await readJsonBody(req);
-    const { userId, action, reason, durationHours = 24, username, adminEmail } = body;
-    if (!userId || !action) {
-      sendJson(res, 400, { error: 'userId and action required' });
+    const { userId, action, reason, durationHours = 24, username } = body;
+    const normalizedAction = String(action || '').toUpperCase().trim();
+    const ALLOWED_USER_STATUS_ACTIONS = new Set(['SUSPEND', 'BAN', 'WARN', 'RESTRICT', 'RESTORE']);
+
+    if (!userId || !UUID_RE.test(String(userId)) || !ALLOWED_USER_STATUS_ACTIONS.has(normalizedAction)) {
+      sendJson(res, 400, { error: 'Valid UUID userId and action (SUSPEND, BAN, WARN, RESTRICT, RESTORE) required.' });
       return;
     }
 
+    if (String(adminAuth.userId).toLowerCase() === String(userId).toLowerCase()) {
+      sendJson(res, 403, { error: 'Security Policy: Administrators cannot moderate their own account status.' });
+      return;
+    }
+
+    const safeHours = Math.max(1, Math.min(8760, Number(durationHours) || 24));
+    const safeReason = String(reason || '').trim();
     const state = loadAdminState();
     state.statuses = state.statuses || {};
     state.statuses[userId] = state.statuses[userId] || {};
 
     let patch = {};
-    if (action === 'SUSPEND') {
-      const until = new Date(Date.now() + durationHours * 3600 * 1000).toISOString();
+    let expiresAtIso = null;
+    if (normalizedAction === 'SUSPEND') {
+      expiresAtIso = new Date(Date.now() + safeHours * 3600 * 1000).toISOString();
       state.statuses[userId].is_suspended = true;
       state.statuses[userId].is_banned = false;
-      state.statuses[userId].suspension_reason = reason || `${durationHours}h enforcement`;
-      state.statuses[userId].suspended_until = until;
-      patch = { is_suspended: true, suspension_reason: reason || `${durationHours}h enforcement`, suspended_until: until };
-    } else if (action === 'BAN') {
+      state.statuses[userId].suspension_reason = safeReason || `${safeHours}h enforcement`;
+      state.statuses[userId].suspended_until = expiresAtIso;
+      patch = { is_suspended: true, suspension_reason: safeReason || `${safeHours}h enforcement`, suspended_until: expiresAtIso };
+    } else if (normalizedAction === 'BAN') {
       state.statuses[userId].is_banned = true;
       state.statuses[userId].is_suspended = false;
-      state.statuses[userId].ban_reason = reason || 'Admin account termination';
-      patch = { is_banned: true, ban_reason: reason || 'Admin account termination' };
-    } else if (action === 'WARN') {
+      state.statuses[userId].ban_reason = safeReason || 'Admin account termination';
+      patch = { is_banned: true, ban_reason: safeReason || 'Admin account termination' };
+    } else if (normalizedAction === 'WARN') {
       state.warnings = state.warnings || {};
       state.warnings[userId] = state.warnings[userId] || [];
       state.warnings[userId].unshift({
-        reason: reason || 'Community guidelines violation notice',
+        reason: safeReason || 'Community guidelines violation notice',
         timestamp: new Date().toISOString(),
-        adminEmail: adminEmail || 'Admin'
+        adminEmail: adminAuth.email || 'Admin'
       });
-      // Send warning push notification
       relayRealtimeBroadcast(`vybe_user_push:${userId}`, {
         type: 'ACCOUNT_WARNING',
         title: '⚠️ Community Guidelines Warning',
-        body: `Your account received a moderation notice: ${reason || 'Please review VYBE Community Guidelines.'}`
+        body: `Your account received a moderation notice: ${safeReason || 'Please review VYBE Community Guidelines.'}`
       });
       getTokensForUser(userId).then(tokens => {
         dispatchFcmIfConfigured({
           tokens,
           topic: `vybe_user_${String(userId).replace(/[^a-zA-Z0-9-_.~%]/g, '_')}`,
           title: '⚠️ Community Guidelines Warning',
-          body: `Your account received a moderation notice: ${reason || 'Please review VYBE Community Guidelines.'}`,
-          data: { type: 'ACCOUNT_WARNING', reason: reason || '' },
+          body: `Your account received a moderation notice: ${safeReason || 'Please review VYBE Community Guidelines.'}`,
+          data: { type: 'ACCOUNT_WARNING', reason: safeReason },
           channelId: 'vybe_system_high_v2'
         });
       }).catch(() => {});
-    } else if (action === 'RESTRICT') {
-      const until = new Date(Date.now() + durationHours * 3600 * 1000).toISOString();
+    } else if (normalizedAction === 'RESTRICT') {
+      expiresAtIso = new Date(Date.now() + safeHours * 3600 * 1000).toISOString();
       state.restrictions = state.restrictions || {};
       state.restrictions[userId] = {
         isRestricted: true,
-        reason: reason || `Temporary feature restriction for ${durationHours}h`,
-        restrictedUntil: until,
-        adminEmail
+        reason: safeReason || `Temporary feature restriction for ${safeHours}h`,
+        restrictedUntil: expiresAtIso,
+        adminEmail: adminAuth.email || 'Admin'
       };
       relayRealtimeBroadcast(`vybe_user_push:${userId}`, {
         type: 'ACCOUNT_RESTRICTED',
         title: '🔒 Account Interaction Restricted',
-        body: `Your account has been temporarily restricted for ${durationHours}h: ${reason || 'Violation of platform rules'}.`
+        body: `Your account has been temporarily restricted for ${safeHours}h: ${safeReason || 'Violation of platform rules'}.`
       });
-    } else if (action === 'RESTORE') {
+    } else if (normalizedAction === 'RESTORE') {
       state.statuses[userId].is_banned = false;
       state.statuses[userId].is_suspended = false;
       state.statuses[userId].ban_reason = null;
@@ -1081,13 +1359,13 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    if (action === 'BAN' || action === 'SUSPEND' || action === 'RESTORE') {
-      const statusTitle = action === 'BAN' ? '🚫 Account Suspended' : (action === 'SUSPEND' ? '⏳ Account Temporarily Suspended' : '✅ Account Restored');
-      const statusBody = action === 'RESTORE' ? 'Your account has been fully restored by Platform Administration.' : `Status notification: ${reason || 'Please contact VYBE support.'}`;
+    if (normalizedAction === 'BAN' || normalizedAction === 'SUSPEND' || normalizedAction === 'RESTORE') {
+      const statusTitle = normalizedAction === 'BAN' ? '🚫 Account Suspended' : (normalizedAction === 'SUSPEND' ? '⏳ Account Temporarily Suspended' : '✅ Account Restored');
+      const statusBody = normalizedAction === 'RESTORE' ? 'Your account has been fully restored by Platform Administration.' : `Status notification: ${safeReason || 'Please contact VYBE support.'}`;
       relayRealtimeBroadcast(`vybe_user_push:${userId}`, {
         type: 'USER_STATUS_UPDATE',
-        action,
-        reason: reason || '',
+        action: normalizedAction,
+        reason: safeReason,
         title: statusTitle,
         body: statusBody
       });
@@ -1097,31 +1375,68 @@ const server = http.createServer(async (req, res) => {
           topic: `vybe_user_${String(userId).replace(/[^a-zA-Z0-9-_.~%]/g, '_')}`,
           title: statusTitle,
           body: statusBody,
-          data: { type: 'USER_STATUS_UPDATE', action, reason: reason || '' },
+          data: { type: 'USER_STATUS_UPDATE', action: normalizedAction, reason: safeReason },
           channelId: 'vybe_system_high_v2'
         });
       }).catch(() => {});
     }
 
+    if (Object.keys(patch).length > 0) {
+      const dbOk = await patchSupabaseProfile(userId, patch, adminAuth.token);
+      if (!dbOk) {
+        sendJson(res, 502, { error: 'Failed updating user moderation status in Supabase database.' });
+        return;
+      }
+    }
+
+    // Persist moderation action history in Supabase
+    try {
+      await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/user_moderation_actions`, {
+        method: 'POST',
+        headers: buildSupabaseHeaders({
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal'
+        }, true, adminAuth.token),
+        body: JSON.stringify({
+          user_id: userId,
+          action_type: normalizedAction === 'RESTORE' ? 'UNBAN' : normalizedAction,
+          reason: safeReason || `Admin action: ${normalizedAction}`,
+          duration_hours: (normalizedAction === 'SUSPEND' || normalizedAction === 'RESTRICT') ? safeHours : null,
+          expires_at: expiresAtIso,
+          is_active: normalizedAction !== 'RESTORE',
+          created_by: adminAuth.userId
+        })
+      });
+    } catch {}
+
+    await recordSupabaseAuditLog({
+      adminId: adminAuth.userId,
+      adminEmail: adminAuth.email,
+      action: `USER_${normalizedAction}`,
+      targetType: 'profiles',
+      targetId: userId,
+      details: { action: normalizedAction, reason: safeReason || null, durationHours: safeHours },
+      callerJwt: adminAuth.token
+    });
+
     state.auditLogs = state.auditLogs || [];
     state.auditLogs.unshift({
       timestamp: new Date().toISOString(),
-      action: `USER_${action}`,
+      action: `USER_${normalizedAction}`,
       userId,
       username: username || 'User',
-      adminEmail: adminEmail || 'Owner Admin',
-      details: { action, reason, patch }
+      adminEmail: adminAuth.email || 'Admin',
+      details: { action: normalizedAction, reason: safeReason, patch }
     });
     if (state.auditLogs.length > 200) state.auditLogs.pop();
 
     saveAdminState(state);
-    patchSupabaseProfile(userId, patch);
 
     sendJson(res, 200, {
       success: true,
-      message: `Account status set to ${action} for ${username || userId}`,
+      message: `Account status set to ${normalizedAction} for ${username || userId}`,
       userId,
-      action
+      action: normalizedAction
     });
     return;
   }
@@ -1129,48 +1444,191 @@ const server = http.createServer(async (req, res) => {
   // 5. CONTENT MODERATION ACTION (DELETE / ARCHIVE ON SUPABASE)
   if (cleanUrl === '/api/v1/admin/content-action' && req.method === 'POST') {
     const body = await readJsonBody(req);
-    const { contentId, action, adminEmail } = body;
-    const state = loadAdminState();
-    state.contentModeration = state.contentModeration || {};
-    state.contentModeration[contentId] = { action, timestamp: new Date().toISOString(), adminEmail };
-    saveAdminState(state);
-
-    if (contentId) {
-      if (action === 'DELETE' || action === 'REMOVE') {
-        fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/posts?id=eq.${encodeURIComponent(contentId)}`, {
-          method: 'DELETE',
-          headers: {
-            'apikey': SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-          }
-        }).catch(() => {});
-      } else if (action === 'ARCHIVE' || action === 'HIDE') {
-        fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/posts?id=eq.${encodeURIComponent(contentId)}`, {
-          method: 'PATCH',
-          headers: {
-            'apikey': SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ is_archived: true })
-        }).catch(() => {});
-      }
-      relayRealtimeBroadcast('vybe_feed_updates', { event: 'POST_REMOVED', postId: contentId });
+    const { contentId, action } = body;
+    if (!contentId || !UUID_RE.test(String(contentId))) {
+      sendJson(res, 400, { error: 'Valid UUID contentId required.' });
+      return;
     }
 
-    sendJson(res, 200, { success: true, contentId, action });
+    const actionUpper = String(action || '').toUpperCase();
+    let dbResp = null;
+    if (actionUpper === 'DELETE' || actionUpper === 'REMOVE') {
+      dbResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/posts?id=eq.${encodeURIComponent(contentId)}`, {
+        method: 'DELETE',
+        headers: buildSupabaseHeaders({}, true, adminAuth.token)
+      });
+    } else if (actionUpper === 'ARCHIVE' || actionUpper === 'HIDE') {
+      dbResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/posts?id=eq.${encodeURIComponent(contentId)}`, {
+        method: 'PATCH',
+        headers: buildSupabaseHeaders({ 'Content-Type': 'application/json' }, true, adminAuth.token),
+        body: JSON.stringify({ is_archived: true })
+      });
+    } else {
+      sendJson(res, 400, { error: 'Unsupported content moderation action.' });
+      return;
+    }
+
+    if (!dbResp || !dbResp.ok) {
+      sendJson(res, dbResp?.status || 502, { error: 'Failed applying content moderation action in Supabase.' });
+      return;
+    }
+
+    await recordSupabaseAuditLog({
+      adminId: adminAuth.userId,
+      adminEmail: adminAuth.email,
+      action: `POST_${actionUpper}`,
+      targetType: 'posts',
+      targetId: String(contentId),
+      details: { action: actionUpper },
+      callerJwt: adminAuth.token
+    });
+
+    const state = loadAdminState();
+    state.contentModeration = state.contentModeration || {};
+    state.contentModeration[contentId] = { action: actionUpper, timestamp: new Date().toISOString(), adminEmail: adminAuth.email };
+    saveAdminState(state);
+    relayRealtimeBroadcast('vybe_feed_updates', { event: 'POST_REMOVED', postId: contentId });
+
+    sendJson(res, 200, { success: true, contentId, action: actionUpper });
     return;
   }
 
-  // 6. REPORT ACTION
+  // 6. REPORT ACTION (Persisted in Supabase public.reports + audit log)
   if (cleanUrl === '/api/v1/admin/report-action' && req.method === 'POST') {
     const body = await readJsonBody(req);
-    const { reportId, action, notes, adminEmail } = body;
+    const { reportId, action, notes } = body;
+    if (!reportId || !UUID_RE.test(String(reportId))) {
+      sendJson(res, 400, { error: 'Valid UUID reportId is required.' });
+      return;
+    }
+
+    const rawAction = String(action || '').toUpperCase().trim();
+    const STATUS_MAP = {
+      OPEN: 'OPEN',
+      INVESTIGATE: 'INVESTIGATING',
+      INVESTIGATING: 'INVESTIGATING',
+      RESOLVE: 'RESOLVED',
+      RESOLVED: 'RESOLVED',
+      APPROVE: 'RESOLVED',
+      DISMISS: 'DISMISSED',
+      DISMISSED: 'DISMISSED',
+      REJECT: 'DISMISSED'
+    };
+    const mappedStatus = STATUS_MAP[rawAction];
+    if (!mappedStatus) {
+      sendJson(res, 400, { error: 'action must map to OPEN, INVESTIGATING, RESOLVED, or DISMISSED.' });
+      return;
+    }
+
+    let dbResp = null;
+    try {
+      dbResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/reports?id=eq.${encodeURIComponent(reportId)}`, {
+        method: 'PATCH',
+        headers: buildSupabaseHeaders({
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
+        }, true, adminAuth.token),
+        body: JSON.stringify({
+          status: mappedStatus,
+          admin_notes: notes ? String(notes).slice(0, 1000) : null
+        })
+      });
+    } catch (err) {
+      sendJson(res, 502, { error: 'Failed communicating with Supabase reports table: ' + err.message });
+      return;
+    }
+
+    if (!dbResp || !dbResp.ok) {
+      sendJson(res, dbResp?.status || 502, { error: 'Failed updating report status in Supabase database.' });
+      return;
+    }
+
+    await recordSupabaseAuditLog({
+      adminId: adminAuth.userId,
+      adminEmail: adminAuth.email,
+      action: `REPORT_${mappedStatus}`,
+      targetType: 'reports',
+      targetId: String(reportId),
+      details: { status: mappedStatus, notes: notes || null },
+      callerJwt: adminAuth.token
+    });
+
     const state = loadAdminState();
     state.reports = state.reports || {};
-    state.reports[reportId] = { action, notes, timestamp: new Date().toISOString(), adminEmail };
+    state.reports[reportId] = {
+      action: mappedStatus,
+      notes: notes || null,
+      timestamp: new Date().toISOString(),
+      adminEmail: adminAuth.email || 'Admin'
+    };
     saveAdminState(state);
-    sendJson(res, 200, { success: true, reportId, action });
+    sendJson(res, 200, { success: true, reportId, status: mappedStatus, action: mappedStatus });
+    return;
+  }
+
+  // 6b. VERIFICATION REQUESTS QUEUE & REVIEW (Persisted via RPC + PII stripped)
+  if (cleanUrl === '/api/v1/admin/verification-requests' && req.method === 'GET') {
+    try {
+      const resp = await fetch(
+        `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/verification_requests?select=id,user_id,request_type,full_name,category,identity_document_url,supporting_links,status,rejection_reason,reviewed_by,reviewed_at,created_at,updated_at,profiles:user_id(id,username,display_name,avatar_url)&order=created_at.desc&limit=100`,
+        { headers: buildSupabaseHeaders({}, true, adminAuth.token) }
+      );
+      if (!resp.ok) {
+        sendJson(res, resp.status, { error: 'Failed fetching verification requests from Supabase.' });
+        return;
+      }
+      const requests = await resp.json();
+      sendJson(res, 200, { success: true, requests: Array.isArray(requests) ? requests : [] });
+    } catch (err) {
+      sendJson(res, 502, { error: 'Error communicating with Supabase verification queue: ' + err.message });
+    }
+    return;
+  }
+
+  if (cleanUrl === '/api/v1/admin/verification-requests/review' && req.method === 'POST') {
+    const body = await readJsonBody(req);
+    const requestId = body.requestId || body.id;
+    const decision = String(body.decision || '').toUpperCase().trim();
+    const notes = body.notes ? String(body.notes) : null;
+    const vipExpiresAt = body.vipExpiresAt || null;
+
+    if (!requestId || !UUID_RE.test(String(requestId))) {
+      sendJson(res, 400, { error: 'Valid UUID requestId is required.' });
+      return;
+    }
+    if (!['APPROVED', 'REJECTED', 'MORE_INFO_REQUIRED'].includes(decision)) {
+      sendJson(res, 400, { error: 'decision must be APPROVED, REJECTED, or MORE_INFO_REQUIRED.' });
+      return;
+    }
+
+    try {
+      const rpcResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/rpc/admin_review_verification_request`, {
+        method: 'POST',
+        headers: buildSupabaseHeaders({ 'Content-Type': 'application/json' }, true, adminAuth.token),
+        body: JSON.stringify({
+          p_request_id: requestId,
+          p_decision: decision,
+          p_notes: notes,
+          p_admin_id: adminAuth.userId,
+          p_vip_expires_at: vipExpiresAt
+        })
+      });
+
+      if (!rpcResp.ok) {
+        const errText = await rpcResp.text().catch(() => '');
+        const status = (rpcResp.status === 401 || rpcResp.status === 403) ? rpcResp.status : 502;
+        sendJson(res, status, {
+          error: 'Supabase admin_review_verification_request RPC failed',
+          details: errText.slice(0, 200)
+        });
+        return;
+      }
+
+      const result = await rpcResp.json().catch(() => ({ success: true, status: decision }));
+      sendJson(res, 200, { success: true, requestId, decision, result });
+    } catch (err) {
+      sendJson(res, 502, { error: 'Failed communicating with Supabase verification RPC: ' + err.message });
+    }
     return;
   }
 
@@ -1312,7 +1770,7 @@ const server = http.createServer(async (req, res) => {
 
     try {
       const pResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?select=id,is_verified,is_vip,is_worker,is_banned,is_suspended,created_at&limit=1000`, {
-        headers: { 'apikey': SUPABASE_ANON_KEY }
+        headers: buildSupabaseHeaders({}, true, adminAuth.token)
       });
       if (pResp.ok) {
         const users = await pResp.json();
@@ -1345,7 +1803,7 @@ const server = http.createServer(async (req, res) => {
 
     try {
       const postResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/posts?select=id,is_vybes_reel,is_unfiltered,likes_count,comments_count,shares_count&limit=1000`, {
-        headers: { 'apikey': SUPABASE_ANON_KEY }
+        headers: buildSupabaseHeaders({}, true, adminAuth.token)
       });
       if (postResp.ok) {
         const posts = await postResp.json();
@@ -1362,7 +1820,7 @@ const server = http.createServer(async (req, res) => {
 
     try {
       const sResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/stories?select=id&limit=200`, {
-        headers: { 'apikey': SUPABASE_ANON_KEY }
+        headers: buildSupabaseHeaders({}, true, adminAuth.token)
       });
       if (sResp.ok) {
         const stories = await sResp.json();
@@ -1372,7 +1830,7 @@ const server = http.createServer(async (req, res) => {
 
     try {
       const repResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/reports?select=id,status&limit=500`, {
-        headers: { 'apikey': SUPABASE_ANON_KEY }
+        headers: buildSupabaseHeaders({}, true, adminAuth.token)
       });
       if (repResp.ok) {
         const reps = await repResp.json();
@@ -1431,7 +1889,7 @@ const server = http.createServer(async (req, res) => {
     let posts = [];
     try {
       const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/posts?select=id,author_id,caption,media_type,media_urls,is_vybes_reel,is_unfiltered,likes_count,comments_count,shares_count,created_at,profiles:author_id(username,display_name,avatar_url)&order=created_at.desc&limit=60`, {
-        headers: { 'apikey': SUPABASE_ANON_KEY }
+        headers: buildSupabaseHeaders({}, true, adminAuth.token)
       });
       if (resp.ok) {
         posts = await resp.json();
@@ -1474,7 +1932,7 @@ const server = http.createServer(async (req, res) => {
 
     try {
       const cResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/time_capsules?select=id,title,category_theme,unlock_date_formatted,is_unlocked&limit=100`, {
-        headers: { 'apikey': SUPABASE_ANON_KEY }
+        headers: buildSupabaseHeaders({}, true, adminAuth.token)
       });
       if (cResp.ok) {
         const cList = await cResp.json();
@@ -1484,7 +1942,7 @@ const server = http.createServer(async (req, res) => {
 
     try {
       const cpResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/crossed_paths?select=id,title,broad_location,venue_or_event_name,encounter_date&limit=100`, {
-        headers: { 'apikey': SUPABASE_ANON_KEY }
+        headers: buildSupabaseHeaders({}, true, adminAuth.token)
       });
       if (cpResp.ok) {
         const cpList = await cpResp.json();
@@ -1547,27 +2005,39 @@ const server = http.createServer(async (req, res) => {
   // 12. TOGGLE EXPERIENCE FEATURE FLAG
   if (cleanUrl === '/api/v1/admin/experiences/toggle' && req.method === 'POST') {
     const body = await readJsonBody(req);
-    const { experienceKey, enabled, adminEmail } = body;
+    const { experienceKey, enabled } = body;
     if (!experienceKey) {
       sendJson(res, 400, { error: 'experienceKey required' });
       return;
     }
+    const cleanKey = String(experienceKey).trim();
     const state = loadAdminState();
     state.featureFlags = state.featureFlags || {};
-    state.featureFlags[experienceKey] = Boolean(enabled);
+    state.featureFlags[cleanKey] = Boolean(enabled);
 
     state.auditLogs = state.auditLogs || [];
     state.auditLogs.unshift({
       timestamp: new Date().toISOString(),
-      action: `EXPERIENCE_TOGGLE_${experienceKey.toUpperCase()}`,
+      action: `EXPERIENCE_TOGGLE_${cleanKey.toUpperCase()}`,
       userId: 'PLATFORM',
       username: 'System',
-      adminEmail: adminEmail || 'Owner Admin',
-      details: { experience: experienceKey, enabled: Boolean(enabled) }
+      adminEmail: adminAuth.email || 'Admin',
+      details: { experience: cleanKey, enabled: Boolean(enabled) }
     });
 
     saveAdminState(state);
-    sendJson(res, 200, { success: true, experienceKey, enabled: Boolean(enabled) });
+
+    await recordSupabaseAuditLog({
+      adminId: adminAuth.userId,
+      adminEmail: adminAuth.email,
+      action: `EXPERIENCE_TOGGLE_${cleanKey.toUpperCase()}`,
+      targetType: 'PLATFORM_CONFIG',
+      targetId: cleanKey,
+      details: { experience: cleanKey, enabled: Boolean(enabled) },
+      callerJwt: adminAuth.token
+    });
+
+    sendJson(res, 200, { success: true, experienceKey: cleanKey, enabled: Boolean(enabled) });
     return;
   }
 
@@ -1584,7 +2054,7 @@ const server = http.createServer(async (req, res) => {
 
   if (cleanUrl === '/api/v1/admin/platform-config' && req.method === 'POST') {
     const body = await readJsonBody(req);
-    const { maintenanceMode, maintenanceMessage, announcementBanner, announcementActive, announcementLink, adminEmail } = body;
+    const { maintenanceMode, maintenanceMessage, announcementBanner, announcementActive, announcementLink } = body;
     const state = loadAdminState();
     state.platformConfig = state.platformConfig || {};
     if (maintenanceMode !== undefined) state.platformConfig.maintenanceMode = Boolean(maintenanceMode);
@@ -1599,22 +2069,33 @@ const server = http.createServer(async (req, res) => {
       action: 'UPDATE_PLATFORM_CONFIG',
       userId: 'PLATFORM',
       username: 'System',
-      adminEmail: adminEmail || 'Owner Admin',
+      adminEmail: adminAuth.email || 'Admin',
       details: { config: state.platformConfig }
     });
 
     saveAdminState(state);
+
+    await recordSupabaseAuditLog({
+      adminId: adminAuth.userId,
+      adminEmail: adminAuth.email,
+      action: 'UPDATE_PLATFORM_CONFIG',
+      targetType: 'PLATFORM_CONFIG',
+      targetId: 'GLOBAL',
+      details: { config: state.platformConfig },
+      callerJwt: adminAuth.token
+    });
+
     sendJson(res, 200, { success: true, config: state.platformConfig });
     return;
   }
 
-  // 14. ADMIN STAFF & ROLES DIRECTORY
+  // 14. ADMIN STAFF & ROLES DIRECTORY (Zero hardcoded owner emails; reads DB roles only)
   if (cleanUrl === '/api/v1/admin/staff' && req.method === 'GET') {
     const state = loadAdminState();
     let users = [];
     try {
-      const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?select=id,username,display_name,email,avatar_url,role,created_at&limit=200`, {
-        headers: { 'apikey': SUPABASE_ANON_KEY }
+      const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?select=id,username,display_name,avatar_url,role,created_at&limit=200`, {
+        headers: buildSupabaseHeaders({}, true, adminAuth.token)
       });
       if (resp.ok) {
         users = await resp.json();
@@ -1622,19 +2103,16 @@ const server = http.createServer(async (req, res) => {
     } catch {}
 
     const staff = users.filter(u => {
-      const r = state.roles && state.roles[u.id] ? state.roles[u.id] : u.role;
-      const isOwner = (u.email === 'renukadas083@gmail.com' || u.email === 'nrnexthq@gmail.com' || u.email === 'nimai.roul@olaelectric.com');
-      return isOwner || (r && r !== 'USER');
+      const r = String((state.roles && state.roles[u.id] ? state.roles[u.id] : u.role) || 'USER').toUpperCase();
+      return r !== 'USER';
     }).map(u => {
-      const isOwner = (u.email === 'renukadas083@gmail.com' || u.email === 'nrnexthq@gmail.com' || u.email === 'nimai.roul@olaelectric.com');
-      const assignedRole = isOwner ? 'SUPER_ADMIN' : (state.roles && state.roles[u.id] ? state.roles[u.id] : (u.role || 'ADMIN'));
+      const assignedRole = String((state.roles && state.roles[u.id] ? state.roles[u.id] : (u.role || 'ADMIN'))).toUpperCase();
       return {
         id: u.id,
         username: u.username,
         display_name: u.display_name,
-        email: u.email,
         role: assignedRole,
-        is_owner: isOwner,
+        is_owner: SUPER_ADMIN_ROLES.has(assignedRole),
         avatar_url: u.avatar_url,
         created_at: u.created_at
       };
@@ -1644,7 +2122,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 15. CSV DATA EXPORT FOR AUDIT & COMPLIANCE
+  // 15. CSV DATA EXPORT FOR AUDIT & COMPLIANCE (PII stripped)
   if (cleanUrl.startsWith('/api/v1/admin/export/')) {
     const type = cleanUrl.replace('/api/v1/admin/export/', '').toLowerCase().trim();
     const state = loadAdminState();
@@ -1666,16 +2144,16 @@ const server = http.createServer(async (req, res) => {
     if (type === 'users') {
       let users = [];
       try {
-        const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?select=id,username,display_name,email,role,is_verified,is_vip,is_worker,is_banned,created_at&limit=500`, {
-          headers: { 'apikey': SUPABASE_ANON_KEY }
+        const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?select=id,username,display_name,role,is_verified,is_vip,is_worker,is_banned,created_at&limit=500`, {
+          headers: buildSupabaseHeaders({}, true, adminAuth.token)
         });
         if (resp.ok) users = await resp.json();
       } catch {}
-      let csv = 'ID,Username,Display_Name,Email,Role,Verified,VIP,Official,Banned,Joined\n';
+      let csv = 'ID,Username,Display_Name,Role,Verified,VIP,Official,Banned,Joined\n';
       users.forEach(u => {
         const b = state.badges && state.badges[u.id];
         const s = state.statuses && state.statuses[u.id];
-        csv += `"${u.id}","${u.username}","${(u.display_name || '').replace(/"/g, '""')}","${u.email || ''}","${state.roles && state.roles[u.id] ? state.roles[u.id] : u.role}","${b?.is_verified ?? u.is_verified}","${b?.is_vip ?? u.is_vip}","${b?.is_worker ?? u.is_worker}","${s?.is_banned ?? u.is_banned}","${u.created_at}"\n`;
+        csv += `"${u.id}","${u.username}","${(u.display_name || '').replace(/"/g, '""')}","${state.roles && state.roles[u.id] ? state.roles[u.id] : u.role}","${b?.is_verified ?? u.is_verified}","${b?.is_vip ?? u.is_vip}","${b?.is_worker ?? u.is_worker}","${s?.is_banned ?? u.is_banned}","${u.created_at}"\n`;
       });
       res.writeHead(200, {
         'Content-Type': 'text/csv; charset=utf-8',
@@ -1821,30 +2299,62 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // Path Traversal & Sensitive Manifest Protection
+  let safeDecodedPath = '';
+  try {
+    safeDecodedPath = decodeURIComponent(cleanUrl).replace(/\\/g, '/');
+  } catch {
+    res.writeHead(400, { 'Content-Type': 'text/plain' });
+    res.end('Bad Request');
+    return;
+  }
+
+  const rawSegments = String(req.url || '/').split('?')[0].replace(/\\/g, '/').split('/').filter(Boolean);
+  const decodedSegments = safeDecodedPath.split('/').filter(Boolean);
+  const BLOCKED_MANIFEST_RE = /^(package(-lock)?\.json|tsconfig.*\.json|vite\.config\.[tj]s|netlify.*\.toml|capacitor\.config\.[tj]s|firebase-service-account\.json|admin_state_override\.json)$/i;
+  if (
+    rawSegments.some(seg => seg === '..' || seg.startsWith('.') || BLOCKED_MANIFEST_RE.test(seg)) ||
+    decodedSegments.some(seg => seg === '..' || seg.startsWith('.') || BLOCKED_MANIFEST_RE.test(seg))
+  ) {
+    res.writeHead(403, { 'Content-Type': 'text/plain' });
+    res.end('Forbidden');
+    return;
+  }
+
+  const isSafeWithinDir = (baseDir, candidate) => {
+    const rel = path.relative(baseDir, candidate);
+    return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+  };
+
+  const relRequestPath = safeDecodedPath.replace(/^\/+/, '');
+
   // 3. Static Assets: Check PUBLIC_DIR first (brand icons, badges, etc.)
-  const publicCandidate = path.join(PUBLIC_DIR, cleanUrl.replace(/^\/+/, ''));
-  if (publicCandidate.startsWith(PUBLIC_DIR) && fs.existsSync(publicCandidate) && fs.statSync(publicCandidate).isFile()) {
+  const publicCandidate = path.resolve(PUBLIC_DIR, relRequestPath);
+  if (isSafeWithinDir(PUBLIC_DIR, publicCandidate) && fs.existsSync(publicCandidate) && fs.statSync(publicCandidate).isFile()) {
     const ext = path.extname(publicCandidate).toLowerCase();
     return sendStaticFile(publicCandidate, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
   }
 
   // 4. Static Assets: Check DIST_DIR (Vite JS/CSS bundles) and PUBLIC_WEBAPP_DIR fallback
-  const distCandidate = path.join(DIST_DIR, cleanUrl.replace(/^\/+/, ''));
-  if (distCandidate.startsWith(DIST_DIR) && fs.existsSync(distCandidate) && fs.statSync(distCandidate).isFile()) {
+  const distCandidate = path.resolve(DIST_DIR, relRequestPath);
+  if (isSafeWithinDir(DIST_DIR, distCandidate) && fs.existsSync(distCandidate) && fs.statSync(distCandidate).isFile()) {
     const ext = path.extname(distCandidate).toLowerCase();
     return sendStaticFile(distCandidate, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
   }
-  const persistedWebappCandidate = path.join(PUBLIC_WEBAPP_DIR, cleanUrl.replace(/^\/+/, ''));
-  if (persistedWebappCandidate.startsWith(PUBLIC_WEBAPP_DIR) && fs.existsSync(persistedWebappCandidate) && fs.statSync(persistedWebappCandidate).isFile()) {
+  const persistedWebappCandidate = path.resolve(PUBLIC_WEBAPP_DIR, relRequestPath);
+  if (isSafeWithinDir(PUBLIC_WEBAPP_DIR, persistedWebappCandidate) && fs.existsSync(persistedWebappCandidate) && fs.statSync(persistedWebappCandidate).isFile()) {
     const ext = path.extname(persistedWebappCandidate).toLowerCase();
     return sendStaticFile(persistedWebappCandidate, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
   }
 
-  // 5. Static Assets: Check WEB_DIR (Admin portal badges and assets)
-  const webCandidate = path.join(WEB_DIR, cleanUrl.replace(/^\/admin/, '').replace(/^\/+/, ''));
-  if (webCandidate.startsWith(WEB_DIR) && fs.existsSync(webCandidate) && fs.statSync(webCandidate).isFile()) {
-    const ext = path.extname(webCandidate).toLowerCase();
-    return sendStaticFile(webCandidate, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
+  // 5. Static Assets: Check WEB_DIR strictly for /admin/* and /badges/* routes
+  if (safeDecodedPath.startsWith('/admin/') || safeDecodedPath.startsWith('/badges/')) {
+    const webRelPath = safeDecodedPath.replace(/^\/admin\/?/, '').replace(/^\/+/, '');
+    const webCandidate = path.resolve(WEB_DIR, webRelPath);
+    if (isSafeWithinDir(WEB_DIR, webCandidate) && fs.existsSync(webCandidate) && fs.statSync(webCandidate).isFile()) {
+      const ext = path.extname(webCandidate).toLowerCase();
+      return sendStaticFile(webCandidate, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
+    }
   }
 
   // 6. SPA Route Fallback:
@@ -1879,6 +2389,10 @@ const server = http.createServer(async (req, res) => {
   res.end('Not Found');
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[VYBE Web Portal & Push Gateway] Listening on http://0.0.0.0:${PORT}`);
-});
+if (require.main === module) {
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`[VYBE Web Portal & Push Gateway] Listening on http://0.0.0.0:${PORT}`);
+  });
+}
+
+module.exports = { server, verifyUserAuth, verifyAdminAuth, checkRateLimit };

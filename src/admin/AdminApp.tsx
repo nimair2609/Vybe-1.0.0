@@ -12,7 +12,16 @@ import {
   fetchLivePosts,
   adminSignInWithPassword,
   getStoredAdminSession,
-  adminSignOut
+  adminSignOut,
+  fetchLiveVerificationRequests,
+  reviewVerificationRequestInSupabase,
+  fetchLiveReports,
+  updateReportStatusInSupabase,
+  moderatePostInSupabase,
+  suspendUserInSupabase,
+  recordAdminAuditLogToSupabase,
+  fetchLiveAuditLogs,
+  LiveReportItem
 } from '../services/supabaseService';
 import { vybeDiagnostics, DiagnosticsSummary } from '../utils/performanceDiagnostics';
 import { vybeCache } from '../utils/indexedDbCache';
@@ -56,7 +65,7 @@ export const AdminApp: React.FC = () => {
     return Boolean(getStoredAdminSession().token);
   });
   const [adminKey, setAdminKey] = useState('');
-  const [adminEmail, setAdminEmail] = useState(() => getStoredAdminSession().email || 'nimair2609@gmail.com');
+  const [adminEmail, setAdminEmail] = useState(() => getStoredAdminSession().email || '');
   const [authError, setAuthError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
@@ -71,63 +80,11 @@ export const AdminApp: React.FC = () => {
   // Diagnostics State
   const [diagnostics, setDiagnostics] = useState<DiagnosticsSummary>(vybeDiagnostics.getSummary());
 
-  // Verification Applications State
-  const [verificationQueue, setVerificationQueue] = useState<VerificationApp[]>([
-    {
-      id: 'app_101',
-      userId: 'u_aarav',
-      username: 'aarav_mehta',
-      displayName: 'Aarav Mehta',
-      badge: 'VERIFIED_BLUE',
-      category: 'Independent Musician & Vocalist',
-      proof: 'Official Spotify Artist profile with 42,000 monthly listeners',
-      submittedAt: 'Today, 10:14 AM'
-    },
-    {
-      id: 'app_102',
-      userId: 'u_priya',
-      username: 'priya_visuals',
-      displayName: 'Priya Sharma',
-      badge: 'VIP_GOLD',
-      category: 'Cinematic Reel Creator',
-      proof: '140k reach across cinematic photography portfolio',
-      submittedAt: 'Yesterday, 3:30 PM'
-    },
-    {
-      id: 'app_103',
-      userId: 'u_kabir',
-      username: 'kabir_studios',
-      displayName: 'Kabir Studios',
-      badge: 'SHOP_GOLD',
-      category: 'Verified Streetwear & Merch Store',
-      proof: 'Registered Apparel Brand with GST certificate',
-      submittedAt: '2 days ago'
-    }
-  ]);
+  // Verification Applications State (Live Supabase Queue)
+  const [verificationQueue, setVerificationQueue] = useState<VerificationApp[]>([]);
 
-  // Reports Queue State
-  const [reports, setReports] = useState([
-    {
-      id: 'rep_1',
-      type: 'POST',
-      targetId: 'post_spambot_1',
-      reporter: '@rohan_99',
-      violator: '@crypto_bot_303',
-      reason: 'Automated repetitive advertising',
-      snippet: 'Earn 500% profit daily! Click link in bio to register!',
-      status: 'PENDING'
-    },
-    {
-      id: 'rep_2',
-      type: 'USER',
-      targetId: 'u_impersonator_2',
-      reporter: '@aarav_mehta',
-      violator: '@aarav_mehta_official_live',
-      reason: 'Impersonation of verified creator',
-      snippet: 'Using duplicate photo and asking for private donations',
-      status: 'PENDING'
-    }
-  ]);
+  // Reports Queue State (Live Supabase Queue)
+  const [reports, setReports] = useState<LiveReportItem[]>([]);
 
   // Broadcast Notification State
   const [broadcastTitle, setBroadcastTitle] = useState('');
@@ -143,12 +100,8 @@ export const AdminApp: React.FC = () => {
     maintenanceMode: false
   });
 
-  // Audit Logs
-  const [auditLogs, setAuditLogs] = useState<AuditRecord[]>([
-    { id: 'log_1', action: 'ADMIN_SESSION', admin: adminEmail, target: 'SYSTEM', details: 'Command Center session initialized', time: 'Just now' },
-    { id: 'log_2', action: 'EGRESS_OPTIMIZE', admin: 'SYSTEM_DAEMON', target: 'CACHE_ENGINE', details: 'IndexedDB persistent caching active (TTL 7-15 min)', time: '5 mins ago' },
-    { id: 'log_3', action: 'SECURITY_AUDIT', admin: 'SYSTEM_DAEMON', target: 'SUPABASE_RLS', details: 'Zero-trust Supabase RLS security policies enforced', time: '1 hour ago' }
-  ]);
+  // Audit Logs (Live Supabase Audit Trail)
+  const [auditLogs, setAuditLogs] = useState<AuditRecord[]>([]);
 
   // Auto-refresh diagnostics ticker
   useEffect(() => {
@@ -167,12 +120,57 @@ export const AdminApp: React.FC = () => {
   const loadPlatformData = async (forceRefresh: boolean = false) => {
     setIsLoadingData(true);
     try {
-      const [liveUsers, livePosts] = await Promise.all([
+      const token = localStorage.getItem('vybe_admin_jwt') || '';
+      const [liveUsers, livePosts, liveVerifs, liveReports, liveAudits, configRes] = await Promise.all([
         fetchLiveProfiles({ forceRefresh }),
-        fetchLivePosts(undefined, { limit: 50, forceRefresh })
+        fetchLivePosts(undefined, { limit: 50, forceRefresh }),
+        fetchLiveVerificationRequests(),
+        fetchLiveReports(),
+        fetchLiveAuditLogs(),
+        token
+          ? fetch('/api/v1/admin/platform-config', {
+              headers: { Authorization: `Bearer ${token}` }
+            }).then(r => (r.ok ? r.json() : null)).catch(() => null)
+          : Promise.resolve(null)
       ]);
-      if (liveUsers && liveUsers.length > 0) setUsers(liveUsers);
-      if (livePosts && livePosts.length > 0) setPosts(livePosts);
+      setUsers(liveUsers || []);
+      setPosts(livePosts || []);
+      setVerificationQueue(
+        (liveVerifs || [])
+          .filter(v => v.status === 'PENDING' || v.status === 'MORE_INFO_REQUIRED')
+          .map(v => ({
+            id: v.id,
+            userId: v.userId,
+            username: v.username,
+            displayName: v.displayName,
+            badge: v.badge,
+            category: v.category,
+            proof: v.proof,
+            submittedAt: v.submittedAt
+          }))
+      );
+      setReports((liveReports || []).filter(r => r.status === 'OPEN' || r.status === 'INVESTIGATING'));
+      setAuditLogs(
+        (liveAudits || []).map(a => ({
+          id: a.id,
+          action: a.action,
+          admin: a.adminEmail,
+          target: `${a.targetType}:${a.targetId}`,
+          details: a.details,
+          time: a.createdAt
+        }))
+      );
+      if (configRes?.featureFlags) {
+        const ff = configRes.featureFlags;
+        setFeatureFlags(prev => ({
+          ...prev,
+          unloadRooms: ff.unloadRooms ?? ff.unload ?? prev.unloadRooms,
+          crossedPaths: ff.crossedPaths ?? ff.crossed_paths ?? prev.crossedPaths,
+          timeCapsules: ff.timeCapsules ?? ff.time_capsule ?? prev.timeCapsules,
+          spiritualMode: ff.spiritualMode ?? prev.spiritualMode,
+          maintenanceMode: configRes.config?.maintenanceMode ?? prev.maintenanceMode
+        }));
+      }
       setDiagnostics(vybeDiagnostics.getSummary());
     } catch (err) {
       console.warn('Admin data load notice:', err);
@@ -222,15 +220,22 @@ export const AdminApp: React.FC = () => {
   };
 
   const recordAudit = (action: string, target: string, details: string) => {
+    const activeEmail = localStorage.getItem('vybe_admin_email') || adminEmail || 'admin';
     const newLog: AuditRecord = {
       id: `log_${Date.now()}`,
       action,
-      admin: adminEmail,
+      admin: activeEmail,
       target,
       details,
       time: 'Just now'
     };
     setAuditLogs(prev => [newLog, ...prev]);
+    recordAdminAuditLogToSupabase({
+      action,
+      targetType: 'ADMIN_PORTAL',
+      targetId: target,
+      details: { summary: details }
+    }).catch(() => {});
   };
 
   const showNotification = (msg: string) => {
@@ -238,108 +243,170 @@ export const AdminApp: React.FC = () => {
     setTimeout(() => setFeedback(null), 3500);
   };
 
-  // Badge Management Action (Syncs to Supabase profiles table)
-  const toggleUserBadge = (userId: string, badge: OfficialVybeBadge) => {
-    let nextIsVerified = false;
-    let nextIsVip = false;
-    let nextIsWorker = false;
-    let nextIsBusiness = false;
+  // Badge Management Action (Syncs via audited admin_assign_badge RPC with verified admin JWT)
+  const toggleUserBadge = async (userId: string, badge: OfficialVybeBadge) => {
+    const token = localStorage.getItem('vybe_admin_jwt') || '';
+    const adminUserId = localStorage.getItem('vybe_admin_user_id') || '';
+    if (!token || !token.startsWith('eyJ')) {
+      showNotification('Administrator session expired. Please sign in again.');
+      return;
+    }
+    if (adminUserId && adminUserId.toLowerCase() === userId.toLowerCase()) {
+      showNotification('Security Policy: Self-assignment or self-revocation of badges is prohibited.');
+      return;
+    }
 
-    setUsers(prev => prev.map(u => {
-      if (u.id !== userId) return u;
-      const hasBadge = u.badges.includes(badge);
-      const nextBadges = hasBadge ? u.badges.filter(b => b !== badge) : [...u.badges, badge];
-      nextIsVerified = badge === 'VERIFIED_BLUE' ? !hasBadge : u.isVerified;
-      nextIsVip = badge === 'VIP_GOLD' ? !hasBadge : u.isVip;
-      nextIsWorker = badge === 'WORKER_GREEN' ? !hasBadge : u.isWorker;
-      nextIsBusiness = badge === 'SHOP_GOLD' ? !hasBadge : u.isVerifiedBusiness;
-      return {
-        ...u,
-        badges: nextBadges,
-        isVerified: nextIsVerified,
-        isVip: nextIsVip,
-        isWorker: nextIsWorker,
-        isVerifiedBusiness: nextIsBusiness
-      };
-    }));
+    const targetUser = users.find(u => u.id === userId);
+    if (!targetUser) return;
+    const hasBadge = targetUser.badges.includes(badge);
+    const nextGrant = !hasBadge;
 
-    // Real Supabase persistence
-    const token = localStorage.getItem('vybe_admin_jwt') || SUPABASE_ANON_KEY;
-    const patchBody: Record<string, boolean> = {};
-    if (badge === 'VERIFIED_BLUE') patchBody.is_verified = nextIsVerified;
-    if (badge === 'VIP_GOLD') patchBody.is_vip = nextIsVip;
-    if (badge === 'WORKER_GREEN') patchBody.is_worker = nextIsWorker;
-    if (badge === 'SHOP_GOLD') patchBody.is_verified_business = nextIsBusiness;
+    const categoryMap: Record<OfficialVybeBadge, string> = {
+      VERIFIED_BLUE: 'VERIFIED',
+      VIP_GOLD: 'VIP',
+      WORKER_GREEN: 'WORKER',
+      SHOP_GOLD: 'SHOP'
+    };
+    const rpcCategory = categoryMap[badge];
 
-    fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
-      method: 'PATCH',
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(patchBody)
-    }).catch(err => console.warn('Supabase badge sync notice:', err));
+    try {
+      const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_assign_badge`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          p_target_user_id: userId,
+          p_badge_category: rpcCategory,
+          p_is_grant: nextGrant,
+          p_reason: 'Admin portal badge update',
+          p_require_acceptance: false,
+          p_worker_mandatory: rpcCategory === 'WORKER'
+        })
+      });
 
-    recordAudit('BADGE_TOGGLE', userId, `Toggled badge ${badge}`);
-    showNotification(`Badge updated for user.`);
-  };
-
-  // Verification Queue Approvals
-  const approveVerification = (app: VerificationApp) => {
-    setVerificationQueue(prev => prev.filter(a => a.id !== app.id));
-    toggleUserBadge(app.userId, app.badge);
-    recordAudit('VERIFICATION_APPROVED', `@${app.username}`, `Approved badge ${app.badge}`);
-    showNotification(`Approved ${app.badge} for @${app.username}`);
-  };
-
-  const rejectVerification = (app: VerificationApp) => {
-    setVerificationQueue(prev => prev.filter(a => a.id !== app.id));
-    recordAudit('VERIFICATION_REJECTED', `@${app.username}`, `Rejected verification application`);
-    showNotification(`Application for @${app.username} rejected.`);
-  };
-
-  // Post Moderation Action (Syncs to Supabase posts table)
-  const removePost = (postId: string) => {
-    setPosts(prev => prev.filter(p => p.id !== postId));
-    const token = localStorage.getItem('vybe_admin_jwt') || SUPABASE_ANON_KEY;
-    fetch(`${SUPABASE_URL}/rest/v1/posts?id=eq.${encodeURIComponent(postId)}`, {
-      method: 'DELETE',
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${token}`
+      if (!resp.ok) {
+        const errPayload = await resp.json().catch(() => ({}));
+        showNotification(errPayload.message || errPayload.error || `Badge update rejected (${resp.status}).`);
+        return;
       }
-    }).catch(err => console.warn('Supabase post remove notice:', err));
 
-    recordAudit('POST_REMOVED', postId, 'Removed post violating community guidelines');
-    showNotification('Post removed successfully.');
+      setUsers(prev => prev.map(u => {
+        if (u.id !== userId) return u;
+        const nextBadges = nextGrant
+          ? Array.from(new Set([...u.badges, badge]))
+          : u.badges.filter(b => b !== badge);
+        return {
+          ...u,
+          badges: nextBadges,
+          isVerified: badge === 'VERIFIED_BLUE' ? nextGrant : u.isVerified,
+          isVip: badge === 'VIP_GOLD' ? nextGrant : u.isVip,
+          isWorker: badge === 'WORKER_GREEN' ? nextGrant : u.isWorker,
+          isVerifiedBusiness: badge === 'SHOP_GOLD' ? nextGrant : u.isVerifiedBusiness
+        };
+      }));
+
+      recordAudit('BADGE_TOGGLE', userId, `${nextGrant ? 'Granted' : 'Revoked'} badge ${badge}`);
+      showNotification('Badge updated successfully.');
+    } catch (err: any) {
+      showNotification(err?.message || 'Network error updating badge.');
+    }
+  };
+
+  // Verification Queue Approvals (Persisted via Supabase admin_review_verification_request RPC)
+  const approveVerification = async (app: VerificationApp) => {
+    const res = await reviewVerificationRequestInSupabase({
+      requestId: app.id,
+      decision: 'APPROVED',
+      notes: `Approved ${app.badge} via VYBE Admin Command Center`
+    });
+    if (!res.ok) {
+      showNotification(res.error || 'Failed approving verification request.');
+      return;
+    }
+    setVerificationQueue(prev => prev.filter(a => a.id !== app.id));
+    showNotification(`Approved ${app.badge} for @${app.username}`);
+    loadPlatformData(true);
+  };
+
+  const rejectVerification = async (app: VerificationApp) => {
+    const res = await reviewVerificationRequestInSupabase({
+      requestId: app.id,
+      decision: 'REJECTED',
+      notes: 'Verification criteria not met'
+    });
+    if (!res.ok) {
+      showNotification(res.error || 'Failed rejecting verification request.');
+      return;
+    }
+    setVerificationQueue(prev => prev.filter(a => a.id !== app.id));
+    showNotification(`Application for @${app.username} declined.`);
+    loadPlatformData(true);
+  };
+
+  // Post Moderation Action (Syncs to Supabase posts table with verified admin JWT)
+  const removePost = async (postId: string) => {
+    const token = localStorage.getItem('vybe_admin_jwt') || '';
+    if (!token || !token.startsWith('eyJ')) {
+      showNotification('Administrator session expired. Please sign in again.');
+      return;
+    }
+    try {
+      const resp = await fetch(`${SUPABASE_URL}/rest/v1/posts?id=eq.${encodeURIComponent(postId)}`, {
+        method: 'DELETE',
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!resp.ok) {
+        showNotification(`Failed to remove post (${resp.status}).`);
+        return;
+      }
+      setPosts(prev => prev.filter(p => p.id !== postId));
+      recordAudit('POST_REMOVED', postId, 'Removed post violating community guidelines');
+      showNotification('Post removed successfully.');
+    } catch (err: any) {
+      showNotification(err?.message || 'Error removing post.');
+    }
   };
 
   // Broadcast Action (Connected to real Netlify / backend endpoint)
-  const handleSendBroadcast = (e: React.FormEvent) => {
+  const handleSendBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!broadcastTitle.trim() || !broadcastBody.trim()) return;
-    setIsSendingBroadcast(true);
-
     const token = localStorage.getItem('vybe_admin_jwt') || '';
-    fetch('/api/v1/admin/broadcast-push', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-      },
-      body: JSON.stringify({ title: broadcastTitle.trim(), message: broadcastBody.trim() })
-    }).then(() => {
-      recordAudit('BROADCAST_SENT', 'ALL_USERS', `Title: "${broadcastTitle}"`);
-      showNotification(`System announcement broadcasted to all active devices!`);
-    }).catch(() => {
-      recordAudit('BROADCAST_SENT', 'ALL_USERS', `Title: "${broadcastTitle}" (Local Broadcast)`);
-      showNotification(`System announcement broadcasted!`);
-    }).finally(() => {
+    if (!token || !token.startsWith('eyJ')) {
+      showNotification('Administrator session expired. Please sign in again.');
+      return;
+    }
+
+    setIsSendingBroadcast(true);
+    try {
+      const resp = await fetch('/api/v1/admin/broadcast-push', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ title: broadcastTitle.trim(), message: broadcastBody.trim() })
+      });
+      const payload = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        showNotification(payload?.error || `Broadcast rejected (${resp.status}).`);
+        return;
+      }
+      recordAudit('BROADCAST_SENT', 'ALL_USERS', `Title: "${broadcastTitle.trim()}"`);
+      showNotification('System announcement broadcasted to all active devices!');
       setBroadcastTitle('');
       setBroadcastBody('');
+    } catch (err: any) {
+      showNotification(err?.message || 'Failed to dispatch system broadcast.');
+    } finally {
       setIsSendingBroadcast(false);
-    });
+    }
   };
 
   // Filtered Users List
@@ -875,48 +942,105 @@ export const AdminApp: React.FC = () => {
           {/* TAB 5: SAFETY REPORTS */}
           {activeTab === 'reports' && (
             <div className="space-y-4 animate-fade-in">
-              <h3 className="text-sm font-bold text-white">Safety & Community Reports</h3>
-              <div className="space-y-3">
-                {reports.map(rep => (
-                  <div key={rep.id} className="p-5 rounded-2xl bg-[#0F1629] border border-[#1F2D4A] space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono font-bold text-red-400 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/30">
-                          {rep.type} VIOLATION
+              <h3 className="text-sm font-bold text-white">Safety & Community Reports ({reports.length})</h3>
+              {reports.length === 0 ? (
+                <div className="p-12 text-center rounded-2xl bg-[#0F1629] border border-[#1F2D4A]">
+                  <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-2 opacity-80" />
+                  <h4 className="text-sm font-bold text-white">Safety Queue Clear</h4>
+                  <p className="text-xs text-gray-400 mt-1">No open or investigating reports in Supabase.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {reports.map(rep => (
+                    <div key={rep.id} className="p-5 rounded-2xl bg-[#0F1629] border border-[#1F2D4A] space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono font-bold text-red-400 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/30">
+                            {rep.targetType} VIOLATION
+                          </span>
+                          <span className="text-xs font-bold text-white font-mono">Target: {rep.targetId}</span>
+                        </div>
+                        <span className="text-[11px] text-gray-500 font-mono">
+                          Reported by {rep.reporterUsername} • {rep.createdAt}
                         </span>
-                        <span className="text-xs font-bold text-white">Target: {rep.violator}</span>
                       </div>
-                      <span className="text-[11px] text-gray-500 font-mono">Reported by {rep.reporter}</span>
+                      <p className="text-xs text-gray-300"><strong>Reason:</strong> {rep.reason}</p>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={async () => {
+                            const res = await updateReportStatusInSupabase({
+                              reportId: rep.id,
+                              status: 'DISMISSED',
+                              adminNotes: 'Dismissed via Command Center'
+                            });
+                            if (!res.ok) {
+                              showNotification(res.error || 'Failed dismissing report.');
+                              return;
+                            }
+                            setReports(prev => prev.filter(r => r.id !== rep.id));
+                            showNotification('Report dismissed and logged.');
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-[#1F2D4A] hover:bg-emerald-500/20 hover:text-emerald-400 font-semibold text-xs transition-all"
+                        >
+                          Dismiss Report
+                        </button>
+                        {rep.targetType === 'POST' && (
+                          <button
+                            onClick={async () => {
+                              const modRes = await moderatePostInSupabase({ postId: rep.targetId, action: 'DELETE' });
+                              if (!modRes.ok) {
+                                showNotification(modRes.error || 'Failed removing reported post.');
+                                return;
+                              }
+                              const repRes = await updateReportStatusInSupabase({
+                                reportId: rep.id,
+                                status: 'RESOLVED',
+                                adminNotes: 'Post removed via moderation'
+                              });
+                              if (repRes.ok) {
+                                setReports(prev => prev.filter(r => r.id !== rep.id));
+                              }
+                              setPosts(prev => prev.filter(p => p.id !== rep.targetId));
+                              showNotification('Reported post removed and report resolved.');
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 font-semibold text-xs hover:bg-amber-500/30 transition-all"
+                          >
+                            Remove Reported Post
+                          </button>
+                        )}
+                        {rep.targetType === 'USER' && (
+                          <button
+                            onClick={async () => {
+                              const susRes = await suspendUserInSupabase({
+                                userId: rep.targetId,
+                                action: 'SUSPEND',
+                                reason: rep.reason,
+                                durationHours: 72
+                              });
+                              if (!susRes.ok) {
+                                showNotification(susRes.error || 'Failed suspending account.');
+                                return;
+                              }
+                              const repRes = await updateReportStatusInSupabase({
+                                reportId: rep.id,
+                                status: 'RESOLVED',
+                                adminNotes: 'Account suspended 72h'
+                              });
+                              if (repRes.ok) {
+                                setReports(prev => prev.filter(r => r.id !== rep.id));
+                              }
+                              showNotification(`Account ${rep.targetId} suspended.`);
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-red-500/20 text-red-400 font-semibold text-xs hover:bg-red-500/30 transition-all"
+                          >
+                            Suspend Violator Account
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-xs text-gray-300"><strong>Reason:</strong> {rep.reason}</p>
-                    <div className="p-3 rounded-xl bg-[#070A14] border border-[#1F2D4A] text-xs text-gray-400 italic">
-                      "{rep.snippet}"
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => {
-                          setReports(prev => prev.filter(r => r.id !== rep.id));
-                          recordAudit('REPORT_RESOLVED', rep.violator, `Action taken on report ${rep.id}`);
-                          showNotification('Report marked resolved & violator flagged.');
-                        }}
-                        className="px-3 py-1.5 rounded-xl bg-[#1F2D4A] hover:bg-emerald-500/20 hover:text-emerald-400 font-semibold text-xs transition-all"
-                      >
-                        Resolve & Dismiss
-                      </button>
-                      <button
-                        onClick={() => {
-                          setReports(prev => prev.filter(r => r.id !== rep.id));
-                          recordAudit('USER_BANNED', rep.violator, 'Banned violator account');
-                          showNotification(`Violator ${rep.violator} suspended.`);
-                        }}
-                        className="px-3 py-1.5 rounded-xl bg-red-500/20 text-red-400 font-semibold text-xs hover:bg-red-500/30 transition-all"
-                      >
-                        Suspend Violator Account
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -1122,10 +1246,33 @@ export const AdminApp: React.FC = () => {
                         <div className="text-[11px] text-gray-400">{item.desc}</div>
                       </div>
                       <button
-                        onClick={() => {
-                          setFeatureFlags(prev => ({ ...prev, [item.key]: !isEnabled }));
-                          recordAudit('FLAG_TOGGLE', item.key, `Toggled to ${!isEnabled}`);
-                          showNotification(`Updated ${item.label}`);
+                        onClick={async () => {
+                          const token = localStorage.getItem('vybe_admin_jwt') || '';
+                          if (!token || !token.startsWith('eyJ')) {
+                            showNotification('Administrator session expired. Please sign in again.');
+                            return;
+                          }
+                          const nextEnabled = !isEnabled;
+                          try {
+                            const resp = await fetch('/api/v1/admin/experiences/toggle', {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                Authorization: `Bearer ${token}`
+                              },
+                              body: JSON.stringify({ experienceKey: item.key, enabled: nextEnabled })
+                            });
+                            if (!resp.ok) {
+                              const err = await resp.json().catch(() => ({}));
+                              showNotification(err?.error || `Feature toggle rejected (${resp.status}).`);
+                              return;
+                            }
+                            setFeatureFlags(prev => ({ ...prev, [item.key]: nextEnabled }));
+                            recordAudit('FLAG_TOGGLE', item.key, `Toggled to ${nextEnabled}`);
+                            showNotification(`Updated ${item.label}`);
+                          } catch (err: any) {
+                            showNotification(err?.message || 'Network error toggling feature flag.');
+                          }
                         }}
                         className={`w-11 h-6 rounded-full transition-colors p-1 ${
                           isEnabled ? 'bg-[#00F0FF]' : 'bg-[#1F2D4A]'

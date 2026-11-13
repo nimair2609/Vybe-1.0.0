@@ -52,7 +52,8 @@ const PROFILE_SELECT_COLUMNS = [
   'live_pulse',
   'last_seen_at',
   'created_at',
-  'is_private_account'
+  'is_private_account',
+  'role'
 ].join(',');
 
 const POST_SELECT_COLUMNS = [
@@ -126,7 +127,8 @@ export function mapSupabaseProfileToUser(p: any): User {
     isOnline: Boolean(p.last_seen_at && (Date.now() - new Date(p.last_seen_at).getTime() < 3600000 * 48)),
     badges,
     joinedDate: p.created_at ? new Date(p.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'Recently',
-    isPrivate: Boolean(p.is_private_account)
+    isPrivate: Boolean(p.is_private_account),
+    role: p.role || 'USER'
   };
 }
 
@@ -642,21 +644,48 @@ export function resolveMediaUrl(rawUrl: string): string {
   return rawUrl;
 }
 
+function extractUserIdFromJwt(token: string): string | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+    const jsonStr = typeof atob === 'function' ? atob(padded) : '';
+    if (!jsonStr) return null;
+    const payload = JSON.parse(jsonStr);
+    const sub = String(payload?.sub || '').trim();
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sub) ? sub : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function uploadMediaBlobToStorage(
   blob: Blob,
   bucket: 'posts' | 'avatars' | 'banners' | 'stories',
   fileName: string = 'media',
   originalSizeBytes?: number
 ): Promise<{ publicUrl: string; storagePath: string } | null> {
+  const token = localStorage.getItem('vybe_access_token') || localStorage.getItem('vybe_admin_jwt') || '';
+  if (!token || !token.startsWith('eyJ')) {
+    console.warn('[Supabase Storage] Upload aborted: authenticated user JWT required.');
+    return null;
+  }
+
+  const uid = extractUserIdFromJwt(token);
+  if (!uid) {
+    console.warn('[Supabase Storage] Upload aborted: unable to resolve authenticated user UID from JWT.');
+    return null;
+  }
+
   const cleanExt = blob.type.includes('webp') ? 'webp' : (blob.type.includes('png') ? 'png' : 'jpg');
   const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${cleanExt}`;
-  const storagePath = `${uniqueName}`;
+  const storagePath = `${uid}/${uniqueName}`;
   const targetUrl = `${SUPABASE_URL}/storage/v1/object/${bucket}/${storagePath}`;
 
-  const token = localStorage.getItem('vybe_access_token') || localStorage.getItem('vybe_admin_jwt') || '';
   const uploadHeaders: Record<string, string> = {
     'apikey': SUPABASE_ANON_KEY,
-    ...(token && token.startsWith('eyJ') ? { 'Authorization': `Bearer ${token}` } : { 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }),
+    'Authorization': `Bearer ${token}`,
     'Content-Type': blob.type || 'image/webp',
     'x-upsert': 'true'
   };
@@ -724,28 +753,62 @@ export async function adminSignInWithPassword(
     const token = data.access_token;
     const user = data.user;
 
-    // Verify role in profiles table
+    // Verify role in profiles and admin_users tables — fail CLOSED if check fails or lacks admin role
+    const adminRoles = new Set(['ADMIN', 'SUPER_ADMIN', 'OWNER_ADMIN', 'MODERATOR']);
+    let roleCheckSucceeded = false;
+    let isAuthorizedAdmin = false;
+
     try {
-      const profileRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}&select=id,role,is_verified,is_vip`, {
-        headers: {
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const [profileRes, adminUserRes] = await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=id,role`, {
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${token}`
+          }
+        }),
+        fetch(`${SUPABASE_URL}/rest/v1/admin_users?user_id=eq.${encodeURIComponent(user.id)}&is_active=eq.true&select=role`, {
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${token}`
+          }
+        }).catch(() => null)
+      ]);
 
       if (profileRes.ok) {
+        roleCheckSucceeded = true;
         const profiles = await profileRes.json();
         const profile = Array.isArray(profiles) ? profiles[0] : profiles;
-        const role = (profile?.role || '').toUpperCase();
-        if (role && role !== 'ADMIN' && role !== 'SUPER_ADMIN' && role !== 'MODERATOR') {
-          return {
-            success: false,
-            error: 'Forbidden: Authenticated account does not hold administrator privileges.'
-          };
+        const role = String(profile?.role || '').toUpperCase();
+        if (adminRoles.has(role)) {
+          isAuthorizedAdmin = true;
+        }
+      }
+
+      if (adminUserRes && adminUserRes.ok) {
+        roleCheckSucceeded = true;
+        const adminRows = await adminUserRes.json();
+        const adminRec = Array.isArray(adminRows) ? adminRows[0] : adminRows;
+        const adminRole = String(adminRec?.role || '').toUpperCase();
+        if (adminRoles.has(adminRole)) {
+          isAuthorizedAdmin = true;
         }
       }
     } catch {
-      // Proceed if profile query throttled
+      roleCheckSucceeded = false;
+    }
+
+    if (!roleCheckSucceeded) {
+      return {
+        success: false,
+        error: 'Unable to verify administrator privileges right now. Sign-in aborted.'
+      };
+    }
+
+    if (!isAuthorizedAdmin) {
+      return {
+        success: false,
+        error: 'Forbidden: Authenticated account does not hold administrator privileges.'
+      };
     }
 
     localStorage.setItem('vybe_admin_jwt', token);
@@ -874,3 +937,364 @@ export async function sendLiveDirectMessage(params: {
     return null;
   }
 }
+
+// -------------------------------------------------------------
+// Column-Scoped Admin Session & Live Moderation Helpers
+// -------------------------------------------------------------
+const ADMIN_ROLE_SET = new Set(['ADMIN', 'SUPER_ADMIN', 'OWNER_ADMIN', 'MODERATOR']);
+
+export function isVerifiedAdminSession(user?: User | null): boolean {
+  try {
+    const adminJwt = typeof localStorage !== 'undefined' ? (localStorage.getItem('vybe_admin_jwt') || '') : '';
+    if (adminJwt.startsWith('eyJ')) return true;
+    const accessJwt = typeof localStorage !== 'undefined' ? (localStorage.getItem('vybe_access_token') || '') : '';
+    const role = String(user?.role || '').toUpperCase().trim();
+    return Boolean(accessJwt.startsWith('eyJ') && ADMIN_ROLE_SET.has(role));
+  } catch {
+    return false;
+  }
+}
+
+function getAdminAuthHeaders(): { headers: Record<string, string>; token: string; adminId: string; adminEmail: string } | null {
+  try {
+    const token = localStorage.getItem('vybe_admin_jwt') || '';
+    if (!token || !token.startsWith('eyJ')) return null;
+    const adminId = localStorage.getItem('vybe_admin_user_id') || extractUserIdFromJwt(token) || '';
+    const adminEmail = localStorage.getItem('vybe_admin_email') || 'admin';
+    return {
+      token,
+      adminId,
+      adminEmail,
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    };
+  } catch {
+    return null;
+  }
+}
+
+export interface LiveVerificationRequestItem {
+  id: string;
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  requestType: string;
+  badge: OfficialVybeBadge;
+  category: string;
+  proof: string;
+  status: string;
+  submittedAt: string;
+}
+
+export interface LiveReportItem {
+  id: string;
+  reporterId: string;
+  reporterUsername: string;
+  targetType: string;
+  targetId: string;
+  reason: string;
+  status: string;
+  adminNotes: string;
+  createdAt: string;
+}
+
+export interface LiveAuditLogItem {
+  id: string;
+  adminId: string;
+  adminEmail: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  details: string;
+  createdAt: string;
+}
+
+export function mapRequestTypeToBadge(requestType: string): OfficialVybeBadge {
+  const upper = String(requestType || '').toUpperCase();
+  if (upper.includes('WORKER')) return 'WORKER_GREEN';
+  if (upper.includes('VIP')) return 'VIP_GOLD';
+  if (upper.includes('SHOP') || upper.includes('BUSINESS')) return 'SHOP_GOLD';
+  return 'VERIFIED_BLUE';
+}
+
+export async function fetchLiveVerificationRequests(): Promise<LiveVerificationRequestItem[]> {
+  const auth = getAdminAuthHeaders();
+  if (!auth) return [];
+  try {
+    const selectCols = 'id,user_id,request_type,full_name,category,identity_document_url,supporting_links,status,rejection_reason,created_at,profiles:user_id(id,username,display_name,avatar_url)';
+    const resp = await fetch(
+      `${SUPABASE_URL}/rest/v1/verification_requests?select=${encodeURIComponent(selectCols)}&order=created_at.desc&limit=100`,
+      { headers: auth.headers }
+    );
+    if (!resp.ok) return [];
+    const rows = await resp.json();
+    if (!Array.isArray(rows)) return [];
+    return rows.map((r: any) => {
+      const p = r.profiles || {};
+      const links = Array.isArray(r.supporting_links) ? r.supporting_links.filter(Boolean).join(', ') : '';
+      const proofParts = [links, r.identity_document_url ? `Document: ${r.identity_document_url}` : ''].filter(Boolean);
+      return {
+        id: r.id,
+        userId: r.user_id,
+        username: p.username || 'vybe_member',
+        displayName: r.full_name || p.display_name || p.username || 'VYBE Member',
+        avatarUrl: p.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(p.username || r.user_id || 'vybe')}`,
+        requestType: r.request_type || 'VERIFIED',
+        badge: mapRequestTypeToBadge(r.request_type),
+        category: r.category || 'Creator',
+        proof: proofParts.join(' • ') || 'Submitted application details',
+        status: String(r.status || 'PENDING').toUpperCase(),
+        submittedAt: r.created_at ? new Date(r.created_at).toLocaleString() : 'Recently'
+      };
+    });
+  } catch (err) {
+    console.warn('[Admin] fetchLiveVerificationRequests notice:', err);
+    return [];
+  }
+}
+
+export async function reviewVerificationRequestInSupabase(params: {
+  requestId: string;
+  decision: 'APPROVED' | 'REJECTED' | 'MORE_INFO_REQUIRED';
+  notes?: string;
+  vipExpiresAt?: string | null;
+}): Promise<{ ok: boolean; error?: string }> {
+  const auth = getAdminAuthHeaders();
+  if (!auth) return { ok: false, error: 'Administrator session required.' };
+  if (!UUID_REGEX.test(params.requestId)) return { ok: false, error: 'Invalid verification request ID.' };
+
+  try {
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_review_verification_request`, {
+      method: 'POST',
+      headers: auth.headers,
+      body: JSON.stringify({
+        p_request_id: params.requestId,
+        p_decision: params.decision,
+        p_notes: params.notes || null,
+        p_admin_id: UUID_REGEX.test(auth.adminId) ? auth.adminId : null,
+        p_vip_expires_at: params.vipExpiresAt || null
+      })
+    });
+    if (!resp.ok) {
+      const errData = await resp.json().catch(() => ({}));
+      return { ok: false, error: errData?.message || errData?.error || `RPC rejected (${resp.status}).` };
+    }
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Network error reviewing verification request.' };
+  }
+}
+
+export async function fetchLiveReports(): Promise<LiveReportItem[]> {
+  const auth = getAdminAuthHeaders();
+  if (!auth) return [];
+  try {
+    const selectCols = 'id,reporter_id,target_type,target_id,reason,status,admin_notes,created_at,reporter:reporter_id(id,username,display_name)';
+    const resp = await fetch(
+      `${SUPABASE_URL}/rest/v1/reports?select=${encodeURIComponent(selectCols)}&order=created_at.desc&limit=100`,
+      { headers: auth.headers }
+    );
+    if (!resp.ok) return [];
+    const rows = await resp.json();
+    if (!Array.isArray(rows)) return [];
+    return rows.map((r: any) => ({
+      id: r.id,
+      reporterId: r.reporter_id,
+      reporterUsername: r.reporter?.username ? `@${r.reporter.username}` : (r.reporter_id || 'member'),
+      targetType: String(r.target_type || 'POST').toUpperCase(),
+      targetId: String(r.target_id || ''),
+      reason: r.reason || 'Policy violation report',
+      status: String(r.status || 'OPEN').toUpperCase(),
+      adminNotes: r.admin_notes || '',
+      createdAt: r.created_at ? new Date(r.created_at).toLocaleString() : 'Recently'
+    }));
+  } catch (err) {
+    console.warn('[Admin] fetchLiveReports notice:', err);
+    return [];
+  }
+}
+
+export async function updateReportStatusInSupabase(params: {
+  reportId: string;
+  status: 'OPEN' | 'INVESTIGATING' | 'RESOLVED' | 'DISMISSED';
+  adminNotes?: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const auth = getAdminAuthHeaders();
+  if (!auth) return { ok: false, error: 'Administrator session required.' };
+  if (!UUID_REGEX.test(params.reportId)) return { ok: false, error: 'Invalid report ID.' };
+
+  try {
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/reports?id=eq.${encodeURIComponent(params.reportId)}`, {
+      method: 'PATCH',
+      headers: { ...auth.headers, 'Prefer': 'return=representation' },
+      body: JSON.stringify({
+        status: params.status,
+        ...(params.adminNotes !== undefined ? { admin_notes: params.adminNotes } : {})
+      })
+    });
+    if (!resp.ok) {
+      const errData = await resp.json().catch(() => ({}));
+      return { ok: false, error: errData?.message || `Report update failed (${resp.status}).` };
+    }
+    await recordAdminAuditLogToSupabase({
+      action: `REPORT_${params.status}`,
+      targetType: 'reports',
+      targetId: params.reportId,
+      details: { status: params.status, adminNotes: params.adminNotes || null }
+    });
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Network error updating report.' };
+  }
+}
+
+export async function moderatePostInSupabase(params: {
+  postId: string;
+  action: 'DELETE' | 'ARCHIVE';
+}): Promise<{ ok: boolean; error?: string }> {
+  const auth = getAdminAuthHeaders();
+  if (!auth) return { ok: false, error: 'Administrator session required.' };
+  if (!UUID_REGEX.test(params.postId)) return { ok: false, error: 'Invalid post UUID.' };
+
+  try {
+    const isDelete = params.action === 'DELETE';
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/posts?id=eq.${encodeURIComponent(params.postId)}`, {
+      method: isDelete ? 'DELETE' : 'PATCH',
+      headers: { ...auth.headers, 'Prefer': 'return=minimal' },
+      ...(isDelete ? {} : { body: JSON.stringify({ is_archived: true }) })
+    });
+    if (!resp.ok) {
+      const errData = await resp.json().catch(() => ({}));
+      return { ok: false, error: errData?.message || `Post moderation failed (${resp.status}).` };
+    }
+    await recordAdminAuditLogToSupabase({
+      action: `POST_${params.action}`,
+      targetType: 'posts',
+      targetId: params.postId,
+      details: { action: params.action }
+    });
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Network error moderating post.' };
+  }
+}
+
+export async function suspendUserInSupabase(params: {
+  userId: string;
+  action: 'SUSPEND' | 'BAN' | 'RESTORE';
+  reason?: string;
+  durationHours?: number;
+}): Promise<{ ok: boolean; error?: string }> {
+  const auth = getAdminAuthHeaders();
+  if (!auth) return { ok: false, error: 'Administrator session required.' };
+  if (!UUID_REGEX.test(params.userId)) return { ok: false, error: 'Invalid user UUID.' };
+  if (auth.adminId && auth.adminId.toLowerCase() === params.userId.toLowerCase()) {
+    return { ok: false, error: 'Security Policy: Administrators cannot moderate their own account.' };
+  }
+
+  const hours = Math.max(1, Math.min(8760, params.durationHours || 72));
+  const until = new Date(Date.now() + hours * 3600 * 1000).toISOString();
+  const patch: Record<string, any> =
+    params.action === 'BAN'
+      ? { is_banned: true, ban_reason: params.reason || 'Safety moderation enforcement' }
+      : params.action === 'SUSPEND'
+        ? { is_suspended: true, suspension_reason: params.reason || `${hours}h suspension`, suspended_until: until }
+        : { is_banned: false, is_suspended: false, ban_reason: null, suspension_reason: null, suspended_until: null };
+
+  try {
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(params.userId)}`, {
+      method: 'PATCH',
+      headers: { ...auth.headers, 'Prefer': 'return=representation' },
+      body: JSON.stringify(patch)
+    });
+    if (!resp.ok) {
+      const errData = await resp.json().catch(() => ({}));
+      return { ok: false, error: errData?.message || `Account moderation failed (${resp.status}).` };
+    }
+
+    await fetch(`${SUPABASE_URL}/rest/v1/user_moderation_actions`, {
+      method: 'POST',
+      headers: { ...auth.headers, 'Prefer': 'return=minimal' },
+      body: JSON.stringify({
+        user_id: params.userId,
+        action_type: params.action === 'RESTORE' ? 'UNBAN' : params.action,
+        reason: params.reason || `Admin ${params.action}`,
+        duration_hours: params.action === 'SUSPEND' ? hours : null,
+        expires_at: params.action === 'SUSPEND' ? until : null,
+        is_active: params.action !== 'RESTORE',
+        created_by: UUID_REGEX.test(auth.adminId) ? auth.adminId : null
+      })
+    }).catch(() => null);
+
+    await recordAdminAuditLogToSupabase({
+      action: `USER_${params.action}`,
+      targetType: 'profiles',
+      targetId: params.userId,
+      details: { action: params.action, reason: params.reason || null }
+    });
+
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Network error moderating user account.' };
+  }
+}
+
+export async function recordAdminAuditLogToSupabase(params: {
+  action: string;
+  targetType: string;
+  targetId: string;
+  details?: Record<string, any>;
+}): Promise<boolean> {
+  const auth = getAdminAuthHeaders();
+  if (!auth) return false;
+  try {
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/admin_audit_logs`, {
+      method: 'POST',
+      headers: { ...auth.headers, 'Prefer': 'return=minimal' },
+      body: JSON.stringify({
+        admin_id: UUID_REGEX.test(auth.adminId) ? auth.adminId : null,
+        admin_email: auth.adminEmail,
+        action: params.action.slice(0, 100),
+        target_type: params.targetType.slice(0, 50),
+        target_id: params.targetId.slice(0, 100),
+        details: params.details || {}
+      })
+    });
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchLiveAuditLogs(): Promise<LiveAuditLogItem[]> {
+  const auth = getAdminAuthHeaders();
+  if (!auth) return [];
+  try {
+    const selectCols = 'id,admin_id,admin_email,action,target_type,target_id,details,created_at';
+    const resp = await fetch(
+      `${SUPABASE_URL}/rest/v1/admin_audit_logs?select=${encodeURIComponent(selectCols)}&order=created_at.desc&limit=100`,
+      { headers: auth.headers }
+    );
+    if (!resp.ok) return [];
+    const rows = await resp.json();
+    if (!Array.isArray(rows)) return [];
+    return rows.map((r: any) => ({
+      id: r.id,
+      adminId: r.admin_id || '',
+      adminEmail: r.admin_email || 'admin',
+      action: r.action || 'ACTION',
+      targetType: r.target_type || 'SYSTEM',
+      targetId: r.target_id || '',
+      details: typeof r.details === 'string' ? r.details : JSON.stringify(r.details || {}),
+      createdAt: r.created_at ? new Date(r.created_at).toLocaleString() : 'Recently'
+    }));
+  } catch (err) {
+    console.warn('[Admin] fetchLiveAuditLogs notice:', err);
+    return [];
+  }
+}
+

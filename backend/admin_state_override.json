@@ -1,11 +1,27 @@
 {
   "badges": {},
-  "roles": {},
-  "statuses": {},
+  "roles": {
+    "11111111-1111-4111-8111-111111111111": "SUPPORT_ADMIN"
+  },
+  "statuses": {
+    "11111111-1111-4111-8111-111111111111": {
+      "is_suspended": true,
+      "is_banned": false,
+      "suspension_reason": "Spam",
+      "suspended_until": "2026-11-14T08:48:33.212Z"
+    }
+  },
   "warnings": {},
   "restrictions": {},
   "contentModeration": {},
-  "reports": {},
+  "reports": {
+    "66666666-6666-4666-8666-666666666666": {
+      "action": "RESOLVED",
+      "notes": "Handled",
+      "timestamp": "2026-11-13T08:48:33.217Z",
+      "adminEmail": "lead_admin@vybe.app"
+    }
+  },
   "featureFlags": {
     "unload": true,
     "unfiltered": true,
@@ -127,5 +143,90 @@
       "status": "ACTIVE"
     }
   ],
-  "auditLogs": []
+  "auditLogs": [
+    {
+      "timestamp": "2026-11-13T08:48:33.212Z",
+      "action": "USER_SUSPEND",
+      "userId": "11111111-1111-4111-8111-111111111111",
+      "username": "User",
+      "adminEmail": "lead_admin@vybe.app",
+      "details": {
+        "action": "SUSPEND",
+        "reason": "Spam",
+        "patch": {
+          "is_suspended": true,
+          "suspension_reason": "Spam",
+          "suspended_until": "2026-11-14T08:48:33.212Z"
+        }
+      }
+    },
+    {
+      "timestamp": "2026-11-13T08:48:33.204Z",
+      "action": "UPDATE_ROLE",
+      "userId": "11111111-1111-4111-8111-111111111111",
+      "username": "support_dev",
+      "adminEmail": "owner@vybe.app",
+      "details": {
+        "requestedRole": "SUPPORT_ADMIN",
+        "profileRole": "MODERATOR",
+        "adminSubRole": "SUPPORT_ADMIN"
+      }
+    },
+    {
+      "timestamp": "2026-11-13T08:48:04.482Z",
+      "action": "USER_SUSPEND",
+      "userId": "11111111-1111-4111-8111-111111111111",
+      "username": "User",
+      "adminEmail": "lead_admin@vybe.app",
+      "details": {
+        "action": "SUSPEND",
+        "reason": "Spam",
+        "patch": {
+          "is_suspended": true,
+          "suspension_reason": "Spam",
+          "suspended_until": "2026-11-14T08:48:04.482Z"
+        }
+      }
+    },
+    {
+      "timestamp": "2026-11-13T08:48:04.474Z",
+      "action": "UPDATE_ROLE",
+      "userId": "11111111-1111-4111-8111-111111111111",
+      "username": "support_dev",
+      "adminEmail": "owner@vybe.app",
+      "details": {
+        "requestedRole": "SUPPORT_ADMIN",
+        "profileRole": "MODERATOR",
+        "adminSubRole": "SUPPORT_ADMIN"
+      }
+    },
+    {
+      "timestamp": "2026-11-13T08:44:24.390Z",
+      "action": "USER_SUSPEND",
+      "userId": "11111111-1111-4111-8111-111111111111",
+      "username": "User",
+      "adminEmail": "lead_admin@vybe.app",
+      "details": {
+        "action": "SUSPEND",
+        "reason": "Spam",
+        "patch": {
+          "is_suspended": true,
+          "suspension_reason": "Spam",
+          "suspended_until": "2026-11-14T08:44:24.390Z"
+        }
+      }
+    },
+    {
+      "timestamp": "2026-11-13T08:44:24.383Z",
+      "action": "UPDATE_ROLE",
+      "userId": "11111111-1111-4111-8111-111111111111",
+      "username": "support_dev",
+      "adminEmail": "owner@vybe.app",
+      "details": {
+        "requestedRole": "SUPPORT_ADMIN",
+        "profileRole": "MODERATOR",
+        "adminSubRole": "SUPPORT_ADMIN"
+      }
+    }
+  ]
 }

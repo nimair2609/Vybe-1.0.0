@@ -77,6 +77,9 @@ interface SupabaseAuthApi {
   ): Response<Unit>
 }
 
+const val PUBLIC_PROFILE_SELECT_COLUMNS =
+  "id,username,display_name,first_name,last_name,bio,avatar_url,cover_url,is_email_verified,is_phone_verified,role,is_verified,is_vip,is_verified_public_figure,is_verified_business,is_worker,worker_badge_mandatory,vip_expires_at,badge_approval_status,badge_display_status,badge_type,is_deactivated,is_private_account,message_privacy,followers_count,following_count,posts_count,live_pulse,last_seen_at,created_at"
+
 interface SupabaseRestApi {
   // --- PROFILES & SECURE IDENTIFIER RESOLUTION ---
   @POST("rpc/resolve_login_identifier")
@@ -93,12 +96,18 @@ interface SupabaseRestApi {
     @Body request: SupabaseRpcCheckUsernameRequest
   ): Response<Boolean>
 
+  @POST("rpc/get_my_private_profile")
+  suspend fun getMyPrivateProfileRpc(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String
+  ): Response<List<SupabaseProfileDto>>
+
   @GET("profiles")
   suspend fun getProfileById(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("id") idFilter: String,
-    @Query("select") select: String = "*"
+    @Query("select") select: String = PUBLIC_PROFILE_SELECT_COLUMNS
   ): Response<List<SupabaseProfileDto>>
 
   @GET("profiles")
@@ -106,7 +115,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("email") emailFilter: String,
-    @Query("select") select: String = "*"
+    @Query("select") select: String = PUBLIC_PROFILE_SELECT_COLUMNS
   ): Response<List<SupabaseProfileDto>>
 
   @GET("profiles")
@@ -114,7 +123,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("username") usernameFilter: String,
-    @Query("select") select: String = "*"
+    @Query("select") select: String = PUBLIC_PROFILE_SELECT_COLUMNS
   ): Response<List<SupabaseProfileDto>>
 
   @GET("profiles")
@@ -122,14 +131,14 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("phone") phoneFilter: String,
-    @Query("select") select: String = "*"
+    @Query("select") select: String = PUBLIC_PROFILE_SELECT_COLUMNS
   ): Response<List<SupabaseProfileDto>>
 
   @GET("profiles")
   suspend fun getProfiles(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
-    @Query("select") select: String = "*",
+    @Query("select") select: String = PUBLIC_PROFILE_SELECT_COLUMNS,
     @Query("order") order: String = "created_at.desc",
     @Query("limit") limit: Int = 100
   ): Response<List<SupabaseProfileDto>>
@@ -139,7 +148,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("or") orFilter: String,
-    @Query("select") select: String = "*",
+    @Query("select") select: String = PUBLIC_PROFILE_SELECT_COLUMNS,
     @Query("limit") limit: Int = 40
   ): Response<List<SupabaseProfileDto>>
 
@@ -182,7 +191,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("conversation_id") conversationIdsInFilter: String,
-    @Query("select") select: String = "*,profiles(*)"
+    @Query("select") select: String = "*,profiles($PUBLIC_PROFILE_SELECT_COLUMNS)"
   ): Response<List<SupabaseConversationMemberDto>>
 
   @POST("conversations")
@@ -277,7 +286,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("post_id") postIdFilter: String,
-    @Query("select") select: String = "*,profiles:author_id(*)",
+    @Query("select") select: String = "*,profiles:author_id($PUBLIC_PROFILE_SELECT_COLUMNS)",
     @Query("order") order: String = "created_at.asc",
     @Query("limit") limit: Int = 100
   ): Response<List<SupabaseCommentDto>>
@@ -352,7 +361,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("recipient_id") recipientIdFilter: String,
-    @Query("select") select: String = "*,actor:actor_id(*)",
+    @Query("select") select: String = "*,actor:actor_id($PUBLIC_PROFILE_SELECT_COLUMNS)",
     @Query("order") order: String = "created_at.desc",
     @Query("limit") limit: Int = 50
   ): Response<List<SupabaseNotificationDto>>
@@ -362,7 +371,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("id") idsInFilter: String,
-    @Query("select") select: String = "*,profiles:author_id(*)"
+    @Query("select") select: String = "*,profiles:author_id($PUBLIC_PROFILE_SELECT_COLUMNS)"
   ): Response<List<SupabasePostDto>>
 
   @POST("notifications")
@@ -522,7 +531,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("expires_at") expiresAtFilter: String,
-    @Query("select") select: String = "*,profiles:author_id(*)",
+    @Query("select") select: String = "*,profiles:author_id($PUBLIC_PROFILE_SELECT_COLUMNS)",
     @Query("order") order: String = "created_at.desc",
     @Query("limit") limit: Int = 80
   ): Response<List<SupabaseStoryDto>>
@@ -579,7 +588,7 @@ interface SupabaseRestApi {
   suspend fun getPosts(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
-    @Query("select") select: String = "*,post_media(*),profiles:author_id(*)",
+    @Query("select") select: String = "*,post_media(*),profiles:author_id($PUBLIC_PROFILE_SELECT_COLUMNS)",
     @Query("order") order: String = "created_at.desc",
     @Query("offset") offset: Int = 0,
     @Query("limit") limit: Int = 60
@@ -590,7 +599,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("client_upload_id") clientUploadFilter: String,
-    @Query("select") select: String = "*,post_media(*),profiles:author_id(*)"
+    @Query("select") select: String = "*,post_media(*),profiles:author_id($PUBLIC_PROFILE_SELECT_COLUMNS)"
   ): Response<List<SupabasePostDto>>
 
   @POST("posts")
@@ -661,7 +670,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("is_active") activeFilter: String = "eq.true",
-    @Query("select") select: String = "*,profiles:host_id(*)",
+    @Query("select") select: String = "*,profiles:host_id($PUBLIC_PROFILE_SELECT_COLUMNS)",
     @Query("order") order: String = "created_at.desc",
     @Query("limit") limit: Int = 50
   ): Response<List<SupabaseRoomDto>>
@@ -671,7 +680,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("room_code") roomCodeFilter: String,
-    @Query("select") select: String = "*,profiles:host_id(*)"
+    @Query("select") select: String = "*,profiles:host_id($PUBLIC_PROFILE_SELECT_COLUMNS)"
   ): Response<List<SupabaseRoomDto>>
 
   @GET("rooms")
@@ -679,7 +688,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("id") idFilter: String,
-    @Query("select") select: String = "*,profiles:host_id(*)"
+    @Query("select") select: String = "*,profiles:host_id($PUBLIC_PROFILE_SELECT_COLUMNS)"
   ): Response<List<SupabaseRoomDto>>
 
   @POST("rooms")
@@ -742,7 +751,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("room_id") roomIdFilter: String,
-    @Query("select") select: String = "*,profiles:sender_id(*)",
+    @Query("select") select: String = "*,profiles:sender_id($PUBLIC_PROFILE_SELECT_COLUMNS)",
     @Query("order") order: String = "created_at.asc",
     @Query("limit") limit: Int = 80
   ): Response<List<SupabaseRoomMessageDto>>
@@ -830,7 +839,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("is_live") isLiveFilter: String = "eq.true",
-    @Query("select") select: String = "*,profiles:host_id(*)",
+    @Query("select") select: String = "*,profiles:host_id($PUBLIC_PROFILE_SELECT_COLUMNS)",
     @Query("order") order: String = "started_at.desc",
     @Query("limit") limit: Int = 30
   ): Response<List<SupabaseLiveStreamDto>>
@@ -840,7 +849,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("id") idFilter: String,
-    @Query("select") select: String = "*,profiles:host_id(*)"
+    @Query("select") select: String = "*,profiles:host_id($PUBLIC_PROFILE_SELECT_COLUMNS)"
   ): Response<List<SupabaseLiveStreamDto>>
 
   @POST("live_streams")
@@ -889,7 +898,7 @@ interface SupabaseRestApi {
   suspend fun getAudiencePools(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
-    @Query("select") select: String = "*,audience_pool_options(*),profiles:creator_id(*)",
+    @Query("select") select: String = "*,audience_pool_options(*),profiles:creator_id($PUBLIC_PROFILE_SELECT_COLUMNS)",
     @Query("order") order: String = "created_at.desc",
     @Query("limit") limit: Int = 40
   ): Response<List<SupabaseAudiencePoolDto>>
@@ -937,7 +946,7 @@ interface SupabaseRestApi {
   suspend fun getDoubleTakes(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
-    @Query("select") select: String = "*,double_take_answers(*,profiles:user_id(*))",
+    @Query("select") select: String = "*,double_take_answers(*,profiles:user_id($PUBLIC_PROFILE_SELECT_COLUMNS))",
     @Query("order") order: String = "created_at.desc",
     @Query("limit") limit: Int = 40
   ): Response<List<SupabaseDoubleTakeDto>>
@@ -994,7 +1003,7 @@ interface SupabaseRestApi {
   suspend fun getTimeCapsules(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
-    @Query("select") select: String = "*,profiles:creator_id(*)",
+    @Query("select") select: String = "*,profiles:creator_id($PUBLIC_PROFILE_SELECT_COLUMNS)",
     @Query("order") order: String = "created_at.desc",
     @Query("limit") limit: Int = 40
   ): Response<List<SupabaseTimeCapsuleDto>>
@@ -1020,7 +1029,7 @@ interface SupabaseRestApi {
   suspend fun getCrossedPaths(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
-    @Query("select") select: String = "*,profiles:creator_id(*)",
+    @Query("select") select: String = "*,profiles:creator_id($PUBLIC_PROFILE_SELECT_COLUMNS)",
     @Query("order") order: String = "created_at.desc",
     @Query("limit") limit: Int = 40
   ): Response<List<SupabaseCrossedPathDto>>
@@ -1060,7 +1069,7 @@ interface SupabaseRestApi {
   suspend fun getBusinessProfiles(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
-    @Query("select") select: String = "*,business_reviews(*,profiles:author_id(*))",
+    @Query("select") select: String = "*,business_reviews(*,profiles:author_id($PUBLIC_PROFILE_SELECT_COLUMNS))",
     @Query("order") order: String = "created_at.desc",
     @Query("limit") limit: Int = 40
   ): Response<List<SupabaseBusinessProfileDto>>
@@ -1104,7 +1113,7 @@ interface SupabaseRestApi {
     @Header("Authorization") authHeader: String? = null,
     @Query("community_id") communityIdFilter: String? = null,
     @Query("user_id") userIdFilter: String? = null,
-    @Query("select") select: String = "*,profiles:user_id(*)"
+    @Query("select") select: String = "*,profiles:user_id($PUBLIC_PROFILE_SELECT_COLUMNS)"
   ): Response<List<SupabaseCommunityMemberDto>>
 
   @POST("community_members")
@@ -1138,7 +1147,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("community_id") communityIdFilter: String,
-    @Query("select") select: String = "*,profiles:author_id(*)",
+    @Query("select") select: String = "*,profiles:author_id($PUBLIC_PROFILE_SELECT_COLUMNS)",
     @Query("order") order: String = "created_at.desc",
     @Query("limit") limit: Int = 50
   ): Response<List<SupabaseCommunityPostDto>>
@@ -1197,7 +1206,7 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,
     @Query("post_id") postIdFilter: String,
-    @Query("select") select: String = "*,profiles:author_id(*)",
+    @Query("select") select: String = "*,profiles:author_id($PUBLIC_PROFILE_SELECT_COLUMNS)",
     @Query("order") order: String = "created_at.asc",
     @Query("limit") limit: Int = 100
   ): Response<List<SupabaseCommunityCommentDto>>
@@ -1236,7 +1245,7 @@ interface SupabaseRestApi {
     @Header("Authorization") authHeader: String? = null,
     @Query("user_id") userIdFilter: String? = null,
     @Query("status") statusFilter: String? = null,
-    @Query("select") select: String = "*,profiles:user_id(*)",
+    @Query("select") select: String = "*,profiles:user_id($PUBLIC_PROFILE_SELECT_COLUMNS)",
     @Query("order") order: String = "created_at.desc",
     @Query("limit") limit: Int = 100
   ): Response<List<SupabaseVerificationRequestDto>>

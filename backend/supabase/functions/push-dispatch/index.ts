@@ -86,6 +86,13 @@ Deno.serve(async (req: Request) => {
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
     const saRaw = Deno.env.get('FIREBASE_SERVICE_ACCOUNT') ?? '';
 
+    if (!supabaseUrl || !serviceRoleKey || !anonKey) {
+      return new Response(JSON.stringify({ error: 'Push dispatch service configuration incomplete.' }), {
+        status: 503,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const authHeader = req.headers.get('Authorization') ?? '';
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
@@ -120,6 +127,22 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    const [{ data: callerProfile }, { data: callerAdminRec }] = await Promise.all([
+      supabaseAdmin.from('profiles').select('role').eq('id', callerId).maybeSingle(),
+      supabaseAdmin.from('admin_users').select('role, is_active').eq('user_id', callerId).eq('is_active', true).maybeSingle(),
+    ]);
+    const adminRoles = new Set(['ADMIN', 'SUPER_ADMIN', 'OWNER_ADMIN', 'MODERATOR']);
+    const isCallerAdmin =
+      adminRoles.has(String(callerAdminRec?.role || '').toUpperCase()) ||
+      adminRoles.has(String(callerProfile?.role || '').toUpperCase());
+
+    if (isBroadcast && !isCallerAdmin) {
+      return new Response(JSON.stringify({ error: 'Forbidden: Only authorized VYBE administrators may send broadcast pushes.' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (!isBroadcast && recipientId === callerId && type !== 'ANNOUNCEMENT') {
       return new Response(JSON.stringify({ skipped: 'self_event' }), {
         status: 200,
@@ -130,7 +153,7 @@ Deno.serve(async (req: Request) => {
     // Respect bidirectional block list for targeted notifications
     if (!isBroadcast && recipientId) {
       const { data: blocks } = await supabaseAdmin
-        .from('user_blocks')
+        .from('blocks')
         .select('blocker_id')
         .or(`and(blocker_id.eq.${callerId},blocked_id.eq.${recipientId}),and(blocker_id.eq.${recipientId},blocked_id.eq.${callerId})`)
         .limit(1);
@@ -219,7 +242,7 @@ Deno.serve(async (req: Request) => {
       stringData.title = String(title);
       stringData.body = String(message);
       stringData.type = String(type);
-      stringData.actor_id = String(body.actorId || body.actor_id || callerId);
+      stringData.actor_id = String(isCallerAdmin ? (body.actorId || body.actor_id || callerId) : callerId);
       if (recipientId) stringData.recipient_id = String(recipientId);
       stringData.event_key = canonicalEventKey;
       stringData.channel_id = String(channelId);

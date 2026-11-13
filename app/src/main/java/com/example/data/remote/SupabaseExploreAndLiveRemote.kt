@@ -1051,7 +1051,7 @@ object SupabaseExploreAndLiveRemote {
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
         communityIdFilter = "eq.$communityId",
-        select = "*,profiles:user_id(*)"
+        select = "*,profiles:user_id($PUBLIC_PROFILE_SELECT_COLUMNS)"
       )
       if (!resp.isSuccessful) {
         resp = SupabaseNetworkClient.restApi.getCommunityMembers(

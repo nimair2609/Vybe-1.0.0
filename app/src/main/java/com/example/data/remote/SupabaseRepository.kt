@@ -951,7 +951,28 @@ class SupabaseRepository {
         idFilter = "eq.$userId"
       )
       if (resp.isSuccessful && !resp.body().isNullOrEmpty()) {
-        return@withContext mapProfileDtoToUser(resp.body()!!.first(), email)
+        var profileDto = resp.body()!!.first()
+        if (!authHeader.isNullOrBlank()) {
+          try {
+            val privResp = SupabaseNetworkClient.restApi.getMyPrivateProfileRpc(
+              apiKey = SupabaseConfig.supabaseAnonKey,
+              authHeader = authHeader
+            )
+            val priv = privResp.body()?.firstOrNull()
+            if (privResp.isSuccessful && priv != null && priv.id == profileDto.id) {
+              profileDto = profileDto.copy(
+                email = priv.email ?: profileDto.email,
+                phone = priv.phone ?: profileDto.phone,
+                dateOfBirth = priv.dateOfBirth ?: profileDto.dateOfBirth,
+                age = priv.age ?: profileDto.age,
+                isUnder18 = priv.isUnder18 ?: profileDto.isUnder18
+              )
+            }
+          } catch (e: Exception) {
+            Log.w(TAG, "getMyPrivateProfileRpc failed: ${e.message}")
+          }
+        }
+        return@withContext mapProfileDtoToUser(profileDto, email)
       }
     } catch (e: Exception) {
       Log.w(TAG, "getProfileById failed: ${e.message}")
@@ -1936,7 +1957,7 @@ class SupabaseRepository {
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
         idsInFilter = "eq.$cleanId",
-        select = "*,profiles:author_id(*),post_media(*)"
+        select = "*,profiles:author_id($PUBLIC_PROFILE_SELECT_COLUMNS),post_media(*)"
       )
       if (!resp.isSuccessful) {
         resp = SupabaseNetworkClient.restApi.getPostsByIds(
@@ -3148,7 +3169,7 @@ class SupabaseRepository {
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
         recipientIdFilter = "eq.$recipientId",
-        select = "*,actor:actor_id(*)"
+        select = "*,actor:actor_id($PUBLIC_PROFILE_SELECT_COLUMNS)"
       )
       if (!resp.isSuccessful) {
         resp = SupabaseNetworkClient.restApi.getNotifications(
