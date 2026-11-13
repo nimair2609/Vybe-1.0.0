@@ -1,6 +1,7 @@
 import React from 'react';
 import { Plus } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
+import { OptimizedImage } from './OptimizedImage';
 
 export const StoryCarousel: React.FC = () => {
   const { currentUser, stories, openStoryViewer, openModal } = useVybe();
@@ -15,10 +16,12 @@ export const StoryCarousel: React.FC = () => {
           className="flex flex-col items-center gap-1.5 cursor-pointer group"
         >
           <div className="relative">
-            <div className="w-15 h-15 w-[60px] h-[60px] rounded-full p-[2px] border border-[var(--vybe-border)] group-hover:border-[var(--vybe-accent)] transition-colors">
-              <img
+            <div className="w-[60px] h-[60px] rounded-full p-[2px] border border-[var(--vybe-border)] group-hover:border-[var(--vybe-accent)] transition-colors">
+              <OptimizedImage
                 src={currentUser.avatarUrl}
                 alt={currentUser.displayName}
+                width={56}
+                height={56}
                 className="w-full h-full object-cover rounded-full"
               />
             </div>
@@ -47,9 +50,11 @@ export const StoryCarousel: React.FC = () => {
               }`}
             >
               <div className="w-full h-full p-[1.5px] bg-[var(--vybe-bg)] rounded-full">
-                <img
+                <OptimizedImage
                   src={story.author.avatarUrl}
                   alt={story.author.displayName}
+                  width={54}
+                  height={54}
                   className="w-full h-full object-cover rounded-full"
                 />
               </div>

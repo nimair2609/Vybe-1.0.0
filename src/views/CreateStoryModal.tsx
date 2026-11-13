@@ -1,10 +1,16 @@
 import React, { useState, useRef } from 'react';
 import {
   X, Sparkles, Send, Music, Image as ImageIcon,
-  Video, Type, AlertCircle, Users
+  Video, Type, AlertCircle, Users, CheckCircle2
 } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
-import { compressImageToDataUrl } from '../utils/imageCompressor';
+import {
+  compressImageToBlob,
+  compressImageToDataUrl,
+  UPLOAD_COMPRESSION_PRESETS
+} from '../utils/imageCompressor';
+import { uploadMediaBlobToStorage } from '../services/supabaseService';
+import { trackDisposableBlobUrl } from '../utils/cacheManager';
 
 type StoryTabMode = 'PHOTO' | 'VIDEO' | 'TEXT';
 
@@ -20,6 +26,10 @@ export const CreateStoryModal: React.FC = () => {
   const [audience, setAudience] = useState<'Public' | 'Followers' | 'VYBE Matches'>('Public');
   const [musicTrack] = useState('Midnight Vibe Lo-Fi');
   const [mediaPreviewUrl, setMediaPreviewUrl] = useState<string>('');
+  const [selectedBlob, setSelectedBlob] = useState<Blob | null>(null);
+  const [selectedFileName, setSelectedFileName] = useState<string>('story.webp');
+  const [originalSizeBytes, setOriginalSizeBytes] = useState<number | undefined>(undefined);
+  const [compressionSavings, setCompressionSavings] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
 
@@ -34,9 +44,12 @@ export const CreateStoryModal: React.FC = () => {
     'from-[#060714] to-[#1A1F36]'
   ];
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     setValidationError(null);
+    setCompressionSavings(null);
+    setSelectedBlob(null);
+    setOriginalSizeBytes(undefined);
     if (!file) return;
 
     const isImage = file.type.startsWith('image/');
@@ -60,31 +73,37 @@ export const CreateStoryModal: React.FC = () => {
     }
 
     if (isImage) {
-      compressImageToDataUrl(file, { maxWidth: 1080, maxHeight: 1920, quality: 0.82 })
-        .then(compressedUrl => setMediaPreviewUrl(compressedUrl))
-        .catch(() => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            if (typeof reader.result === 'string') setMediaPreviewUrl(reader.result);
-          };
-          reader.readAsDataURL(file);
-        });
+      try {
+        const res = await compressImageToBlob(file, UPLOAD_COMPRESSION_PRESETS.STORY);
+        setSelectedBlob(res.blob);
+        setSelectedFileName(file.name.replace(/\.[^/.]+$/, '') + `.${res.extension}`);
+        setOriginalSizeBytes(res.originalSizeBytes);
+
+        const origKb = Math.round(res.originalSizeBytes / 1024);
+        const newKb = Math.round(res.sizeBytes / 1024);
+        const pct = Math.max(0, Math.round(((res.originalSizeBytes - res.sizeBytes) / (res.originalSizeBytes || 1)) * 100));
+        setCompressionSavings(`${origKb} KB -> ${newKb} KB (-${pct}%) WebP`);
+
+        const previewObjUrl = URL.createObjectURL(res.blob);
+        trackDisposableBlobUrl(previewObjUrl);
+        setMediaPreviewUrl(previewObjUrl);
+      } catch {
+        const fallbackDataUrl = await compressImageToDataUrl(file, UPLOAD_COMPRESSION_PRESETS.STORY);
+        setMediaPreviewUrl(fallbackDataUrl);
+      }
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setMediaPreviewUrl(reader.result);
-      }
-    };
-    reader.onerror = () => {
-      setValidationError('Could not read the selected file. Please try another file.');
-    };
-    reader.readAsDataURL(file);
+    // Video story file: use binary Blob upload with size telemetry instead of massive base64 DataURL
+    setSelectedBlob(file);
+    setSelectedFileName(file.name || 'story_video.mp4');
+    setOriginalSizeBytes(file.size);
+    const previewObjUrl = URL.createObjectURL(file);
+    trackDisposableBlobUrl(previewObjUrl);
+    setMediaPreviewUrl(previewObjUrl);
   };
 
-  const publishWithAudience = (targetAudience: 'Public' | 'Followers' | 'VYBE Matches') => {
+  const publishWithAudience = async (targetAudience: 'Public' | 'Followers' | 'VYBE Matches') => {
     setValidationError(null);
 
     if (mode === 'TEXT' && !caption.trim()) {
@@ -98,9 +117,25 @@ export const CreateStoryModal: React.FC = () => {
 
     setIsPublishing(true);
     try {
+      let resolvedMediaUrl = mode === 'TEXT' ? '' : mediaPreviewUrl;
+      if (mode !== 'TEXT' && selectedBlob) {
+        const uploadRes = await uploadMediaBlobToStorage(
+          selectedBlob,
+          'stories',
+          selectedFileName,
+          originalSizeBytes,
+          { isPrivate: targetAudience !== 'Public' }
+        );
+        if (uploadRes?.publicUrl) {
+          resolvedMediaUrl = uploadRes.publicUrl;
+        } else if (mode === 'PHOTO') {
+          resolvedMediaUrl = await compressImageToDataUrl(selectedBlob, UPLOAD_COMPRESSION_PRESETS.STORY);
+        }
+      }
+
       createStory({
         caption: caption.trim(),
-        mediaUrl: mode === 'TEXT' ? '' : mediaPreviewUrl,
+        mediaUrl: resolvedMediaUrl,
         mediaType: mode,
         audience: targetAudience,
         textBackgroundColor: mode === 'TEXT' ? selectedBg : undefined,
@@ -250,6 +285,13 @@ export const CreateStoryModal: React.FC = () => {
                   }`}
                 />
               ))}
+            </div>
+          )}
+
+          {compressionSavings && !validationError && (
+            <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+              <span>Compressed: {compressionSavings}</span>
             </div>
           )}
 

@@ -1,17 +1,9 @@
 package com.example.ui.components
 
-import android.media.MediaPlayer
-import android.net.Uri
-import android.widget.VideoView
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -19,7 +11,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -35,17 +26,15 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import com.example.ui.theme.VybeMagenta
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 
 /**
- * High-performance, single-instance video player for vertical Reels ViewPager.
- * When [isActive] is false, native VideoView and MediaPlayer instances are completely
- * released from memory and replaced with a zero-cost poster image placeholder.
- * This guarantees STRICTLY ONLY ONE video decoder/player is active in memory at any time.
+ * High-performance, single-instance video player for vertical Reels ViewPager backed by Media3 [VybeVideoPlayer]
+ * and the shared application-level [com.example.util.VybeCacheManager] (`SimpleCache`).
+ *
+ * When [isActive] is false, the active player instance is completely released from memory and replaced with a
+ * lightweight cached poster preview image so only one decoder is alive at any time.
  */
 @Composable
 fun SmartReelVideoPlayer(
@@ -56,10 +45,9 @@ fun SmartReelVideoPlayer(
   onDoubleTap: () -> Unit,
   modifier: Modifier = Modifier
 ) {
-  var isPlaying by remember { mutableStateOf(true) }
-  var isBuffering by remember { mutableStateOf(true) }
-  var playbackProgress by remember { mutableFloatStateOf(0f) }
-  var showPlayPauseFeedback by remember { mutableStateOf(false) }
+  var isPausedByUser by remember(videoUrl, isActive) { mutableStateOf(false) }
+  var isReady by remember(videoUrl, isActive) { mutableStateOf(false) }
+  var playbackProgress by remember(videoUrl, isActive) { mutableFloatStateOf(0f) }
 
   // Double tap heart pop animation
   var showHeartPop by remember { mutableStateOf(false) }
@@ -90,100 +78,30 @@ fun SmartReelVideoPlayer(
     contentAlignment = Alignment.Center
   ) {
     if (isActive) {
-      var videoViewRef by remember { mutableStateOf<VideoView?>(null) }
-      var mediaPlayerRef by remember { mutableStateOf<MediaPlayer?>(null) }
-
-      // Update volume when isMuted changes
-      LaunchedEffect(isMuted) {
-        try {
-          val vol = if (isMuted) 0f else 1f
-          mediaPlayerRef?.setVolume(vol, vol)
-        } catch (_: Exception) {}
-      }
-
-      // Track playback progress
-      LaunchedEffect(isActive, isPlaying) {
-        while (isActive && isPlaying) {
-          try {
-            val vv = videoViewRef
-            if (vv != null && vv.isPlaying && vv.duration > 0) {
-              playbackProgress = (vv.currentPosition.toFloat() / vv.duration.toFloat()).coerceIn(0f, 1f)
-            }
-          } catch (_: Exception) {}
-          delay(150)
-        }
-      }
-
-      // Safe lifecycle release when this page leaves viewport
-      DisposableEffect(videoUrl) {
-        onDispose {
-          try {
-            videoViewRef?.stopPlayback()
-            mediaPlayerRef?.release()
-            mediaPlayerRef = null
-            videoViewRef = null
-          } catch (_: Exception) {}
-        }
-      }
-
-      AndroidView(
-        factory = { ctx ->
-          VideoView(ctx).apply {
-            setVideoURI(Uri.parse(videoUrl))
-            setOnPreparedListener { mp ->
-              mediaPlayerRef = mp
-              mp.isLooping = true
-              val vol = if (isMuted) 0f else 1f
-              mp.setVolume(vol, vol)
-              start()
-              isPlaying = true
-              isBuffering = false
-            }
-            setOnErrorListener { _, _, _ ->
-              isBuffering = false
-              true
-            }
-            setOnCompletionListener {
-              isPlaying = false
-            }
-            videoViewRef = this
+      VybeVideoPlayer(
+        videoUrl = videoUrl,
+        autoPlay = true,
+        isLooping = true,
+        initialMuted = isMuted,
+        isPausedExternal = isPausedByUser,
+        fitMode = VideoFitMode.COVER_PROPORTIONAL,
+        showControls = false,
+        onReadyChanged = { ready -> isReady = ready },
+        onProgressChanged = { posMs, durMs ->
+          if (durMs > 0) {
+            playbackProgress = (posMs.toFloat() / durMs.toFloat()).coerceIn(0f, 1f)
           }
         },
-        update = { view ->
-          videoViewRef = view
+        onTapOverlay = { isPausedByUser = !isPausedByUser },
+        onDoubleTapOverlay = {
+          onDoubleTap()
+          showHeartPop = true
         },
         modifier = Modifier.fillMaxSize()
       )
 
-      // Gesture overlay: Tap to play/pause, Double-tap to like
-      Box(
-        modifier = Modifier
-          .fillMaxSize()
-          .pointerInput(videoUrl) {
-            detectTapGestures(
-              onDoubleTap = {
-                onDoubleTap()
-                showHeartPop = true
-              },
-              onTap = {
-                val vv = videoViewRef
-                if (vv != null) {
-                  if (vv.isPlaying) {
-                    vv.pause()
-                    isPlaying = false
-                  } else {
-                    vv.start()
-                    isPlaying = true
-                  }
-                  showPlayPauseFeedback = true
-                }
-              }
-            )
-          }
-      )
-
       // Loading / Buffering spinner
-      if (isBuffering) {
+      if (!isReady) {
         CircularProgressIndicator(
           color = VybeMagenta,
           strokeWidth = 3.dp,
@@ -192,7 +110,7 @@ fun SmartReelVideoPlayer(
       }
 
       // Play / Pause central visual feedback
-      if (!isPlaying && !isBuffering) {
+      if (isPausedByUser && isReady) {
         Box(
           modifier = Modifier
             .size(64.dp)
@@ -243,8 +161,7 @@ fun SmartReelVideoPlayer(
         trackColor = Color.White.copy(alpha = 0.2f),
       )
     } else {
-      // INACTIVE PAGE: ZERO MEMORY OVERHEAD
-      // Native player is completely unmounted. Show only poster thumbnail.
+      // INACTIVE PAGE: ZERO DECODER OVERHEAD
       AsyncImage(
         model = videoUrl,
         contentDescription = "Reel preview",

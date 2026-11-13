@@ -1530,6 +1530,7 @@ class SupabaseRepository {
     bytes: ByteArray,
     mimeType: String,
     accessToken: String = "",
+    isPrivateMedia: Boolean = false,
     onProgress: ((Int) -> Unit)? = null
   ): Result<UploadedStorageMedia> = withContext(Dispatchers.IO) {
     if (!isConfigured) {
@@ -1542,6 +1543,12 @@ class SupabaseRepository {
       val cleanBucket = bucket.trim()
       val cleanLeaf = fileName.trim().removePrefix("/")
       val cleanContentType = mimeType.trim().lowercase().ifBlank { "application/octet-stream" }
+      val restrictedBuckets = setOf("chat-media", "business_docs")
+      val cacheControlHeader = if (isPrivateMedia || cleanBucket in restrictedBuckets) {
+        "private, max-age=0, must-revalidate"
+      } else {
+        "public, max-age=31536000, immutable"
+      }
 
       fun buildObjectPathForJwt(jwt: String): String {
         val canonicalOwnerId = SupabaseConfig.extractJwtSubject(jwt)
@@ -1562,6 +1569,7 @@ class SupabaseRepository {
           .addHeader("apikey", SupabaseConfig.supabaseAnonKey)
           .addHeader("Authorization", "Bearer $jwt")
           .addHeader("Content-Type", cleanContentType)
+          .addHeader("cache-control", cacheControlHeader)
           .addHeader("x-upsert", "true")
           .post(body)
           .build()

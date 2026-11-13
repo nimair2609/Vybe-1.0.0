@@ -275,6 +275,7 @@ fun VybeSurfaceCard(
   cornerRadius: Dp = VybeTokens.Radius.lg,
   borderColor: Color? = null,
   containerColor: Color? = null,
+  elevated: Boolean = false,
   contentPadding: PaddingValues = PaddingValues(16.dp),
   content: @Composable ColumnScope.() -> Unit
 ) {
@@ -285,7 +286,7 @@ fun VybeSurfaceCard(
     .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
 
   Surface(
-    color = containerColor ?: palette.card,
+    color = containerColor ?: if (elevated) palette.elevated else palette.card,
     contentColor = palette.textPrimary,
     shape = shape,
     border = BorderStroke(1.dp, borderColor ?: palette.border),

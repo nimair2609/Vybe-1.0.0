@@ -660,11 +660,17 @@ function extractUserIdFromJwt(token: string): string | null {
   }
 }
 
+export interface UploadStorageOptions {
+  isPrivate?: boolean;
+  cacheControl?: string;
+}
+
 export async function uploadMediaBlobToStorage(
   blob: Blob,
-  bucket: 'posts' | 'avatars' | 'banners' | 'stories',
+  bucket: 'posts' | 'avatars' | 'banners' | 'stories' | 'chat-media',
   fileName: string = 'media',
-  originalSizeBytes?: number
+  originalSizeBytes?: number,
+  options: UploadStorageOptions = {}
 ): Promise<{ publicUrl: string; storagePath: string } | null> {
   const token = localStorage.getItem('vybe_access_token') || localStorage.getItem('vybe_admin_jwt') || '';
   if (!token || !token.startsWith('eyJ')) {
@@ -678,15 +684,33 @@ export async function uploadMediaBlobToStorage(
     return null;
   }
 
-  const cleanExt = blob.type.includes('webp') ? 'webp' : (blob.type.includes('png') ? 'png' : 'jpg');
-  const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${cleanExt}`;
+  const mime = (blob.type || 'image/webp').toLowerCase();
+  const cleanExt = mime.includes('mp4')
+    ? 'mp4'
+    : mime.includes('webm')
+      ? 'webm'
+      : mime.includes('webp')
+        ? 'webp'
+        : mime.includes('png')
+          ? 'png'
+          : 'jpg';
+  const baseLeaf = (fileName || 'media').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.[^/.]+$/, '');
+  const uniqueName = `${Date.now()}_${baseLeaf.slice(0, 24)}_${Math.random().toString(36).slice(2, 6)}.${cleanExt}`;
   const storagePath = `${uid}/${uniqueName}`;
   const targetUrl = `${SUPABASE_URL}/storage/v1/object/${bucket}/${storagePath}`;
+
+  const isRestricted = Boolean(options.isPrivate || bucket === 'chat-media');
+  const cacheControlHeader = options.cacheControl || (
+    isRestricted
+      ? 'private, max-age=0, must-revalidate'
+      : 'public, max-age=31536000, immutable'
+  );
 
   const uploadHeaders: Record<string, string> = {
     'apikey': SUPABASE_ANON_KEY,
     'Authorization': `Bearer ${token}`,
     'Content-Type': blob.type || 'image/webp',
+    'cache-control': cacheControlHeader,
     'x-upsert': 'true'
   };
 
@@ -703,6 +727,31 @@ export async function uploadMediaBlobToStorage(
       vybeDiagnostics.recordNetworkRequest(targetUrl, duration, res.status, blob.size, 'POST');
       vybeDiagnostics.recordStorageUpload(bucket, blob.size, originalSizeBytes || blob.size);
       const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${storagePath}`;
+      if (isRestricted) {
+        try {
+          const signRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${bucket}/${storagePath}`, {
+            method: 'POST',
+            headers: {
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ expiresIn: 604800 })
+          });
+          if (signRes.ok) {
+            const signJson = await signRes.json();
+            const signedPath = signJson?.signedURL || signJson?.signedUrl || '';
+            if (signedPath) {
+              const fullSigned = signedPath.startsWith('http')
+                ? signedPath
+                : signedPath.startsWith('/storage/v1')
+                  ? `${SUPABASE_URL}${signedPath}`
+                  : `${SUPABASE_URL}/storage/v1${signedPath}`;
+              return { publicUrl: fullSigned, storagePath: `${bucket}/${storagePath}` };
+            }
+          }
+        } catch {}
+      }
       return { publicUrl, storagePath: `${bucket}/${storagePath}` };
     }
 

@@ -115,12 +115,7 @@ class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     try {
-      coil.Coil.setImageLoader(
-        coil.ImageLoader.Builder(applicationContext)
-          .okHttpClient(com.example.data.remote.SupabaseNetworkClient.okHttpClient)
-          .crossfade(true)
-          .build()
-      )
+      coil.Coil.setImageLoader(com.example.util.VybeCacheManager.getImageLoader(applicationContext))
     } catch (e: Throwable) {
       Log.w("MainActivity", "Coil initialization notice: ${e.message}")
     }

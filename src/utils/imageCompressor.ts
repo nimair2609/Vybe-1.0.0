@@ -21,12 +21,15 @@ export interface CompressedBlobResult {
   height: number;
 }
 
-const DEFAULT_OPTIONS: CompressionOptions = {
-  maxWidth: 1440,
-  maxHeight: 1440,
-  quality: 0.82,
-  format: 'image/webp'
+export const UPLOAD_COMPRESSION_PRESETS = {
+  FEED: { maxWidth: 1440, maxHeight: 1440, quality: 0.82, format: 'image/webp' as const },
+  STORY: { maxWidth: 1080, maxHeight: 1920, quality: 0.82, format: 'image/webp' as const },
+  AVATAR: { maxWidth: 512, maxHeight: 512, quality: 0.85, format: 'image/webp' as const },
+  BANNER: { maxWidth: 1920, maxHeight: 1080, quality: 0.82, format: 'image/webp' as const },
+  THUMBNAIL: { maxWidth: 480, maxHeight: 480, quality: 0.72, format: 'image/webp' as const }
 };
+
+const DEFAULT_OPTIONS: CompressionOptions = UPLOAD_COMPRESSION_PRESETS.FEED;
 
 /**
  * Check if browser supports WebP canvas export.

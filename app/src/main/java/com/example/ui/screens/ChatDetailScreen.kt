@@ -556,7 +556,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
       Column(
         modifier = Modifier
           .fillMaxWidth()
-          .background(palette.surface)
+          .background(palette.card)
           .navigationBarsPadding()
           .imePadding()
       ) {

@@ -29,6 +29,7 @@ import coil.compose.AsyncImage
 import com.example.data.model.NotificationItem
 import com.example.data.model.NotificationType
 import com.example.data.model.User
+import com.example.data.model.VybeReaction
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VybeAvatar
@@ -37,6 +38,7 @@ import com.example.ui.components.VybePrimaryButton
 import com.example.ui.components.VybeSecondaryButton
 import com.example.ui.components.VybeSubScreenTopBar
 import com.example.ui.components.VybeSurfaceCard
+import com.example.ui.components.reactionColor
 import com.example.ui.theme.*
 import com.example.util.rememberRelativeTimestamp
 
@@ -362,7 +364,7 @@ fun NotificationCard(
 ) {
   val palette = LocalVybePalette.current
   val (icon, iconTint) = when (item.type) {
-    NotificationType.LIKE -> Pair(Icons.Outlined.FavoriteBorder, VybeReaction.LOVE.color)
+    NotificationType.LIKE -> Pair(Icons.Outlined.FavoriteBorder, reactionColor(VybeReaction.LOVE))
     NotificationType.COMMENT_OR_REPLY -> Pair(Icons.Outlined.ChatBubbleOutline, palette.accent)
     NotificationType.FOLLOW -> Pair(Icons.Outlined.PersonAdd, palette.accent)
     NotificationType.DIRECT_MESSAGE, NotificationType.GROUP_MESSAGE -> Pair(Icons.Outlined.Forum, palette.success)

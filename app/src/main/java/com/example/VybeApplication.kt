@@ -4,8 +4,12 @@ import android.app.Activity
 import android.app.Application
 import android.os.Bundle
 import android.util.Log
+import coil.Coil
+import coil.ImageLoader
+import coil.ImageLoaderFactory
 import com.example.notifications.VybeNotificationHelper
 import com.example.notifications.VybeNotificationSyncJobService
+import com.example.util.VybeCacheManager
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import java.util.concurrent.atomic.AtomicInteger
@@ -15,14 +19,25 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * Ensures notification channels exist even when the app process is cold-started in the background
  * by Firebase Cloud Messaging, registers native OS JobScheduler background sync for when the app is
- * closed or backgrounded, and tracks foreground/background lifecycle state accurately.
+ * closed or backgrounded, initializes the single shared media cache / Coil ImageLoader, and tracks
+ * foreground/background lifecycle state accurately.
  */
-class VybeApplication : Application() {
+class VybeApplication : Application(), ImageLoaderFactory {
 
   private val startedActivitiesCount = AtomicInteger(0)
 
+  override fun newImageLoader(): ImageLoader = VybeCacheManager.getImageLoader(this)
+
   override fun onCreate() {
     super.onCreate()
+
+    // 0. Initialize single application-level media & image cache manager
+    try {
+      VybeCacheManager.init(this)
+      Coil.setImageLoader(VybeCacheManager.getImageLoader(this))
+    } catch (e: Throwable) {
+      Log.w("VybeApplication", "VybeCacheManager init notice: ${e.message}")
+    }
 
     // 1. Initialize FirebaseApp with fallback options to ensure FCM token acquisition works
     // even before a custom google-services.json is attached.

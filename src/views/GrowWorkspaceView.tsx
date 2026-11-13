@@ -275,7 +275,7 @@ export const GrowWorkspaceView: React.FC = () => {
                       >
                         {post.author.displayName}
                       </button>
-                      <p className="text-[11px] text-[var(--vybe-text-muted)]">{post.timestampLabel}</p>
+                      <p className="text-[11px] text-[var(--vybe-text-muted)]">{post.timestamp}</p>
                     </div>
                   </div>
 
@@ -283,9 +283,9 @@ export const GrowWorkspaceView: React.FC = () => {
                     <p className="text-sm text-[var(--vybe-text)] leading-relaxed">{post.caption}</p>
                   )}
 
-                  {post.mediaUrl && (
+                  {post.mediaUrls?.[0] && (
                     <img
-                      src={post.mediaUrl}
+                      src={post.mediaUrls[0]}
                       alt={post.caption || 'Discussion media'}
                       className="w-full max-h-64 object-cover rounded-xl border border-[var(--vybe-border)]"
                     />
@@ -296,10 +296,10 @@ export const GrowWorkspaceView: React.FC = () => {
                       <button
                         onClick={() => toggleLikePost(post.id)}
                         className={`flex items-center gap-1.5 font-semibold ${
-                          post.isLikedByMe ? 'text-rose-500' : 'hover:text-[var(--vybe-text)]'
+                          post.isLiked ? 'text-rose-500' : 'hover:text-[var(--vybe-text)]'
                         }`}
                       >
-                        <Heart className={`w-4 h-4 ${post.isLikedByMe ? 'fill-current' : ''}`} />
+                        <Heart className={`w-4 h-4 ${post.isLiked ? 'fill-current' : ''}`} />
                         <span>{post.likesCount}</span>
                       </button>
                       <span className="flex items-center gap-1.5 font-semibold">
@@ -523,12 +523,12 @@ export const GrowWorkspaceView: React.FC = () => {
               <div className="flex items-center gap-3 min-w-0">
                 <img
                   src={shop.logoUrl}
-                  alt={shop.name}
+                  alt={shop.businessName}
                   className="w-12 h-12 rounded-xl object-cover border border-[var(--vybe-border)] shrink-0"
                 />
                 <div className="min-w-0">
-                  <h3 className="text-sm font-bold text-[var(--vybe-text)] truncate">{shop.name}</h3>
-                  <p className="text-xs text-[var(--vybe-text-secondary)] truncate">{shop.category} · {shop.city}</p>
+                  <h3 className="text-sm font-bold text-[var(--vybe-text)] truncate">{shop.businessName}</h3>
+                  <p className="text-xs text-[var(--vybe-text-secondary)] truncate">{shop.category} · {shop.locationAddress}</p>
                 </div>
               </div>
               <button

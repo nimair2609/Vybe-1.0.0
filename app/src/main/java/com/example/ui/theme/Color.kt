@@ -78,8 +78,11 @@ val GrowDarkTextMuted = Color(0xFF64748B)
 
 // Legacy Surface Aliases mapped cleanly to VYBE 2.0 Tokens
 val ObsidianBackground = SocialDarkBackground
+val ObsidianCanvas = SocialDarkBackground
 val ObsidianSurface = SocialDarkSurface
+val ObsidianCard = SocialDarkSurface
 val ObsidianSurfaceElevated = SocialDarkElevated
+val ObsidianElevated = SocialDarkElevated
 val ObsidianBorder = SocialDarkBorder
 val ObsidianTextPrimary = SocialDarkTextPrimary
 val ObsidianTextSecondary = SocialDarkTextSecondary

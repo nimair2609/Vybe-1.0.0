@@ -383,7 +383,7 @@ fun StoryCreateDialog(
         Column(
           modifier = Modifier
             .fillMaxWidth()
-            .background(palette.surface)
+            .background(palette.card)
             .windowInsetsPadding(WindowInsets.navigationBars)
             .testTag("create_story_bottom_bar")
         ) {

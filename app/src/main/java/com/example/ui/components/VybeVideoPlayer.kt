@@ -2,12 +2,10 @@ package com.example.ui.components
 
 import android.graphics.Matrix
 import android.graphics.SurfaceTexture
-import android.media.AudioAttributes
-import android.media.MediaPlayer
-import android.net.Uri
 import android.provider.Settings
 import android.view.Surface
 import android.view.TextureView
+import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -38,7 +36,17 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.example.util.FeedAudioController
+import com.example.util.VybeCacheManager
 
 enum class VideoFitMode {
   /** Scales proportionally inside container without cropping important content (ideal for landscape/portrait in stories & reels). */
@@ -48,15 +56,18 @@ enum class VideoFitMode {
 }
 
 /**
- * Reusable, lifecycle-safe video player built on `TextureView` + `MediaPlayer` so it clips cleanly
- * inside Compose cards, reels, stories, and post-creation previews without `SurfaceView` Z-order black boxes.
+ * Reusable, lifecycle-safe video player powered by AndroidX Media3 [ExoPlayer] + shared application-level
+ * [VybeCacheManager] (`SimpleCache` + `CacheDataSource` + `LeastRecentlyUsedCacheEvictor`), rendered via `TextureView`
+ * so it clips cleanly inside Compose cards, reels, stories, and post-creation previews without `SurfaceView` Z-order boxes.
  *
- * Enforces strict single-video viewport autoplay:
+ * Enforces strict single-video viewport autoplay & zero duplicate downloads:
+ * - Replays directly from the shared bounded 500 MB LRU disk cache with canonical cache keys.
  * - Starts automatically when [autoPlay] becomes true (muted by default in feed).
  * - Immediately pauses when [autoPlay] becomes false, [isPausedExternal] becomes true, or lifecycle pauses.
  * - Respects manual user pause ([manuallyPausedByUser]) and system reduced-motion preferences when [respectReducedMotion] is true.
- * - Prevents repeated initialization and releases native decoders cleanly on dispose.
+ * - Unregisters and releases Media3 ExoPlayer cleanly on dispose.
  */
+@OptIn(UnstableApi::class)
 @Composable
 fun VybeVideoPlayer(
   videoUrl: String,
@@ -104,7 +115,7 @@ fun VybeVideoPlayer(
   var playbackError by remember(videoUrl) { mutableStateOf<String?>(null) }
   var retryNonce by remember { mutableIntStateOf(0) }
 
-  // Keep latest state references accessible inside async MediaPlayer callbacks
+  // Keep latest state references accessible inside async ExoPlayer callbacks
   val latestAutoPlay by rememberUpdatedState(autoPlay)
   val latestPausedExternal by rememberUpdatedState(isPausedExternal)
   val latestMuted by rememberUpdatedState(isMuted)
@@ -114,7 +125,7 @@ fun VybeVideoPlayer(
   var viewWidth by remember { mutableIntStateOf(0) }
   var viewHeight by remember { mutableIntStateOf(0) }
 
-  val mediaPlayerRef = remember { mutableStateOf<MediaPlayer?>(null) }
+  val exoPlayerRef = remember { mutableStateOf<ExoPlayer?>(null) }
   val textureViewRef = remember { mutableStateOf<TextureView?>(null) }
   val activeSurfaceRef = remember { mutableStateOf<Surface?>(null) }
   val boundUrlRef = remember { mutableStateOf<String?>(null) }
@@ -122,19 +133,19 @@ fun VybeVideoPlayer(
   LaunchedEffect(initialMuted) {
     isMuted = initialMuted
     try {
-      val mp = mediaPlayerRef.value
+      val player = exoPlayerRef.value
       val vol = if (initialMuted) 0f else 1f
-      mp?.setVolume(vol, vol)
-      if (feedAudioOwnerId != null && mp != null) {
-        FeedAudioController.onVideoAudioStateChanged(feedAudioOwnerId, mp, shouldPlayAudio = isPlaying && !initialMuted)
+      player?.volume = vol
+      if (feedAudioOwnerId != null && player != null) {
+        FeedAudioController.onVideoAudioStateChanged(feedAudioOwnerId, player, shouldPlayAudio = isPlaying && !initialMuted)
       }
     } catch (_: Exception) {}
   }
 
   LaunchedEffect(isPlaying, isMuted, feedAudioOwnerId) {
     val ownerId = feedAudioOwnerId ?: return@LaunchedEffect
-    val mp = mediaPlayerRef.value ?: return@LaunchedEffect
-    FeedAudioController.onVideoAudioStateChanged(ownerId, mp, shouldPlayAudio = isPlaying && !isMuted)
+    val player = exoPlayerRef.value ?: return@LaunchedEffect
+    FeedAudioController.onVideoAudioStateChanged(ownerId, player, shouldPlayAudio = isPlaying && !isMuted)
   }
 
   LaunchedEffect(isPrepared, isBuffering, playbackError) {
@@ -147,13 +158,13 @@ fun VybeVideoPlayer(
 
   LaunchedEffect(seekNonce) {
     if (seekNonce > 0 && seekToFraction != null && isPrepared && playbackError == null) {
-      val mp = mediaPlayerRef.value ?: return@LaunchedEffect
+      val player = exoPlayerRef.value ?: return@LaunchedEffect
       try {
-        val dur = mp.duration
-        if (dur > 0) {
-          val targetMs = (dur * seekToFraction.coerceIn(0f, 1f)).toInt()
-          mp.seekTo(targetMs)
-          onProgressChanged?.invoke(targetMs, dur)
+        val dur = player.duration
+        if (dur > 0 && dur != C.TIME_UNSET) {
+          val targetMs = (dur * seekToFraction.coerceIn(0f, 1f)).toLong()
+          player.seekTo(targetMs)
+          onProgressChanged?.invoke(targetMs.toInt(), dur.toInt())
         }
       } catch (_: Exception) {}
     }
@@ -162,13 +173,13 @@ fun VybeVideoPlayer(
   LaunchedEffect(isPrepared, isPlaying, videoUrl, onProgressChanged != null) {
     if (onProgressChanged == null || !isPrepared || playbackError != null) return@LaunchedEffect
     while (isPrepared && playbackError == null) {
-      val mp = mediaPlayerRef.value
-      if (mp != null) {
+      val player = exoPlayerRef.value
+      if (player != null) {
         try {
-          val dur = mp.duration
-          val pos = mp.currentPosition
-          if (dur > 0 && pos >= 0) {
-            onProgressChanged(pos.coerceAtMost(dur), dur)
+          val dur = player.duration
+          val pos = player.currentPosition
+          if (dur > 0 && dur != C.TIME_UNSET && pos >= 0) {
+            onProgressChanged(pos.coerceAtMost(dur).toInt(), dur.toInt())
           }
         } catch (_: Exception) {}
       }
@@ -213,28 +224,38 @@ fun VybeVideoPlayer(
   }
 
   fun releaseCurrentPlayer() {
-    mediaPlayerRef.value?.let { old ->
+    exoPlayerRef.value?.let { old ->
       if (feedAudioOwnerId != null) {
         FeedAudioController.onVideoAudioStateChanged(feedAudioOwnerId, old, shouldPlayAudio = false)
       }
+      VybeCacheManager.unregisterActivePlayer(old)
       try {
-        if (old.isPlaying) old.stop()
+        old.playWhenReady = false
+        old.stop()
       } catch (_: Exception) {}
       try {
-        old.reset()
+        old.clearVideoSurface()
       } catch (_: Exception) {}
       try {
         old.release()
       } catch (_: Exception) {}
     }
-    mediaPlayerRef.value = null
+    exoPlayerRef.value = null
     boundUrlRef.value = null
     isPrepared = false
     isPlaying = false
   }
 
+  fun startOrResumePlayer(player: ExoPlayer) {
+    if (player.playbackState == Player.STATE_ENDED && !isLooping) {
+      player.seekTo(0L)
+    }
+    player.playWhenReady = true
+    player.play()
+  }
+
   fun configureAndStartPlayer(surface: Surface, forceReload: Boolean = false) {
-    if (!forceReload && boundUrlRef.value == videoUrl && mediaPlayerRef.value != null && playbackError == null) {
+    if (!forceReload && boundUrlRef.value == videoUrl && exoPlayerRef.value != null && playbackError == null) {
       return
     }
     releaseCurrentPlayer()
@@ -248,102 +269,115 @@ fun VybeVideoPlayer(
     }
 
     try {
-      val mp = MediaPlayer()
-      mediaPlayerRef.value = mp
+      val cacheDataSourceFactory = VybeCacheManager.getCacheDataSourceFactory(context)
+      val mediaSourceFactory = DefaultMediaSourceFactory(cacheDataSourceFactory)
+      val audioAttrs = AudioAttributes.Builder()
+        .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+        .setUsage(C.USAGE_MEDIA)
+        .build()
+
+      val player = ExoPlayer.Builder(context)
+        .setMediaSourceFactory(mediaSourceFactory)
+        .setAudioAttributes(audioAttrs, false)
+        .build()
+
+      VybeCacheManager.registerActivePlayer(player)
+      exoPlayerRef.value = player
       boundUrlRef.value = videoUrl
 
-      mp.setAudioAttributes(
-        AudioAttributes.Builder()
-          .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
-          .setUsage(AudioAttributes.USAGE_MEDIA)
-          .build()
-      )
-      mp.setSurface(surface)
-      mp.isLooping = isLooping
-      val vol = if (latestMuted) 0f else 1f
-      mp.setVolume(vol, vol)
+      player.setVideoSurface(surface)
+      player.repeatMode = if (isLooping) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+      player.volume = if (latestMuted) 0f else 1f
 
-      mp.setOnVideoSizeChangedListener { _, w, h ->
-        if (w > 0 && h > 0) {
-          videoWidth = w
-          videoHeight = h
-          val ratio = (w.toFloat() / h.toFloat()).coerceIn(0.45f, 2.4f)
-          onAspectRatioDetected?.invoke(ratio)
-          applyAspectTransform()
-        }
-      }
-
-      mp.setOnInfoListener { _, what, _ ->
-        when (what) {
-          MediaPlayer.MEDIA_INFO_BUFFERING_START -> isBuffering = true
-          MediaPlayer.MEDIA_INFO_BUFFERING_END,
-          MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START -> isBuffering = false
-        }
-        false
-      }
-
-      mp.setOnPreparedListener { player ->
-        isPrepared = true
-        isBuffering = false
-        val w = player.videoWidth
-        val h = player.videoHeight
-        if (w > 0 && h > 0) {
-          videoWidth = w
-          videoHeight = h
-          onAspectRatioDetected?.invoke((w.toFloat() / h.toFloat()).coerceIn(0.45f, 2.4f))
-          applyAspectTransform()
-        }
-        val dur = try { player.duration } catch (_: Exception) { 0 }
-        if (dur > 0) {
-          onDurationDetected?.invoke(dur)
-        }
-        val currentVol = if (latestMuted) 0f else 1f
-        player.setVolume(currentVol, currentVol)
-
-        val isLifecycleResumed = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
-        val shouldPlayNow = latestAutoPlay &&
-          !latestPausedExternal &&
-          !manuallyPausedByUser &&
-          !isSystemReducedMotion &&
-          isLifecycleResumed
-
-        if (shouldPlayNow) {
-          try {
-            player.start()
-            isPlaying = true
-          } catch (_: Exception) {
-            isPlaying = false
+      player.addListener(object : Player.Listener {
+        override fun onVideoSizeChanged(videoSize: VideoSize) {
+          val w = videoSize.width
+          val h = videoSize.height
+          if (w > 0 && h > 0) {
+            val adjustedW = (w * videoSize.pixelWidthHeightRatio).toInt().coerceAtLeast(1)
+            videoWidth = adjustedW
+            videoHeight = h
+            val ratio = (adjustedW.toFloat() / h.toFloat()).coerceIn(0.45f, 2.4f)
+            onAspectRatioDetected?.invoke(ratio)
+            applyAspectTransform()
           }
-        } else {
-          try {
-            player.seekTo(1)
-          } catch (_: Exception) {}
-          isPlaying = false
         }
-      }
 
-      mp.setOnCompletionListener {
-        if (!isLooping) {
-          isPlaying = false
-          onVideoCompleted?.invoke()
+        override fun onPlaybackStateChanged(playbackState: Int) {
+          when (playbackState) {
+            Player.STATE_BUFFERING -> {
+              isBuffering = true
+            }
+            Player.STATE_READY -> {
+              isBuffering = false
+              val firstReady = !isPrepared
+              isPrepared = true
+              val dur = player.duration
+              if (dur > 0 && dur != C.TIME_UNSET) {
+                onDurationDetected?.invoke(dur.toInt())
+              }
+              player.volume = if (latestMuted) 0f else 1f
+
+              if (firstReady) {
+                val isLifecycleResumed = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+                val shouldPlayNow = latestAutoPlay &&
+                  !latestPausedExternal &&
+                  !manuallyPausedByUser &&
+                  !isSystemReducedMotion &&
+                  isLifecycleResumed
+                if (shouldPlayNow) {
+                  player.playWhenReady = true
+                  player.play()
+                } else {
+                  player.playWhenReady = false
+                }
+              }
+            }
+            Player.STATE_ENDED -> {
+              isBuffering = false
+              if (!isLooping) {
+                isPlaying = false
+                player.playWhenReady = false
+                onVideoCompleted?.invoke()
+              }
+            }
+            Player.STATE_IDLE -> {
+              isPlaying = false
+            }
+          }
         }
-      }
 
-      mp.setOnErrorListener { _, what, extra ->
-        isPrepared = false
-        isBuffering = false
-        isPlaying = false
-        playbackError = "Unable to play video ($what/$extra)."
-        true
-      }
+        override fun onIsPlayingChanged(playing: Boolean) {
+          isPlaying = playing
+          if (playing) {
+            isBuffering = false
+          }
+        }
 
-      val parsedUri = Uri.parse(videoUrl)
-      if (parsedUri.scheme == "content" || parsedUri.scheme == "file") {
-        mp.setDataSource(context, parsedUri)
-      } else {
-        mp.setDataSource(videoUrl)
-      }
-      mp.prepareAsync()
+        override fun onPlayerError(error: PlaybackException) {
+          isPrepared = false
+          isBuffering = false
+          isPlaying = false
+          playbackError = error.localizedMessage?.takeIf { it.isNotBlank() } ?: "Unable to play video."
+        }
+      })
+
+      val cacheKey = VybeCacheManager.stableMediaCacheKey(videoUrl)
+      val mediaItem = MediaItem.Builder()
+        .setUri(videoUrl)
+        .setCustomCacheKey(cacheKey)
+        .build()
+
+      val isLifecycleResumed = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+      val initialAutoPlay = latestAutoPlay &&
+        !latestPausedExternal &&
+        !manuallyPausedByUser &&
+        !isSystemReducedMotion &&
+        isLifecycleResumed
+
+      player.playWhenReady = initialAutoPlay
+      player.setMediaItem(mediaItem)
+      player.prepare()
     } catch (_: Exception) {
       isPrepared = false
       isBuffering = false
@@ -355,24 +389,23 @@ fun VybeVideoPlayer(
   // React dynamically whenever viewport visibility (`autoPlay`) or external pause changes
   LaunchedEffect(autoPlay, isPausedExternal, isPrepared) {
     if (!autoPlay) {
-      // Leaving viewport resets manual pause so scrolling back later behaves predictably
       manuallyPausedByUser = false
     }
-    val mp = mediaPlayerRef.value ?: return@LaunchedEffect
+    val player = exoPlayerRef.value ?: return@LaunchedEffect
     if (!isPrepared || playbackError != null) return@LaunchedEffect
 
     try {
       val shouldPause = !autoPlay || isPausedExternal
       if (shouldPause) {
-        if (mp.isPlaying) {
-          mp.pause()
+        if (player.isPlaying || player.playWhenReady) {
+          player.playWhenReady = false
+          player.pause()
         }
         isPlaying = false
       } else if (!manuallyPausedByUser && !isSystemReducedMotion && lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-        if (!mp.isPlaying) {
-          mp.start()
+        if (!player.isPlaying) {
+          startOrResumePlayer(player)
         }
-        isPlaying = true
       }
     } catch (_: Exception) {}
   }
@@ -388,23 +421,23 @@ fun VybeVideoPlayer(
   // Pause cleanly when app moves to background and release decoder on dispose
   DisposableEffect(lifecycleOwner) {
     val observer = LifecycleEventObserver { _, event ->
-      val mp = mediaPlayerRef.value
+      val player = exoPlayerRef.value
       when (event) {
         Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> {
           try {
-            if (isPrepared && mp?.isPlaying == true) {
-              mp.pause()
+            if (isPrepared && (player?.isPlaying == true || player?.playWhenReady == true)) {
+              player.playWhenReady = false
+              player.pause()
             }
             isPlaying = false
           } catch (_: Exception) {}
         }
         Lifecycle.Event.ON_RESUME -> {
           try {
-            if (isPrepared && latestAutoPlay && !latestPausedExternal && !manuallyPausedByUser && !isSystemReducedMotion && mp != null && playbackError == null) {
-              if (!mp.isPlaying) {
-                mp.start()
+            if (isPrepared && latestAutoPlay && !latestPausedExternal && !manuallyPausedByUser && !isSystemReducedMotion && player != null && playbackError == null) {
+              if (!player.isPlaying) {
+                startOrResumePlayer(player)
               }
-              isPlaying = true
             }
           } catch (_: Exception) {}
         }
@@ -480,17 +513,16 @@ fun VybeVideoPlayer(
                   if (onTapOverlay != null) {
                     onTapOverlay()
                   } else if (showControls) {
-                    val mp = mediaPlayerRef.value
-                    if (mp != null && isPrepared && playbackError == null) {
+                    val player = exoPlayerRef.value
+                    if (player != null && isPrepared && playbackError == null) {
                       try {
-                        if (mp.isPlaying) {
-                          mp.pause()
-                          isPlaying = false
+                        if (player.isPlaying) {
+                          player.playWhenReady = false
+                          player.pause()
                           manuallyPausedByUser = true
                         } else {
                           manuallyPausedByUser = false
-                          mp.start()
-                          isPlaying = true
+                          startOrResumePlayer(player)
                         }
                       } catch (_: Exception) {}
                     }
@@ -508,17 +540,16 @@ fun VybeVideoPlayer(
               interactionSource = remember { MutableInteractionSource() },
               indication = null
             ) {
-              val mp = mediaPlayerRef.value
-              if (mp != null && isPrepared && playbackError == null) {
+              val player = exoPlayerRef.value
+              if (player != null && isPrepared && playbackError == null) {
                 try {
-                  if (mp.isPlaying) {
-                    mp.pause()
-                    isPlaying = false
+                  if (player.isPlaying) {
+                    player.playWhenReady = false
+                    player.pause()
                     manuallyPausedByUser = true
                   } else {
                     manuallyPausedByUser = false
-                    mp.start()
-                    isPlaying = true
+                    startOrResumePlayer(player)
                   }
                 } catch (_: Exception) {}
               }
@@ -572,12 +603,11 @@ fun VybeVideoPlayer(
             .clip(CircleShape)
             .background(Color.Black.copy(alpha = 0.55f))
             .clickable {
-              val mp = mediaPlayerRef.value
-              if (mp != null && isPrepared) {
+              val player = exoPlayerRef.value
+              if (player != null && isPrepared) {
                 try {
                   manuallyPausedByUser = false
-                  mp.start()
-                  isPlaying = true
+                  startOrResumePlayer(player)
                 } catch (_: Exception) {}
               }
             },
@@ -599,7 +629,7 @@ fun VybeVideoPlayer(
           isMuted = nextMuted
           try {
             val vol = if (nextMuted) 0f else 1f
-            mediaPlayerRef.value?.setVolume(vol, vol)
+            exoPlayerRef.value?.volume = vol
           } catch (_: Exception) {}
           onMuteToggled?.invoke(nextMuted)
         },

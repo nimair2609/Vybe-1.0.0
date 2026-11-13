@@ -538,8 +538,8 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
         item(key = "search_and_categories") {
           Column(modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
             VybeSearchBar(
-              value = searchQuery,
-              onValueChange = { searchQuery = it },
+              query = searchQuery,
+              onQueryChange = { searchQuery = it },
               placeholder = "Search communities...",
               testTag = "community_search_input"
             )

@@ -9,6 +9,7 @@ import { FingerHeartReaction, FingerHeartDoubleTapOverlay, FingerHeartIcon } fro
 import { useVybe } from '../context/VybeContext';
 import { formatRelativeTimestamp } from '../utils/timestamp';
 import { resolveMediaUrl } from '../services/supabaseService';
+import { OptimizedImage } from './OptimizedImage';
 
 interface PostCardProps {
   post: Post;
@@ -134,11 +135,11 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
             onClick={() => openUserProfile(post.author)}
             className="relative shrink-0 cursor-pointer"
           >
-            <img
+            <OptimizedImage
               src={post.author.avatarUrl}
               alt={post.author.displayName}
-              loading="lazy"
-              decoding="async"
+              width={40}
+              height={40}
               className="w-10 h-10 rounded-full object-cover border border-[var(--vybe-border)]"
             />
             {post.author.isOnline && (
@@ -219,11 +220,10 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
                 className="w-full h-full object-cover max-h-[500px]"
               />
             ) : (
-              <img
+              <OptimizedImage
                 src={resolveMediaUrl(post.mediaUrls[0])}
                 alt="Post content"
-                loading="lazy"
-                decoding="async"
+                aspectRatio="4 / 5"
                 className="w-full h-full object-cover max-h-[500px]"
               />
             )}

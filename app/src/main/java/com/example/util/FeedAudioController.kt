@@ -4,13 +4,14 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.media.MediaPlayer
+import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.*
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
 
 /**
- * Coordinates Feed audio playback across video posts (`MediaPlayer`) and music-enabled photo/text posts (`AudioTrack`).
+ * Coordinates Feed audio playback across video posts (`ExoPlayer` / `MediaPlayer`) and music-enabled photo/text posts (`AudioTrack`).
  * Guarantees:
  * 1. Once enabled, Feed audio remains enabled across scrolled items until switched off.
  * 2. Strictly ONE item can produce sound at any instant (zero overlapping audio).
@@ -32,8 +33,47 @@ object FeedAudioController {
   @Volatile
   private var activeOwnerPostId: String? = null
   private var activeMediaPlayer: MediaPlayer? = null
+  private var activeExoPlayer: ExoPlayer? = null
   private var synthJob: Job? = null
   private var currentAudioTrack: AudioTrack? = null
+
+  /**
+   * Registers a Media3 [ExoPlayer] for [postId]. Mutes any previously active player and halts
+   * ambient music tracks so video and music audio never overlap.
+   */
+  fun onVideoAudioStateChanged(postId: String, player: ExoPlayer, shouldPlayAudio: Boolean) {
+    synchronized(lock) {
+      if (shouldPlayAudio) {
+        if (activeOwnerPostId != null && activeOwnerPostId != postId) {
+          stopSynthLocked()
+          activeMediaPlayer?.let { prevMp ->
+            try { prevMp.setVolume(0f, 0f) } catch (_: Exception) {}
+          }
+          activeMediaPlayer = null
+          val prevExo = activeExoPlayer
+          if (prevExo != null && prevExo !== player) {
+            try { prevExo.volume = 0f } catch (_: Exception) {}
+          }
+        }
+        stopSynthLocked()
+        activeOwnerPostId = postId
+        activeExoPlayer = player
+        try {
+          player.volume = 1f
+        } catch (_: Exception) {}
+      } else {
+        try {
+          player.volume = 0f
+        } catch (_: Exception) {}
+        if (activeExoPlayer === player) {
+          activeExoPlayer = null
+          if (activeOwnerPostId == postId) {
+            activeOwnerPostId = null
+          }
+        }
+      }
+    }
+  }
 
   /**
    * Registers a [MediaPlayer] for [postId]. Mutes any previously registered player for a different post
@@ -44,6 +84,10 @@ object FeedAudioController {
       if (shouldPlayAudio) {
         if (activeOwnerPostId != null && activeOwnerPostId != postId) {
           stopSynthLocked()
+          activeExoPlayer?.let { prevExo ->
+            try { prevExo.volume = 0f } catch (_: Exception) {}
+          }
+          activeExoPlayer = null
           val prevPlayer = activeMediaPlayer
           if (prevPlayer != null && prevPlayer !== player) {
             try {
@@ -95,6 +139,12 @@ object FeedAudioController {
         } catch (_: Exception) {}
       }
       activeMediaPlayer = null
+      activeExoPlayer?.let { prev ->
+        try {
+          prev.volume = 0f
+        } catch (_: Exception) {}
+      }
+      activeExoPlayer = null
       stopSynthLocked()
 
       activeOwnerPostId = postId
@@ -113,6 +163,12 @@ object FeedAudioController {
         } catch (_: Exception) {}
       }
       activeMediaPlayer = null
+      activeExoPlayer?.let { prev ->
+        try {
+          prev.volume = 0f
+        } catch (_: Exception) {}
+      }
+      activeExoPlayer = null
       stopSynthLocked()
       activeOwnerPostId = null
     }

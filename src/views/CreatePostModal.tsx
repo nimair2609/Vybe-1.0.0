@@ -15,6 +15,7 @@ export const CreatePostModal: React.FC = () => {
   const [imageUrl, setImageUrl] = useState('');
   const [selectedBlob, setSelectedBlob] = useState<Blob | null>(null);
   const [blobFileName, setBlobFileName] = useState<string>('photo.webp');
+  const [originalSizeBytes, setOriginalSizeBytes] = useState<number | undefined>(undefined);
   const [compressionSavings, setCompressionSavings] = useState<string | null>(null);
   const [locationName, setLocationName] = useState('');
   const [audioTrackTitle, setAudioTrackTitle] = useState('');
@@ -46,6 +47,7 @@ export const CreatePostModal: React.FC = () => {
       });
 
       setSelectedBlob(res.blob);
+      setOriginalSizeBytes(res.originalSizeBytes);
       setBlobFileName(file.name.replace(/\.[^/.]+$/, '') + '.webp');
       
       const origKb = Math.round(res.originalSizeBytes / 1024);
@@ -84,7 +86,9 @@ export const CreatePostModal: React.FC = () => {
         const uploadResult = await uploadMediaBlobToStorage(
           selectedBlob,
           'posts',
-          blobFileName
+          blobFileName,
+          originalSizeBytes,
+          { isPrivate: Boolean(currentUser.isPrivate) }
         );
         if (uploadResult && uploadResult.publicUrl) {
           finalMediaUrl = uploadResult.publicUrl;

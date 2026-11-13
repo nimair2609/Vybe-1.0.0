@@ -1239,7 +1239,8 @@ class VybeRepository private constructor() {
           val initialPayload = MediaUtils.readMediaPayload(
             context = ctx,
             uriString = rawUri,
-            preserveRawBytes = op.isUnfiltered
+            preserveRawBytes = op.isUnfiltered,
+            uploadTarget = com.example.util.MediaUploadTarget.FEED
           ) ?: throw IllegalStateException("Could not read selected media file. Please re-select the photo or video.")
 
           if (detectedAspectRatio == null && initialPayload.aspectRatio != null) {
@@ -1258,7 +1259,7 @@ class VybeRepository private constructor() {
             val mixRes = StoryReelMediaComposer.mixMusicIntoVideo(ctx, rawUri, effectiveAttachment)
             if (mixRes.isSuccess) {
               val mixedUri = mixRes.getOrThrow()
-              val mixedPayload = MediaUtils.readMediaPayload(ctx, mixedUri)
+              val mixedPayload = MediaUtils.readMediaPayload(ctx, mixedUri, uploadTarget = com.example.util.MediaUploadTarget.FEED)
               if (mixedPayload != null && mixedPayload.bytes.isNotEmpty()) {
                 payload = mixedPayload
                 effectiveLocalUri = mixedUri
@@ -1281,6 +1282,7 @@ class VybeRepository private constructor() {
               bytes = payload.bytes,
               mimeType = payload.mimeType,
               accessToken = token,
+              isPrivateMedia = user.isPrivate,
               onProgress = { pct ->
                 _uploadStatus.value = UploadStatus.Uploading(
                   label = if (payload.isVideo) "Uploading video..." else "Uploading photo...",
@@ -1542,7 +1544,11 @@ class VybeRepository private constructor() {
         MediaUtils.validateMediaUri(ctx, op.localOrRemoteMediaUri, MediaUtils.MAX_STORY_POST_BYTES)
           .getOrElse { throw it }
 
-        val initialPayload = MediaUtils.readMediaPayload(ctx, op.localOrRemoteMediaUri)
+        val initialPayload = MediaUtils.readMediaPayload(
+          context = ctx,
+          uriString = op.localOrRemoteMediaUri,
+          uploadTarget = com.example.util.MediaUploadTarget.STORY
+        )
           ?: throw IllegalStateException("Unable to read story media file. Please select it again.")
 
         if (initialPayload.bytes.isEmpty()) {
@@ -1565,7 +1571,11 @@ class VybeRepository private constructor() {
           }
           if (renderResult.isSuccess) {
             val renderedUri = renderResult.getOrThrow()
-            val renderedPayload = MediaUtils.readMediaPayload(ctx, renderedUri)
+            val renderedPayload = MediaUtils.readMediaPayload(
+              ctx,
+              renderedUri,
+              uploadTarget = com.example.util.MediaUploadTarget.STORY
+            )
             if (renderedPayload != null && renderedPayload.bytes.isNotEmpty()) {
               payload = renderedPayload
               resolvedUrl = renderedUri
@@ -1585,6 +1595,7 @@ class VybeRepository private constructor() {
             bytes = payload.bytes,
             mimeType = payload.mimeType,
             accessToken = token,
+            isPrivateMedia = user.isPrivate || op.audience != StoryAudience.EVERYONE,
             onProgress = { pct ->
               _uploadStatus.value = UploadStatus.Uploading(
                 label = if (payload.isVideo) "Uploading story video..." else "Uploading story photo...",
@@ -2542,14 +2553,19 @@ class VybeRepository private constructor() {
       if (ctx != null && supabaseRepo.isConfigured && !avatarUrl.isNullOrBlank() &&
         !avatarUrl.startsWith("http", true)
       ) {
-        MediaUtils.readMediaPayload(ctx, avatarUrl)?.let { payload ->
+        MediaUtils.readMediaPayload(
+          ctx,
+          avatarUrl,
+          uploadTarget = com.example.util.MediaUploadTarget.AVATAR
+        )?.let { payload ->
           val uploaded = supabaseRepo.uploadMediaWithProgress(
             bucket = "avatars",
             userId = user.id,
             fileName = "avatar_${System.currentTimeMillis()}.${payload.extension}",
             bytes = payload.bytes,
             mimeType = payload.mimeType,
-            accessToken = token
+            accessToken = token,
+            isPrivateMedia = false
           )
           if (uploaded.isSuccess) {
             finalAvatar = uploaded.getOrThrow().url
@@ -2561,14 +2577,19 @@ class VybeRepository private constructor() {
       if (ctx != null && supabaseRepo.isConfigured && !coverUrl.isNullOrBlank() &&
         !coverUrl.startsWith("http", true)
       ) {
-        MediaUtils.readMediaPayload(ctx, coverUrl)?.let { payload ->
+        MediaUtils.readMediaPayload(
+          ctx,
+          coverUrl,
+          uploadTarget = com.example.util.MediaUploadTarget.BANNER
+        )?.let { payload ->
           val uploaded = supabaseRepo.uploadMediaWithProgress(
             bucket = "avatars",
             userId = user.id,
             fileName = "cover_${System.currentTimeMillis()}.${payload.extension}",
             bytes = payload.bytes,
             mimeType = payload.mimeType,
-            accessToken = token
+            accessToken = token,
+            isPrivateMedia = false
           )
           if (uploaded.isSuccess) {
             finalCover = uploaded.getOrThrow().url
@@ -3042,7 +3063,11 @@ class VybeRepository private constructor() {
     MediaUtils.validateMediaUri(ctx, rawMediaUri, MediaUtils.MAX_CHAT_MEDIA_BYTES).getOrElse {
       return Result.failure(it)
     }
-    val payload = MediaUtils.readMediaPayload(ctx, rawMediaUri)
+    val payload = MediaUtils.readMediaPayload(
+      ctx,
+      rawMediaUri,
+      uploadTarget = com.example.util.MediaUploadTarget.CHAT
+    )
       ?: return Result.failure(IllegalStateException("Could not read selected attachment."))
     if (payload.bytes.isEmpty()) {
       return Result.failure(IllegalStateException("Selected attachment is empty."))
@@ -3054,7 +3079,8 @@ class VybeRepository private constructor() {
       fileName = leafName,
       bytes = payload.bytes,
       mimeType = payload.mimeType,
-      accessToken = token
+      accessToken = token,
+      isPrivateMedia = true
     )
     if (primary.isSuccess) {
       return Result.success(primary.getOrThrow().url)
@@ -3066,7 +3092,8 @@ class VybeRepository private constructor() {
       fileName = "chat_$leafName",
       bytes = payload.bytes,
       mimeType = payload.mimeType,
-      accessToken = token
+      accessToken = token,
+      isPrivateMedia = true
     )
     return if (fallback.isSuccess) {
       Result.success(fallback.getOrThrow().url)
@@ -7157,7 +7184,11 @@ class VybeRepository private constructor() {
         var uploadedUrl: String? = null
         val ctx = appContext
         if (mediaUri != null && ctx != null) {
-          val payload = MediaUtils.readMediaPayload(ctx, mediaUri.toString())
+          val payload = MediaUtils.readMediaPayload(
+            ctx,
+            mediaUri.toString(),
+            uploadTarget = com.example.util.MediaUploadTarget.FEED
+          )
           if (payload != null) {
             val fileName = "comm_${UUID.randomUUID()}.${payload.extension}"
             val uploadRes = supabaseRepo.uploadMediaWithProgress(
@@ -7166,7 +7197,8 @@ class VybeRepository private constructor() {
               fileName = fileName,
               bytes = payload.bytes,
               mimeType = payload.mimeType,
-              accessToken = token
+              accessToken = token,
+              isPrivateMedia = false
             )
             uploadedUrl = uploadRes.getOrNull()?.url
           }

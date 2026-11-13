@@ -268,7 +268,7 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
     },
     bottomBar = {
       Surface(
-        color = palette.surface,
+        color = palette.card,
         tonalElevation = 0.dp,
         modifier = Modifier.fillMaxWidth()
       ) {

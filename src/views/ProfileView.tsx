@@ -7,6 +7,7 @@ import { useVybe } from '../context/VybeContext';
 import { OfficialBadge } from '../components/Badges';
 import { FingerHeartReaction } from '../components/FingerHeartReaction';
 import { VybeModeSwitch, VybeEmptyState } from '../components/VybeDesignSystem';
+import { OptimizedImage } from '../components/OptimizedImage';
 import { LivePulseStatus } from '../types';
 
 export const ProfileView: React.FC = () => {
@@ -62,12 +63,14 @@ export const ProfileView: React.FC = () => {
     <div className="w-full max-w-2xl mx-auto pb-28">
       {/* Cover Banner */}
       <div className="h-44 w-full relative bg-[var(--vybe-elevated)]">
-        <img
+        <OptimizedImage
           src={
             targetUser.coverUrl ||
             'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80'
           }
           alt="Cover"
+          aspectRatio="16 / 9"
+          eager
           className="w-full h-full object-cover"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-[var(--vybe-bg)] via-transparent to-black/30" />
@@ -120,9 +123,12 @@ export const ProfileView: React.FC = () => {
         {/* Avatar & Action Row */}
         <div className="flex items-end justify-between gap-3">
           <div className="relative">
-            <img
+            <OptimizedImage
               src={targetUser.avatarUrl}
               alt={targetUser.displayName}
+              width={96}
+              height={96}
+              eager
               className="w-24 h-24 rounded-full object-cover border-4 border-[var(--vybe-bg)] shadow-lg"
             />
             {targetUser.isOnline && (
@@ -299,12 +305,13 @@ export const ProfileView: React.FC = () => {
                 onClick={() => openSharedPostModal(p.id)}
                 className="aspect-square bg-[#101322] border border-[#262E4A] rounded-xl overflow-hidden relative group cursor-pointer"
               >
-                <img
+                <OptimizedImage
                   src={
                     p.mediaUrls[0] ||
                     'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=400&q=80'
                   }
                   alt="Post"
+                  aspectRatio="1 / 1"
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                 />
                 <div className="absolute bottom-1.5 right-1.5 rounded-full bg-black/55 backdrop-blur-md px-1">

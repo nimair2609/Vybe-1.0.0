@@ -54,6 +54,7 @@ enum class SettingsSubpage {
   TIME_MANAGEMENT,
   HELP,
   SUPPORT_TICKETS,
+  STORAGE_AND_CACHE,
   CHECK_FOR_UPDATES,
   ABOUT
 }
@@ -129,6 +130,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
           SettingsSubpage.TIME_MANAGEMENT -> "Time Management"
           SettingsSubpage.HELP -> "Privacy, Data & Safety"
           SettingsSubpage.SUPPORT_TICKETS -> "Support Tickets"
+          SettingsSubpage.STORAGE_AND_CACHE -> "Storage & Cache"
           SettingsSubpage.CHECK_FOR_UPDATES -> "Check for Updates"
           SettingsSubpage.ABOUT -> "About VYBE"
         },
@@ -372,6 +374,15 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                 title = "Badges & Verification",
                 subtitle = "Official badges, verification applications, and display preferences",
                 onClick = { viewModel.navigateTo(Screen.VERIFICATION_CENTER) }
+              )
+              HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp), color = palette.border)
+              SettingsListItem(
+                icon = Icons.Default.Storage,
+                iconTint = palette.accent,
+                title = "Storage & Cache Manager",
+                subtitle = "Manage image cache, 500 MB video cache & temporary media",
+                onClick = { activeSubpage = SettingsSubpage.STORAGE_AND_CACHE },
+                testTag = "settings_storage_cache_item"
               )
             }
           }
@@ -1330,6 +1341,189 @@ fun SettingsScreen(viewModel: VybeViewModel) {
           }
         }
       }
+
+      // SUBPAGE: STORAGE & CACHE RESET MANAGER
+      SettingsSubpage.STORAGE_AND_CACHE -> {
+        val localCtx = LocalContext.current
+        var stats by remember {
+          mutableStateOf(com.example.util.VybeCacheManager.getCacheStats(localCtx))
+        }
+        var cacheActionStatus by remember { mutableStateOf<String?>(null) }
+
+        LazyColumn(
+          modifier = Modifier
+            .fillMaxSize()
+            .padding(paddingValues)
+            .navigationBarsPadding()
+            .padding(16.dp),
+          verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+          item {
+            VybeSurfaceCard(
+              borderColor = palette.accent.copy(alpha = 0.35f),
+              contentPadding = PaddingValues(16.dp)
+            ) {
+              Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Column {
+                    Text(
+                      "Disposable Cache Usage",
+                      fontFamily = PlusJakartaSansFontFamily,
+                      fontWeight = FontWeight.Bold,
+                      fontSize = 15.sp,
+                      color = palette.textPrimary
+                    )
+                    Text(
+                      "Media3 Video Cap: ${formatCacheBytes(stats.videoCacheLimitBytes)}",
+                      fontSize = 11.sp,
+                      color = palette.textSecondary
+                    )
+                  }
+                  Text(
+                    text = formatCacheBytes(stats.totalDisposableBytes),
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 18.sp,
+                    color = palette.accent
+                  )
+                }
+
+                HorizontalDivider(color = palette.border)
+
+                CacheStatRow("Image Cache (Coil Disk)", formatCacheBytes(stats.imageCacheBytes), palette.accent)
+                CacheStatRow("Video Cache (Media3 LRU)", formatCacheBytes(stats.videoCacheBytes), palette.accentSecondary)
+                CacheStatRow("Temporary Camera & Audio Files", formatCacheBytes(stats.tempCacheBytes), palette.warning)
+
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("Video Disk Cache Cap", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = palette.textSecondary)
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                  listOf(
+                    250L * 1024L * 1024L to "250 MB",
+                    500L * 1024L * 1024L to "500 MB",
+                    1024L * 1024L * 1024L to "1 GB"
+                  ).forEach { (limitBytes, label) ->
+                    val selected = stats.videoCacheLimitBytes == limitBytes
+                    Surface(
+                      color = if (selected) palette.accent.copy(alpha = 0.18f) else palette.elevated,
+                      shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                      border = BorderStroke(1.dp, if (selected) palette.accent else palette.border),
+                      modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 42.dp)
+                        .clip(RoundedCornerShape(VybeTokens.Radius.sm))
+                        .clickable {
+                          com.example.util.VybeCacheManager.setVideoCacheLimitBytes(localCtx, limitBytes)
+                          stats = com.example.util.VybeCacheManager.getCacheStats(localCtx)
+                          cacheActionStatus = "Video cache limit set to $label."
+                        }
+                    ) {
+                      Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(6.dp)) {
+                        Text(
+                          text = label,
+                          fontSize = 12.sp,
+                          fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                          color = if (selected) palette.accent else palette.textPrimary
+                        )
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          item {
+            VybeSurfaceCard(contentPadding = PaddingValues(16.dp)) {
+              Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                  "Cache Reset Controls",
+                  fontFamily = PlusJakartaSansFontFamily,
+                  fontWeight = FontWeight.Bold,
+                  fontSize = 15.sp,
+                  color = palette.textPrimary
+                )
+                Text(
+                  "Clears only on-device disposable media caches and reinitializes caches safely. Your Supabase account, posts, messages, and cloud files are never modified.",
+                  fontSize = 11.sp,
+                  color = palette.textSecondary
+                )
+
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                  VybeSecondaryButton(
+                    text = "Clear Images",
+                    testTag = "clear_image_cache_button",
+                    onClick = {
+                      stats = com.example.util.VybeCacheManager.clearImageCache(localCtx)
+                      cacheActionStatus = "Image disk & memory cache cleared."
+                    },
+                    modifier = Modifier.weight(1f)
+                  )
+                  VybeSecondaryButton(
+                    text = "Clear Videos",
+                    testTag = "clear_video_cache_button",
+                    onClick = {
+                      stats = com.example.util.VybeCacheManager.clearVideoCache(localCtx)
+                      cacheActionStatus = "Media3 video cache cleared and reinitialized."
+                    },
+                    modifier = Modifier.weight(1f)
+                  )
+                }
+
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                  VybeSecondaryButton(
+                    text = "Clear Temp Files",
+                    testTag = "clear_temp_cache_button",
+                    onClick = {
+                      stats = com.example.util.VybeCacheManager.clearTempCache(localCtx)
+                      cacheActionStatus = "Temporary camera & render cache cleared."
+                    },
+                    modifier = Modifier.weight(1f)
+                  )
+                  VybePrimaryButton(
+                    text = "Clear All Cache",
+                    testTag = "clear_all_cache_button",
+                    onClick = {
+                      stats = com.example.util.VybeCacheManager.clearAllDisposableCache(localCtx)
+                      cacheActionStatus = "All disposable image, video & temp caches cleared."
+                    },
+                    modifier = Modifier.weight(1f)
+                  )
+                }
+
+                if (cacheActionStatus != null) {
+                  Surface(
+                    color = palette.success.copy(alpha = 0.14f),
+                    shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                    border = BorderStroke(1.dp, palette.success.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth()
+                  ) {
+                    Text(
+                      text = cacheActionStatus ?: "",
+                      fontSize = 12.sp,
+                      fontWeight = FontWeight.SemiBold,
+                      color = palette.success,
+                      modifier = Modifier.padding(10.dp)
+                    )
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 
@@ -1481,5 +1675,28 @@ fun SettingsListItem(
       Text(subtitle, fontSize = 11.sp, color = palette.textSecondary)
     }
     Icon(Icons.Default.ChevronRight, contentDescription = null, tint = palette.textMuted)
+  }
+}
+
+@Composable
+private fun CacheStatRow(label: String, value: String, accentColor: Color) {
+  val palette = LocalVybePalette.current
+  Row(
+    modifier = Modifier.fillMaxWidth(),
+    horizontalArrangement = Arrangement.SpaceBetween,
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    Text(label, fontSize = 12.sp, color = palette.textSecondary)
+    Text(value, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = accentColor)
+  }
+}
+
+private fun formatCacheBytes(bytes: Long): String {
+  val safe = bytes.coerceAtLeast(0L)
+  return when {
+    safe >= 1024L * 1024L * 1024L -> String.format("%.2f GB", safe / (1024.0 * 1024.0 * 1024.0))
+    safe >= 1024L * 1024L -> String.format("%.1f MB", safe / (1024.0 * 1024.0))
+    safe >= 1024L -> "${safe / 1024L} KB"
+    else -> "$safe B"
   }
 }

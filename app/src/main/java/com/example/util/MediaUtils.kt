@@ -3,25 +3,43 @@ package com.example.util
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
+import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+
+enum class MediaUploadTarget(val maxDimension: Int, val quality: Int) {
+  FEED(1440, 82),
+  STORY(1440, 82),
+  AVATAR(512, 85),
+  BANNER(1920, 82),
+  CHAT(1440, 80)
+}
 
 data class LocalMediaPayload(
   val bytes: ByteArray,
   val mimeType: String,
   val extension: String,
   val isVideo: Boolean,
-  val aspectRatio: Float?
+  val aspectRatio: Float?,
+  val originalSizeBytes: Long = bytes.size.toLong(),
+  val compressedSizeBytes: Long = bytes.size.toLong(),
+  val width: Int? = null,
+  val height: Int? = null
 )
 
 object MediaUtils {
 
+  private const val TAG = "MediaUtils"
   const val MAX_STORY_POST_BYTES: Long = 100L * 1024L * 1024L // 100 MB (matches Supabase bucket limit)
   const val MAX_CHAT_MEDIA_BYTES: Long = 50L * 1024L * 1024L // 50 MB
 
@@ -192,15 +210,18 @@ object MediaUtils {
   }
 
   /**
-   * Reads bytes, normalizes MIME type for Supabase Storage compatibility, and computes natural aspect ratio.
+   * Reads bytes, resizes large images proportionally for [uploadTarget] (Feed 1440px, Avatar 512px,
+   * Banner 1920px), compresses to WebP (with JPEG fallback), normalizes MIME type for Supabase Storage
+   * compatibility, and records both original and compressed byte counts.
    *
    * When [preserveRawBytes] is `true` (used by UNFILTERED camera capture), the exact captured camera bytes
-   * are returned untouched with zero decoding, resizing, or JPEG re-compression.
+   * are returned untouched with zero decoding, resizing, or re-compression.
    */
   fun readMediaPayload(
     context: Context,
     uriString: String,
-    preserveRawBytes: Boolean = false
+    preserveRawBytes: Boolean = false,
+    uploadTarget: MediaUploadTarget = MediaUploadTarget.FEED
   ): LocalMediaPayload? {
     return try {
       val uri = Uri.parse(uriString)
@@ -222,6 +243,7 @@ object MediaUtils {
       }
 
       if (rawBytes == null || rawBytes.isEmpty()) return null
+      val originalSize = rawBytes.size.toLong()
 
       if (preserveRawBytes) {
         // UNFILTERED path: preserve 100% original camera bytes without any re-encoding or compression
@@ -239,51 +261,240 @@ object MediaUtils {
           mimeType = normalizedHeaderMime,
           extension = ext,
           isVideo = isVideo,
-          aspectRatio = aspectRatio
+          aspectRatio = aspectRatio,
+          originalSizeBytes = originalSize,
+          compressedSizeBytes = originalSize
         )
       }
 
-      // Normalize MIME types for Supabase Storage buckets (stories, posts, chat-media)
-      var finalBytes = rawBytes
-      val finalMime: String = if (isVideo) {
-        when {
+      if (isVideo) {
+        val finalMime = when {
           rawMime in ALLOWED_VIDEO_MIMES -> rawMime
           rawMime.contains("webm") -> "video/webm"
           rawMime.contains("quicktime") || rawMime.contains("mov") -> "video/quicktime"
           else -> "video/mp4"
         }
-      } else {
-        when {
-          rawMime == "image/jpg" || rawMime == "image/jpeg" -> "image/jpeg"
-          rawMime in ALLOWED_IMAGE_MIMES -> rawMime
-          else -> {
-            // Transcode HEIC / HEIF / AVIF / BMP to high-fidelity JPEG so Supabase Storage accepts it
-            val decoded = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size)
-            if (decoded != null) {
-              val out = ByteArrayOutputStream()
-              decoded.compress(Bitmap.CompressFormat.JPEG, 95, out)
-              val converted = out.toByteArray()
-              if (converted.isNotEmpty()) {
-                finalBytes = converted
-              }
-            }
-            "image/jpeg"
-          }
-        }
+        val ext = extensionForMime(finalMime, uriString)
+        val aspectRatio = computeAspectRatio(context, uri, rawBytes, isVideo = true)
+        return LocalMediaPayload(
+          bytes = rawBytes,
+          mimeType = finalMime,
+          extension = ext,
+          isVideo = true,
+          aspectRatio = aspectRatio,
+          originalSizeBytes = originalSize,
+          compressedSizeBytes = originalSize
+        )
       }
 
+      // Image resizing & WebP/JPEG compression path
+      val compressed = compressImageBytes(
+        rawBytes = rawBytes,
+        rawMime = rawMime,
+        maxDimension = uploadTarget.maxDimension,
+        quality = uploadTarget.quality
+      )
+
+      val finalBytes = compressed?.first ?: rawBytes
+      val finalMime = compressed?.second ?: when {
+        rawMime == "image/jpg" || rawMime == "image/jpeg" -> "image/jpeg"
+        rawMime in ALLOWED_IMAGE_MIMES -> rawMime
+        else -> "image/jpeg"
+      }
+      val finalW = compressed?.third?.first
+      val finalH = compressed?.third?.second
       val ext = extensionForMime(finalMime, uriString)
-      val aspectRatio = computeAspectRatio(context, uri, finalBytes, isVideo)
+      val aspectRatio = if (finalW != null && finalH != null && finalW > 0 && finalH > 0) {
+        (finalW.toFloat() / finalH.toFloat()).coerceIn(0.5f, 2.2f)
+      } else {
+        computeAspectRatio(context, uri, finalBytes, isVideo = false)
+      }
+
+      Log.i(
+        TAG,
+        "Prepared upload [$uploadTarget]: ${originalSize}B -> ${finalBytes.size}B ($finalMime, ${finalW ?: "?"}x${finalH ?: "?"})"
+      )
 
       LocalMediaPayload(
         bytes = finalBytes,
         mimeType = finalMime,
         extension = ext,
-        isVideo = isVideo,
-        aspectRatio = aspectRatio
+        isVideo = false,
+        aspectRatio = aspectRatio,
+        originalSizeBytes = originalSize,
+        compressedSizeBytes = finalBytes.size.toLong(),
+        width = finalW,
+        height = finalH
       )
     } catch (_: Exception) {
       null
+    }
+  }
+
+  /**
+   * Decodes, EXIF-orients, proportionally scales to [maxDimension], and compresses [rawBytes] into WebP
+   * (or JPEG fallback). If an already-valid standard image is smaller as-is and already within bounds,
+   * keeps the smaller representation so files never bloat.
+   */
+  fun compressImageBytes(
+    rawBytes: ByteArray,
+    rawMime: String = "image/jpeg",
+    maxDimension: Int = 1440,
+    quality: Int = 82
+  ): Triple<ByteArray, String, Pair<Int, Int>>? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+    var sampleSize = 1
+    val largestSide = maxOf(bounds.outWidth, bounds.outHeight)
+    while (largestSide / (sampleSize * 2) >= maxDimension) {
+      sampleSize *= 2
+    }
+
+    val decodeOpts = BitmapFactory.Options().apply {
+      inSampleSize = sampleSize
+      inPreferredConfig = Bitmap.Config.ARGB_8888
+    }
+    var bitmap = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, decodeOpts) ?: return null
+
+    try {
+      bitmap = applyExifOrientation(bitmap, rawBytes)
+
+      val curMax = maxOf(bitmap.width, bitmap.height)
+      val resized = curMax > maxDimension
+      if (resized) {
+        val ratio = maxDimension.toFloat() / curMax.toFloat()
+        val targetW = (bitmap.width * ratio).toInt().coerceAtLeast(1)
+        val targetH = (bitmap.height * ratio).toInt().coerceAtLeast(1)
+        val scaled = Bitmap.createScaledBitmap(bitmap, targetW, targetH, true)
+        if (scaled !== bitmap) {
+          bitmap.recycle()
+          bitmap = scaled
+        }
+      }
+
+      val webpFormat = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        Bitmap.CompressFormat.WEBP_LOSSY
+      } else {
+        @Suppress("DEPRECATION")
+        Bitmap.CompressFormat.WEBP
+      }
+
+      val webpOut = ByteArrayOutputStream()
+      val webpOk = bitmap.compress(webpFormat, quality.coerceIn(50, 95), webpOut)
+      val webpBytes = webpOut.toByteArray()
+
+      val (encodedBytes, encodedMime) = if (webpOk && webpBytes.isNotEmpty()) {
+        webpBytes to "image/webp"
+      } else {
+        val jpgOut = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(50, 95), jpgOut)
+        jpgOut.toByteArray() to "image/jpeg"
+      }
+
+      val finalW = bitmap.width
+      val finalH = bitmap.height
+
+      val normalizedRawMime = if (rawMime == "image/jpg") "image/jpeg" else rawMime
+      val shouldKeepOriginal = !resized &&
+        normalizedRawMime in ALLOWED_IMAGE_MIMES &&
+        rawBytes.size <= encodedBytes.size
+
+      return if (shouldKeepOriginal) {
+        Triple(rawBytes, normalizedRawMime, finalW to finalH)
+      } else if (encodedBytes.isNotEmpty()) {
+        Triple(encodedBytes, encodedMime, finalW to finalH)
+      } else {
+        null
+      }
+    } finally {
+      if (!bitmap.isRecycled) {
+        bitmap.recycle()
+      }
+    }
+  }
+
+  /**
+   * Generates a lightweight WebP/JPEG thumbnail from a local image or video frame.
+   */
+  fun generateThumbnailBytes(
+    context: Context,
+    uriString: String,
+    isVideo: Boolean,
+    maxDimension: Int = 480,
+    quality: Int = 72
+  ): ByteArray? {
+    return try {
+      val uri = Uri.parse(uriString)
+      val rawBitmap: Bitmap? = if (isVideo) {
+        val retriever = MediaMetadataRetriever()
+        try {
+          if (uri.scheme == "file" && uri.path != null) {
+            retriever.setDataSource(uri.path)
+          } else {
+            retriever.setDataSource(context, uri)
+          }
+          retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+        } finally {
+          try { retriever.release() } catch (_: Exception) {}
+        }
+      } else {
+        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+          ?: uri.path?.let { BitmapFactory.decodeFile(it) }
+      }
+
+      val bmp = rawBitmap ?: return null
+      try {
+        val curMax = maxOf(bmp.width, bmp.height).coerceAtLeast(1)
+        val scaled = if (curMax > maxDimension) {
+          val scale = maxDimension.toFloat() / curMax.toFloat()
+          Bitmap.createScaledBitmap(
+            bmp,
+            (bmp.width * scale).toInt().coerceAtLeast(1),
+            (bmp.height * scale).toInt().coerceAtLeast(1),
+            true
+          )
+        } else bmp
+
+        val out = ByteArrayOutputStream()
+        val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+          Bitmap.CompressFormat.WEBP_LOSSY
+        } else {
+          @Suppress("DEPRECATION")
+          Bitmap.CompressFormat.WEBP
+        }
+        scaled.compress(format, quality, out)
+        if (scaled !== bmp && !scaled.isRecycled) scaled.recycle()
+        out.toByteArray().takeIf { it.isNotEmpty() }
+      } finally {
+        if (!bmp.isRecycled) bmp.recycle()
+      }
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  private fun applyExifOrientation(bitmap: Bitmap, rawBytes: ByteArray): Bitmap {
+    return try {
+      val exif = ExifInterface(ByteArrayInputStream(rawBytes))
+      val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+      val matrix = Matrix()
+      when (orientation) {
+        ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+        ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+        ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+        ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+        else -> return bitmap
+      }
+      val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+      if (rotated !== bitmap) {
+        bitmap.recycle()
+      }
+      rotated
+    } catch (_: Exception) {
+      bitmap
     }
   }
 

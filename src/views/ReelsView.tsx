@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   MessageCircle, Share2, Bookmark, Volume2,
-  VolumeX, Music, ArrowUp, ArrowDown, Sparkles, Pause
+  VolumeX, Music, ArrowUp, ArrowDown, Sparkles, Pause, Play
 } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
 import { OfficialBadge } from '../components/Badges';
 import { FingerHeartReaction, FingerHeartDoubleTapOverlay } from '../components/FingerHeartReaction';
+import { OptimizedImage } from '../components/OptimizedImage';
 import { resolveMediaUrl } from '../services/supabaseService';
 
 export const ReelsView: React.FC = () => {
@@ -24,10 +25,13 @@ export const ReelsView: React.FC = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [isContainerVisible, setIsContainerVisible] = useState(true);
+  const [isVideoReady, setIsVideoReady] = useState(false);
   const [progress, setProgress] = useState(0);
   const [showComments, setShowComments] = useState(false);
   const [commentText, setCommentText] = useState('');
 
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const progressBarRef = useRef<HTMLDivElement | null>(null);
 
@@ -38,9 +42,36 @@ export const ReelsView: React.FC = () => {
     mediaUrl &&
       (mediaUrl.includes('.mp4') ||
         mediaUrl.includes('.webm') ||
+        mediaUrl.includes('.mov') ||
         currentReel?.mediaType === 'VIDEO' ||
         currentReel?.mediaType === 'REEL')
   );
+  const fallbackPosterUrl =
+    currentReel?.author?.coverUrl ||
+    currentReel?.author?.avatarUrl ||
+    '';
+
+  // Visibility-aware playback via IntersectionObserver (pause when scrolled out of view / offscreen)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || typeof IntersectionObserver === 'undefined') return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        const visible = Boolean(entry?.isIntersecting && entry.intersectionRatio >= 0.35);
+        setIsContainerVisible(visible);
+        if (!visible && videoRef.current && !videoRef.current.paused) {
+          videoRef.current.pause();
+          setIsPaused(true);
+        }
+      },
+      { threshold: [0, 0.35, 0.7] }
+    );
+
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [currentReel?.id]);
 
   // Auto-pause when tab/window is hidden to preserve device battery & bandwidth
   useEffect(() => {
@@ -54,22 +85,45 @@ export const ReelsView: React.FC = () => {
     return () => document.removeEventListener('visibilitychange', handleVis);
   }, []);
 
-  // Reset progress & play state when switching Reels
+  // Reset progress & thumbnail-first readiness when switching Reels, and release previous media buffer cleanly
   useEffect(() => {
     setProgress(0);
     setIsPaused(false);
+    setIsVideoReady(false);
+
+    return () => {
+      const vid = videoRef.current;
+      if (vid) {
+        try {
+          vid.pause();
+          vid.removeAttribute('src');
+          vid.load();
+        } catch {}
+      }
+    };
   }, [currentIndex, currentReel?.id]);
 
-  // Smooth fallback progress loop for static-image Reels when playing
+  // Ensure playback pauses immediately if container loses visibility or page pauses
   useEffect(() => {
-    if (!currentReel || isVideoReel || isPaused) return;
+    const vid = videoRef.current;
+    if (!vid || !isVideoReel) return;
+    if (!isContainerVisible || isPaused) {
+      if (!vid.paused) vid.pause();
+    } else if (isContainerVisible && !isPaused && vid.paused && vid.readyState >= 2) {
+      vid.play().catch(() => {});
+    }
+  }, [isContainerVisible, isPaused, isVideoReel]);
+
+  // Smooth fallback progress loop for static-image Reels when playing & visible
+  useEffect(() => {
+    if (!currentReel || isVideoReel || isPaused || !isContainerVisible) return;
     const durationMs = 6000;
     const stepMs = 60;
     const timer = window.setInterval(() => {
       setProgress(prev => (prev + (stepMs / durationMs) * 100) % 100);
     }, stepMs);
     return () => window.clearInterval(timer);
-  }, [currentReel?.id, isVideoReel, isPaused]);
+  }, [currentReel?.id, isVideoReel, isPaused, isContainerVisible]);
 
   const handleNext = () => {
     if (currentIndex < reels.length - 1) {
@@ -121,7 +175,10 @@ export const ReelsView: React.FC = () => {
   }
 
   return (
-    <div className="relative w-full h-[calc(100dvh-124px)] max-w-md mx-auto bg-black rounded-3xl overflow-hidden shadow-2xl border border-[#262E4A]/60 my-2 select-none">
+    <div
+      ref={containerRef}
+      className="relative w-full h-[calc(100dvh-124px)] max-w-md mx-auto bg-black rounded-3xl overflow-hidden shadow-2xl border border-[#262E4A]/60 my-2 select-none"
+    >
       {/* Instagram-Style Top Horizontal Duration / Progress Bar */}
       <div
         ref={progressBarRef}
@@ -146,38 +203,66 @@ export const ReelsView: React.FC = () => {
         onDoubleTap={() => ensurePostLoved(currentReel.id)}
         className="absolute inset-0"
       >
-        <div onClick={toggleVideoPlayPause} className="w-full h-full cursor-pointer">
+        <div onClick={toggleVideoPlayPause} className="w-full h-full cursor-pointer relative">
           {isVideoReel ? (
-            <video
-              key={currentReel.id}
-              ref={videoRef}
-              src={mediaUrl}
-              autoPlay
-              loop
-              playsInline
-              muted={isMuted}
-              onTimeUpdate={(e) => {
-                const el = e.currentTarget;
-                if (el.duration && Number.isFinite(el.duration) && el.duration > 0) {
-                  setProgress((el.currentTime / el.duration) * 100);
-                }
-              }}
-              onPause={() => setIsPaused(true)}
-              onPlay={() => setIsPaused(false)}
-              className="w-full h-full object-cover"
-            />
+            <>
+              {/* Thumbnail-first backdrop visible until video frames are ready */}
+              {!isVideoReady && (
+                <div className="absolute inset-0 z-0 flex items-center justify-center bg-[#060714]">
+                  {fallbackPosterUrl ? (
+                    <OptimizedImage
+                      src={fallbackPosterUrl}
+                      alt={currentReel.author.displayName}
+                      eager
+                      className="w-full h-full object-cover blur-sm opacity-45 scale-105"
+                    />
+                  ) : null}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                    <div className="p-3.5 rounded-full bg-black/55 border border-white/15 text-white keep-white">
+                      <Play className="w-6 h-6" />
+                    </div>
+                  </div>
+                </div>
+              )}
+              <video
+                key={currentReel.id}
+                ref={videoRef}
+                src={isContainerVisible ? mediaUrl : undefined}
+                poster={fallbackPosterUrl || undefined}
+                autoPlay={isContainerVisible && !isPaused}
+                loop
+                playsInline
+                preload={isContainerVisible ? 'metadata' : 'none'}
+                muted={isMuted}
+                onLoadedData={() => setIsVideoReady(true)}
+                onCanPlay={() => setIsVideoReady(true)}
+                onTimeUpdate={(e) => {
+                  const el = e.currentTarget;
+                  if (el.duration && Number.isFinite(el.duration) && el.duration > 0) {
+                    setProgress((el.currentTime / el.duration) * 100);
+                  }
+                }}
+                onPause={() => setIsPaused(true)}
+                onPlay={() => setIsPaused(false)}
+                className={`relative z-10 w-full h-full object-cover transition-opacity duration-200 ${
+                  isVideoReady ? 'opacity-100' : 'opacity-0'
+                }`}
+              />
+            </>
           ) : (
-            <img
+            <OptimizedImage
               src={
                 mediaUrl ||
                 'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=800&q=80'
               }
               alt="Reel content"
+              aspectRatio="9 / 16"
+              eager
               className="w-full h-full object-cover"
             />
           )}
         </div>
-        <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-transparent to-black/90 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-transparent to-black/90 pointer-events-none z-10" />
 
         {isPaused && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center z-20">
@@ -273,9 +358,11 @@ export const ReelsView: React.FC = () => {
           onClick={() => openUserProfile(currentReel.author)}
           className="flex items-center gap-2.5 cursor-pointer"
         >
-          <img
+          <OptimizedImage
             src={currentReel.author.avatarUrl}
             alt={currentReel.author.displayName}
+            width={40}
+            height={40}
             className="w-10 h-10 rounded-full object-cover border-2 border-white/25"
           />
           <div>
@@ -348,9 +435,11 @@ export const ReelsView: React.FC = () => {
               currentReel.comments.map(c => (
                 <div key={c.id} className="flex items-start justify-between gap-2 p-2.5 rounded-xl bg-[#060714]/80 border border-[#262E4A]">
                   <div className="flex items-start gap-2">
-                    <img
+                    <OptimizedImage
                       src={c.author.avatarUrl}
                       alt={c.author.displayName}
+                      width={28}
+                      height={28}
                       className="w-7 h-7 rounded-full object-cover shrink-0"
                     />
                     <div>

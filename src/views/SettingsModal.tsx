@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Settings, X, Moon, Sun, Bell, Shield, 
   RefreshCw, CheckCircle2, RotateCcw, ExternalLink, Download, 
-  AlertTriangle, Lock, LogOut, Sparkles 
+  AlertTriangle, Lock, LogOut, Sparkles, HardDrive, Trash2 
 } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
 import { 
@@ -10,6 +10,15 @@ import {
   formatFileSize 
 } from '../services/githubUpdater';
 import { isVerifiedAdminSession } from '../services/supabaseService';
+import {
+  WebCacheStats,
+  getWebCacheStats,
+  clearWebImageCache,
+  clearWebVideoCache,
+  clearWebTempCache,
+  clearAllWebDisposableCache,
+  formatWebBytes
+} from '../utils/cacheManager';
 
 export const SettingsModal: React.FC = () => {
   const { 
@@ -20,6 +29,12 @@ export const SettingsModal: React.FC = () => {
 
   const [inputRepo, setInputRepo] = useState(githubRepo);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [cacheStats, setCacheStats] = useState<WebCacheStats | null>(null);
+  const [cacheStatusMessage, setCacheStatusMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    getWebCacheStats().then(setCacheStats).catch(() => {});
+  }, []);
 
   const handleUpdateCheck = () => {
     if (inputRepo.trim()) {
@@ -194,6 +209,96 @@ export const SettingsModal: React.FC = () => {
               className="w-4 h-4 accent-[#00C6FF]" 
             />
           </div>
+        </div>
+
+        {/* Storage & Cache Reset Manager */}
+        <div className="p-4 rounded-2xl bg-[#060714] border border-[#262E4A] space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <HardDrive className="w-4 h-4 text-[#00C6FF]" />
+              <div>
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider">Storage & Cache Manager</h4>
+                <p className="text-[10px] text-gray-400">
+                  Disposable browser caches only — Supabase data & Auth stay safe
+                </p>
+              </div>
+            </div>
+            <span className="text-xs font-bold text-[#00C6FF]">
+              {cacheStats ? formatWebBytes(cacheStats.totalDisposableBytes) : '...'}
+            </span>
+          </div>
+
+          {cacheStats && (
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="p-2 rounded-xl bg-[#101322] border border-[#262E4A]">
+                <span className="block text-[10px] text-gray-400">Images ({cacheStats.imageCachedCount})</span>
+                <span className="text-xs font-bold text-white">{formatWebBytes(cacheStats.imageCacheBytes)}</span>
+              </div>
+              <div className="p-2 rounded-xl bg-[#101322] border border-[#262E4A]">
+                <span className="block text-[10px] text-gray-400">Videos ({cacheStats.videoCachedCount})</span>
+                <span className="text-xs font-bold text-white">{formatWebBytes(cacheStats.videoCacheBytes)}</span>
+              </div>
+              <div className="p-2 rounded-xl bg-[#101322] border border-[#262E4A]">
+                <span className="block text-[10px] text-gray-400">Temp / DB ({cacheStats.indexedDbKeysCount})</span>
+                <span className="text-xs font-bold text-white">{formatWebBytes(cacheStats.tempCacheBytes)}</span>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                const next = await clearWebImageCache();
+                setCacheStats(next);
+                setCacheStatusMessage('Browser image cache cleared.');
+              }}
+              className="py-2 px-3 rounded-xl bg-[#1A1F36] hover:bg-[#262E4A] text-xs font-semibold text-white transition-colors"
+            >
+              Clear Image Cache
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                const next = await clearWebVideoCache();
+                setCacheStats(next);
+                setCacheStatusMessage('Video cache cleared.');
+              }}
+              className="py-2 px-3 rounded-xl bg-[#1A1F36] hover:bg-[#262E4A] text-xs font-semibold text-white transition-colors"
+            >
+              Clear Video Cache
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                const next = await clearWebTempCache();
+                setCacheStats(next);
+                setCacheStatusMessage('Temporary query & preview caches reset.');
+              }}
+              className="py-2 px-3 rounded-xl bg-[#1A1F36] hover:bg-[#262E4A] text-xs font-semibold text-white transition-colors"
+            >
+              Clear Temp Cache
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                const next = await clearAllWebDisposableCache();
+                setCacheStats(next);
+                setCacheStatusMessage('All disposable caches cleared & reinitialized.');
+              }}
+              className="py-2 px-3 rounded-xl bg-gradient-to-r from-[#8B5CF6] to-[#00C6FF] text-xs font-bold text-white flex items-center justify-center gap-1.5"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Clear All Cache</span>
+            </button>
+          </div>
+
+          {cacheStatusMessage && (
+            <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>{cacheStatusMessage}</span>
+            </div>
+          )}
         </div>
 
         {/* Verification & Badges Shortcut */}
