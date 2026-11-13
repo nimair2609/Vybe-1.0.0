@@ -10,7 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -152,264 +152,266 @@ fun SettingsScreen(viewModel: VybeViewModel) {
           modifier = Modifier
             .fillMaxSize()
             .padding(paddingValues)
-            .navigationBarsPadding()
-            .padding(horizontal = 16.dp),
-          verticalArrangement = Arrangement.spacedBy(14.dp)
+            .navigationBarsPadding(),
+          contentPadding = PaddingValues(bottom = 48.dp)
         ) {
           if (currentUser != null) {
             item {
-              Spacer(modifier = Modifier.height(6.dp))
-              VybeSurfaceCard(
-                onClick = { activeSubpage = SettingsSubpage.ACCOUNT_CENTER },
-                borderColor = palette.accent.copy(alpha = 0.38f),
-                contentPadding = PaddingValues(14.dp),
+              Row(
                 modifier = Modifier
                   .fillMaxWidth()
-                  .testTag("settings_account_center_card")
+                  .defaultMinSize(minHeight = 72.dp)
+                  .clickable { activeSubpage = SettingsSubpage.ACCOUNT_CENTER }
+                  .padding(horizontal = 16.dp, vertical = 14.dp)
+                  .testTag("settings_account_center_card"),
+                verticalAlignment = Alignment.CenterVertically
               ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                  VybeAvatar(user = currentUser!!, size = 52.dp)
-                  Spacer(modifier = Modifier.width(12.dp))
-                  Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                      Text(
-                        currentUser!!.displayName,
-                        fontFamily = PlusJakartaSansFontFamily,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        color = palette.textPrimary
-                      )
-                      Spacer(modifier = Modifier.width(4.dp))
-                      VerificationBadge(user = currentUser!!)
-                    }
-                    Text(
-                      "@${currentUser!!.username} • Account Center",
-                      fontSize = 12.sp,
-                      color = palette.accent,
-                      fontWeight = FontWeight.SemiBold
-                    )
-                  }
-                  Icon(Icons.Default.ChevronRight, contentDescription = null, tint = palette.textMuted)
-                }
-              }
-            }
-          }
-
-          // Section: Privacy & Audience
-          item {
-            SettingsSectionHeader("Privacy & Audience")
-          }
-
-          item {
-            VybeSurfaceCard(contentPadding = PaddingValues(14.dp)) {
-              Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                val isPrivateAccount = currentUser?.isPrivate == true
-                Row(
-                  modifier = Modifier.fillMaxWidth(),
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                  Row(
-                    modifier = Modifier.weight(1f).padding(end = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                  ) {
-                    Icon(
-                      imageVector = if (isPrivateAccount) Icons.Default.Lock else Icons.Default.Public,
-                      contentDescription = null,
-                      tint = palette.accent,
-                      modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                      Text("Private Account", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = palette.textPrimary)
-                      Text(
-                        text = if (isPrivateAccount) {
-                          "Only approved followers can view your posts, reels, and stories."
-                        } else {
-                          "Your profile, public posts, and stories are visible on VYBE."
-                        },
-                        fontSize = 11.sp,
-                        color = palette.textSecondary
-                      )
-                    }
-                  }
-                  Switch(
-                    checked = isPrivateAccount,
-                    onCheckedChange = { viewModel.setAccountPrivate(it) },
-                    modifier = Modifier.testTag("private_account_switch")
-                  )
-                }
-
-                HorizontalDivider(color = palette.border)
-
-                val currentDmPrivacy = currentUser?.messagePrivacy ?: "EVERYONE"
-                Column {
+                VybeAvatar(user = currentUser!!, size = 48.dp, showPulseDot = false)
+                Spacer(modifier = Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
                   Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.ChatBubbleOutline, contentDescription = null, tint = palette.accentSecondary, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text("Who Can Message You", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = palette.textPrimary)
+                    Text(
+                      currentUser!!.displayName,
+                      fontFamily = PlusJakartaSansFontFamily,
+                      fontWeight = FontWeight.Bold,
+                      fontSize = 15.sp,
+                      color = palette.textPrimary
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    VerificationBadge(user = currentUser!!)
                   }
-                  Spacer(modifier = Modifier.height(8.dp))
-                  Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                  ) {
-                    listOf(
-                      "EVERYONE" to "Everyone",
-                      "MUTUAL_FOLLOWS" to "Mutuals",
-                      "NONE" to "No One"
-                    ).forEach { (key, label) ->
-                      val isSelected = currentDmPrivacy == key
-                      Surface(
-                        color = if (isSelected) palette.accent.copy(alpha = 0.18f) else palette.elevated,
-                        shape = RoundedCornerShape(VybeTokens.Radius.sm),
-                        border = BorderStroke(1.dp, if (isSelected) palette.accent else palette.border),
-                        modifier = Modifier
-                          .weight(1f)
-                          .heightIn(min = 42.dp)
-                          .clip(RoundedCornerShape(VybeTokens.Radius.sm))
-                          .clickable { viewModel.setMessagePrivacy(key) }
-                          .testTag("dm_privacy_${key.lowercase()}")
-                      ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)) {
-                          Text(
-                            text = label,
-                            fontSize = 12.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (isSelected) palette.accent else palette.textPrimary
-                          )
-                        }
-                      }
-                    }
-                  }
-                  Spacer(modifier = Modifier.height(4.dp))
                   Text(
-                    text = when (currentDmPrivacy) {
-                      "MUTUAL_FOLLOWS" -> "Mutuals: Direct messaging opens only when both accounts follow each other."
-                      "NONE" -> "No One: New direct message threads from other users are disabled."
-                      else -> "Everyone: Registered VYBE members can start a conversation with you."
-                    },
-                    fontSize = 11.sp,
+                    "@${currentUser!!.username} • Account Center",
+                    fontSize = 12.sp,
                     color = palette.textSecondary
                   )
                 }
-
-                HorizontalDivider(color = palette.border)
-
-                Row(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .clickable { showVybeMatchesDialog = true }
-                    .padding(vertical = 4.dp)
-                    .testTag("manage_vybe_matches_settings_item"),
-                  verticalAlignment = Alignment.CenterVertically
-                ) {
-                  Icon(Icons.Default.Star, contentDescription = null, tint = palette.success, modifier = Modifier.size(22.dp))
-                  Spacer(modifier = Modifier.width(12.dp))
-                  Column(modifier = Modifier.weight(1f)) {
-                    Text("VYBE Matches Audience", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = palette.textPrimary)
-                    Text(
-                      "${vybeMatches.size} people selected for restricted VYBE Matches stories",
-                      fontSize = 11.sp,
-                      color = palette.textSecondary
-                    )
-                  }
-                  Icon(Icons.Default.ChevronRight, contentDescription = null, tint = palette.textMuted)
-                }
+                Icon(
+                  imageVector = Icons.Outlined.ChevronRight,
+                  contentDescription = null,
+                  tint = palette.textMuted,
+                  modifier = Modifier.size(20.dp)
+                )
               }
+              HorizontalDivider(thickness = 0.6.dp, color = palette.border.copy(alpha = 0.7f))
             }
           }
 
-          // Section: Account and Preferences
+          // Section: Who can see your content
           item {
-            SettingsSectionHeader("Account and Preferences")
+            SettingsSectionHeader("Who can see your content")
           }
 
           item {
-            VybeSurfaceCard(contentPadding = PaddingValues(0.dp)) {
+            val isPrivateAccount = currentUser?.isPrivate == true
+            Column(modifier = Modifier.fillMaxWidth()) {
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .defaultMinSize(minHeight = 56.dp)
+                  .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+              ) {
+                Row(
+                  modifier = Modifier.weight(1f).padding(end = 12.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Icon(
+                    imageVector = if (isPrivateAccount) Icons.Outlined.Lock else Icons.Outlined.Public,
+                    contentDescription = null,
+                    tint = palette.textPrimary,
+                    modifier = Modifier.size(22.dp)
+                  )
+                  Spacer(modifier = Modifier.width(16.dp))
+                  Column {
+                    Text("Account privacy", fontWeight = FontWeight.Medium, fontSize = 14.sp, color = palette.textPrimary)
+                    Text(
+                      text = if (isPrivateAccount) "Private account" else "Public account",
+                      fontSize = 12.sp,
+                      color = palette.textSecondary
+                    )
+                  }
+                }
+                Switch(
+                  checked = isPrivateAccount,
+                  onCheckedChange = { viewModel.setAccountPrivate(it) },
+                  modifier = Modifier.testTag("private_account_switch")
+                )
+              }
+
+              HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.6.dp, color = palette.border.copy(alpha = 0.55f))
+
+              val currentDmPrivacy = currentUser?.messagePrivacy ?: "EVERYONE"
+              Column(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(horizontal = 16.dp, vertical = 12.dp)
+              ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Icon(
+                    imageVector = Icons.Outlined.ChatBubbleOutline,
+                    contentDescription = null,
+                    tint = palette.textPrimary,
+                    modifier = Modifier.size(22.dp)
+                  )
+                  Spacer(modifier = Modifier.width(16.dp))
+                  Text("Message privacy", fontWeight = FontWeight.Medium, fontSize = 14.sp, color = palette.textPrimary)
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 38.dp),
+                  horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                  listOf(
+                    "EVERYONE" to "Everyone",
+                    "MUTUAL_FOLLOWS" to "Mutuals",
+                    "NONE" to "No One"
+                  ).forEach { (key, label) ->
+                    val isSelected = currentDmPrivacy == key
+                    Surface(
+                      color = if (isSelected) palette.textPrimary.copy(alpha = 0.1f) else Color.Transparent,
+                      shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                      border = BorderStroke(1.dp, if (isSelected) palette.textPrimary else palette.border),
+                      modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 40.dp)
+                        .clip(RoundedCornerShape(VybeTokens.Radius.sm))
+                        .clickable { viewModel.setMessagePrivacy(key) }
+                        .testTag("dm_privacy_${key.lowercase()}")
+                    ) {
+                      Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)) {
+                        Text(
+                          text = label,
+                          fontSize = 12.sp,
+                          fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                          color = if (isSelected) palette.textPrimary else palette.textSecondary
+                        )
+                      }
+                    }
+                  }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                  text = when (currentDmPrivacy) {
+                    "MUTUAL_FOLLOWS" -> "Direct messaging opens only when both accounts link up."
+                    "NONE" -> "New direct message requests from other users are disabled."
+                    else -> "Registered VYBE members can start a conversation with you."
+                  },
+                  fontSize = 11.sp,
+                  color = palette.textSecondary,
+                  modifier = Modifier.padding(start = 38.dp)
+                )
+              }
+
+              HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.6.dp, color = palette.border.copy(alpha = 0.55f))
+
               SettingsListItem(
-                icon = Icons.Default.Bookmark,
-                iconTint = palette.accent,
+                icon = Icons.Outlined.StarOutline,
+                iconTint = palette.textPrimary,
+                title = "VYBE Matches",
+                subtitle = "${vybeMatches.size} people selected for restricted stories",
+                onClick = { showVybeMatchesDialog = true },
+                testTag = "manage_vybe_matches_settings_item"
+              )
+            }
+            HorizontalDivider(thickness = 0.6.dp, color = palette.border.copy(alpha = 0.7f))
+          }
+
+          // Section: How you use VYBE
+          item {
+            SettingsSectionHeader("How you use VYBE")
+          }
+
+          item {
+            Column(modifier = Modifier.fillMaxWidth()) {
+              SettingsListItem(
+                icon = Icons.Outlined.BookmarkBorder,
+                iconTint = palette.textPrimary,
                 title = "Saved",
                 subtitle = "View and organize saved posts and reels",
                 onClick = { activeSubpage = SettingsSubpage.SAVED }
               )
-              HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp), color = palette.border)
+              HorizontalDivider(modifier = Modifier.padding(start = 54.dp, end = 16.dp), thickness = 0.6.dp, color = palette.border.copy(alpha = 0.5f))
               SettingsListItem(
-                icon = Icons.Default.Archive,
-                iconTint = VybeBrandMagenta,
+                icon = Icons.Outlined.Archive,
+                iconTint = palette.textPrimary,
                 title = "Archive",
                 subtitle = "Revisit and restore your archived posts",
                 onClick = { activeSubpage = SettingsSubpage.ARCHIVE }
               )
-              HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp), color = palette.border)
+              HorizontalDivider(modifier = Modifier.padding(start = 54.dp, end = 16.dp), thickness = 0.6.dp, color = palette.border.copy(alpha = 0.5f))
               SettingsListItem(
-                icon = Icons.Default.History,
-                iconTint = palette.accentSecondary,
-                title = "Your Activity",
+                icon = Icons.Outlined.History,
+                iconTint = palette.textPrimary,
+                title = "Your activity",
                 subtitle = "Interactions, comments, post history, and capsules",
                 onClick = { activeSubpage = SettingsSubpage.YOUR_ACTIVITY }
               )
-              HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp), color = palette.border)
+              HorizontalDivider(modifier = Modifier.padding(start = 54.dp, end = 16.dp), thickness = 0.6.dp, color = palette.border.copy(alpha = 0.5f))
               SettingsListItem(
-                icon = Icons.Default.Notifications,
-                iconTint = palette.warning,
+                icon = Icons.Outlined.Notifications,
+                iconTint = palette.textPrimary,
                 title = "Notifications",
-                subtitle = "Push notifications and interaction preferences",
+                subtitle = "Push alerts and notification preferences",
                 onClick = { activeSubpage = SettingsSubpage.NOTIFICATIONS }
               )
-              HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp), color = palette.border)
+              HorizontalDivider(modifier = Modifier.padding(start = 54.dp, end = 16.dp), thickness = 0.6.dp, color = palette.border.copy(alpha = 0.5f))
               SettingsListItem(
-                icon = Icons.Default.Timer,
-                iconTint = palette.success,
-                title = "Time Management",
+                icon = Icons.Outlined.Schedule,
+                iconTint = palette.textPrimary,
+                title = "Time management",
                 subtitle = "Screen time insights and break reminders",
                 onClick = { activeSubpage = SettingsSubpage.TIME_MANAGEMENT }
               )
-              HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp), color = palette.border)
+              HorizontalDivider(modifier = Modifier.padding(start = 54.dp, end = 16.dp), thickness = 0.6.dp, color = palette.border.copy(alpha = 0.5f))
               SettingsListItem(
-                icon = Icons.Default.Verified,
-                iconTint = VybeGrowBlueBright,
-                title = "Badges & Verification",
-                subtitle = "Official badges, verification applications, and display preferences",
+                icon = Icons.Outlined.Verified,
+                iconTint = palette.textPrimary,
+                title = "Badges & verification",
+                subtitle = "Official badges and verification applications",
                 onClick = { viewModel.navigateTo(Screen.VERIFICATION_CENTER) }
               )
-              HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp), color = palette.border)
+              HorizontalDivider(modifier = Modifier.padding(start = 54.dp, end = 16.dp), thickness = 0.6.dp, color = palette.border.copy(alpha = 0.5f))
               SettingsListItem(
-                icon = Icons.Default.Storage,
-                iconTint = palette.accent,
-                title = "Storage & Cache Manager",
-                subtitle = "Manage image cache, 500 MB video cache & temporary media",
+                icon = Icons.Outlined.Storage,
+                iconTint = palette.textPrimary,
+                title = "Storage & cache",
+                subtitle = "Image cache, 500 MB video cache & temporary media",
                 onClick = { activeSubpage = SettingsSubpage.STORAGE_AND_CACHE },
                 testTag = "settings_storage_cache_item"
               )
             }
+            HorizontalDivider(thickness = 0.6.dp, color = palette.border.copy(alpha = 0.7f))
           }
 
-          // Section: Appearance & Theme
+          // Section: Appearance
           item {
-            SettingsSectionHeader("Appearance & Theme")
+            SettingsSectionHeader("Appearance")
           }
 
           item {
-            VybeSurfaceCard(contentPadding = PaddingValues(14.dp)) {
-              Text("Application Theme", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = palette.textPrimary)
-              Spacer(modifier = Modifier.height(10.dp))
+            Column(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+            ) {
               Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
               ) {
                 listOf(
-                  Triple(AppThemeMode.DARK, "Dark", Icons.Default.DarkMode),
-                  Triple(AppThemeMode.LIGHT, "Light", Icons.Default.LightMode),
-                  Triple(AppThemeMode.SYSTEM, "System", Icons.Default.SettingsBrightness)
+                  Triple(AppThemeMode.DARK, "Dark", Icons.Outlined.DarkMode),
+                  Triple(AppThemeMode.LIGHT, "Light", Icons.Outlined.LightMode),
+                  Triple(AppThemeMode.SYSTEM, "System", Icons.Outlined.SettingsBrightness)
                 ).forEach { (mode, label, icon) ->
                   val isSelected = currentThemeMode == mode
                   Surface(
-                    color = if (isSelected) palette.accent.copy(alpha = 0.2f) else palette.elevated,
+                    color = if (isSelected) palette.textPrimary.copy(alpha = 0.1f) else Color.Transparent,
                     shape = RoundedCornerShape(VybeTokens.Radius.md),
-                    border = BorderStroke(if (isSelected) 1.5.dp else 1.dp, if (isSelected) palette.accent else palette.border),
+                    border = BorderStroke(if (isSelected) 1.2.dp else 0.8.dp, if (isSelected) palette.textPrimary else palette.border),
                     modifier = Modifier
                       .weight(1f)
                       .heightIn(min = 48.dp)
@@ -425,7 +427,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                       Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        tint = if (isSelected) palette.accent else palette.textSecondary,
+                        tint = if (isSelected) palette.textPrimary else palette.textSecondary,
                         modifier = Modifier.size(16.dp)
                       )
                       Spacer(modifier = Modifier.width(6.dp))
@@ -433,114 +435,113 @@ fun SettingsScreen(viewModel: VybeViewModel) {
                         text = label,
                         fontSize = 12.sp,
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isSelected) palette.accent else palette.textPrimary
+                        color = if (isSelected) palette.textPrimary else palette.textSecondary
                       )
                     }
                   }
                 }
               }
             }
+            HorizontalDivider(thickness = 0.6.dp, color = palette.border.copy(alpha = 0.7f))
           }
 
-          // Section: More Information & Single Designated Update Checker
+          // Section: More info and support
           item {
-            SettingsSectionHeader("More Information")
+            SettingsSectionHeader("More info and support")
           }
 
           item {
-            VybeSurfaceCard(contentPadding = PaddingValues(0.dp)) {
+            Column(modifier = Modifier.fillMaxWidth()) {
               SettingsListItem(
-                icon = Icons.Default.SystemUpdate,
-                iconTint = palette.success,
-                title = "Check for Updates",
-                subtitle = "Installed v${GitHubUpdater.INSTALLED_VERSION} • Check official GitHub releases",
+                icon = Icons.Outlined.SystemUpdate,
+                iconTint = palette.textPrimary,
+                title = "Check for updates",
+                subtitle = "Installed v${GitHubUpdater.INSTALLED_VERSION} • Official releases",
                 onClick = { activeSubpage = SettingsSubpage.CHECK_FOR_UPDATES },
                 testTag = "settings_check_updates_item"
               )
-              HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp), color = palette.border)
+              HorizontalDivider(modifier = Modifier.padding(start = 54.dp, end = 16.dp), thickness = 0.6.dp, color = palette.border.copy(alpha = 0.5f))
               SettingsListItem(
-                icon = Icons.Default.HelpOutline,
-                iconTint = palette.accentSecondary,
-                title = "Privacy, Data & Safety",
-                subtitle = "Storage policies, RLS protection, and deletion retention",
+                icon = Icons.Outlined.HelpOutline,
+                iconTint = palette.textPrimary,
+                title = "Privacy, data & safety",
+                subtitle = "Storage policies, RLS protection, and retention",
                 onClick = { activeSubpage = SettingsSubpage.HELP }
               )
-              HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp), color = palette.border)
+              HorizontalDivider(modifier = Modifier.padding(start = 54.dp, end = 16.dp), thickness = 0.6.dp, color = palette.border.copy(alpha = 0.5f))
               SettingsListItem(
-                icon = Icons.Default.SupportAgent,
-                iconTint = palette.accent,
-                title = "Chat with Support",
-                subtitle = "Direct help desk ticket system with NR Next team",
+                icon = Icons.Outlined.SupportAgent,
+                iconTint = palette.textPrimary,
+                title = "Help & support tickets",
+                subtitle = "Direct help desk with NR Next team",
                 onClick = { activeSubpage = SettingsSubpage.SUPPORT_TICKETS }
               )
-              HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp), color = palette.border)
+              HorizontalDivider(modifier = Modifier.padding(start = 54.dp, end = 16.dp), thickness = 0.6.dp, color = palette.border.copy(alpha = 0.5f))
               SettingsListItem(
-                icon = Icons.Default.Info,
-                iconTint = VybeBrandMagenta,
+                icon = Icons.Outlined.Info,
+                iconTint = palette.textPrimary,
                 title = "About VYBE",
                 subtitle = "Version ${GitHubUpdater.INSTALLED_VERSION} • Product of NR Next",
                 onClick = { activeSubpage = SettingsSubpage.ABOUT },
                 testTag = "settings_about_vybe_item"
               )
             }
+            HorizontalDivider(thickness = 0.6.dp, color = palette.border.copy(alpha = 0.7f))
           }
 
           if (currentUser?.role == UserRole.ADMIN) {
             item {
-              SettingsSectionHeader("Platform Administration")
+              SettingsSectionHeader("Administration")
             }
             item {
-              VybeSurfaceCard(
-                borderColor = VybeVerifiedGold.copy(alpha = 0.5f),
-                contentPadding = PaddingValues(0.dp)
-              ) {
-                SettingsListItem(
-                  icon = Icons.Default.AdminPanelSettings,
-                  iconTint = VybeVerifiedGold,
-                  title = "Admin & Trust Safety Console",
-                  subtitle = "Review moderation reports, verified badges, and age compliance",
-                  onClick = { viewModel.navigateTo(Screen.ADMIN_CONSOLE) }
-                )
-              }
+              SettingsListItem(
+                icon = Icons.Outlined.AdminPanelSettings,
+                iconTint = palette.textPrimary,
+                title = "Admin & trust safety console",
+                subtitle = "Review moderation reports, verified badges, and compliance",
+                onClick = { viewModel.navigateTo(Screen.ADMIN_CONSOLE) }
+              )
+              HorizontalDivider(thickness = 0.6.dp, color = palette.border.copy(alpha = 0.7f))
             }
           }
 
+          // Section: Login / Account Actions
           item {
-            VybeSurfaceCard(contentPadding = PaddingValues(14.dp)) {
+            SettingsSectionHeader("Login")
+          }
+
+          item {
+            Column(modifier = Modifier.fillMaxWidth()) {
               Row(
                 modifier = Modifier
                   .fillMaxWidth()
-                  .heightIn(min = 48.dp)
+                  .heightIn(min = 52.dp)
                   .clickable { viewModel.logout() }
-                  .padding(vertical = 8.dp)
+                  .padding(horizontal = 16.dp, vertical = 12.dp)
                   .testTag("logout_button"),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = palette.textPrimary)
-                Spacer(modifier = Modifier.width(12.dp))
-                Text("Log Out", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = palette.textPrimary)
+                Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = null, tint = palette.textPrimary, modifier = Modifier.size(22.dp))
+                Spacer(modifier = Modifier.width(16.dp))
+                Text("Log out", fontWeight = FontWeight.Medium, fontSize = 14.sp, color = palette.textPrimary)
               }
 
-              HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = palette.border)
+              HorizontalDivider(modifier = Modifier.padding(start = 54.dp, end = 16.dp), thickness = 0.6.dp, color = palette.border.copy(alpha = 0.5f))
 
               Row(
                 modifier = Modifier
                   .fillMaxWidth()
-                  .heightIn(min = 48.dp)
+                  .heightIn(min = 52.dp)
                   .clickable { showDeactivateModal = true }
-                  .padding(vertical = 8.dp)
+                  .padding(horizontal = 16.dp, vertical = 12.dp)
                   .testTag("deactivate_button"),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Icon(Icons.Default.DeleteOutline, contentDescription = null, tint = palette.danger)
-                Spacer(modifier = Modifier.width(12.dp))
-                Text("Deactivate or Delete Account", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = palette.danger)
+                Icon(Icons.Outlined.DeleteOutline, contentDescription = null, tint = palette.danger, modifier = Modifier.size(22.dp))
+                Spacer(modifier = Modifier.width(16.dp))
+                Text("Deactivate or delete account", fontWeight = FontWeight.Medium, fontSize = 14.sp, color = palette.danger)
               }
             }
-          }
-
-          item {
-            Spacer(modifier = Modifier.height(60.dp))
           }
         }
       }
@@ -1298,7 +1299,7 @@ fun SettingsScreen(viewModel: VybeViewModel) {
             }
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-              text = "🇮🇳 PROUDLY MADE IN INDIA",
+              text = "PROUDLY MADE IN INDIA",
               fontSize = 11.sp,
               fontWeight = FontWeight.SemiBold,
               color = palette.textSecondary,
@@ -1625,10 +1626,12 @@ private fun SettingsSectionHeader(title: String) {
   val palette = LocalVybePalette.current
   Text(
     text = title,
-    fontFamily = PlusJakartaSansFontFamily,
-    fontWeight = FontWeight.Bold,
-    fontSize = 15.sp,
-    color = palette.textPrimary
+    fontFamily = InterFontFamily,
+    fontWeight = FontWeight.SemiBold,
+    fontSize = 12.sp,
+    color = palette.textMuted,
+    letterSpacing = 0.3.sp,
+    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 6.dp)
   )
 }
 
@@ -1662,19 +1665,21 @@ fun SettingsListItem(
   Row(
     modifier = Modifier
       .fillMaxWidth()
-      .heightIn(min = 54.dp)
+      .heightIn(min = 52.dp)
       .clickable { onClick() }
       .then(if (testTag != null) Modifier.testTag(testTag) else Modifier)
-      .padding(horizontal = 14.dp, vertical = 12.dp),
+      .padding(horizontal = 16.dp, vertical = 12.dp),
     verticalAlignment = Alignment.CenterVertically
   ) {
     Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(22.dp))
-    Spacer(modifier = Modifier.width(14.dp))
+    Spacer(modifier = Modifier.width(16.dp))
     Column(modifier = Modifier.weight(1f)) {
-      Text(title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = palette.textPrimary)
-      Text(subtitle, fontSize = 11.sp, color = palette.textSecondary)
+      Text(title, fontWeight = FontWeight.Medium, fontSize = 14.sp, color = palette.textPrimary)
+      if (subtitle.isNotBlank()) {
+        Text(subtitle, fontSize = 12.sp, color = palette.textSecondary)
+      }
     }
-    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = palette.textMuted)
+    Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = palette.textMuted, modifier = Modifier.size(20.dp))
   }
 }
 

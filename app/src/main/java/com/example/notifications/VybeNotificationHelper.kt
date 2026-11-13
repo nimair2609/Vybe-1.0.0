@@ -821,7 +821,7 @@ object VybeNotificationHelper {
         val body = if (rawBody.isNotBlank() && !rawBody.equals("New activity on VYBE", true)) {
           rawBody
         } else {
-          "Sent a Finger Heart 🫰 on your post"
+          "Sent a reaction on your post"
         }
         Triple(title, body, "VYBE Activity")
       }
@@ -835,7 +835,7 @@ object VybeNotificationHelper {
         val body = if (rawBody.isNotBlank() && !rawBody.equals("New activity on VYBE", true)) {
           rawBody
         } else {
-          "Sent a Finger Heart 🫰 on your story"
+          "Sent a reaction on your story"
         }
         Triple(title, body, "Stories")
       }
@@ -990,7 +990,7 @@ object VybeNotificationHelper {
     body: String,
     notificationId: Int
   ): NotificationCompat.Action {
-    val shareText = "⚡ $title on VYBE\n$body"
+    val shareText = "$title on VYBE\n$body"
     val sendIntent = Intent(Intent.ACTION_SEND).apply {
       type = "text/plain"
       putExtra(Intent.EXTRA_SUBJECT, title)

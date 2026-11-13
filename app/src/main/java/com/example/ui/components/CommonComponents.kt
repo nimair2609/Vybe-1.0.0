@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material3.*
@@ -105,7 +106,12 @@ fun VybeAvatar(
           .background(palette.accent),
         contentAlignment = Alignment.Center
       ) {
-        Text("▶", fontSize = (size.value * 0.16).sp, color = Color.White)
+        Icon(
+          imageVector = Icons.Filled.PlayArrow,
+          contentDescription = "Profile video",
+          tint = Color.White,
+          modifier = Modifier.size(size * 0.22f)
+        )
       }
     }
 

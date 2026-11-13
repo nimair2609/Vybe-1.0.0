@@ -65,7 +65,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun UserProfileScreen(
   viewModel: VybeViewModel,
-  forceOwnProfile: Boolean = false
+  forceOwnProfile: Boolean = false,
+  showTopOverlay: Boolean = true
 ) {
   BackHandler {
     viewModel.closeUserProfileOrBack()
@@ -301,35 +302,37 @@ fun UserProfileScreen(
             )
           }
 
-          // Top Bar Overlay: Back + ModeSwitch (own profile) + Share/More
+          // Top Bar Overlay: Back + ModeSwitch (standalone only) + Share/More
           Row(
             modifier = Modifier
               .fillMaxWidth()
-              .statusBarsPadding()
+              .let { if (showTopOverlay) it.statusBarsPadding() else it }
               .padding(horizontal = 12.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = if (showTopOverlay) Arrangement.SpaceBetween else Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
           ) {
-            IconButton(
-              onClick = { viewModel.closeUserProfileOrBack() },
-              modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.45f))
-                .testTag("profile_back_button")
-            ) {
-              Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
-                tint = Color.White
-              )
-            }
+            if (showTopOverlay) {
+              IconButton(
+                onClick = { viewModel.closeUserProfileOrBack() },
+                modifier = Modifier
+                  .size(44.dp)
+                  .clip(CircleShape)
+                  .background(Color.Black.copy(alpha = 0.45f))
+                  .testTag("profile_back_button")
+              ) {
+                Icon(
+                  imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                  contentDescription = "Back",
+                  tint = Color.White
+                )
+              }
 
-            if (effectiveIsMe) {
-              VybeModeSwitch(
-                currentMode = experienceMode,
-                onModeChange = { viewModel.setExperienceMode(it) }
-              )
+              if (effectiveIsMe) {
+                VybeModeSwitch(
+                  currentMode = experienceMode,
+                  onModeChange = { viewModel.setExperienceMode(it) }
+                )
+              }
             }
 
             Row(

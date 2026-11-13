@@ -32,6 +32,8 @@ fun MainScreen(viewModel: VybeViewModel) {
   val experienceMode by viewModel.experienceMode.collectAsState()
   val growTab by viewModel.growTab.collectAsState()
   val conversations by viewModel.conversations.collectAsState()
+  val notifications by viewModel.notifications.collectAsState()
+  val currentUser by viewModel.currentUser.collectAsState()
   val palette = LocalVybePalette.current
 
   val unreadMessagesCount = remember(conversations) {
@@ -39,6 +41,10 @@ fun MainScreen(viewModel: VybeViewModel) {
       conv.messages.count { !it.isMe && !it.isRead && !it.isDeletedForEveryone }
     }
   }
+  val unreadNotificationsCount = remember(notifications) {
+    notifications.count { !it.isRead }
+  }
+  val showWorkspaceTopBar = experienceMode == VybeExperienceMode.GROW || selectedTab != MainTab.VYBES
 
   // Handle back press cleanly across both Social and Grow modes
   androidx.activity.compose.BackHandler(
@@ -55,29 +61,56 @@ fun MainScreen(viewModel: VybeViewModel) {
   Scaffold(
     containerColor = palette.canvas,
     contentWindowInsets = WindowInsets(0.dp),
+    topBar = {
+      if (showWorkspaceTopBar) {
+        com.example.ui.components.VybeWorkspaceTopBar(
+          experienceMode = experienceMode,
+          currentUser = currentUser,
+          unreadNotificationsCount = unreadNotificationsCount,
+          onBrandClick = {
+            if (experienceMode == VybeExperienceMode.GROW) {
+              viewModel.selectGrowTab("HOME")
+            } else {
+              viewModel.selectTab(MainTab.FEED)
+            }
+          },
+          onModeChange = { viewModel.setExperienceMode(it) },
+          onNotificationsClick = { viewModel.navigateTo(Screen.NOTIFICATIONS) },
+          onProfileClick = {
+            if (experienceMode == VybeExperienceMode.GROW) {
+              viewModel.selectGrowTab("PROFILE")
+            } else {
+              viewModel.selectTab(MainTab.PROFILE)
+            }
+          }
+        )
+      }
+    },
     bottomBar = {
       Surface(
         color = palette.card.copy(alpha = 0.98f),
         tonalElevation = 0.dp,
-        border = BorderStroke(0.8.dp, palette.border),
         modifier = Modifier
           .fillMaxWidth()
           .testTag("main_bottom_nav")
       ) {
-        if (experienceMode == VybeExperienceMode.SOCIAL) {
-          SocialBottomBar(
-            selectedTab = selectedTab,
-            unreadMessagesCount = unreadMessagesCount,
-            palette = palette,
-            onSelectTab = { viewModel.selectTab(it) },
-            onCreateClick = { viewModel.navigateTo(Screen.CREATE_POST) }
-          )
-        } else {
-          GrowBottomBar(
-            activeGrowTab = growTab,
-            palette = palette,
-            onSelectGrowTab = { viewModel.selectGrowTab(it) }
-          )
+        Column {
+          HorizontalDivider(thickness = 0.6.dp, color = palette.border)
+          if (experienceMode == VybeExperienceMode.SOCIAL) {
+            SocialBottomBar(
+              selectedTab = selectedTab,
+              unreadMessagesCount = unreadMessagesCount,
+              palette = palette,
+              onSelectTab = { viewModel.selectTab(it) },
+              onCreateClick = { viewModel.navigateTo(Screen.CREATE_POST) }
+            )
+          } else {
+            GrowBottomBar(
+              activeGrowTab = growTab,
+              palette = palette,
+              onSelectGrowTab = { viewModel.selectGrowTab(it) }
+            )
+          }
         }
       }
     }
@@ -93,17 +126,17 @@ fun MainScreen(viewModel: VybeViewModel) {
           "CIRCLE" -> GrowCircleWorkspace(viewModel)
           "PROJECTS" -> GrowProjectsWorkspace(viewModel)
           "OPPORTUNITIES" -> GrowOpportunitiesWorkspace(viewModel)
-          "PROFILE" -> UserProfileScreen(viewModel, forceOwnProfile = true)
+          "PROFILE" -> GrowProfileWorkspace(viewModel)
           else -> GrowHomeWorkspace(viewModel)
         }
       } else {
         when (selectedTab) {
-          MainTab.FEED -> HomeScreen(viewModel)
-          MainTab.EXPLORE -> ExploreScreen(viewModel)
+          MainTab.FEED -> HomeScreen(viewModel, showTopHeader = false)
+          MainTab.EXPLORE -> ExploreScreen(viewModel, showTopBrandRow = false)
           MainTab.CREATE -> CreatePostScreen(viewModel)
           MainTab.VYBES -> ReelsViewerScreen(viewModel)
-          MainTab.PROFILE -> UserProfileScreen(viewModel, forceOwnProfile = true)
-          MainTab.INBOX -> InboxScreen(viewModel)
+          MainTab.PROFILE -> UserProfileScreen(viewModel, forceOwnProfile = true, showTopOverlay = false)
+          MainTab.INBOX -> InboxScreen(viewModel, embeddedInMainScreen = true)
           MainTab.MOOD_ZONES -> MoodZonesScreen(viewModel)
           MainTab.CROSSED_PATHS -> CrossedPathsScreen(viewModel)
         }

@@ -1122,13 +1122,24 @@ fun AuthScreen(viewModel: VybeViewModel) {
                 color = VybeVerifiedGold.copy(alpha = 0.15f),
                 shape = RoundedCornerShape(VybeTokens.Radius.xs)
               ) {
-                Text(
-                  text = "🔒 Direct Channel to NR Next Backend Verification Team",
-                  fontSize = 10.sp,
-                  fontWeight = FontWeight.Bold,
-                  color = VybeVerifiedGold,
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
                   modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                )
+                ) {
+                  Icon(
+                    imageVector = Icons.Outlined.Lock,
+                    contentDescription = null,
+                    tint = VybeVerifiedGold,
+                    modifier = Modifier.size(12.dp)
+                  )
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text(
+                    text = "Direct Channel to NR Next Backend Verification Team",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = VybeVerifiedGold
+                  )
+                }
               }
               Spacer(modifier = Modifier.height(10.dp))
               Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

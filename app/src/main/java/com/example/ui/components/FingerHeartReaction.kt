@@ -561,10 +561,10 @@ fun FingerHeartReaction(
                                             forceDarkSurface = !isLightTheme
                                         )
                                     } else {
-                                        Text(
-                                            text = rx.emoji,
-                                            fontSize = 20.sp,
-                                            textAlign = TextAlign.Center
+                                        VybeReactionOutlineIcon(
+                                            reaction = rx,
+                                            size = 23.dp,
+                                            tint = if (isHovered || isCurrent) rColor else if (isLightTheme) Color(0xFF0F172A) else Color.White
                                         )
                                     }
                                 }
@@ -729,19 +729,12 @@ fun FingerHeartReaction(
                 contentAlignment = Alignment.Center
             ) {
                 if (effectiveReaction != null && effectiveReaction != VybeReaction.LOVE) {
-                    Box(
-                        modifier = Modifier
-                            .size(iconSize)
-                            .semantics { contentDescription = "${effectiveReaction.label} reaction" },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = effectiveReaction.emoji,
-                            fontSize = (iconSize.value * 0.84f).sp,
-                            lineHeight = (iconSize.value * 0.84f).sp,
-                            textAlign = TextAlign.Center
-                        )
-                    }
+                    VybeReactionOutlineIcon(
+                        reaction = effectiveReaction,
+                        size = iconSize,
+                        tint = reactionColor(effectiveReaction),
+                        modifier = Modifier.semantics { contentDescription = "${effectiveReaction.label} reaction" }
+                    )
                 } else {
                     VybeUniversalReactionIcon(
                         isActive = isActive,

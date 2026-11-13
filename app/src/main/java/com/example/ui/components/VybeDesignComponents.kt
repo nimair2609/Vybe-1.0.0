@@ -44,17 +44,17 @@ import com.example.ui.theme.*
 fun VybeBrandWordmark(
   isGrowMode: Boolean = false,
   showSubLabel: Boolean = false,
+  compact: Boolean = false,
   modifier: Modifier = Modifier
 ) {
   val palette = LocalVybePalette.current
   Column(modifier = modifier) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-      // Stylized Violet-Blue V Emblem + YBE
       Text(
         text = "V",
         fontFamily = PlusJakartaSansFontFamily,
         fontWeight = FontWeight.Black,
-        fontSize = 22.sp,
+        fontSize = 21.sp,
         color = if (isGrowMode) VybeGrowBlue else VybeSocialVioletBright,
         letterSpacing = (-0.5).sp
       )
@@ -62,11 +62,11 @@ fun VybeBrandWordmark(
         text = "YBE",
         fontFamily = PlusJakartaSansFontFamily,
         fontWeight = FontWeight.ExtraBold,
-        fontSize = 21.sp,
+        fontSize = 20.sp,
         color = palette.textPrimary,
-        letterSpacing = 1.sp
+        letterSpacing = 0.8.sp
       )
-      if (isGrowMode) {
+      if (isGrowMode && !compact) {
         Spacer(modifier = Modifier.width(6.dp))
         Surface(
           color = VybeGrowBlue.copy(alpha = 0.14f),
@@ -97,6 +97,10 @@ fun VybeBrandWordmark(
   }
 }
 
+/**
+ * Fixed-geometry segmented switcher anchored at identical coordinates across all top-level tabs.
+ * Never resizes or reflows between Social and Grow selections.
+ */
 @Composable
 fun VybeModeSwitch(
   currentMode: VybeExperienceMode,
@@ -104,56 +108,176 @@ fun VybeModeSwitch(
   modifier: Modifier = Modifier
 ) {
   val palette = LocalVybePalette.current
-  Surface(
-    color = palette.elevated,
-    shape = RoundedCornerShape(VybeTokens.Radius.pill),
-    border = BorderStroke(1.dp, palette.border),
+  val indicatorOffset by androidx.compose.animation.core.animateDpAsState(
+    targetValue = if (currentMode == VybeExperienceMode.GROW) 66.dp else 0.dp,
+    animationSpec = tween(220),
+    label = "vybe_mode_pill_offset"
+  )
+  val indicatorColor by animateColorAsState(
+    targetValue = if (currentMode == VybeExperienceMode.GROW) VybeGrowBlue else VybeSocialViolet,
+    animationSpec = tween(220),
+    label = "vybe_mode_pill_color"
+  )
+
+  Box(
+    contentAlignment = Alignment.Center,
     modifier = modifier
-      .heightIn(min = 40.dp)
+      .defaultMinSize(minHeight = 48.dp)
       .testTag("vybe_mode_switch")
   ) {
-    Row(
-      modifier = Modifier.padding(3.dp),
-      verticalAlignment = Alignment.CenterVertically
+    Surface(
+      color = palette.elevated,
+      shape = RoundedCornerShape(VybeTokens.Radius.pill),
+      border = BorderStroke(1.dp, palette.border),
+      modifier = Modifier
+        .width(140.dp)
+        .height(38.dp)
     ) {
-      listOf(
-        VybeExperienceMode.SOCIAL to "Social",
-        VybeExperienceMode.GROW to "Grow"
-      ).forEach { (mode, label) ->
-        val selected = currentMode == mode
-        val bg by animateColorAsState(
-          targetValue = when {
-            selected && mode == VybeExperienceMode.SOCIAL -> VybeSocialViolet
-            selected && mode == VybeExperienceMode.GROW -> VybeGrowBlue
-            else -> Color.Transparent
-          },
-          animationSpec = tween(220),
-          label = "modeBg"
-        )
-        val textColor by animateColorAsState(
-          targetValue = if (selected) Color.White else palette.textSecondary,
-          animationSpec = tween(220),
-          label = "modeText"
-        )
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .padding(3.dp)
+      ) {
+        // Sliding active pill indicator
         Box(
-          contentAlignment = Alignment.Center,
           modifier = Modifier
+            .offset(x = indicatorOffset)
+            .width(66.dp)
+            .fillMaxHeight()
             .clip(RoundedCornerShape(VybeTokens.Radius.pill))
-            .background(bg)
-            .clickable { onModeChange(mode) }
-            .padding(horizontal = 16.dp, vertical = 7.dp)
-            .testTag("mode_switch_${mode.name.lowercase()}")
+            .background(indicatorColor)
+        )
+
+        Row(
+          modifier = Modifier.fillMaxSize(),
+          verticalAlignment = Alignment.CenterVertically
         ) {
-          Text(
-            text = label,
-            fontFamily = PlusJakartaSansFontFamily,
-            fontSize = 12.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-            color = textColor,
-            maxLines = 1
-          )
+          listOf(
+            VybeExperienceMode.SOCIAL to "Social",
+            VybeExperienceMode.GROW to "Grow"
+          ).forEach { (mode, label) ->
+            val selected = currentMode == mode
+            val textColor by animateColorAsState(
+              targetValue = if (selected) Color.White else palette.textSecondary,
+              animationSpec = tween(220),
+              label = "modeText_${mode.name}"
+            )
+            Box(
+              contentAlignment = Alignment.Center,
+              modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(VybeTokens.Radius.pill))
+                .clickable(onClick = { onModeChange(mode) })
+                .testTag("mode_switch_${mode.name.lowercase()}")
+            ) {
+              Text(
+                text = label,
+                fontFamily = PlusJakartaSansFontFamily,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = textColor,
+                maxLines = 1,
+                softWrap = false
+              )
+            }
+          }
         }
       }
+    }
+  }
+}
+
+/**
+ * Unified persistent top workspace bar shared across all Social and Grow primary tabs.
+ * Keeps VYBE brand, centered VybeModeSwitch, notification bell, and profile avatar pinned
+ * in invariant screen coordinates.
+ */
+@Composable
+fun VybeWorkspaceTopBar(
+  experienceMode: VybeExperienceMode,
+  currentUser: com.example.data.model.User?,
+  unreadNotificationsCount: Int,
+  onBrandClick: () -> Unit,
+  onModeChange: (VybeExperienceMode) -> Unit,
+  onNotificationsClick: () -> Unit,
+  onProfileClick: () -> Unit,
+  modifier: Modifier = Modifier
+) {
+  val palette = LocalVybePalette.current
+  Surface(
+    color = palette.canvas,
+    modifier = modifier
+      .fillMaxWidth()
+      .testTag("vybe_workspace_top_bar")
+  ) {
+    Column(modifier = Modifier.statusBarsPadding()) {
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .height(54.dp)
+          .padding(horizontal = 12.dp)
+      ) {
+        // Fixed Left Slot: Logo + Brand Wordmark
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+          modifier = Modifier
+            .align(Alignment.CenterStart)
+            .defaultMinSize(minHeight = 48.dp)
+            .clip(RoundedCornerShape(VybeTokens.Radius.sm))
+            .clickable(onClick = onBrandClick)
+            .padding(end = 4.dp)
+        ) {
+          androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.vybe_app_icon_clean),
+            contentDescription = "VYBE",
+            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+            modifier = Modifier
+              .size(24.dp)
+              .clip(RoundedCornerShape(7.dp))
+          )
+          VybeBrandWordmark(
+            isGrowMode = experienceMode == VybeExperienceMode.GROW,
+            compact = true
+          )
+        }
+
+        // Fixed Center Slot: Social / Grow Mode Switch
+        VybeModeSwitch(
+          currentMode = experienceMode,
+          onModeChange = onModeChange,
+          modifier = Modifier.align(Alignment.Center)
+        )
+
+        // Fixed Right Slot: Notification Bell + Profile Avatar
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(2.dp),
+          modifier = Modifier.align(Alignment.CenterEnd)
+        ) {
+          VybeNotificationBellButton(
+            unreadCount = unreadNotificationsCount,
+            onClick = onNotificationsClick,
+            testTag = "workspace_notifications_button"
+          )
+          if (currentUser != null) {
+            Box(
+              modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .clickable(onClick = onProfileClick)
+                .testTag("workspace_profile_avatar_button"),
+              contentAlignment = Alignment.Center
+            ) {
+              VybeAvatar(user = currentUser, size = 30.dp, showPulseDot = false)
+            }
+          } else {
+            Spacer(modifier = Modifier.width(44.dp))
+          }
+        }
+      }
+      HorizontalDivider(thickness = 0.6.dp, color = palette.border)
     }
   }
 }

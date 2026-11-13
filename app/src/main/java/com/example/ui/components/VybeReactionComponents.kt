@@ -90,13 +90,21 @@ fun VybeMoodOutlineIcon(
   )
 }
 
+fun reactionOutlineVector(reaction: VybeReaction): ImageVector = when (reaction) {
+  VybeReaction.LOVE -> Icons.Outlined.FavoriteBorder
+  VybeReaction.FLAME -> Icons.Outlined.LocalFireDepartment
+  VybeReaction.LAUGH -> Icons.Outlined.SentimentVerySatisfied
+  VybeReaction.WOW -> Icons.Outlined.Bolt
+  VybeReaction.SAD -> Icons.Outlined.SentimentDissatisfied
+}
+
 /**
  * Custom VYBE-branded reaction icon for the 5 official reactions:
- * 1. Finger Heart (🫰) [Default]
- * 2. Fire (🔥)
- * 3. Laugh (😂)
- * 4. Wow (😮)
- * 5. Sad (😢)
+ * 1. Finger Heart [Default]
+ * 2. Flame
+ * 3. Laugh
+ * 4. Spark / Bolt
+ * 5. Empathy
  */
 @Composable
 fun VybeReactionOutlineIcon(
@@ -124,11 +132,11 @@ fun VybeReactionOutlineIcon(
         inactiveTintOverride = inactiveOverride
       )
     } else {
-      Text(
-        text = reaction.emoji,
-        fontSize = (size.value * 0.88f).sp,
-        lineHeight = (size.value * 0.88f).sp,
-        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+      Icon(
+        imageVector = reactionOutlineVector(reaction),
+        contentDescription = reaction.label,
+        tint = if (tint != Color.Unspecified) tint else reactionColor(reaction),
+        modifier = Modifier.size(size)
       )
     }
   }

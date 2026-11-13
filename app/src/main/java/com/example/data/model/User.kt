@@ -7,12 +7,12 @@ enum class UserRole {
 val UserRole.isAdminAccess: Boolean get() = this == UserRole.ADMIN || this == UserRole.SUPER_ADMIN
 val UserRole.isOwnerAccess: Boolean get() = this == UserRole.SUPER_ADMIN
 
-enum class LivePulseStatus(val label: String, val icon: String) {
-  OPEN_TO_CHAT("Open to chatting", "💬"),
-  FEELING_CREATIVE("Feeling creative", "✨"),
-  LISTENING_MUSIC("Listening to music", "🎧"),
-  GAMING_PARTNER("Looking for gaming partner", "🎮"),
-  QUIET_TIME("Taking quiet time", "🌙"),
+enum class LivePulseStatus(val label: String, val icon: String = "") {
+  OPEN_TO_CHAT("Open to chatting", ""),
+  FEELING_CREATIVE("Feeling creative", ""),
+  LISTENING_MUSIC("Listening to music", ""),
+  GAMING_PARTNER("Looking for gaming partner", ""),
+  QUIET_TIME("Taking quiet time", ""),
   NONE("None", "")
 }
 

@@ -10,7 +10,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.outlined.ArrowForward
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -38,8 +39,6 @@ fun GrowHomeWorkspace(viewModel: VybeViewModel) {
   val growJourneys by viewModel.growJourneys.collectAsState()
   val growBadges by viewModel.growBadges.collectAsState()
   val circles by viewModel.circles.collectAsState()
-  val notifications by viewModel.notifications.collectAsState()
-  val unreadCount = remember(notifications) { notifications.count { !it.isRead } }
 
   val joinedJourneys = remember(growJourneys) { growJourneys.filter { it.isJoined } }
   val primaryJourney = joinedJourneys.firstOrNull() ?: growJourneys.firstOrNull()
@@ -54,40 +53,10 @@ fun GrowHomeWorkspace(viewModel: VybeViewModel) {
     modifier = Modifier
       .fillMaxSize()
       .background(palette.canvas)
-      .statusBarsPadding(),
-    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+      .testTag("grow_home_workspace"),
+    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
     verticalArrangement = Arrangement.spacedBy(16.dp)
   ) {
-    // Header: VYBE Grow + Mode Switch + Notification Bell + Avatar
-    item {
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-      ) {
-        VybeBrandWordmark(isGrowMode = true)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-          VybeModeSwitch(
-            currentMode = VybeExperienceMode.GROW,
-            onModeChange = { viewModel.setExperienceMode(it) }
-          )
-          VybeNotificationBellButton(
-            unreadCount = unreadCount,
-            onClick = { viewModel.navigateTo(Screen.NOTIFICATIONS) },
-            testTag = "grow_notifications_button"
-          )
-          if (currentUser != null) {
-            VybeAvatar(
-              user = currentUser!!,
-              size = 36.dp,
-              showPulseDot = false,
-              onClick = { viewModel.selectGrowTab("PROFILE") }
-            )
-          }
-        }
-      }
-    }
-
     // Hero Banner Card ("Welcome back, ...")
     item {
       Surface(
@@ -125,11 +94,11 @@ fun GrowHomeWorkspace(viewModel: VybeViewModel) {
               onClick = { viewModel.navigateTo(Screen.VYBE_GROW) },
               colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F172A), contentColor = Color.White),
               shape = RoundedCornerShape(VybeTokens.Radius.md),
-              modifier = Modifier.heightIn(min = 44.dp).testTag("grow_continue_learning_button")
+              modifier = Modifier.heightIn(min = 48.dp).testTag("grow_continue_learning_button")
             ) {
               Text("Continue Learning", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold, fontSize = 13.sp)
               Spacer(modifier = Modifier.width(6.dp))
-              Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
+              Icon(Icons.AutoMirrored.Outlined.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
             }
           }
         }
@@ -150,7 +119,10 @@ fun GrowHomeWorkspace(viewModel: VybeViewModel) {
           fontSize = 17.sp,
           color = palette.textPrimary
         )
-        TextButton(onClick = { viewModel.navigateTo(Screen.VYBE_GROW) }) {
+        TextButton(
+          onClick = { viewModel.navigateTo(Screen.VYBE_GROW) },
+          modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+        ) {
           Text("View all", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = palette.accent)
         }
       }
@@ -170,7 +142,7 @@ fun GrowHomeWorkspace(viewModel: VybeViewModel) {
           Spacer(modifier = Modifier.width(16.dp))
           Column(modifier = Modifier.weight(1f)) {
             Text(
-              text = "Skill & Habit Momentum",
+              text = "Skill & Track Momentum",
               fontFamily = PlusJakartaSansFontFamily,
               fontWeight = FontWeight.Bold,
               fontSize = 15.sp,
@@ -240,7 +212,7 @@ fun GrowHomeWorkspace(viewModel: VybeViewModel) {
       }
     }
 
-    // Featured Card (Matches Mockup "Build Your Future")
+    // Featured Card
     item {
       Text(
         text = "Featured",
@@ -276,7 +248,7 @@ fun GrowHomeWorkspace(viewModel: VybeViewModel) {
             Spacer(modifier = Modifier.height(12.dp))
             VybePrimaryButton(
               text = "Explore Circles",
-              icon = Icons.Default.ArrowForward,
+              icon = Icons.AutoMirrored.Outlined.ArrowForward,
               onClick = { viewModel.selectGrowTab("CIRCLE") },
               testTag = "grow_featured_explore_button"
             )
@@ -290,7 +262,7 @@ fun GrowHomeWorkspace(viewModel: VybeViewModel) {
             contentAlignment = Alignment.Center
           ) {
             Icon(
-              imageVector = Icons.Default.RocketLaunch,
+              imageVector = Icons.Outlined.RocketLaunch,
               contentDescription = null,
               tint = palette.accent,
               modifier = Modifier.size(30.dp)
@@ -314,7 +286,7 @@ private fun GrowQuickTile(
     onClick = onClick,
     cornerRadius = VybeTokens.Radius.md,
     contentPadding = PaddingValues(vertical = 12.dp, horizontal = 6.dp),
-    modifier = modifier
+    modifier = modifier.defaultMinSize(minHeight = 48.dp)
   ) {
     Column(
       modifier = Modifier.fillMaxWidth(),
@@ -354,20 +326,30 @@ fun GrowCircleWorkspace(viewModel: VybeViewModel) {
   val circles by viewModel.circles.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
   var query by remember { mutableStateOf("") }
-  var filterIndex by remember { mutableIntStateOf(0) }
+  var selectedTab by remember { mutableStateOf("DISCOVER") }
+  var selectedCategory by remember { mutableStateOf("All") }
   var showCreateDialog by remember { mutableStateOf(false) }
   var newName by remember { mutableStateOf("") }
   var newDesc by remember { mutableStateOf("") }
+  var newCategory by remember { mutableStateOf("Tech & Founders") }
   var newPrivate by remember { mutableStateOf(false) }
 
-  val filtered = remember(circles, query, filterIndex, currentUser?.id) {
-    val base = when (filterIndex) {
-      1 -> circles.filter { it.isMember || (currentUser != null && it.ownerId == currentUser!!.id) }
-      else -> circles
-    }
+  val categories = remember { listOf("All", "Tech & Founders", "Wellness", "Creative", "Lifestyle") }
+  val createCategories = remember { listOf("Tech & Founders", "Wellness", "Creative", "Lifestyle") }
+
+  val myCircles = remember(circles, currentUser?.id) {
+    circles.filter { it.isMember || (currentUser != null && it.ownerId == currentUser!!.id) }
+  }
+
+  val filtered = remember(circles, myCircles, query, selectedTab, selectedCategory) {
+    val tabBase = if (selectedTab == "MY_CIRCLES") myCircles else circles
+    val catBase = if (selectedCategory == "All") tabBase else tabBase.filter { it.category == selectedCategory }
     val q = query.trim().lowercase()
-    if (q.isEmpty()) base else base.filter {
-      it.name.lowercase().contains(q) || it.description.lowercase().contains(q) || it.category.lowercase().contains(q)
+    if (q.isEmpty()) catBase else catBase.filter {
+      it.name.lowercase().contains(q) ||
+        it.description.lowercase().contains(q) ||
+        it.category.lowercase().contains(q) ||
+        it.tags.any { tag -> tag.lowercase().contains(q) }
     }
   }
 
@@ -381,7 +363,7 @@ fun GrowCircleWorkspace(viewModel: VybeViewModel) {
         contentColor = Color.White,
         modifier = Modifier.testTag("grow_circle_fab")
       ) {
-        Icon(Icons.Default.Edit, contentDescription = "Create Circle")
+        Icon(Icons.Filled.Add, contentDescription = "Create Circle")
       }
     }
   ) { innerPadding ->
@@ -389,8 +371,8 @@ fun GrowCircleWorkspace(viewModel: VybeViewModel) {
       modifier = Modifier
         .fillMaxSize()
         .padding(innerPadding)
-        .statusBarsPadding(),
-      contentPadding = PaddingValues(16.dp),
+        .testTag("grow_circle_workspace"),
+      contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
       verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
       item {
@@ -399,25 +381,29 @@ fun GrowCircleWorkspace(viewModel: VybeViewModel) {
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.SpaceBetween
         ) {
-          VybeBrandWordmark(isGrowMode = true)
-          VybeModeSwitch(
-            currentMode = VybeExperienceMode.GROW,
-            onModeChange = { viewModel.setExperienceMode(it) }
-          )
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = "Circle",
+              fontFamily = PlusJakartaSansFontFamily,
+              fontWeight = FontWeight.ExtraBold,
+              fontSize = 22.sp,
+              color = palette.textPrimary
+            )
+            Text(
+              text = "Private circles & professional peer networks",
+              fontSize = 13.sp,
+              color = palette.textSecondary
+            )
+          }
+          IconButton(
+            onClick = { showCreateDialog = true },
+            modifier = Modifier
+              .size(48.dp)
+              .testTag("create_circle_button")
+          ) {
+            Icon(Icons.Outlined.AddCircleOutline, contentDescription = "Create Circle", tint = palette.accent)
+          }
         }
-        Spacer(modifier = Modifier.height(10.dp))
-        Text(
-          text = "Circle",
-          fontFamily = PlusJakartaSansFontFamily,
-          fontWeight = FontWeight.ExtraBold,
-          fontSize = 24.sp,
-          color = palette.textPrimary
-        )
-        Text(
-          text = "Connect with like-minded builders, creators & peers",
-          fontSize = 13.sp,
-          color = palette.textSecondary
-        )
       }
 
       item {
@@ -429,19 +415,93 @@ fun GrowCircleWorkspace(viewModel: VybeViewModel) {
         )
       }
 
+      // Single Unified 2-Tab Selector: Discover Circles | My Circles
       item {
-        VybeUnderlineTabs(
-          tabs = listOf("All Circles", "My Circles", "Communities"),
-          selectedIndex = filterIndex,
-          onTabSelected = { idx ->
-            if (idx == 2) {
-              viewModel.openCommunityZone()
-            } else {
-              filterIndex = idx
+        Surface(
+          color = palette.elevated,
+          shape = RoundedCornerShape(VybeTokens.Radius.md),
+          border = BorderStroke(1.dp, palette.border),
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Row(
+            modifier = Modifier.padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            val isDiscover = selectedTab == "DISCOVER"
+            Box(
+              modifier = Modifier
+                .weight(1f)
+                .defaultMinSize(minHeight = 44.dp)
+                .clip(RoundedCornerShape(VybeTokens.Radius.sm))
+                .background(if (isDiscover) palette.accent else Color.Transparent)
+                .clickable { selectedTab = "DISCOVER" }
+                .padding(vertical = 10.dp)
+                .testTag("grow_circle_discover_tab"),
+              contentAlignment = Alignment.Center
+            ) {
+              Text(
+                text = "Discover Circles",
+                fontFamily = PlusJakartaSansFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                color = if (isDiscover) Color.White else palette.textSecondary,
+                maxLines = 1,
+                softWrap = false
+              )
             }
-          },
-          testTagPrefix = "grow_circle_tab"
-        )
+
+            val isMy = selectedTab == "MY_CIRCLES"
+            Box(
+              modifier = Modifier
+                .weight(1f)
+                .defaultMinSize(minHeight = 44.dp)
+                .clip(RoundedCornerShape(VybeTokens.Radius.sm))
+                .background(if (isMy) palette.accent else Color.Transparent)
+                .clickable { selectedTab = "MY_CIRCLES" }
+                .padding(vertical = 10.dp)
+                .testTag("grow_circle_my_tab"),
+              contentAlignment = Alignment.Center
+            ) {
+              Text(
+                text = "My Circles (${myCircles.size})",
+                fontFamily = PlusJakartaSansFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                color = if (isMy) Color.White else palette.textSecondary,
+                maxLines = 1,
+                softWrap = false
+              )
+            }
+          }
+        }
+      }
+
+      // Category Filter Pills
+      item {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          items(categories) { cat ->
+            val isSelected = selectedCategory == cat
+            Surface(
+              color = if (isSelected) palette.accent.copy(alpha = 0.16f) else palette.elevated,
+              shape = RoundedCornerShape(VybeTokens.Radius.pill),
+              border = BorderStroke(1.dp, if (isSelected) palette.accent else palette.border),
+              modifier = Modifier
+                .defaultMinSize(minHeight = 36.dp)
+                .clip(RoundedCornerShape(VybeTokens.Radius.pill))
+                .clickable { selectedCategory = cat }
+                .testTag("grow_circle_category_${cat.lowercase().replace(" ", "_")}")
+            ) {
+              Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)) {
+                Text(
+                  text = cat,
+                  fontSize = 12.sp,
+                  fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                  color = if (isSelected) palette.accent else palette.textPrimary
+                )
+              }
+            }
+          }
+        }
       }
 
       if (filtered.isEmpty()) {
@@ -457,7 +517,9 @@ fun GrowCircleWorkspace(viewModel: VybeViewModel) {
       } else {
         items(filtered, key = { it.id }) { circle ->
           VybeSurfaceCard(
-            modifier = Modifier.fillMaxWidth().testTag("grow_circle_card_${circle.id}")
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("grow_circle_card_${circle.id}")
           ) {
             Row(
               modifier = Modifier.fillMaxWidth(),
@@ -471,7 +533,7 @@ fun GrowCircleWorkspace(viewModel: VybeViewModel) {
                 contentAlignment = Alignment.Center
               ) {
                 Icon(
-                  imageVector = if (circle.isPrivate) Icons.Default.Lock else Icons.Default.Groups,
+                  imageVector = if (circle.isPrivate) Icons.Outlined.Lock else Icons.Outlined.Groups,
                   contentDescription = null,
                   tint = palette.accent,
                   modifier = Modifier.size(22.dp)
@@ -479,30 +541,45 @@ fun GrowCircleWorkspace(viewModel: VybeViewModel) {
               }
               Spacer(modifier = Modifier.width(12.dp))
               Column(modifier = Modifier.weight(1f)) {
-                Text(
-                  text = circle.name,
-                  fontFamily = PlusJakartaSansFontFamily,
-                  fontWeight = FontWeight.Bold,
-                  fontSize = 15.sp,
-                  color = palette.textPrimary,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Text(
+                    text = circle.name,
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = palette.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                  )
+                  if (circle.isPrivate) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                      imageVector = Icons.Outlined.Lock,
+                      contentDescription = "Private",
+                      tint = palette.accent,
+                      modifier = Modifier.size(14.dp)
+                    )
+                  }
+                }
                 Text(
                   text = "${circle.membersCount} members • ${circle.category}",
                   fontSize = 12.sp,
                   color = palette.textSecondary
                 )
               }
+              Spacer(modifier = Modifier.width(8.dp))
               if (circle.isMember) {
                 VybeSecondaryButton(
                   text = "Joined",
-                  onClick = { viewModel.leaveCircle(circle.id) }
+                  onClick = { viewModel.leaveCircle(circle.id) },
+                  testTag = "grow_circle_action_${circle.id}"
                 )
               } else {
                 VybePrimaryButton(
                   text = "Join",
-                  onClick = { viewModel.joinCircle(circle.id) }
+                  onClick = { viewModel.joinCircle(circle.id) },
+                  testTag = "grow_circle_action_${circle.id}"
                 )
               }
             }
@@ -514,6 +591,25 @@ fun GrowCircleWorkspace(viewModel: VybeViewModel) {
                 color = palette.textSecondary,
                 lineHeight = 18.sp
               )
+            }
+            if (circle.tags.isNotEmpty()) {
+              Spacer(modifier = Modifier.height(10.dp))
+              LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(circle.tags) { tag ->
+                  Surface(
+                    color = palette.accentSecondary.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(VybeTokens.Radius.xs)
+                  ) {
+                    Text(
+                      text = tag,
+                      color = palette.accentSecondary,
+                      fontSize = 11.sp,
+                      fontWeight = FontWeight.SemiBold,
+                      modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                  }
+                }
+              }
             }
           }
         }
@@ -537,21 +633,57 @@ fun GrowCircleWorkspace(viewModel: VybeViewModel) {
             value = newName,
             onValueChange = { newName = it },
             label = { Text("Circle Name") },
+            placeholder = { Text("e.g. Bangalore Indie Tech") },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("create_circle_name_input")
           )
           OutlinedTextField(
             value = newDesc,
             onValueChange = { newDesc = it },
             label = { Text("Description") },
-            modifier = Modifier.fillMaxWidth()
+            placeholder = { Text("What is this circle about?") },
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("create_circle_desc_input")
           )
+          Text(
+            text = "Category",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = palette.textPrimary
+          )
+          LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(createCategories) { cat ->
+              val isCatSelected = newCategory == cat
+              Surface(
+                color = if (isCatSelected) palette.accent.copy(alpha = 0.16f) else palette.elevated,
+                shape = RoundedCornerShape(VybeTokens.Radius.pill),
+                border = BorderStroke(1.dp, if (isCatSelected) palette.accent else palette.border),
+                modifier = Modifier
+                  .clip(RoundedCornerShape(VybeTokens.Radius.pill))
+                  .clickable { newCategory = cat }
+              ) {
+                Text(
+                  text = cat,
+                  fontSize = 11.sp,
+                  fontWeight = if (isCatSelected) FontWeight.Bold else FontWeight.Medium,
+                  color = if (isCatSelected) palette.accent else palette.textPrimary,
+                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                )
+              }
+            }
+          }
           Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
           ) {
-            Text("Private Circle", fontSize = 13.sp, color = palette.textPrimary, fontWeight = FontWeight.SemiBold)
+            Column {
+              Text("Private Circle", fontSize = 13.sp, color = palette.textPrimary, fontWeight = FontWeight.SemiBold)
+              Text("Invite-only membership", fontSize = 11.sp, color = palette.textSecondary)
+            }
             Switch(checked = newPrivate, onCheckedChange = { newPrivate = it })
           }
         }
@@ -560,10 +692,13 @@ fun GrowCircleWorkspace(viewModel: VybeViewModel) {
         VybePrimaryButton(
           text = "Create",
           enabled = newName.isNotBlank(),
+          testTag = "create_circle_submit_button",
           onClick = {
-            viewModel.createCircle(newName.trim(), newDesc.trim(), "Tech & Founders", newPrivate)
+            viewModel.createCircle(newName.trim(), newDesc.trim(), newCategory, newPrivate)
             newName = ""
             newDesc = ""
+            newCategory = "Tech & Founders"
+            newPrivate = false
             showCreateDialog = false
           }
         )
@@ -588,23 +723,11 @@ fun GrowProjectsWorkspace(viewModel: VybeViewModel) {
     modifier = Modifier
       .fillMaxSize()
       .background(palette.canvas)
-      .statusBarsPadding(),
-    contentPadding = PaddingValues(16.dp),
+      .testTag("grow_projects_workspace"),
+    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
     verticalArrangement = Arrangement.spacedBy(14.dp)
   ) {
     item {
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-      ) {
-        VybeBrandWordmark(isGrowMode = true)
-        VybeModeSwitch(
-          currentMode = VybeExperienceMode.GROW,
-          onModeChange = { viewModel.setExperienceMode(it) }
-        )
-      }
-      Spacer(modifier = Modifier.height(10.dp))
       Text(
         text = "Projects & Skill Tracks",
         fontFamily = PlusJakartaSansFontFamily,
@@ -744,30 +867,17 @@ fun GrowProjectsWorkspace(viewModel: VybeViewModel) {
 fun GrowOpportunitiesWorkspace(viewModel: VybeViewModel) {
   val palette = LocalVybePalette.current
   val shops by viewModel.shops.collectAsState()
-  val communities by viewModel.communities.collectAsState()
   val growBadges by viewModel.growBadges.collectAsState()
 
   LazyColumn(
     modifier = Modifier
       .fillMaxSize()
       .background(palette.canvas)
-      .statusBarsPadding(),
-    contentPadding = PaddingValues(16.dp),
+      .testTag("grow_opportunities_workspace"),
+    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
     verticalArrangement = Arrangement.spacedBy(14.dp)
   ) {
     item {
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-      ) {
-        VybeBrandWordmark(isGrowMode = true)
-        VybeModeSwitch(
-          currentMode = VybeExperienceMode.GROW,
-          onModeChange = { viewModel.setExperienceMode(it) }
-        )
-      }
-      Spacer(modifier = Modifier.height(10.dp))
       Text(
         text = "Opportunities & Credentials",
         fontFamily = PlusJakartaSansFontFamily,
@@ -776,7 +886,7 @@ fun GrowOpportunitiesWorkspace(viewModel: VybeViewModel) {
         color = palette.textPrimary
       )
       Text(
-        text = "Creator programs, verified shops, and earned credentials",
+        text = "Creator programs, verified hubs, and earned credentials",
         fontSize = 13.sp,
         color = palette.textSecondary
       )
@@ -788,7 +898,7 @@ fun GrowOpportunitiesWorkspace(viewModel: VybeViewModel) {
         borderColor = palette.accent.copy(alpha = 0.35f)
       ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-          Icon(Icons.Default.AutoGraph, contentDescription = null, tint = palette.accent, modifier = Modifier.size(28.dp))
+          Icon(Icons.Outlined.AutoGraph, contentDescription = null, tint = palette.accent, modifier = Modifier.size(26.dp))
           Spacer(modifier = Modifier.width(12.dp))
           Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -804,7 +914,7 @@ fun GrowOpportunitiesWorkspace(viewModel: VybeViewModel) {
               color = palette.textSecondary
             )
           }
-          Icon(Icons.Default.ChevronRight, contentDescription = null, tint = palette.textMuted)
+          Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = palette.textMuted)
         }
       }
     }
@@ -815,7 +925,7 @@ fun GrowOpportunitiesWorkspace(viewModel: VybeViewModel) {
         borderColor = palette.accentSecondary.copy(alpha = 0.35f)
       ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-          Icon(Icons.Default.Verified, contentDescription = null, tint = palette.accentSecondary, modifier = Modifier.size(28.dp))
+          Icon(Icons.Outlined.Verified, contentDescription = null, tint = palette.accentSecondary, modifier = Modifier.size(26.dp))
           Spacer(modifier = Modifier.width(12.dp))
           Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -831,7 +941,7 @@ fun GrowOpportunitiesWorkspace(viewModel: VybeViewModel) {
               color = palette.textSecondary
             )
           }
-          Icon(Icons.Default.ChevronRight, contentDescription = null, tint = palette.textMuted)
+          Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = palette.textMuted)
         }
       }
     }
@@ -851,13 +961,13 @@ fun GrowOpportunitiesWorkspace(viewModel: VybeViewModel) {
           onClick = { viewModel.openShopDetail(shop) }
         ) {
           Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Storefront, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(24.dp))
+            Icon(Icons.Outlined.Storefront, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(24.dp))
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
               Text(shop.businessName, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = palette.textPrimary)
               Text(shop.category, fontSize = 12.sp, color = palette.textSecondary)
             }
-            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = palette.textMuted)
+            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = palette.textMuted)
           }
         }
       }
@@ -876,7 +986,7 @@ fun GrowOpportunitiesWorkspace(viewModel: VybeViewModel) {
       items(growBadges, key = { it.id }) { badge ->
         VybeSurfaceCard(borderColor = VybeVerifiedGold.copy(alpha = 0.4f)) {
           Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.WorkspacePremium, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(24.dp))
+            Icon(Icons.Outlined.WorkspacePremium, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(24.dp))
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
               Text(badge.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = palette.textPrimary)
@@ -885,7 +995,7 @@ fun GrowOpportunitiesWorkspace(viewModel: VybeViewModel) {
           }
         }
       }
-    } else if (communities.isEmpty() && shops.isEmpty()) {
+    } else if (shops.isEmpty()) {
       item {
         VybeEmptyState(
           icon = Icons.Outlined.WorkspacePremium,
@@ -894,5 +1004,310 @@ fun GrowOpportunitiesWorkspace(viewModel: VybeViewModel) {
         )
       }
     }
+  }
+}
+
+@Composable
+fun GrowProfileWorkspace(viewModel: VybeViewModel) {
+  val palette = LocalVybePalette.current
+  val currentUser by viewModel.currentUser.collectAsState()
+  val growJourneys by viewModel.growJourneys.collectAsState()
+  val circles by viewModel.circles.collectAsState()
+  val growBadges by viewModel.growBadges.collectAsState()
+
+  val joinedTracks = remember(growJourneys) { growJourneys.filter { it.isJoined } }
+  val joinedCircles = remember(circles, currentUser?.id) {
+    circles.filter { it.isMember || (currentUser != null && it.ownerId == currentUser!!.id) }
+  }
+
+  LazyColumn(
+    modifier = Modifier
+      .fillMaxSize()
+      .background(palette.canvas)
+      .testTag("grow_profile_workspace"),
+    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+    verticalArrangement = Arrangement.spacedBy(16.dp)
+  ) {
+    // Dedicated Professional Grow Identity Card
+    item {
+      VybeSurfaceCard(contentPadding = PaddingValues(16.dp)) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          if (currentUser != null) {
+            VybeAvatar(user = currentUser!!, size = 64.dp, showPulseDot = false)
+            Spacer(modifier = Modifier.width(14.dp))
+          }
+          Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Text(
+                text = currentUser?.displayName ?: "VYBE Member",
+                fontFamily = PlusJakartaSansFontFamily,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 18.sp,
+                color = palette.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
+              )
+              if (currentUser != null) {
+                VerificationBadge(user = currentUser!!, enableExplanationDialog = true)
+              }
+            }
+            Text(
+              text = "@${currentUser?.username.orEmpty().ifBlank { "member" }}",
+              fontSize = 12.sp,
+              fontWeight = FontWeight.Medium,
+              color = palette.accent
+            )
+            if (!currentUser?.bio.isNullOrBlank()) {
+              Spacer(modifier = Modifier.height(4.dp))
+              Text(
+                text = currentUser!!.bio,
+                fontSize = 12.sp,
+                color = palette.textSecondary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+              )
+            }
+          }
+          IconButton(
+            onClick = { viewModel.navigateTo(Screen.SETTINGS) },
+            modifier = Modifier
+              .size(48.dp)
+              .testTag("grow_profile_settings_button")
+          ) {
+            Icon(Icons.Outlined.Settings, contentDescription = "Settings", tint = palette.textPrimary)
+          }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+        HorizontalDivider(thickness = 0.6.dp, color = palette.border)
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Grow Metrics Strip (Strictly Grow stats)
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+          GrowMetricItem(count = joinedTracks.size, label = "Tracks")
+          GrowMetricItem(count = joinedCircles.size, label = "Circles")
+          GrowMetricItem(count = growBadges.size, label = "Badges")
+          GrowMetricItem(count = currentUser?.followingCount ?: 0, label = "Linkups")
+        }
+      }
+    }
+
+    // Active Skill Tracks
+    item {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Text(
+          text = "Active Skill Tracks",
+          fontFamily = PlusJakartaSansFontFamily,
+          fontWeight = FontWeight.Bold,
+          fontSize = 16.sp,
+          color = palette.textPrimary
+        )
+        TextButton(
+          onClick = { viewModel.selectGrowTab("PROJECTS") },
+          modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+        ) {
+          Text("Explore Tracks", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = palette.accent)
+        }
+      }
+    }
+
+    if (joinedTracks.isEmpty()) {
+      item {
+        VybeEmptyState(
+          icon = Icons.Outlined.MenuBook,
+          title = "No enrolled tracks yet",
+          subtitle = "Join a structured skill track from Projects to build measurable momentum.",
+          actionLabel = "Browse Tracks",
+          onAction = { viewModel.selectGrowTab("PROJECTS") }
+        )
+      }
+    } else {
+      items(joinedTracks, key = { it.id }) { track ->
+        VybeSurfaceCard(
+          onClick = { viewModel.navigateTo(Screen.VYBE_GROW) },
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Column(modifier = Modifier.weight(1f)) {
+              Text(track.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = palette.textPrimary)
+              Text(
+                text = "Day ${track.currentDay} of ${track.durationDays} • ${track.category}",
+                fontSize = 12.sp,
+                color = palette.textSecondary
+              )
+            }
+            Text(
+              text = "${((track.currentDay.toFloat() / track.durationDays.coerceAtLeast(1)) * 100).toInt()}%",
+              fontWeight = FontWeight.Bold,
+              fontSize = 13.sp,
+              color = palette.accent
+            )
+          }
+          Spacer(modifier = Modifier.height(8.dp))
+          LinearProgressIndicator(
+            progress = { (track.currentDay.toFloat() / track.durationDays.coerceAtLeast(1)).coerceIn(0f, 1f) },
+            color = palette.accent,
+            trackColor = palette.elevated,
+            modifier = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(VybeTokens.Radius.pill))
+          )
+        }
+      }
+    }
+
+    // Joined Circles
+    item {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Text(
+          text = "Your Circles (${joinedCircles.size})",
+          fontFamily = PlusJakartaSansFontFamily,
+          fontWeight = FontWeight.Bold,
+          fontSize = 16.sp,
+          color = palette.textPrimary
+        )
+        TextButton(
+          onClick = { viewModel.selectGrowTab("CIRCLE") },
+          modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+        ) {
+          Text("Manage", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = palette.accent)
+        }
+      }
+    }
+
+    if (joinedCircles.isEmpty()) {
+      item {
+        VybeSurfaceCard(onClick = { viewModel.selectGrowTab("CIRCLE") }) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Groups, contentDescription = null, tint = palette.accent, modifier = Modifier.size(22.dp))
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+              Text("Join your first Circle", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = palette.textPrimary)
+              Text("Connect with founders, learners, and creators in Grow Circle.", fontSize = 12.sp, color = palette.textSecondary)
+            }
+            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = palette.textMuted)
+          }
+        }
+      }
+    } else {
+      items(joinedCircles, key = { it.id }) { circle ->
+        VybeSurfaceCard(onClick = { viewModel.selectGrowTab("CIRCLE") }) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+              imageVector = if (circle.isPrivate) Icons.Outlined.Lock else Icons.Outlined.Groups,
+              contentDescription = null,
+              tint = palette.accent,
+              modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+              Text(circle.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = palette.textPrimary)
+              Text("${circle.membersCount} members • ${circle.category}", fontSize = 12.sp, color = palette.textSecondary)
+            }
+            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = palette.textMuted)
+          }
+        }
+      }
+    }
+
+    // Earned Credentials & Creator Links
+    item {
+      Text(
+        text = "Credentials & Studio",
+        fontFamily = PlusJakartaSansFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 16.sp,
+        color = palette.textPrimary
+      )
+    }
+
+    if (growBadges.isNotEmpty()) {
+      items(growBadges, key = { it.id }) { badge ->
+        VybeSurfaceCard(borderColor = VybeVerifiedGold.copy(alpha = 0.35f)) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.WorkspacePremium, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(22.dp))
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+              Text(badge.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = palette.textPrimary)
+              Text(badge.description, fontSize = 12.sp, color = palette.textSecondary)
+            }
+          }
+        }
+      }
+    }
+
+    item {
+      VybeSurfaceCard(contentPadding = PaddingValues(0.dp)) {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = 52.dp)
+            .clickable { viewModel.navigateTo(Screen.CREATOR_STUDIO) }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Icon(Icons.Outlined.AutoGraph, contentDescription = null, tint = palette.textPrimary, modifier = Modifier.size(22.dp))
+          Spacer(modifier = Modifier.width(14.dp))
+          Column(modifier = Modifier.weight(1f)) {
+            Text("Creator Studio & Insights", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = palette.textPrimary)
+            Text("Analytics, growth signals, and milestones", fontSize = 11.sp, color = palette.textSecondary)
+          }
+          Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = palette.textMuted)
+        }
+        HorizontalDivider(thickness = 0.6.dp, color = palette.border)
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = 52.dp)
+            .clickable { viewModel.navigateTo(Screen.VERIFICATION_CENTER) }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Icon(Icons.Outlined.Verified, contentDescription = null, tint = palette.textPrimary, modifier = Modifier.size(22.dp))
+          Spacer(modifier = Modifier.width(14.dp))
+          Column(modifier = Modifier.weight(1f)) {
+            Text("Verification & Business Center", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = palette.textPrimary)
+            Text("Manage creator verification & partner storefronts", fontSize = 11.sp, color = palette.textSecondary)
+          }
+          Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = palette.textMuted)
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun GrowMetricItem(count: Int, label: String) {
+  val palette = LocalVybePalette.current
+  Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Text(
+      text = count.toString(),
+      fontFamily = PlusJakartaSansFontFamily,
+      fontWeight = FontWeight.ExtraBold,
+      fontSize = 17.sp,
+      color = palette.textPrimary
+    )
+    Text(
+      text = label,
+      fontSize = 11.sp,
+      color = palette.textSecondary
+    )
   }
 }

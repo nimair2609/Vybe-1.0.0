@@ -41,7 +41,10 @@ import com.example.util.rememberMessageTimestamp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InboxScreen(viewModel: VybeViewModel) {
+fun InboxScreen(
+  viewModel: VybeViewModel,
+  embeddedInMainScreen: Boolean = false
+) {
   val palette = LocalVybePalette.current
   val conversations by viewModel.conversations.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
@@ -107,7 +110,7 @@ fun InboxScreen(viewModel: VybeViewModel) {
     contentWindowInsets = WindowInsets(0.dp),
     topBar = {
       Surface(color = palette.canvas) {
-        Column(modifier = Modifier.statusBarsPadding()) {
+        Column(modifier = if (embeddedInMainScreen) Modifier else Modifier.statusBarsPadding()) {
           Row(
             modifier = Modifier
               .fillMaxWidth()

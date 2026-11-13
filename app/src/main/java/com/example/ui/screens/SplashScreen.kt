@@ -140,7 +140,7 @@ fun SplashScreen() {
       Spacer(modifier = Modifier.height(4.dp))
 
       Text(
-        text = "🇮🇳 PROUDLY MADE IN INDIA",
+        text = "PROUDLY MADE IN INDIA",
         style = MaterialTheme.typography.labelSmall,
         color = SocialDarkTextSecondary,
         letterSpacing = 1.2.sp,

@@ -258,21 +258,66 @@ class VybeViewModel : ViewModel() {
   val commentReactionsByMe = repository.commentReactionsByMe
 
   // --- VYBE 2.0: Feed Modes, Dual Experience (Social/Grow), Circle & Grow Flows ---
-  private val _experienceMode = MutableStateFlow(com.example.ui.theme.VybeExperienceMode.SOCIAL)
+  private val _experienceMode = MutableStateFlow(
+    try {
+      val saved = com.example.data.session.SessionManager.get()?.getExperienceMode()
+      if (saved == com.example.ui.theme.VybeExperienceMode.GROW.name) {
+        com.example.ui.theme.VybeExperienceMode.GROW
+      } else {
+        com.example.ui.theme.VybeExperienceMode.SOCIAL
+      }
+    } catch (_: Throwable) {
+      com.example.ui.theme.VybeExperienceMode.SOCIAL
+    }
+  )
   val experienceMode: StateFlow<com.example.ui.theme.VybeExperienceMode> = _experienceMode.asStateFlow()
 
   private val _growTab = MutableStateFlow("HOME") // HOME, CIRCLE, PROJECTS, OPPORTUNITIES, PROFILE
   val growTab: StateFlow<String> = _growTab.asStateFlow()
 
   fun setExperienceMode(mode: com.example.ui.theme.VybeExperienceMode) {
+    if (_experienceMode.value == mode) return
     _experienceMode.value = mode
-    if (mode == com.example.ui.theme.VybeExperienceMode.GROW && _growTab.value == "PROFILE") {
+    com.example.data.session.SessionManager.get()?.saveExperienceMode(mode.name)
+    if (mode == com.example.ui.theme.VybeExperienceMode.SOCIAL) {
+      _selectedTab.value = MainTab.FEED
+    } else {
       _growTab.value = "HOME"
+    }
+    _selectedUserProfile.value = null
+    userProfileBackStack.clear()
+    if (_currentScreen.value != Screen.MAIN) {
+      screenBackStack.clear()
+      _currentScreen.value = Screen.MAIN
     }
   }
 
   fun selectGrowTab(tab: String) {
     _growTab.value = tab
+  }
+
+  fun openCircleWorkspace() {
+    _experienceMode.value = com.example.ui.theme.VybeExperienceMode.GROW
+    com.example.data.session.SessionManager.get()?.saveExperienceMode(com.example.ui.theme.VybeExperienceMode.GROW.name)
+    _growTab.value = "CIRCLE"
+    _selectedUserProfile.value = null
+    userProfileBackStack.clear()
+    if (_currentScreen.value != Screen.MAIN) {
+      screenBackStack.clear()
+      _currentScreen.value = Screen.MAIN
+    }
+  }
+
+  fun openGrowWorkspace() {
+    _experienceMode.value = com.example.ui.theme.VybeExperienceMode.GROW
+    com.example.data.session.SessionManager.get()?.saveExperienceMode(com.example.ui.theme.VybeExperienceMode.GROW.name)
+    _growTab.value = "HOME"
+    _selectedUserProfile.value = null
+    userProfileBackStack.clear()
+    if (_currentScreen.value != Screen.MAIN) {
+      screenBackStack.clear()
+      _currentScreen.value = Screen.MAIN
+    }
   }
 
   val feedMode = repository.feedMode
@@ -728,13 +773,13 @@ class VybeViewModel : ViewModel() {
         destination == "NOTIFICATIONS" -> {
           navigateTo(Screen.NOTIFICATIONS)
         }
-        // VYBE Circle Community Hub
+        // VYBE Circle Community Hub (Authoritative Single Circle inside Grow)
         destination == "VYBE_CIRCLE" || (type != null && type.contains("CIRCLE", ignoreCase = true)) -> {
-          navigateTo(Screen.VYBE_CIRCLE)
+          openCircleWorkspace()
         }
-        // VYBE Grow Social Expansion Hub
+        // VYBE Grow Workspace
         destination == "VYBE_GROW" || (type != null && type.contains("GROW", ignoreCase = true)) -> {
-          navigateTo(Screen.VYBE_GROW)
+          openGrowWorkspace()
         }
         // User Profile
         destination == "USER_PROFILE" && !targetId.isNullOrBlank() -> {
@@ -832,6 +877,10 @@ class VybeViewModel : ViewModel() {
 
   // --- Navigation ---
   fun navigateTo(screen: Screen) {
+    if (screen == Screen.VYBE_CIRCLE) {
+      openCircleWorkspace()
+      return
+    }
     if (_currentScreen.value != screen) {
       screenBackStack.add(_currentScreen.value)
       _currentScreen.value = screen

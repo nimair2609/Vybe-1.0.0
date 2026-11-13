@@ -48,6 +48,7 @@ class SessionManager private constructor(context: Context) {
     private const val KEY_LAST_REGISTRATION_SUCCESS = "last_registration_success"
     private const val KEY_LAST_REGISTRATION_STATUS_CODE = "last_registration_status_code"
     private const val KEY_LAST_REGISTRATION_ERROR = "last_registration_error"
+    private const val KEY_EXPERIENCE_MODE = "experience_mode"
 
     @Volatile
     private var instance: SessionManager? = null
@@ -101,6 +102,14 @@ class SessionManager private constructor(context: Context) {
     val clean = token.trim()
     if (clean.isBlank()) return
     prefs.edit().putString(KEY_FCM_TOKEN, clean).apply()
+  }
+
+  fun saveExperienceMode(mode: String) {
+    prefs.edit().putString(KEY_EXPERIENCE_MODE, mode).apply()
+  }
+
+  fun getExperienceMode(): String {
+    return prefs.getString(KEY_EXPERIENCE_MODE, "SOCIAL") ?: "SOCIAL"
   }
 
   fun recordFcmRegistrationResult(

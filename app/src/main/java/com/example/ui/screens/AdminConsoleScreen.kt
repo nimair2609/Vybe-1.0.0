@@ -804,7 +804,9 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                         shape = RoundedCornerShape(VybeTokens.Radius.sm),
                         modifier = Modifier.weight(1f).testTag("approve_vreq_${req.id}")
                       ) {
-                        Text("Approve ✓", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Approve", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                       }
                     }
                   }
@@ -903,7 +905,9 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                           shape = RoundedCornerShape(VybeTokens.Radius.sm),
                           modifier = Modifier.testTag("approve_biz_app_${app.id}")
                         ) {
-                          Text("Approve Verification ✓", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                          Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                          Spacer(modifier = Modifier.width(4.dp))
+                          Text("Approve Verification", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                       }
                     }

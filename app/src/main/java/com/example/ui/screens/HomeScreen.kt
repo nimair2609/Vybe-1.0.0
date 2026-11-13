@@ -55,7 +55,10 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(viewModel: VybeViewModel) {
+fun HomeScreen(
+  viewModel: VybeViewModel,
+  showTopHeader: Boolean = true
+) {
   val palette = LocalVybePalette.current
   val currentUser by viewModel.currentUser.collectAsState()
   val unloadRooms by viewModel.unloadRooms.collectAsState()
@@ -68,8 +71,7 @@ fun HomeScreen(viewModel: VybeViewModel) {
   val posts by viewModel.posts.collectAsState()
   val allUsers by viewModel.allUsers.collectAsState()
   val feedMode by viewModel.feedMode.collectAsState()
-  val circles by viewModel.circles.collectAsState()
-  val growJourneys by viewModel.growJourneys.collectAsState()
+  val unfilteredPosts by viewModel.unfilteredPosts.collectAsState()
   val followingUserIds by viewModel.followingUserIds.collectAsState()
   val requestedFollowUserIds by viewModel.requestedFollowUserIds.collectAsState()
   val hiddenPostIds by viewModel.hiddenPostIds.collectAsState()
@@ -124,59 +126,62 @@ fun HomeScreen(viewModel: VybeViewModel) {
         color = palette.canvas,
         modifier = Modifier
           .fillMaxWidth()
-          .statusBarsPadding()
+          .let { if (showTopHeader) it.statusBarsPadding() else it }
           .testTag("home_top_bar")
       ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-          // Top editorial header matching VYBE 2.0 design
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-          ) {
+          if (showTopHeader) {
             Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
               verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(8.dp),
-              modifier = Modifier.clickable { viewModel.selectTab(MainTab.FEED) }
+              horizontalArrangement = Arrangement.SpaceBetween
             ) {
-              Image(
-                painter = painterResource(id = R.drawable.vybe_app_icon_clean),
-                contentDescription = "VYBE Logo",
-                modifier = Modifier
-                  .size(28.dp)
-                  .clip(RoundedCornerShape(8.dp)),
-                contentScale = ContentScale.Fit
-              )
-              VybeBrandWordmark(isGrowMode = false)
-            }
-
-            Row(
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-              VybeModeSwitch(
-                currentMode = VybeExperienceMode.SOCIAL,
-                onModeChange = { viewModel.setExperienceMode(it) }
-              )
-              VybeNotificationBellButton(
-                unreadCount = unreadNotificationsCount,
-                onClick = { viewModel.navigateTo(Screen.NOTIFICATIONS) },
-                testTag = "home_notification_bell"
-              )
-              if (currentUser != null) {
-                Box(
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.clickable { viewModel.selectTab(MainTab.FEED) }
+              ) {
+                Image(
+                  painter = painterResource(id = R.drawable.vybe_app_icon_clean),
+                  contentDescription = "VYBE Logo",
                   modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .clickable { viewModel.selectTab(MainTab.PROFILE) },
-                  contentAlignment = Alignment.Center
-                ) {
-                  VybeAvatar(user = currentUser!!, size = 34.dp, showPulseDot = false)
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+                  contentScale = ContentScale.Fit
+                )
+                VybeBrandWordmark(isGrowMode = false)
+              }
+
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+              ) {
+                VybeModeSwitch(
+                  currentMode = VybeExperienceMode.SOCIAL,
+                  onModeChange = { viewModel.setExperienceMode(it) }
+                )
+                VybeNotificationBellButton(
+                  unreadCount = unreadNotificationsCount,
+                  onClick = { viewModel.navigateTo(Screen.NOTIFICATIONS) },
+                  testTag = "home_notification_bell"
+                )
+                if (currentUser != null) {
+                  Box(
+                    modifier = Modifier
+                      .size(40.dp)
+                      .clip(CircleShape)
+                      .clickable { viewModel.selectTab(MainTab.PROFILE) },
+                    contentAlignment = Alignment.Center
+                  ) {
+                    VybeAvatar(user = currentUser!!, size = 34.dp, showPulseDot = false)
+                  }
                 }
               }
             }
+          } else {
+            Spacer(modifier = Modifier.height(6.dp))
           }
 
           // Compact status strip: Live Pulse + Quick Create
@@ -211,8 +216,15 @@ fun HomeScreen(viewModel: VybeViewModel) {
                     )
                 )
                 Spacer(modifier = Modifier.width(6.dp))
+                Icon(
+                  imageVector = livePulseOutlineIcon(pulse),
+                  contentDescription = null,
+                  tint = palette.textSecondary,
+                  modifier = Modifier.size(13.dp)
+                )
+                Spacer(modifier = Modifier.width(5.dp))
                 Text(
-                  text = if (pulse.icon.isNotBlank()) "${pulse.icon} ${pulse.label}" else pulse.label,
+                  text = pulse.label,
                   fontFamily = InterFontFamily,
                   fontSize = 11.sp,
                   fontWeight = FontWeight.SemiBold,
@@ -311,7 +323,7 @@ fun HomeScreen(viewModel: VybeViewModel) {
       verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
 
-      // --- QUICK DISCOVERY GATEWAYS ---
+      // --- SOCIAL DISCOVERY GATEWAYS ---
       item(key = "home_quick_gateways") {
         Row(
           modifier = Modifier
@@ -320,25 +332,7 @@ fun HomeScreen(viewModel: VybeViewModel) {
           horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
           HomeGatewayPill(
-            icon = Icons.Default.Group,
-            tint = palette.accent,
-            title = "VYBE Circle",
-            subtitle = "${circles.size} communities",
-            palette = palette,
-            testTag = "gateway_vybe_circle",
-            onClick = { viewModel.navigateTo(Screen.VYBE_CIRCLE) }
-          )
-          HomeGatewayPill(
-            icon = Icons.Default.TrendingUp,
-            tint = palette.accentSecondary,
-            title = "VYBE Grow",
-            subtitle = "${growJourneys.size} journeys",
-            palette = palette,
-            testTag = "gateway_vybe_grow",
-            onClick = { viewModel.setExperienceMode(VybeExperienceMode.GROW) }
-          )
-          HomeGatewayPill(
-            icon = Icons.Default.SelfImprovement,
+            icon = Icons.Outlined.SelfImprovement,
             tint = palette.success,
             title = "Spiritual Mode",
             subtitle = if (isSpiritual) "Active" else "Mindful Space",
@@ -347,7 +341,7 @@ fun HomeScreen(viewModel: VybeViewModel) {
             onClick = { viewModel.navigateTo(Screen.SPIRITUAL_MODE) }
           )
           HomeGatewayPill(
-            icon = Icons.Default.GraphicEq,
+            icon = Icons.Outlined.GraphicEq,
             tint = palette.danger,
             title = "Live Audio",
             subtitle = "${unloadRooms.count { it.isActive }} rooms",
@@ -355,10 +349,28 @@ fun HomeScreen(viewModel: VybeViewModel) {
             testTag = "gateway_vybe_unload",
             onClick = { viewModel.navigateTo(Screen.UNLOAD_VIEW) }
           )
+          HomeGatewayPill(
+            icon = Icons.Outlined.Forum,
+            tint = palette.accent,
+            title = "Mood Zones",
+            subtitle = "Expressive feeds",
+            palette = palette,
+            testTag = "gateway_mood_zones",
+            onClick = { viewModel.selectTab(MainTab.MOOD_ZONES) }
+          )
+          HomeGatewayPill(
+            icon = Icons.Outlined.HourglassEmpty,
+            tint = palette.accentSecondary,
+            title = "Time Capsules",
+            subtitle = "${timeCapsules.size} sealed",
+            palette = palette,
+            testTag = "gateway_time_capsules",
+            onClick = { viewModel.navigateTo(Screen.TIME_CAPSULES_VIEW) }
+          )
         }
       }
 
-      // --- SOMETHING NEW FOR YOU (Personalized Discovery) ---
+      // --- SOMETHING NEW FOR YOU (Social Discovery Only) ---
       item(key = "home_something_new") {
         VybeSurfaceCard(modifier = Modifier.fillMaxWidth()) {
           Row(
@@ -371,7 +383,7 @@ fun HomeScreen(viewModel: VybeViewModel) {
               horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
               Icon(
-                imageVector = Icons.Default.AutoAwesome,
+                imageVector = Icons.Outlined.AutoAwesome,
                 contentDescription = null,
                 tint = palette.accent,
                 modifier = Modifier.size(18.dp)
@@ -385,7 +397,7 @@ fun HomeScreen(viewModel: VybeViewModel) {
               )
             }
             Text(
-              text = "Discovery",
+              text = "Social Spaces",
               fontFamily = InterFontFamily,
               fontSize = 11.sp,
               fontWeight = FontWeight.SemiBold,
@@ -394,80 +406,74 @@ fun HomeScreen(viewModel: VybeViewModel) {
           }
           Spacer(modifier = Modifier.height(12.dp))
 
-          val recommendedCircle = circles.firstOrNull()
-          val recommendedJourney = growJourneys.firstOrNull()
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
           ) {
-            if (recommendedCircle != null) {
-              Surface(
-                color = palette.elevated,
-                shape = RoundedCornerShape(VybeTokens.Radius.md),
-                border = BorderStroke(1.dp, palette.border),
-                modifier = Modifier
-                  .weight(1f)
-                  .clip(RoundedCornerShape(VybeTokens.Radius.md))
-                  .clickable { viewModel.navigateTo(Screen.VYBE_CIRCLE) }
-              ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                  Text(
-                    text = "Circle to Join",
-                    fontSize = 10.sp,
-                    color = palette.accent,
-                    fontWeight = FontWeight.Bold
-                  )
-                  Spacer(modifier = Modifier.height(2.dp))
-                  Text(
-                    text = recommendedCircle.name,
-                    fontFamily = PlusJakartaSansFontFamily,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = palette.textPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                  )
-                  Text(
-                    text = "${recommendedCircle.membersCount} members",
-                    fontSize = 11.sp,
-                    color = palette.textSecondary
-                  )
-                }
+            Surface(
+              color = palette.elevated,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              border = BorderStroke(1.dp, palette.border),
+              modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(VybeTokens.Radius.md))
+                .clickable { viewModel.navigateTo(Screen.UNFILTERED_VIEW) }
+            ) {
+              Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                  text = "Candid Feed",
+                  fontSize = 10.sp,
+                  color = palette.accent,
+                  fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                  text = "Unfiltered",
+                  fontFamily = PlusJakartaSansFontFamily,
+                  fontSize = 13.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = palette.textPrimary,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                  text = "${unfilteredPosts.size} raw moments",
+                  fontSize = 11.sp,
+                  color = palette.textSecondary
+                )
               }
             }
-            if (recommendedJourney != null) {
-              Surface(
-                color = palette.elevated,
-                shape = RoundedCornerShape(VybeTokens.Radius.md),
-                border = BorderStroke(1.dp, palette.border),
-                modifier = Modifier
-                  .weight(1f)
-                  .clip(RoundedCornerShape(VybeTokens.Radius.md))
-                  .clickable { viewModel.navigateTo(Screen.VYBE_GROW) }
-              ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                  Text(
-                    text = "Habit Journey",
-                    fontSize = 10.sp,
-                    color = palette.accentSecondary,
-                    fontWeight = FontWeight.Bold
-                  )
-                  Spacer(modifier = Modifier.height(2.dp))
-                  Text(
-                    text = recommendedJourney.title,
-                    fontFamily = PlusJakartaSansFontFamily,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = palette.textPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                  )
-                  Text(
-                    text = "${recommendedJourney.durationDays}-day streak",
-                    fontSize = 11.sp,
-                    color = palette.textSecondary
-                  )
-                }
+            Surface(
+              color = palette.elevated,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              border = BorderStroke(1.dp, palette.border),
+              modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(VybeTokens.Radius.md))
+                .clickable { viewModel.selectTab(MainTab.CROSSED_PATHS) }
+            ) {
+              Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                  text = "Serendipity",
+                  fontSize = 10.sp,
+                  color = palette.accentSecondary,
+                  fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                  text = "Crossed Paths",
+                  fontFamily = PlusJakartaSansFontFamily,
+                  fontSize = 13.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = palette.textPrimary,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                  text = "${crossedPaths.size} shared spots",
+                  fontSize = 11.sp,
+                  color = palette.textSecondary
+                )
               }
             }
           }
@@ -1218,10 +1224,13 @@ fun HomeScreen(viewModel: VybeViewModel) {
                   .padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                if (status.icon.isNotBlank()) {
-                  Text(status.icon, fontSize = 18.sp)
-                  Spacer(modifier = Modifier.width(10.dp))
-                }
+                Icon(
+                  imageVector = livePulseOutlineIcon(status),
+                  contentDescription = null,
+                  tint = if (isCurrent) palette.accent else palette.textSecondary,
+                  modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
                 Text(
                   text = status.label,
                   fontSize = 13.sp,
@@ -1304,5 +1313,16 @@ private fun HomeGatewayPill(
         )
       }
     }
+  }
+}
+
+private fun livePulseOutlineIcon(status: LivePulseStatus): androidx.compose.ui.graphics.vector.ImageVector {
+  return when (status) {
+    LivePulseStatus.OPEN_TO_CHAT -> Icons.Outlined.ChatBubbleOutline
+    LivePulseStatus.FEELING_CREATIVE -> Icons.Outlined.AutoAwesome
+    LivePulseStatus.LISTENING_MUSIC -> Icons.Outlined.Headphones
+    LivePulseStatus.GAMING_PARTNER -> Icons.Outlined.SportsEsports
+    LivePulseStatus.QUIET_TIME -> Icons.Outlined.DarkMode
+    LivePulseStatus.NONE -> Icons.Outlined.RadioButtonUnchecked
   }
 }

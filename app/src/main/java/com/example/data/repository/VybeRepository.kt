@@ -3354,9 +3354,9 @@ class VybeRepository private constructor() {
                   .distinct()
 
                 val msgPreview = when (mediaType.uppercase()) {
-                  "IMAGE" -> if (cleanText.isNotBlank()) "📷 $cleanText" else "📷 Sent a photo"
-                  "VIDEO" -> if (cleanText.isNotBlank()) "🎬 $cleanText" else "🎬 Sent a video"
-                  "AUDIO", "VOICE" -> "🎤 Sent a voice message"
+                  "IMAGE" -> if (cleanText.isNotBlank()) "Photo: $cleanText" else "Sent a photo"
+                  "VIDEO" -> if (cleanText.isNotBlank()) "Video: $cleanText" else "Sent a video"
+                  "AUDIO", "VOICE" -> "Sent a voice message"
                   else -> cleanText.ifBlank { "Sent an attachment" }.take(120)
                 }
                 val pushTitle = if (c.isGroup && !c.groupName.isNullOrBlank()) {
@@ -6827,9 +6827,9 @@ class VybeRepository private constructor() {
             conv.peerUser.displayName.ifBlank { "@${conv.peerUser.username}" }
           }
           val msgBody = when (latestIncoming.mediaType.uppercase()) {
-            "IMAGE" -> if (latestIncoming.text.isNotBlank() && !latestIncoming.text.startsWith("http")) "📷 ${latestIncoming.text}" else "📷 Sent a photo"
-            "VIDEO" -> if (latestIncoming.text.isNotBlank() && !latestIncoming.text.startsWith("http")) "🎬 ${latestIncoming.text}" else "🎬 Sent a video"
-            "AUDIO", "VOICE" -> "🎤 Sent a voice message"
+            "IMAGE" -> if (latestIncoming.text.isNotBlank() && !latestIncoming.text.startsWith("http")) "Photo: ${latestIncoming.text}" else "Sent a photo"
+            "VIDEO" -> if (latestIncoming.text.isNotBlank() && !latestIncoming.text.startsWith("http")) "Video: ${latestIncoming.text}" else "Sent a video"
+            "AUDIO", "VOICE" -> "Sent a voice message"
             else -> latestIncoming.text.ifBlank { "New message" }
           }
           val msgData = mutableMapOf(
@@ -6985,7 +6985,7 @@ class VybeRepository private constructor() {
     }
     VybeNotificationHelper.showNotification(
       context = ctx,
-      title = "VYBE Live Notifications Active ⚡",
+      title = "VYBE Live Notifications Active",
       body = "Instagram-style Direct replies, avatars, media previews, and <100ms real-time updates are live on your phone!",
       data = data,
       channelId = VybeNotificationHelper.CHANNEL_ID_PRIMARY,

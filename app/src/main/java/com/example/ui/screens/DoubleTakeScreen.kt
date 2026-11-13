@@ -298,13 +298,24 @@ fun DoubleTakeScreen(viewModel: VybeViewModel) {
                               color = palette.success.copy(alpha = 0.18f),
                               shape = RoundedCornerShape(VybeTokens.Radius.xs)
                             ) {
-                              Text(
-                                text = "Connected ✓",
-                                fontSize = 10.sp,
-                                color = palette.success,
-                                fontWeight = FontWeight.Bold,
+                              Row(
+                                verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                              )
+                              ) {
+                                Icon(
+                                  imageVector = Icons.Outlined.Check,
+                                  contentDescription = null,
+                                  tint = palette.success,
+                                  modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                  text = "Connected",
+                                  fontSize = 10.sp,
+                                  color = palette.success,
+                                  fontWeight = FontWeight.Bold
+                                )
+                              }
                             }
                           } else {
                             Button(

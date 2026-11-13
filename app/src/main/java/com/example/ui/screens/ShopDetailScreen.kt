@@ -309,7 +309,9 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                 modifier = Modifier.heightIn(min = 44.dp).testTag("activate_shop_button")
               ) {
-                Text("Activate Approved Shop Profile ✓", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Activate Approved Shop Profile", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
               }
             }
           }
@@ -458,11 +460,11 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
           )
 
           VybeSecondaryButton(
-            text = if (reviewPhotoUri != null) "Photo Attached ✓" else "Attach Store/Product Photo",
+            text = if (reviewPhotoUri != null) "Photo Attached" else "Attach Store/Product Photo",
             onClick = {
               photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
             },
-            icon = Icons.Default.AddPhotoAlternate,
+            icon = if (reviewPhotoUri != null) Icons.Default.CheckCircle else Icons.Default.AddPhotoAlternate,
             modifier = Modifier.fillMaxWidth()
           )
 
