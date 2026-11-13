@@ -1,13 +1,13 @@
 package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.LockReset
@@ -17,6 +17,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -25,6 +26,13 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.data.repository.PasswordRecoveryState
 import com.example.ui.VybeViewModel
+import com.example.ui.components.VybePrimaryButton
+import com.example.ui.components.VybeSecondaryButton
+import com.example.ui.components.VybeSubScreenTopBar
+import com.example.ui.components.VybeSurfaceCard
+import com.example.ui.theme.LocalVybePalette
+import com.example.ui.theme.PlusJakartaSansFontFamily
+import com.example.ui.theme.VybeTokens
 import kotlinx.coroutines.launch
 
 /**
@@ -32,16 +40,11 @@ import kotlinx.coroutines.launch
  *
  * Triggered when the user opens `vybe://reset-password` from the Supabase recovery email
  * (or enters a Supabase recovery token manually).
- *
- * Enforces:
- * 1. Validates recovery session securely against Supabase Auth before allowing password entry.
- * 2. Never invents a fake 6-digit OTP when Supabase sent a recovery link.
- * 3. Displays New Password and Confirm Password with >= 8 char & match validation.
- * 4. Updates password via Supabase Auth, terminates recovery session, and returns cleanly to Login.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PasswordRecoveryScreen(viewModel: VybeViewModel) {
+  val palette = LocalVybePalette.current
   val recoveryState by viewModel.passwordRecoveryState.collectAsState()
   val scope = rememberCoroutineScope()
 
@@ -74,19 +77,24 @@ fun PasswordRecoveryScreen(viewModel: VybeViewModel) {
     viewModel.exitPasswordRecoveryToLogin()
   }
 
+  val fieldColors = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = palette.elevated,
+    unfocusedContainerColor = palette.elevated,
+    focusedBorderColor = palette.accent,
+    unfocusedBorderColor = palette.border,
+    focusedTextColor = palette.textPrimary,
+    unfocusedTextColor = palette.textPrimary
+  )
+
   Scaffold(
     contentWindowInsets = WindowInsets(0.dp),
+    containerColor = palette.canvas,
     topBar = {
-      TopAppBar(
-        title = { Text("Reset Password", fontWeight = FontWeight.Bold) },
-        navigationIcon = {
-          IconButton(
-            onClick = { viewModel.exitPasswordRecoveryToLogin() },
-            modifier = Modifier.testTag("recovery_back_to_login")
-          ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to Login")
-          }
-        }
+      VybeSubScreenTopBar(
+        title = "Reset Password",
+        subtitle = "VYBE Account Recovery",
+        onBackClick = { viewModel.exitPasswordRecoveryToLogin() },
+        backTestTag = "recovery_back_to_login"
       )
     }
   ) { innerPadding ->
@@ -97,20 +105,21 @@ fun PasswordRecoveryScreen(viewModel: VybeViewModel) {
         .navigationBarsPadding()
         .imePadding()
         .verticalScroll(rememberScrollState())
-        .padding(horizontal = 24.dp, vertical = 16.dp),
+        .padding(horizontal = 24.dp, vertical = 20.dp),
       horizontalAlignment = Alignment.CenterHorizontally
     ) {
       Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+        shape = RoundedCornerShape(VybeTokens.Radius.lg),
+        color = palette.accent.copy(alpha = 0.14f),
+        border = BorderStroke(1.dp, palette.accent.copy(alpha = 0.35f)),
         modifier = Modifier.size(64.dp)
       ) {
         Box(contentAlignment = Alignment.Center) {
           Icon(
             Icons.Default.LockReset,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(34.dp)
+            tint = palette.accent,
+            modifier = Modifier.size(32.dp)
           )
         }
       }
@@ -119,21 +128,23 @@ fun PasswordRecoveryScreen(viewModel: VybeViewModel) {
 
       Text(
         text = "VYBE Account Recovery",
+        fontFamily = PlusJakartaSansFontFamily,
         style = MaterialTheme.typography.headlineSmall,
-        fontWeight = FontWeight.Bold
+        fontWeight = FontWeight.Bold,
+        color = palette.textPrimary
       )
 
-      Spacer(Modifier.height(8.dp))
+      Spacer(Modifier.height(12.dp))
 
       when (val state = recoveryState) {
         PasswordRecoveryState.ValidatingLink -> {
           Spacer(Modifier.height(32.dp))
-          CircularProgressIndicator()
+          CircularProgressIndicator(color = palette.accent)
           Spacer(Modifier.height(16.dp))
           Text(
             text = "Validating your recovery link securely with VYBE Auth...",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = palette.textSecondary
           )
           Spacer(Modifier.height(24.dp))
           TextButton(
@@ -142,7 +153,7 @@ fun PasswordRecoveryScreen(viewModel: VybeViewModel) {
               .heightIn(min = 48.dp)
               .testTag("recovery_cancel_validating_login_button")
           ) {
-            Text("Cancel & Back to Login")
+            Text("Cancel & Back to Login", color = palette.accent)
           }
         }
 
@@ -156,8 +167,9 @@ fun PasswordRecoveryScreen(viewModel: VybeViewModel) {
           val isSubmitting = state is PasswordRecoveryState.UpdatingPassword || isBusy
 
           Surface(
-            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
-            shape = RoundedCornerShape(12.dp),
+            color = palette.success.copy(alpha = 0.14f),
+            border = BorderStroke(1.dp, palette.success.copy(alpha = 0.35f)),
+            shape = RoundedCornerShape(VybeTokens.Radius.md),
             modifier = Modifier.fillMaxWidth()
           ) {
             Row(
@@ -167,156 +179,143 @@ fun PasswordRecoveryScreen(viewModel: VybeViewModel) {
               Icon(
                 Icons.Default.CheckCircle,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = palette.success,
                 modifier = Modifier.size(20.dp)
               )
               Spacer(Modifier.width(10.dp))
               Text(
                 text = if (verifiedEmail.isNotBlank()) "Recovery session verified for $verifiedEmail"
                 else "Recovery session verified. Choose a strong new password.",
-                style = MaterialTheme.typography.bodySmall
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.textPrimary
               )
             }
           }
 
-          Spacer(Modifier.height(20.dp))
+          Spacer(Modifier.height(16.dp))
 
-          OutlinedTextField(
-            value = newPassword,
-            onValueChange = {
-              newPassword = it
-              inlineError = null
-            },
-            label = { Text("New Password") },
-            placeholder = { Text("At least 8 characters") },
-            singleLine = true,
-            visualTransformation = if (showNewPass) VisualTransformation.None else PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-            trailingIcon = {
-              IconButton(onClick = { showNewPass = !showNewPass }) {
-                Icon(
-                  imageVector = if (showNewPass) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                  contentDescription = if (showNewPass) "Hide password" else "Show password"
-                )
-              }
-            },
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier
-              .fillMaxWidth()
-              .testTag("recovery_new_password_input")
-          )
+          VybeSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+              value = newPassword,
+              onValueChange = {
+                newPassword = it
+                inlineError = null
+              },
+              label = { Text("New Password") },
+              placeholder = { Text("At least 8 characters", color = palette.textMuted) },
+              singleLine = true,
+              visualTransformation = if (showNewPass) VisualTransformation.None else PasswordVisualTransformation(),
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+              trailingIcon = {
+                IconButton(onClick = { showNewPass = !showNewPass }) {
+                  Icon(
+                    imageVector = if (showNewPass) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                    contentDescription = if (showNewPass) "Hide password" else "Show password",
+                    tint = palette.textSecondary
+                  )
+                }
+              },
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              colors = fieldColors,
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("recovery_new_password_input")
+            )
 
-          Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(14.dp))
 
-          OutlinedTextField(
-            value = confirmPassword,
-            onValueChange = {
-              confirmPassword = it
-              inlineError = null
-            },
-            label = { Text("Confirm Password") },
-            placeholder = { Text("Re-enter new password") },
-            singleLine = true,
-            visualTransformation = if (showConfirmPass) VisualTransformation.None else PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-            trailingIcon = {
-              IconButton(onClick = { showConfirmPass = !showConfirmPass }) {
-                Icon(
-                  imageVector = if (showConfirmPass) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                  contentDescription = if (showConfirmPass) "Hide password" else "Show password"
-                )
-              }
-            },
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier
-              .fillMaxWidth()
-              .testTag("recovery_confirm_password_input")
-          )
+            OutlinedTextField(
+              value = confirmPassword,
+              onValueChange = {
+                confirmPassword = it
+                inlineError = null
+              },
+              label = { Text("Confirm Password") },
+              placeholder = { Text("Re-enter new password", color = palette.textMuted) },
+              singleLine = true,
+              visualTransformation = if (showConfirmPass) VisualTransformation.None else PasswordVisualTransformation(),
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+              trailingIcon = {
+                IconButton(onClick = { showConfirmPass = !showConfirmPass }) {
+                  Icon(
+                    imageVector = if (showConfirmPass) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                    contentDescription = if (showConfirmPass) "Hide password" else "Show password",
+                    tint = palette.textSecondary
+                  )
+                }
+              },
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              colors = fieldColors,
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("recovery_confirm_password_input")
+            )
 
-          if (!inlineError.isNullOrBlank()) {
-            Spacer(Modifier.height(12.dp))
-            Surface(
-              color = MaterialTheme.colorScheme.errorContainer,
-              shape = RoundedCornerShape(12.dp),
-              modifier = Modifier.fillMaxWidth()
-            ) {
-              Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+            if (!inlineError.isNullOrBlank()) {
+              Spacer(Modifier.height(12.dp))
+              Surface(
+                color = palette.danger.copy(alpha = 0.14f),
+                border = BorderStroke(1.dp, palette.danger.copy(alpha = 0.35f)),
+                shape = RoundedCornerShape(VybeTokens.Radius.md),
+                modifier = Modifier.fillMaxWidth()
               ) {
-                Icon(
-                  Icons.Default.ErrorOutline,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.error
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                  text = inlineError!!,
-                  color = MaterialTheme.colorScheme.onErrorContainer,
-                  style = MaterialTheme.typography.bodySmall
-                )
-              }
-            }
-          }
-
-          Spacer(Modifier.height(22.dp))
-
-          Button(
-            onClick = {
-              if (isSubmitting) return@Button
-              if (newPassword.length < 8) {
-                inlineError = "New password must be at least 8 characters long."
-                return@Button
-              }
-              if (newPassword != confirmPassword) {
-                inlineError = "New Password and Confirm Password do not match."
-                return@Button
-              }
-              isBusy = true
-              inlineError = null
-              scope.launch {
-                try {
-                  val (ok, msg) = viewModel.submitRecoveredNewPassword(newPassword, confirmPassword)
-                  if (!ok) {
-                    inlineError = msg
-                  }
-                } finally {
-                  isBusy = false
+                Row(
+                  modifier = Modifier.padding(12.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = palette.danger)
+                  Spacer(Modifier.width(8.dp))
+                  Text(
+                    text = inlineError!!,
+                    color = palette.danger,
+                    style = MaterialTheme.typography.bodySmall
+                  )
                 }
               }
-            },
-            enabled = !isSubmitting,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier
-              .fillMaxWidth()
-              .heightIn(min = 52.dp)
-              .testTag("recovery_submit_password_button")
-          ) {
-            if (isSubmitting) {
-              CircularProgressIndicator(
-                modifier = Modifier.size(20.dp),
-                strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.onPrimary
-              )
-              Spacer(Modifier.width(10.dp))
-              Text("Updating Password...")
-            } else {
-              Text("Update Password", fontWeight = FontWeight.Bold)
             }
-          }
 
-          Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(20.dp))
 
-          OutlinedButton(
-            onClick = { viewModel.exitPasswordRecoveryToLogin() },
-            enabled = !isSubmitting,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier
-              .fillMaxWidth()
-              .heightIn(min = 48.dp)
-              .testTag("recovery_return_to_login_button")
-          ) {
-            Text("Back to Login", fontWeight = FontWeight.SemiBold)
+            VybePrimaryButton(
+              text = if (isSubmitting) "Updating Password..." else "Update Password",
+              isLoading = isSubmitting,
+              enabled = !isSubmitting,
+              testTag = "recovery_submit_password_button",
+              onClick = {
+                if (isSubmitting) return@VybePrimaryButton
+                if (newPassword.length < 8) {
+                  inlineError = "New password must be at least 8 characters long."
+                  return@VybePrimaryButton
+                }
+                if (newPassword != confirmPassword) {
+                  inlineError = "New Password and Confirm Password do not match."
+                  return@VybePrimaryButton
+                }
+                isBusy = true
+                inlineError = null
+                scope.launch {
+                  try {
+                    val (ok, msg) = viewModel.submitRecoveredNewPassword(newPassword, confirmPassword)
+                    if (!ok) {
+                      inlineError = msg
+                    }
+                  } finally {
+                    isBusy = false
+                  }
+                }
+              },
+              modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            VybeSecondaryButton(
+              text = "Back to Login",
+              enabled = !isSubmitting,
+              testTag = "recovery_return_to_login_button",
+              onClick = { viewModel.exitPasswordRecoveryToLogin() },
+              modifier = Modifier.fillMaxWidth()
+            )
           }
         }
 
@@ -328,25 +327,26 @@ fun PasswordRecoveryScreen(viewModel: VybeViewModel) {
           Text(
             text = "Open the password recovery link sent to your email to verify your session automatically. If your email includes a recovery token, you can also verify it below.",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = palette.textSecondary
           )
 
           if (!errorText.isNullOrBlank()) {
             Spacer(Modifier.height(14.dp))
             Surface(
-              color = MaterialTheme.colorScheme.errorContainer,
-              shape = RoundedCornerShape(12.dp),
+              color = palette.danger.copy(alpha = 0.14f),
+              border = BorderStroke(1.dp, palette.danger.copy(alpha = 0.35f)),
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
               modifier = Modifier.fillMaxWidth()
             ) {
               Row(
                 modifier = Modifier.padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = palette.danger)
                 Spacer(Modifier.width(8.dp))
                 Text(
                   text = errorText,
-                  color = MaterialTheme.colorScheme.onErrorContainer,
+                  color = palette.danger,
                   style = MaterialTheme.typography.bodySmall
                 )
               }
@@ -356,113 +356,111 @@ fun PasswordRecoveryScreen(viewModel: VybeViewModel) {
           if (!resendSuccessMsg.isNullOrBlank()) {
             Spacer(Modifier.height(14.dp))
             Surface(
-              color = MaterialTheme.colorScheme.secondaryContainer,
-              shape = RoundedCornerShape(12.dp),
+              color = palette.success.copy(alpha = 0.14f),
+              border = BorderStroke(1.dp, palette.success.copy(alpha = 0.35f)),
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
               modifier = Modifier.fillMaxWidth()
             ) {
               Text(
                 text = resendSuccessMsg!!,
+                color = palette.textPrimary,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(12.dp)
               )
             }
           }
 
-          Spacer(Modifier.height(18.dp))
-
-          OutlinedTextField(
-            value = emailInput,
-            onValueChange = {
-              emailInput = it
-              inlineError = null
-            },
-            label = { Text("Registered Email") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier
-              .fillMaxWidth()
-              .testTag("recovery_email_input")
-          )
-
-          Spacer(Modifier.height(12.dp))
-
-          OutlinedButton(
-            onClick = {
-              val trimmed = emailInput.trim()
-              if (trimmed.isBlank() || !trimmed.contains("@")) {
-                inlineError = "Please enter your registered email address."
-                return@OutlinedButton
-              }
-              isBusy = true
-              inlineError = null
-              resendSuccessMsg = null
-              scope.launch {
-                val (ok, msg) = viewModel.sendPasswordReset(trimmed)
-                isBusy = false
-                if (ok) resendSuccessMsg = msg else inlineError = msg
-              }
-            },
-            enabled = !isBusy,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier
-              .fillMaxWidth()
-              .heightIn(min = 48.dp)
-              .testTag("recovery_send_link_button")
-          ) {
-            Text("Send Fresh Recovery Link")
-          }
-
-          Spacer(Modifier.height(20.dp))
-          HorizontalDivider()
           Spacer(Modifier.height(16.dp))
 
-          Text(
-            text = "Have a recovery token from your email?",
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.align(Alignment.Start)
-          )
-          Spacer(Modifier.height(8.dp))
+          VybeSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+              value = emailInput,
+              onValueChange = {
+                emailInput = it
+                inlineError = null
+              },
+              label = { Text("Registered Email") },
+              singleLine = true,
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              colors = fieldColors,
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("recovery_email_input")
+            )
 
-          OutlinedTextField(
-            value = recoveryTokenInput,
-            onValueChange = {
-              recoveryTokenInput = it
-              inlineError = null
-            },
-            label = { Text("Email Recovery Token") },
-            placeholder = { Text("Paste token from email if provided") },
-            singleLine = true,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier
-              .fillMaxWidth()
-              .testTag("recovery_token_input")
-          )
+            Spacer(Modifier.height(12.dp))
 
-          Spacer(Modifier.height(12.dp))
+            VybeSecondaryButton(
+              text = "Send Fresh Recovery Link",
+              enabled = !isBusy,
+              testTag = "recovery_send_link_button",
+              onClick = {
+                val trimmed = emailInput.trim()
+                if (trimmed.isBlank() || !trimmed.contains("@")) {
+                  inlineError = "Please enter your registered email address."
+                  return@VybeSecondaryButton
+                }
+                isBusy = true
+                inlineError = null
+                resendSuccessMsg = null
+                scope.launch {
+                  val (ok, msg) = viewModel.sendPasswordReset(trimmed)
+                  isBusy = false
+                  if (ok) resendSuccessMsg = msg else inlineError = msg
+                }
+              },
+              modifier = Modifier.fillMaxWidth()
+            )
 
-          Button(
-            onClick = {
-              isBusy = true
-              inlineError = null
-              scope.launch {
-                val (ok, msg) = viewModel.verifyRecoveryTokenManually(emailInput, recoveryTokenInput)
-                isBusy = false
-                if (!ok) inlineError = msg
-              }
-            },
-            enabled = !isBusy && recoveryTokenInput.isNotBlank(),
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier
-              .fillMaxWidth()
-              .heightIn(min = 48.dp)
-              .testTag("recovery_verify_token_button")
-          ) {
-            Text("Verify Recovery Token")
+            Spacer(Modifier.height(18.dp))
+            HorizontalDivider(color = palette.border)
+            Spacer(Modifier.height(16.dp))
+
+            Text(
+              text = "Have a recovery token from your email?",
+              style = MaterialTheme.typography.labelLarge,
+              fontWeight = FontWeight.SemiBold,
+              color = palette.textPrimary
+            )
+            Spacer(Modifier.height(8.dp))
+
+            OutlinedTextField(
+              value = recoveryTokenInput,
+              onValueChange = {
+                recoveryTokenInput = it
+                inlineError = null
+              },
+              label = { Text("Email Recovery Token") },
+              placeholder = { Text("Paste token from email if provided", color = palette.textMuted) },
+              singleLine = true,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              colors = fieldColors,
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("recovery_token_input")
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            VybePrimaryButton(
+              text = "Verify Recovery Token",
+              enabled = !isBusy && recoveryTokenInput.isNotBlank(),
+              testTag = "recovery_verify_token_button",
+              onClick = {
+                isBusy = true
+                inlineError = null
+                scope.launch {
+                  val (ok, msg) = viewModel.verifyRecoveryTokenManually(emailInput, recoveryTokenInput)
+                  isBusy = false
+                  if (!ok) inlineError = msg
+                }
+              },
+              modifier = Modifier.fillMaxWidth()
+            )
           }
 
-          Spacer(Modifier.height(16.dp))
+          Spacer(Modifier.height(14.dp))
 
           TextButton(
             onClick = { viewModel.exitPasswordRecoveryToLogin() },
@@ -471,45 +469,38 @@ fun PasswordRecoveryScreen(viewModel: VybeViewModel) {
               .heightIn(min = 48.dp)
               .testTag("recovery_return_to_login_button")
           ) {
-            Text("Back to Login", fontWeight = FontWeight.SemiBold)
+            Text("Back to Login", fontWeight = FontWeight.SemiBold, color = palette.accent)
           }
         }
 
         is PasswordRecoveryState.Completed -> {
           Spacer(Modifier.height(24.dp))
-          Surface(
-            color = MaterialTheme.colorScheme.secondaryContainer,
-            shape = RoundedCornerShape(14.dp),
+          VybeSurfaceCard(
+            borderColor = palette.success.copy(alpha = 0.4f),
             modifier = Modifier.fillMaxWidth()
           ) {
-            Row(
-              modifier = Modifier.padding(16.dp),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
               Icon(
                 Icons.Default.CheckCircle,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
+                tint = palette.success
               )
               Spacer(Modifier.width(12.dp))
               Text(
                 text = state.message,
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Medium,
+                color = palette.textPrimary
               )
             }
           }
           Spacer(Modifier.height(20.dp))
-          Button(
+          VybePrimaryButton(
+            text = "Login with New Password",
+            testTag = "recovery_completed_login_button",
             onClick = { viewModel.exitPasswordRecoveryToLogin() },
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier
-              .fillMaxWidth()
-              .heightIn(min = 52.dp)
-              .testTag("recovery_completed_login_button")
-          ) {
-            Text("Login with New Password", fontWeight = FontWeight.Bold)
-          }
+            modifier = Modifier.fillMaxWidth()
+          )
         }
       }
     }

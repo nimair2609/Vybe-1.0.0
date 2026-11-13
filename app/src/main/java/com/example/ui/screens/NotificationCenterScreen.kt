@@ -10,7 +10,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -33,6 +32,11 @@ import com.example.data.model.User
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VybeAvatar
+import com.example.ui.components.VybeEmptyState
+import com.example.ui.components.VybePrimaryButton
+import com.example.ui.components.VybeSecondaryButton
+import com.example.ui.components.VybeSubScreenTopBar
+import com.example.ui.components.VybeSurfaceCard
 import com.example.ui.theme.*
 import com.example.util.rememberRelativeTimestamp
 
@@ -43,6 +47,7 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
     viewModel.navigateBack()
   }
 
+  val palette = LocalVybePalette.current
   val notifications by viewModel.notifications.collectAsState()
   val incomingFollowRequestUserIds by viewModel.incomingFollowRequestUserIds.collectAsState()
   val allUsers by viewModel.allUsers.collectAsState()
@@ -69,58 +74,43 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
   val filteredNotifications = remember(notifications, filterUnreadOnly) {
     if (filterUnreadOnly) notifications.filter { !it.isRead } else notifications
   }
+  val totalBadge = unreadCount + pendingFollowRequesters.size
 
   Scaffold(
+    containerColor = palette.canvas,
+    contentWindowInsets = WindowInsets(0.dp),
     snackbarHost = { SnackbarHost(snackbarHostState) },
     topBar = {
-      TopAppBar(
-        navigationIcon = {
-          IconButton(
-            onClick = { viewModel.navigateBack() },
-            modifier = Modifier.testTag("notifications_back_button")
-          ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-          }
-        },
-        title = {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Notifications", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-            val totalBadge = unreadCount + pendingFollowRequesters.size
-            if (totalBadge > 0) {
-              Spacer(modifier = Modifier.width(8.dp))
-              Surface(
-                color = VybeViolet,
-                shape = CircleShape,
-                modifier = Modifier.padding(horizontal = 4.dp)
-              ) {
-                Text(
-                  text = "$totalBadge",
-                  color = Color.White,
-                  fontSize = 12.sp,
-                  fontWeight = FontWeight.Bold,
-                  modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
-                )
-              }
-            }
-          }
-        },
+      VybeSubScreenTopBar(
+        title = "Notifications",
+        subtitle = if (totalBadge > 0) "$totalBadge unread updates" else "All caught up",
+        onBackClick = { viewModel.navigateBack() },
+        backTestTag = "notifications_back_button",
         actions = {
-          IconButton(
-            onClick = { viewModel.refreshAllData() },
-            modifier = Modifier.testTag("notifications_refresh_button")
-          ) {
-            Icon(Icons.Default.Refresh, contentDescription = "Sync Notifications")
-          }
           if (unreadCount > 0) {
             TextButton(
               onClick = { viewModel.markAllNotificationsRead() },
-              modifier = Modifier.testTag("mark_all_read_button")
+              modifier = Modifier
+                .heightIn(min = 48.dp)
+                .testTag("mark_all_read_button")
             ) {
-              Text("Mark All Read", fontSize = 12.sp, color = VybeBrandCyan, fontWeight = FontWeight.SemiBold)
+              Text(
+                "Mark All Read",
+                fontSize = 12.sp,
+                color = palette.accent,
+                fontWeight = FontWeight.Bold
+              )
             }
           }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+          IconButton(
+            onClick = { viewModel.refreshAllData() },
+            modifier = Modifier
+              .size(48.dp)
+              .testTag("notifications_refresh_button")
+          ) {
+            Icon(Icons.Default.Refresh, contentDescription = "Sync Notifications", tint = palette.textPrimary)
+          }
+        }
       )
     }
   ) { paddingValues ->
@@ -128,101 +118,86 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
       modifier = Modifier
         .fillMaxSize()
         .padding(paddingValues)
+        .navigationBarsPadding()
     ) {
       Row(
         modifier = Modifier
           .fillMaxWidth()
-          .padding(horizontal = 16.dp, vertical = 8.dp),
+          .padding(horizontal = 16.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
       ) {
-        FilterChip(
-          selected = !filterUnreadOnly,
-          onClick = { filterUnreadOnly = false },
-          label = { Text("All (${notifications.size})") },
-          colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = VybeViolet.copy(alpha = 0.2f),
-            selectedLabelColor = VybeViolet
-          ),
-          modifier = Modifier.testTag("filter_all_notifications")
-        )
-        FilterChip(
-          selected = filterUnreadOnly,
-          onClick = { filterUnreadOnly = true },
-          label = { Text("Unread ($unreadCount)") },
-          colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = VybeViolet.copy(alpha = 0.2f),
-            selectedLabelColor = VybeViolet
-          ),
-          modifier = Modifier.testTag("filter_unread_notifications")
-        )
+        listOf(
+          Triple(false, "All (${notifications.size})", "filter_all_notifications"),
+          Triple(true, "Unread ($unreadCount)", "filter_unread_notifications")
+        ).forEach { (unreadTab, label, tag) ->
+          val selected = filterUnreadOnly == unreadTab
+          Surface(
+            color = if (selected) palette.accent else palette.elevated,
+            shape = RoundedCornerShape(VybeTokens.Radius.pill),
+            border = BorderStroke(1.dp, if (selected) palette.accent else palette.border),
+            modifier = Modifier
+              .heightIn(min = 40.dp)
+              .clip(RoundedCornerShape(VybeTokens.Radius.pill))
+              .clickable { filterUnreadOnly = unreadTab }
+              .testTag(tag)
+          ) {
+            Box(
+              contentAlignment = Alignment.Center,
+              modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+              Text(
+                text = label,
+                fontFamily = PlusJakartaSansFontFamily,
+                fontSize = 12.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                color = if (selected) Color.White else palette.textSecondary
+              )
+            }
+          }
+        }
       }
 
       if (filteredNotifications.isEmpty() && pendingFollowRequesters.isEmpty()) {
         Box(
           modifier = Modifier
             .fillMaxSize()
-            .padding(32.dp),
+            .padding(24.dp),
           contentAlignment = Alignment.Center
         ) {
-          Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Surface(
-              shape = CircleShape,
-              color = MaterialTheme.colorScheme.surfaceVariant,
-              modifier = Modifier.size(72.dp)
-            ) {
-              Box(contentAlignment = Alignment.Center) {
-                Icon(
-                  imageVector = Icons.Default.NotificationsNone,
-                  contentDescription = null,
-                  modifier = Modifier.size(36.dp),
-                  tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-              }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-              text = if (filterUnreadOnly) "No unread notifications" else "No notifications yet",
-              style = MaterialTheme.typography.titleMedium,
-              fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-              text = "Likes, comments, LINKUPS, and message alerts from real interactions will appear here.",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              textAlign = TextAlign.Center
-            )
-          }
+          VybeEmptyState(
+            icon = Icons.Default.NotificationsNone,
+            title = if (filterUnreadOnly) "No unread notifications" else "No notifications yet",
+            subtitle = "Likes, comments, LINKUPS, and message alerts from real interactions will appear here."
+          )
         }
       } else {
         LazyColumn(
           modifier = Modifier.fillMaxSize(),
-          contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+          contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
           verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
           if (pendingFollowRequesters.isNotEmpty()) {
             item {
               Text(
-                text = "LINKUP Requests (${pendingFollowRequesters.size})",
+                text = "LINKUP REQUESTS (${pendingFollowRequesters.size})",
+                fontFamily = PlusJakartaSansFontFamily,
                 fontWeight = FontWeight.Bold,
-                fontSize = 13.sp,
-                color = VybeViolet,
+                fontSize = 11.sp,
+                letterSpacing = 0.8.sp,
+                color = palette.accent,
                 modifier = Modifier.padding(vertical = 4.dp)
               )
             }
             items(pendingFollowRequesters, key = { "req_${it.id}" }) { requester ->
-              Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.3f)),
+              VybeSurfaceCard(
+                borderColor = palette.accent.copy(alpha = 0.35f),
                 modifier = Modifier
                   .fillMaxWidth()
-                  .testTag("follow_request_item_${requester.id}")
+                  .testTag("follow_request_item_${requester.id}"),
+                contentPadding = PaddingValues(12.dp)
               ) {
                 Row(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
+                  modifier = Modifier.fillMaxWidth(),
                   verticalAlignment = Alignment.CenterVertically
                 ) {
                   VybeAvatar(
@@ -236,19 +211,19 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
                       .weight(1f)
                       .clickable { viewModel.openUserProfile(requester) }
                   ) {
-                    Text(requester.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text(requester.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = palette.textPrimary)
                     Text(
                       "@${requester.username} sent you a LINKUP Request",
                       fontSize = 11.sp,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                      color = palette.textSecondary
                     )
                   }
                   Spacer(modifier = Modifier.width(8.dp))
                   Button(
                     onClick = { viewModel.respondToFollowRequest(requester.id, approve = true) },
-                    colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(VybeTokens.Radius.sm),
                     modifier = Modifier.heightIn(min = 38.dp)
                   ) {
                     Text("Accept LINKUP", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
@@ -256,11 +231,12 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
                   Spacer(modifier = Modifier.width(6.dp))
                   OutlinedButton(
                     onClick = { viewModel.respondToFollowRequest(requester.id, approve = false) },
+                    border = BorderStroke(1.dp, palette.border),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(VybeTokens.Radius.sm),
                     modifier = Modifier.heightIn(min = 38.dp)
                   ) {
-                    Text("Decline", fontSize = 11.sp)
+                    Text("Decline", fontSize = 11.sp, color = palette.textSecondary)
                   }
                 }
               }
@@ -325,6 +301,8 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
               }
             )
           }
+
+          item { Spacer(modifier = Modifier.height(24.dp)) }
         }
       }
     }
@@ -333,26 +311,40 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
   if (notificationToDelete != null) {
     AlertDialog(
       onDismissRequest = { notificationToDelete = null },
-      title = { Text("Delete Notification?", fontWeight = FontWeight.Bold) },
-      text = { Text("This notification will be removed across all your signed-in devices.") },
+      containerColor = palette.card,
+      titleContentColor = palette.textPrimary,
+      textContentColor = palette.textSecondary,
+      title = {
+        Text(
+          "Delete Notification?",
+          fontFamily = PlusJakartaSansFontFamily,
+          fontWeight = FontWeight.Bold
+        )
+      },
+      text = {
+        Text(
+          "This notification will be removed across all your signed-in devices.",
+          color = palette.textSecondary
+        )
+      },
       confirmButton = {
-        Button(
+        VybePrimaryButton(
+          text = "Delete",
+          containerColor = palette.danger,
           onClick = {
             val toDel = notificationToDelete
             if (toDel != null) {
               viewModel.deleteNotification(toDel.id)
               notificationToDelete = null
             }
-          },
-          colors = ButtonDefaults.buttonColors(containerColor = VybeDanger)
-        ) {
-          Text("Delete", color = Color.White)
-        }
+          }
+        )
       },
       dismissButton = {
-        TextButton(onClick = { notificationToDelete = null }) {
-          Text("Cancel")
-        }
+        VybeSecondaryButton(
+          text = "Cancel",
+          onClick = { notificationToDelete = null }
+        )
       }
     )
   }
@@ -368,19 +360,20 @@ fun NotificationCard(
   onClick: () -> Unit,
   onDelete: () -> Unit
 ) {
+  val palette = LocalVybePalette.current
   val (icon, iconTint) = when (item.type) {
-    NotificationType.LIKE -> Pair(Icons.Outlined.FavoriteBorder, VybeMagenta)
-    NotificationType.COMMENT_OR_REPLY -> Pair(Icons.Outlined.ChatBubbleOutline, VybeBrandCyan)
-    NotificationType.FOLLOW -> Pair(Icons.Outlined.PersonAdd, VybeViolet)
-    NotificationType.DIRECT_MESSAGE, NotificationType.GROUP_MESSAGE -> Pair(Icons.Outlined.Forum, Color(0xFF00E676))
-    NotificationType.ROOM_INVITATION -> Pair(Icons.Outlined.GraphicEq, VybeBrandCyan)
-    NotificationType.TIME_CAPSULE_INVITATION, NotificationType.TIME_CAPSULE_UNLOCK -> Pair(Icons.Outlined.Schedule, Color(0xFFAB47BC))
-    NotificationType.DOUBLE_TAKE_RESPONSE -> Pair(Icons.Outlined.PhotoCamera, VybeMagenta)
-    NotificationType.CROSSED_PATHS_INTERACTION -> Pair(Icons.Outlined.Place, Color(0xFFFF5252))
-    NotificationType.BUSINESS_VERIFICATION_UPDATE -> Pair(Icons.Outlined.Verified, VybeBrandCyan)
-    NotificationType.LIVE_STREAM_ALERT -> Pair(Icons.Outlined.Sensors, Color(0xFFFF1744))
-    NotificationType.SECURITY_ACCOUNT_UPDATE -> Pair(Icons.Outlined.Shield, Color(0xFF26A69A))
-    NotificationType.SHOP_REVIEW -> Pair(Icons.Outlined.Storefront, Color(0xFFFFB300))
+    NotificationType.LIKE -> Pair(Icons.Outlined.FavoriteBorder, VybeReaction.LOVE.color)
+    NotificationType.COMMENT_OR_REPLY -> Pair(Icons.Outlined.ChatBubbleOutline, palette.accent)
+    NotificationType.FOLLOW -> Pair(Icons.Outlined.PersonAdd, palette.accent)
+    NotificationType.DIRECT_MESSAGE, NotificationType.GROUP_MESSAGE -> Pair(Icons.Outlined.Forum, palette.success)
+    NotificationType.ROOM_INVITATION -> Pair(Icons.Outlined.GraphicEq, palette.accent)
+    NotificationType.TIME_CAPSULE_INVITATION, NotificationType.TIME_CAPSULE_UNLOCK -> Pair(Icons.Outlined.Schedule, palette.accentSecondary)
+    NotificationType.DOUBLE_TAKE_RESPONSE -> Pair(Icons.Outlined.PhotoCamera, palette.accentSecondary)
+    NotificationType.CROSSED_PATHS_INTERACTION -> Pair(Icons.Outlined.Place, palette.danger)
+    NotificationType.BUSINESS_VERIFICATION_UPDATE -> Pair(Icons.Outlined.Verified, palette.accent)
+    NotificationType.LIVE_STREAM_ALERT -> Pair(Icons.Outlined.Sensors, palette.danger)
+    NotificationType.SECURITY_ACCOUNT_UPDATE -> Pair(Icons.Outlined.Shield, palette.success)
+    NotificationType.SHOP_REVIEW -> Pair(Icons.Outlined.Storefront, palette.warning)
   }
 
   val actorHeadline = remember(item.actorUser, item.title) {
@@ -403,7 +396,7 @@ fun NotificationCard(
         if (item.message.contains("Reel", ignoreCase = true) || item.message.contains("post", ignoreCase = true) || item.message.contains("story", ignoreCase = true)) {
           item.message
         } else {
-          "Sent a Finger Heart 🫰 on your $contentKind"
+          "Reacted to your $contentKind"
         }
       }
       NotificationType.FOLLOW -> {
@@ -424,19 +417,17 @@ fun NotificationCard(
     }
   }
 
-  Surface(
-    shape = RoundedCornerShape(14.dp),
-    color = if (!item.isRead) VybeViolet.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-    border = if (!item.isRead) BorderStroke(1.dp, VybeViolet.copy(alpha = 0.25f)) else null,
+  VybeSurfaceCard(
+    onClick = onClick,
+    containerColor = if (!item.isRead) palette.accent.copy(alpha = 0.08f) else palette.card,
+    borderColor = if (!item.isRead) palette.accent.copy(alpha = 0.35f) else palette.border,
+    contentPadding = PaddingValues(12.dp),
     modifier = Modifier
       .fillMaxWidth()
-      .clickable { onClick() }
       .testTag("notification_item_${item.id}")
   ) {
     Row(
-      modifier = Modifier
-        .fillMaxWidth()
-        .padding(12.dp),
+      modifier = Modifier.fillMaxWidth(),
       verticalAlignment = Alignment.CenterVertically
     ) {
       if (item.actorUser != null) {
@@ -453,10 +444,10 @@ fun NotificationCard(
             modifier = Modifier
               .size(20.dp)
               .clip(CircleShape)
-              .background(MaterialTheme.colorScheme.surface)
+              .background(palette.card)
               .padding(1.5.dp)
               .clip(CircleShape)
-              .background(if (item.type == NotificationType.LIKE) Color(0xFF1F1228) else iconTint),
+              .background(if (item.type == NotificationType.LIKE) palette.elevated else iconTint),
             contentAlignment = Alignment.Center
           ) {
             if (item.type == NotificationType.LIKE) {
@@ -506,9 +497,10 @@ fun NotificationCard(
         Row(verticalAlignment = Alignment.CenterVertically) {
           Text(
             text = actorHeadline,
-            style = MaterialTheme.typography.titleSmall,
+            fontFamily = PlusJakartaSansFontFamily,
+            fontSize = 14.sp,
             fontWeight = if (!item.isRead) FontWeight.Bold else FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = palette.textPrimary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f, fill = false)
@@ -522,15 +514,15 @@ fun NotificationCard(
               modifier = Modifier
                 .size(7.dp)
                 .clip(CircleShape)
-                .background(VybeViolet)
+                .background(palette.accent)
             )
           }
         }
         Spacer(modifier = Modifier.height(2.dp))
         Text(
           text = actionDescription,
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          fontSize = 12.sp,
+          color = palette.textSecondary,
           maxLines = 2,
           overflow = TextOverflow.Ellipsis
         )
@@ -539,7 +531,7 @@ fun NotificationCard(
           Text(
             text = "\"$resolvedContentSnippet\"",
             fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+            color = palette.textPrimary.copy(alpha = 0.85f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
           )
@@ -550,26 +542,25 @@ fun NotificationCard(
           Text(
             text = relativeTime,
             fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+            color = palette.textMuted
           )
           if (!item.targetEntityId.isNullOrBlank()) {
             Text(
               text = if (resolvedIsReel) " • Tap to view Reel" else " • Tap to view post",
               fontSize = 11.sp,
               fontWeight = FontWeight.Medium,
-              color = VybeBrandCyan
+              color = palette.accent
             )
           }
         }
       }
 
-      // Content preview thumbnail or text-post preview tile on right
       if (!resolvedPostPreviewUrl.isNullOrBlank()) {
         Spacer(modifier = Modifier.width(8.dp))
         Box(
           modifier = Modifier
             .size(48.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(VybeTokens.Radius.sm))
             .background(Color.Black.copy(alpha = 0.25f)),
           contentAlignment = Alignment.Center
         ) {
@@ -599,9 +590,9 @@ fun NotificationCard(
       } else if (!resolvedContentSnippet.isNullOrBlank() && !item.targetEntityId.isNullOrBlank()) {
         Spacer(modifier = Modifier.width(8.dp))
         Surface(
-          shape = RoundedCornerShape(10.dp),
-          color = MaterialTheme.colorScheme.surface,
-          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+          shape = RoundedCornerShape(VybeTokens.Radius.sm),
+          color = palette.elevated,
+          border = BorderStroke(1.dp, palette.border),
           modifier = Modifier.size(48.dp)
         ) {
           Box(
@@ -614,7 +605,7 @@ fun NotificationCard(
               lineHeight = 10.sp,
               maxLines = 3,
               overflow = TextOverflow.Ellipsis,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              color = palette.textSecondary,
               textAlign = TextAlign.Center
             )
           }
@@ -631,7 +622,7 @@ fun NotificationCard(
           imageVector = Icons.Outlined.Close,
           contentDescription = "Delete notification",
           modifier = Modifier.size(16.dp),
-          tint = MaterialTheme.colorScheme.onSurfaceVariant
+          tint = palette.textMuted
         )
       }
     }

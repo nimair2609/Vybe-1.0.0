@@ -654,19 +654,16 @@
 
       <form id="admin-login-form">
         <div class="form-group">
-          <label>Administrator Email (Any Gmail or Account)</label>
-          <input type="email" id="admin-email" class="form-control" placeholder="your.name@gmail.com" value="roulnimai95@gmail.com" required />
+          <label>Administrator Email</label>
+          <input type="email" id="admin-email" class="form-control" placeholder="admin@example.com" required />
         </div>
         <div class="form-group">
-          <label>Password (Optional for Instant Access)</label>
-          <input type="password" id="admin-password" class="form-control" placeholder="•••••••••••• (Leave blank to bypass)" />
+          <label>Password</label>
+          <input type="password" id="admin-password" class="form-control" placeholder="Enter your administrator password" required />
         </div>
         <div id="auth-error-msg" style="color: var(--accent-danger); font-size: 12px; margin-bottom: 14px; display: none;"></div>
         <button type="submit" class="btn btn-primary" id="btn-admin-login" style="width: 100%; padding: 13px;">
           <i data-lucide="shield-check"></i> Authenticate & Enter Command Center
-        </button>
-        <button type="button" class="btn btn-outline" onclick="enterConsoleWithEnteredEmail()" style="width: 100%; margin-top: 10px; border-color: var(--primary-cyan); color: var(--primary-cyan); font-weight: 700; padding: 12px;">
-          👑 Instant Access with Typed Email (Any Gmail)
         </button>
       </form>
     </div>
@@ -1099,7 +1096,7 @@
             <div class="grid-3" style="margin-bottom: 14px; gap: 12px;">
               <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px;">
                 <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Firebase Project</div>
-                <div id="fcm-cfg-project" style="font-size: 14px; font-weight: 700; color: #fff; margin-top: 4px;">vybe-1c966</div>
+                <div id="fcm-cfg-project" style="font-size: 14px; font-weight: 700; color: #fff; margin-top: 4px;">--</div>
               </div>
               <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px;">
                 <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Service Account Email</div>
@@ -1237,9 +1234,6 @@
           <div class="card">
             <div class="card-title">
               <span>In-Feed & Reel Sponsored Placements</span>
-              <button class="btn btn-primary btn-sm" onclick="openModal('modal-create-ad')">
-                <i data-lucide="plus"></i> New Campaign
-              </button>
             </div>
             <div class="table-container">
               <table id="table-ads">
@@ -1353,12 +1347,12 @@
             <div class="card-title">
               <span>Cryptographic Audit Trail & CSV Export Center</span>
               <div style="display: flex; gap: 8px;">
-                <a href="/api/v1/admin/export/users" class="btn btn-outline btn-sm" target="_blank">
+                <button type="button" class="btn btn-outline btn-sm" onclick="downloadAdminCsv('/api/v1/admin/export/users', 'vybe-users-directory.csv')">
                   <i data-lucide="download" size="13"></i> Export Users CSV
-                </a>
-                <a href="/api/v1/admin/export/audit-logs" class="btn btn-primary btn-sm" target="_blank">
+                </button>
+                <button type="button" class="btn btn-primary btn-sm" onclick="downloadAdminCsv('/api/v1/admin/export/audit-logs', 'vybe-audit-trail.csv')">
                   <i data-lucide="download" size="13"></i> Export Audit CSV
-                </a>
+                </button>
               </div>
             </div>
             <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
@@ -1472,7 +1466,7 @@
 
     let currentSession = null;
     let currentUserProfile = null;
-    let currentUserRole = 'SUPER_ADMIN';
+    let currentUserRole = '';
     const charts = {};
 
     function showToast(msg) {
@@ -1482,23 +1476,77 @@
       setTimeout(() => { toast.style.display = 'none'; }, 4000);
     }
 
+    function showAuthOverlay(message) {
+      currentSession = null;
+      currentUserRole = '';
+      document.getElementById('dashboard-layout').style.display = 'none';
+      document.getElementById('auth-overlay').style.display = 'flex';
+      const errEl = document.getElementById('auth-error-msg');
+      if (errEl) {
+        if (message) {
+          errEl.innerText = message;
+          errEl.style.display = 'block';
+        } else {
+          errEl.style.display = 'none';
+        }
+      }
+      if (window.lucide && typeof lucide.createIcons === 'function') {
+        lucide.createIcons();
+      }
+    }
+
+    async function adminFetch(url, options = {}) {
+      const token = currentSession?.access_token;
+      if (!token || !token.startsWith('eyJ')) {
+        showAuthOverlay('Administrator session required. Please sign in.');
+        throw new Error('Missing verified administrator session.');
+      }
+      const headers = new Headers(options.headers || {});
+      headers.set('Authorization', `Bearer ${token}`);
+      const resp = await fetch(url, { ...options, headers });
+      if (resp.status === 401) {
+        await supabase.auth.signOut().catch(() => {});
+        showAuthOverlay('Administrator session expired. Please sign in again.');
+      }
+      return resp;
+    }
+
+    async function downloadAdminCsv(url, filename) {
+      try {
+        const resp = await adminFetch(url);
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          alert(err.error || `CSV export failed (${resp.status}).`);
+          return;
+        }
+        const blob = await resp.blob();
+        const dlUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = dlUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(dlUrl);
+      } catch (err) {
+        alert('CSV export error: ' + err.message);
+      }
+    }
+
     function openModal(id) { document.getElementById(id).style.display = 'flex'; }
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
     function switchTab(tabId) {
       if (!tabId) return;
       try {
-        // Hide all tab panels
         document.querySelectorAll('.tab-panel').forEach(p => {
           p.style.display = 'none';
         });
 
-        // Remove active class from all nav items
         document.querySelectorAll('.nav-item').forEach(n => {
           n.classList.remove('active');
         });
 
-        // Show target tab panel
         const targetPanel = document.getElementById('tab-' + tabId);
         if (targetPanel) {
           targetPanel.style.display = 'block';
@@ -1506,11 +1554,9 @@
           console.warn('Tab panel not found for id: tab-' + tabId);
         }
 
-        // Highlight matching nav item
         const targetNavs = document.querySelectorAll(`.nav-item[data-tab="${tabId}"]`);
         targetNavs.forEach(n => n.classList.add('active'));
 
-        // Safely invoke loaders without blocking UI
         try {
           if (tabId === 'overview') loadOverviewData();
           else if (tabId === 'users') loadUsers();
@@ -1527,7 +1573,6 @@
           console.warn('Tab data loader warning for ' + tabId + ':', loaderErr);
         }
 
-        // Refresh Lucide icons safely
         try {
           if (window.lucide && typeof lucide.createIcons === 'function') {
             lucide.createIcons();
@@ -1540,56 +1585,59 @@
       }
     }
 
-    function isRecognizedOwner(email) {
-      if (!email) return false;
-      // Allow any email or Gmail to access console as requested by owner
-      return email.includes('@');
-    }
-
-    function enterConsoleWithEnteredEmail() {
-      const emailInput = document.getElementById('admin-email');
-      const email = (emailInput && emailInput.value.trim()) || localStorage.getItem('vybe_admin_email') || 'roulnimai95@gmail.com';
-      enterConsoleAsOwner(email);
-    }
-
-    // Auto-enter console if owner email or session present
     async function checkExistingSession() {
       try {
-        const savedEmail = localStorage.getItem('vybe_admin_email');
         const { data: { session } } = await supabase.auth.getSession();
-        if (session && session.user && session.user.email) {
-          verifyAdminAccess(session);
+        if (session && session.access_token && session.user) {
+          await verifyAdminAccess(session);
         } else {
-          // Default instant access for owner or saved admin email
-          enterConsoleAsOwner(savedEmail || 'roulnimai95@gmail.com');
+          showAuthOverlay('');
         }
       } catch (e) {
-        enterConsoleAsOwner(localStorage.getItem('vybe_admin_email') || 'roulnimai95@gmail.com');
+        showAuthOverlay('');
       }
     }
 
-    function enterConsoleAsOwner(email) {
-      const resolvedEmail = email || localStorage.getItem('vybe_admin_email') || 'roulnimai95@gmail.com';
-      localStorage.setItem('vybe_admin_email', resolvedEmail);
-      currentSession = { user: { id: 'owner_session', email: resolvedEmail } };
-      currentUserRole = 'OWNER / SUPER ADMIN';
-      document.getElementById('auth-overlay').style.display = 'none';
-      document.getElementById('dashboard-layout').style.display = 'flex';
-      document.getElementById('sidebar-admin-email').innerText = resolvedEmail;
-      document.getElementById('sidebar-admin-role').innerText = '👑 OWNER / SUPER ADMIN';
-      
-      const initials = resolvedEmail.substring(0, 2).toUpperCase();
-      const avatarEl = document.getElementById('admin-avatar-initials');
-      if (avatarEl) avatarEl.innerText = initials;
-
-      lucide.createIcons();
-      loadOverviewData();
-      initCharts();
-    }
-
     async function verifyAdminAccess(session) {
-      const email = session.user.email || 'roulnimai95@gmail.com';
-      enterConsoleAsOwner(email);
+      if (!session || !session.access_token || !session.user) {
+        showAuthOverlay('Authentication required.');
+        return;
+      }
+
+      try {
+        const resp = await fetch('/api/v1/admin/overview-stats', {
+          headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+
+        if (!resp.ok) {
+          const payload = await resp.json().catch(() => ({}));
+          await supabase.auth.signOut().catch(() => {});
+          showAuthOverlay(payload.error || `Access denied (${resp.status}): Active administrator record required.`);
+          return;
+        }
+
+        const data = await resp.json();
+        const email = session.user.email || 'admin';
+        const verifiedRole = data.adminRole || 'ADMIN';
+
+        currentSession = session;
+        currentUserRole = verifiedRole;
+        document.getElementById('auth-overlay').style.display = 'none';
+        document.getElementById('dashboard-layout').style.display = 'flex';
+        document.getElementById('sidebar-admin-email').innerText = email;
+        document.getElementById('sidebar-admin-role').innerText = verifiedRole.replace(/_/g, ' ');
+
+        const initials = email.substring(0, 2).toUpperCase();
+        const avatarEl = document.getElementById('admin-avatar-initials');
+        if (avatarEl) avatarEl.innerText = initials;
+
+        lucide.createIcons();
+        if (!charts.growth || !charts.content) initCharts();
+        applyOverviewStats(data.stats);
+      } catch (err) {
+        await supabase.auth.signOut().catch(() => {});
+        showAuthOverlay('Unable to verify administrator privileges: ' + err.message);
+      }
     }
 
     // Login Form Submit
@@ -1601,37 +1649,30 @@
       const btn = document.getElementById('btn-admin-login');
 
       errorMsg.style.display = 'none';
-      btn.disabled = true;
-      btn.innerText = 'Verifying Credentials...';
-
-      // If recognized owner email, grant immediate access
-      if (isRecognizedOwner(email)) {
-        btn.disabled = false;
-        btn.innerHTML = '<i data-lucide="shield-check"></i> Authenticate & Enter Command Center';
-        lucide.createIcons();
-        enterConsoleAsOwner(email);
+      if (!email || !password) {
+        errorMsg.innerText = 'Administrator email and password are required.';
+        errorMsg.style.display = 'block';
         return;
       }
+
+      btn.disabled = true;
+      btn.innerText = 'Verifying Credentials...';
 
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       btn.disabled = false;
       btn.innerHTML = '<i data-lucide="shield-check"></i> Authenticate & Enter Command Center';
       lucide.createIcons();
 
-      if (error) {
-        if (isRecognizedOwner(email)) {
-          enterConsoleAsOwner(email);
-          return;
-        }
-        errorMsg.innerText = error.message;
+      if (error || !data?.session) {
+        errorMsg.innerText = error?.message || 'Invalid credentials.';
         errorMsg.style.display = 'block';
         return;
       }
-      verifyAdminAccess(data.session);
+      await verifyAdminAccess(data.session);
     });
 
     document.getElementById('btn-logout').addEventListener('click', async () => {
-      await supabase.auth.signOut();
+      await supabase.auth.signOut().catch(() => {});
       location.reload();
     });
 
@@ -1640,29 +1681,34 @@
       showToast("Live data refreshed from Supabase.");
     });
 
+    function applyOverviewStats(s) {
+      if (!s) return;
+      document.getElementById('stat-total-users').innerText = (s.users.total || 0).toLocaleString();
+      document.getElementById('stat-active-dau').innerText = (s.users.dau || 0).toLocaleString();
+      document.getElementById('stat-active-wau').innerText = `WAU: ${s.users.wau || 0} | MAU: ${s.users.mau || 0}`;
+      document.getElementById('stat-total-posts').innerText = (s.content.totalPosts || 0).toLocaleString();
+      document.getElementById('stat-reels-breakdown').innerText = `Reels: ${s.content.reels || 0} | Unfiltered: ${s.content.unfiltered || 0}`;
+      document.getElementById('stat-pending-reports').innerText = s.moderation.pendingReports || 0;
+      document.getElementById('stat-reports-detail').innerText = `${s.moderation.totalReports || 0} total cases logged`;
+      document.getElementById('stat-fcm-devices').innerText = s.push.activeDevices || 0;
+      document.getElementById('stat-verified-count').innerText = ((s.users.verified || 0) + (s.users.vip || 0) + (s.users.official || 0)).toLocaleString();
+      document.getElementById('stat-badges-breakdown').innerText = `${s.users.verified || 0} Blue | ${s.users.vip || 0} Gold | ${s.users.official || 0} Green`;
+      document.getElementById('stat-banned-count').innerText = `${(s.users.banned || 0) + (s.users.suspended || 0)}`;
+      document.getElementById('stat-enforce-breakdown').innerText = `${s.users.banned || 0} Banned | ${s.users.suspended || 0} Suspended`;
+      document.getElementById('stat-live-rooms').innerText = (s.experiences?.liveRooms ?? 0).toLocaleString();
+
+      updateGrowthChart(s.users);
+      updateContentChart(s);
+    }
+
     // 1. Overview Data Loader
     async function loadOverviewData() {
       try {
-        const resp = await fetch('/api/v1/admin/overview-stats');
+        const resp = await adminFetch('/api/v1/admin/overview-stats');
+        if (!resp.ok) return;
         const data = await resp.json();
         if (data.success && data.stats) {
-          const s = data.stats;
-          document.getElementById('stat-total-users').innerText = (s.users.total || 0).toLocaleString();
-          document.getElementById('stat-active-dau').innerText = (s.users.dau || 0).toLocaleString();
-          document.getElementById('stat-active-wau').innerText = `WAU: ${s.users.wau || 0} | MAU: ${s.users.mau || 0}`;
-          document.getElementById('stat-total-posts').innerText = (s.content.totalPosts || 0).toLocaleString();
-          document.getElementById('stat-reels-breakdown').innerText = `Reels: ${s.content.reels || 0} | Unfiltered: ${s.content.unfiltered || 0}`;
-          document.getElementById('stat-pending-reports').innerText = s.moderation.pendingReports || 0;
-          document.getElementById('stat-reports-detail').innerText = `${s.moderation.totalReports || 0} total cases logged`;
-          document.getElementById('stat-fcm-devices').innerText = s.push.activeDevices || 0;
-          document.getElementById('stat-verified-count').innerText = (s.users.verified + s.users.vip + s.users.official) || 0;
-          document.getElementById('stat-badges-breakdown').innerText = `${s.users.verified} Blue | ${s.users.vip} Gold | ${s.users.official} Green`;
-          document.getElementById('stat-banned-count').innerText = `${s.users.banned + s.users.suspended}`;
-          document.getElementById('stat-enforce-breakdown').innerText = `${s.users.banned} Banned | ${s.users.suspended} Suspended`;
-          document.getElementById('stat-live-rooms').innerText = (s.content.totalPosts > 0 ? 2 : 0);
-
-          updateGrowthChart(s.users.total);
-          updateContentChart(s.content);
+          applyOverviewStats(data.stats);
         }
       } catch (err) {
         console.warn('Overview stats error:', err);
@@ -1675,7 +1721,12 @@
       tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Fetching members...</td></tr>`;
 
       try {
-        const resp = await fetch('/api/v1/admin/users');
+        const resp = await adminFetch('/api/v1/admin/users');
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--accent-danger);">${err.error || 'Failed loading users directory.'}</td></tr>`;
+          return;
+        }
         const data = await resp.json();
         const users = data.users || [];
 
@@ -1696,7 +1747,7 @@
         });
 
         if (filtered.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">No members match selected filters.</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">No members found in database.</td></tr>`;
           return;
         }
 
@@ -1718,10 +1769,10 @@
                 <div style="font-size: 11px; color: var(--text-sub);">@${u.username} • <code>${u.id.substring(0,8)}</code></div>
               </td>
               <td>${u.email || '<span style="color: var(--text-sub);">N/A</span>'}</td>
-              <td><span class="badge ${u.role === 'SUPER_ADMIN' ? 'badge-gold' : 'badge-muted'}">${u.role || 'USER'}</span></td>
+              <td><span class="badge ${u.role === 'SUPER_ADMIN' || u.role === 'OWNER_ADMIN' ? 'badge-gold' : 'badge-muted'}">${u.role || 'USER'}</span></td>
               <td>${badges.join(' ') || '<span style="color: var(--text-sub);">-</span>'}</td>
               <td>${statusBadge}</td>
-              <td style="font-size: 11px; color: var(--text-sub);">${u.created_at ? new Date(u.created_at).toLocaleDateString() : 'Recent'}</td>
+              <td style="font-size: 11px; color: var(--text-sub);">${u.created_at ? new Date(u.created_at).toLocaleDateString() : 'N/A'}</td>
               <td>
                 <div style="display: flex; gap: 6px;">
                   <button class="btn btn-outline btn-sm" onclick="openBadgeModal('${u.id}', '${u.username}')" title="Assign Badges">
@@ -1774,15 +1825,14 @@
         action = 'BAN';
       }
 
-      const resp = await fetch('/api/v1/admin/user-status', {
+      const resp = await adminFetch('/api/v1/admin/user-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId,
           action,
           reason,
-          durationHours,
-          adminEmail: currentSession?.user?.email || 'Owner Super Admin'
+          durationHours
         })
       });
 
@@ -1809,14 +1859,13 @@
       const badgeType = document.getElementById('modal-badge-type-select').value;
       const value = document.getElementById('modal-badge-value-select').value === 'true';
 
-      const resp = await fetch('/api/v1/admin/assign-badge', {
+      const resp = await adminFetch('/api/v1/admin/assign-badge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId,
           badgeType,
-          value,
-          adminEmail: currentSession?.user?.email || 'Owner Super Admin'
+          value
         })
       });
 
@@ -1837,7 +1886,11 @@
       tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Loading media content...</td></tr>`;
 
       try {
-        const resp = await fetch('/api/v1/admin/content');
+        const resp = await adminFetch('/api/v1/admin/content');
+        if (!resp.ok) {
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--accent-danger);">Error fetching content.</td></tr>`;
+          return;
+        }
         const data = await resp.json();
         const posts = data.posts || [];
 
@@ -1875,7 +1928,7 @@
               </td>
               <td>${p.likes_count} likes • ${p.comments_count} comms</td>
               <td>${statusBadge}</td>
-              <td style="font-size: 11px; color: var(--text-sub);">${p.created_at ? new Date(p.created_at).toLocaleDateString() : 'Recent'}</td>
+              <td style="font-size: 11px; color: var(--text-sub);">${p.created_at ? new Date(p.created_at).toLocaleDateString() : 'N/A'}</td>
               <td>
                 <div style="display: flex; gap: 6px;">
                   ${p.is_hidden ? `
@@ -1897,19 +1950,20 @@
     document.getElementById('content-filter-type').addEventListener('change', loadContent);
 
     async function moderateContent(contentId, action) {
-      const resp = await fetch('/api/v1/admin/content-action', {
+      const resp = await adminFetch('/api/v1/admin/content-action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contentId,
-          action,
-          adminEmail: currentSession?.user?.email || 'Owner Super Admin'
+          action
         })
       });
       const res = await resp.json();
       if (res.success) {
         showToast(`Content ${action.toLowerCase()}d.`);
         loadContent();
+      } else {
+        alert("Moderation action failed: " + (res.error || 'Server error'));
       }
     }
 
@@ -1919,7 +1973,11 @@
       grid.innerHTML = '<div style="color: var(--text-muted); padding: 20px;">Scanning zones...</div>';
 
       try {
-        const resp = await fetch('/api/v1/admin/experiences');
+        const resp = await adminFetch('/api/v1/admin/experiences');
+        if (!resp.ok) {
+          grid.innerHTML = '<div style="color: var(--accent-danger);">Failed to load experiences.</div>';
+          return;
+        }
         const data = await resp.json();
         const exp = data.experiences || {};
         const flags = data.featureFlags || {};
@@ -1935,6 +1993,19 @@
 
         grid.innerHTML = items.map(item => {
           const isEnabled = flags[item.key] !== false;
+          const countLabel = item.totalActiveRooms !== undefined
+            ? `${item.totalActiveRooms} active lounges`
+            : item.snapshotsCount !== undefined
+              ? `${item.snapshotsCount} snaps`
+              : item.totalActivePolls !== undefined
+                ? `${item.totalActivePolls} active polls`
+                : item.sealedCount !== undefined
+                  ? `${item.sealedCount} sealed vaults`
+                  : item.activePromptsCount !== undefined
+                    ? `${item.activePromptsCount} prompts`
+                    : item.signalsCount !== undefined
+                      ? `${item.signalsCount} encounters`
+                      : 'Active';
           return `
             <div style="background: #0B1022; border: 1px solid var(--border-color); border-radius: 18px; padding: 20px;">
               <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
@@ -1955,7 +2026,7 @@
                   ${isEnabled ? 'LIVE IN APP' : 'ZONE DISABLED'}
                 </span>
                 <span style="font-size: 11px; color: var(--text-sub);">
-                  ${item.totalActiveRooms !== undefined ? `${item.totalActiveRooms} active lounges` : (item.snapshotsCount !== undefined ? `${item.snapshotsCount} snaps` : (item.sealedCount !== undefined ? `${item.sealedCount} sealed vaults` : 'Active'))}
+                  ${countLabel}
                 </span>
               </div>
             </div>
@@ -1967,19 +2038,20 @@
     }
 
     async function toggleExperience(experienceKey, enabled) {
-      const resp = await fetch('/api/v1/admin/experiences/toggle', {
+      const resp = await adminFetch('/api/v1/admin/experiences/toggle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           experienceKey,
-          enabled,
-          adminEmail: currentSession?.user?.email || 'Owner Super Admin'
+          enabled
         })
       });
       const res = await resp.json();
       if (res.success) {
         showToast(`Experience ${experienceKey.toUpperCase()} is now ${enabled ? 'ENABLED' : 'DISABLED'}.`);
         loadExperiences();
+      } else {
+        alert("Toggle failed: " + (res.error || 'Server error'));
       }
     }
 
@@ -1999,15 +2071,14 @@
       btn.disabled = true;
       btn.innerText = 'Dispatching to FCM & Devices...';
 
-      const resp = await fetch('/api/v1/admin/broadcast-push', {
+      const resp = await adminFetch('/api/v1/admin/broadcast-push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title,
           body: msgBody,
           audience,
-          specificUserId,
-          adminEmail: currentSession?.user?.email || 'Owner Super Admin'
+          specificUserId
         })
       });
 
@@ -2017,7 +2088,7 @@
 
       const res = await resp.json();
       if (res.success) {
-        showToast(`Push broadcast sent to ${res.totalDevices || 1} devices!`);
+        showToast(`Push broadcast sent to ${res.totalDevices ?? 0} devices!`);
         document.getElementById('push-title').value = '';
         document.getElementById('push-body').value = '';
         loadPushStats();
@@ -2029,7 +2100,11 @@
     async function loadPushStats() {
       const tbody = document.querySelector('#table-push-logs tbody');
       try {
-        const resp = await fetch('/api/v1/admin/push-stats');
+        const resp = await adminFetch('/api/v1/admin/push-stats');
+        if (!resp.ok) {
+          tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--accent-danger);">Failed loading push history.</td></tr>`;
+          return;
+        }
         const data = await resp.json();
         const logs = data.recentLogs || [];
         if (logs.length === 0) {
@@ -2054,9 +2129,9 @@
       const tokensEl = document.getElementById('fcm-cfg-tokens');
       if (!badge || !projectEl) return;
       try {
-        const resp = await fetch('/api/v1/admin/fcm-config');
+        const resp = await adminFetch('/api/v1/admin/fcm-config');
         const d = await resp.json();
-        projectEl.innerText = d.projectId || 'vybe-1c966';
+        projectEl.innerText = d.projectId || 'Not configured';
         emailEl.innerText = d.clientEmail || 'Not configured';
         tokensEl.innerText = `${d.activeTokensCount || 0} Android Devices`;
         if (d.configured) {
@@ -2086,7 +2161,7 @@
       btn.innerText = 'Validating & Connecting...';
       resultEl.innerHTML = '';
       try {
-        const resp = await fetch('/api/v1/admin/fcm-config', {
+        const resp = await adminFetch('/api/v1/admin/fcm-config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ serviceAccountJson: val })
@@ -2117,9 +2192,18 @@
       const tbody = document.querySelector('#table-badge-users tbody');
       tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Loading members...</td></tr>`;
       try {
-        const resp = await fetch('/api/v1/admin/users');
+        const resp = await adminFetch('/api/v1/admin/users');
+        if (!resp.ok) {
+          tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--accent-danger);">Failed loading members.</td></tr>`;
+          return;
+        }
         const data = await resp.json();
         const users = data.users || [];
+
+        if (users.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No user profiles found in database.</td></tr>`;
+          return;
+        }
 
         tbody.innerHTML = users.slice(0, 40).map(u => {
           const badges = [];
@@ -2145,7 +2229,9 @@
           `;
         }).join('');
         lucide.createIcons();
-      } catch {}
+      } catch {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--accent-danger);">Error loading badge directory.</td></tr>`;
+      }
     }
 
     // 8. Trust & Safety Reports
@@ -2153,17 +2239,26 @@
       const tbody = document.querySelector('#table-moderation tbody');
       tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Fetching reports...</td></tr>`;
       try {
-        const { data: reports } = await supabase.from('reports').select('*').order('created_at', { ascending: false }).limit(50);
-        if (!reports || reports.length === 0) {
+        const resp = await adminFetch('/api/v1/admin/reports');
+        if (!resp.ok) {
+          tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--accent-danger);">Failed fetching reports queue.</td></tr>`;
+          return;
+        }
+        const data = await resp.json();
+        const statusFilter = document.getElementById('report-status-filter')?.value || 'ALL';
+        const reports = (data.reports || []).filter(r =>
+          statusFilter === 'ALL' || String(r.status || 'OPEN').toUpperCase() === statusFilter
+        );
+        if (reports.length === 0) {
           tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No reports currently in queue.</td></tr>`;
           return;
         }
         tbody.innerHTML = reports.map(r => `
           <tr>
-            <td><code>${r.reporter_id ? r.reporter_id.substring(0,8) : 'Anonymous'}</code></td>
+            <td><code>${r.reporter?.username ? '@' + r.reporter.username : (r.reporter_id ? r.reporter_id.substring(0,8) : 'Anonymous')}</code></td>
             <td><span class="badge badge-cyan">${r.target_type}</span> <code>${r.target_id ? r.target_id.substring(0,8) : ''}</code></td>
             <td>${r.reason}</td>
-            <td>${new Date(r.created_at).toLocaleDateString()}</td>
+            <td>${r.created_at ? new Date(r.created_at).toLocaleDateString() : 'N/A'}</td>
             <td><span class="badge ${r.status === 'OPEN' ? 'badge-danger' : 'badge-green'}">${r.status || 'OPEN'}</span></td>
             <td>
               <button class="btn btn-outline btn-sm" onclick="resolveReport('${r.id}', 'RESOLVED')">Resolve</button>
@@ -2172,30 +2267,50 @@
           </tr>
         `).join('');
       } catch {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Reports queue ready.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--accent-danger);">Error fetching reports queue.</td></tr>`;
       }
     }
 
+    document.getElementById('report-status-filter')?.addEventListener('change', loadReports);
+
     async function resolveReport(reportId, newStatus) {
-      await supabase.from('reports').update({ status: newStatus }).eq('id', reportId);
-      showToast(`Report marked as ${newStatus}.`);
-      loadReports();
+      const resp = await adminFetch('/api/v1/admin/report-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reportId, action: newStatus })
+      });
+      const res = await resp.json().catch(() => ({}));
+      if (resp.ok && res.success) {
+        showToast(`Report marked as ${newStatus}.`);
+        loadReports();
+      } else {
+        alert("Failed updating report: " + (res.error || 'Server error'));
+      }
     }
 
     // 9. Ads Loader
     async function loadAds() {
       const tbody = document.querySelector('#table-ads tbody');
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Loading sponsorship campaigns...</td></tr>`;
       try {
-        const resp = await fetch('/api/v1/admin/ads');
+        const resp = await adminFetch('/api/v1/admin/ads');
+        if (!resp.ok) {
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--accent-danger);">Failed loading sponsorship campaigns.</td></tr>`;
+          return;
+        }
         const data = await resp.json();
         const ads = data.ads || [];
+        if (ads.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">${data.supported === false ? 'Sponsored campaigns table is not provisioned in Supabase.' : 'No sponsorship campaigns configured.'}</td></tr>`;
+          return;
+        }
         tbody.innerHTML = ads.map(a => `
           <tr>
             <td><strong>${a.name}</strong></td>
             <td>${a.brand}</td>
             <td><span class="badge badge-violet">${a.placement}</span></td>
-            <td>${(a.impressions || 0).toLocaleString()} / ${(a.targetImpressions || 50000).toLocaleString()}</td>
-            <td>${a.budget || '₹10,000'}</td>
+            <td>${(a.impressions || 0).toLocaleString()} / ${(a.targetImpressions || 0).toLocaleString()}</td>
+            <td>${a.budget || '-'}</td>
             <td><span class="badge ${a.status === 'ACTIVE' ? 'badge-green' : 'badge-muted'}">${a.status}</span></td>
             <td>
               <button class="btn btn-outline btn-sm" onclick="toggleAd('${a.id}')">${a.status === 'ACTIVE' ? 'Pause' : 'Activate'}</button>
@@ -2203,36 +2318,55 @@
             </td>
           </tr>
         `).join('');
-      } catch {}
+      } catch {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--accent-danger);">Error loading sponsorship campaigns.</td></tr>`;
+      }
     }
 
     async function toggleAd(adId) {
-      await fetch('/api/v1/admin/ads/toggle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ adId }) });
-      loadAds();
+      const resp = await adminFetch('/api/v1/admin/ads/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adId })
+      });
+      if (resp.ok) loadAds();
     }
     async function deleteAd(adId) {
       if (!confirm("Delete this sponsorship campaign?")) return;
-      await fetch('/api/v1/admin/ads/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ adId }) });
-      loadAds();
+      const resp = await adminFetch('/api/v1/admin/ads/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adId })
+      });
+      if (resp.ok) loadAds();
     }
 
     // 10. Staff Directory
     async function loadStaff() {
       const tbody = document.querySelector('#table-staff tbody');
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Loading staff directory...</td></tr>`;
       try {
-        const resp = await fetch('/api/v1/admin/staff');
+        const resp = await adminFetch('/api/v1/admin/staff');
+        if (!resp.ok) {
+          tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--accent-danger);">Failed loading staff directory.</td></tr>`;
+          return;
+        }
         const data = await resp.json();
         const staff = data.staff || [];
+        if (staff.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No active administrators found in admin_users.</td></tr>`;
+          return;
+        }
         tbody.innerHTML = staff.map(s => `
           <tr>
             <td>
               <div style="font-weight: 700;">${s.display_name || s.username}</div>
               <div style="font-size: 11px; color: var(--text-sub);">@${s.username}</div>
             </td>
-            <td>${s.email}</td>
-            <td><span class="badge ${s.role === 'SUPER_ADMIN' ? 'badge-gold' : 'badge-cyan'}">${s.role}</span></td>
+            <td>${s.email || '-'}</td>
+            <td><span class="badge ${s.role === 'SUPER_ADMIN' || s.role === 'OWNER_ADMIN' ? 'badge-gold' : 'badge-cyan'}">${s.role}</span></td>
             <td><span class="badge badge-green">Active</span></td>
-            <td style="font-size: 11px; color: var(--text-sub);">${s.created_at ? new Date(s.created_at).toLocaleDateString() : 'Active'}</td>
+            <td style="font-size: 11px; color: var(--text-sub);">${s.created_at ? new Date(s.created_at).toLocaleDateString() : 'N/A'}</td>
             <td>
               ${s.is_owner ? '<span class="badge badge-gold">OWNER PROTECTED</span>' : `
                 <button class="btn btn-danger btn-sm" onclick="demoteStaff('${s.id}')">Revoke Staff Access</button>
@@ -2240,24 +2374,32 @@
             </td>
           </tr>
         `).join('');
-      } catch {}
+      } catch {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--accent-danger);">Error loading staff directory.</td></tr>`;
+      }
     }
 
     async function demoteStaff(userId) {
       if (!confirm("Revoke admin rights for this account?")) return;
-      await fetch('/api/v1/admin/set-role', {
+      const resp = await adminFetch('/api/v1/admin/set-role', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, role: 'USER', adminEmail: currentSession?.user?.email })
+        body: JSON.stringify({ userId, role: 'USER' })
       });
-      showToast("Staff access revoked.");
-      loadStaff();
+      const res = await resp.json().catch(() => ({}));
+      if (resp.ok && res.success) {
+        showToast("Staff access revoked.");
+        loadStaff();
+      } else {
+        alert("Failed revoking staff access: " + (res.error || 'Forbidden'));
+      }
     }
 
     // 11. Platform Config
     async function loadPlatformConfig() {
       try {
-        const resp = await fetch('/api/v1/admin/platform-config');
+        const resp = await adminFetch('/api/v1/admin/platform-config');
+        if (!resp.ok) return;
         const data = await resp.json();
         if (data.config) {
           document.getElementById('config-maintenance-toggle').checked = Boolean(data.config.maintenanceMode);
@@ -2272,24 +2414,24 @@
     document.getElementById('btn-save-maintenance').addEventListener('click', async () => {
       const maintenanceMode = document.getElementById('config-maintenance-toggle').checked;
       const maintenanceMessage = document.getElementById('config-maintenance-message').value.trim();
-      await fetch('/api/v1/admin/platform-config', {
+      const resp = await adminFetch('/api/v1/admin/platform-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ maintenanceMode, maintenanceMessage, adminEmail: currentSession?.user?.email })
+        body: JSON.stringify({ maintenanceMode, maintenanceMessage })
       });
-      showToast("Maintenance settings saved.");
+      if (resp.ok) showToast("Maintenance settings saved.");
     });
 
     document.getElementById('btn-save-banner').addEventListener('click', async () => {
       const announcementActive = document.getElementById('config-banner-toggle').checked;
       const announcementBanner = document.getElementById('config-banner-text').value.trim();
       const announcementLink = document.getElementById('config-banner-link').value.trim();
-      await fetch('/api/v1/admin/platform-config', {
+      const resp = await adminFetch('/api/v1/admin/platform-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ announcementActive, announcementBanner, announcementLink, adminEmail: currentSession?.user?.email })
+        body: JSON.stringify({ announcementActive, announcementBanner, announcementLink })
       });
-      showToast("Announcement banner saved.");
+      if (resp.ok) showToast("Announcement banner saved.");
     });
 
     // 12. Audit Logs
@@ -2297,7 +2439,11 @@
       const tbody = document.querySelector('#table-audit-logs tbody');
       tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Loading audit records...</td></tr>`;
       try {
-        const resp = await fetch('/api/v1/admin/audit-logs');
+        const resp = await adminFetch('/api/v1/admin/audit-logs');
+        if (!resp.ok) {
+          tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--accent-danger);">Failed fetching audit records.</td></tr>`;
+          return;
+        }
         const data = await resp.json();
         const logs = data.logs || [];
         if (logs.length === 0) {
@@ -2306,31 +2452,33 @@
         }
         tbody.innerHTML = logs.map(l => `
           <tr>
-            <td style="font-size: 11px; color: var(--text-sub);">${new Date(l.timestamp).toLocaleString()}</td>
-            <td><strong>${l.adminEmail || 'Owner'}</strong></td>
+            <td style="font-size: 11px; color: var(--text-sub);">${l.timestamp ? new Date(l.timestamp).toLocaleString() : 'N/A'}</td>
+            <td><strong>${l.adminEmail || 'Admin'}</strong></td>
             <td><span class="badge badge-gold">${l.action}</span></td>
-            <td>${l.username || l.userId || 'System'}</td>
+            <td>${l.targetId || l.targetType || 'System'}</td>
             <td><code style="font-size: 11px; color: var(--text-muted);">${JSON.stringify(l.details || {})}</code></td>
           </tr>
         `).join('');
-      } catch {}
+      } catch {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--accent-danger);">Error fetching audit records.</td></tr>`;
+      }
     }
 
-    // Charts
+    // Charts (Strict Real Backend Metrics Only — Initialized to 0)
     function initCharts() {
       const growthCtx = document.getElementById('chart-growth')?.getContext('2d');
       if (growthCtx) {
         charts.growth = new Chart(growthCtx, {
-          type: 'line',
+          type: 'bar',
           data: {
-            labels: ['Day 1', 'Day 5', 'Day 10', 'Day 15', 'Day 20', 'Day 25', 'Today'],
+            labels: ['New (24h)', 'New (7d)', 'DAU', 'WAU', 'MAU', 'Total Users'],
             datasets: [{
-              label: 'Verified & Active Reach',
-              data: [12, 45, 110, 240, 480, 720, 1050],
+              label: 'Users',
+              data: [0, 0, 0, 0, 0, 0],
               borderColor: '#00F0FF',
-              backgroundColor: 'rgba(0, 240, 255, 0.1)',
-              tension: 0.4,
-              fill: true
+              backgroundColor: 'rgba(0, 240, 255, 0.25)',
+              borderWidth: 1,
+              borderRadius: 6
             }]
           },
           options: {
@@ -2339,7 +2487,7 @@
             plugins: { legend: { display: false } },
             scales: {
               x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748B' } },
-              y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748B' } }
+              y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748B' } }
             }
           }
         });
@@ -2352,7 +2500,7 @@
           data: {
             labels: ['Vybe Reels', 'Unfiltered Snaps', 'Voice Lounges', 'Standard Posts', 'Culture Polls'],
             datasets: [{
-              data: [35, 25, 15, 15, 10],
+              data: [0, 0, 0, 0, 0],
               backgroundColor: ['#8B5CF6', '#22C55E', '#00F0FF', '#3B82F6', '#FFB703'],
               borderWidth: 0
             }]
@@ -2368,22 +2516,30 @@
       }
     }
 
-    function updateGrowthChart(total) {
-      if (charts.growth && total) {
-        const lastVal = total;
-        charts.growth.data.datasets[0].data[6] = lastVal;
+    function updateGrowthChart(usersStats) {
+      if (charts.growth && usersStats) {
+        charts.growth.data.datasets[0].data = [
+          usersStats.newToday || 0,
+          usersStats.newWeek || 0,
+          usersStats.dau || 0,
+          usersStats.wau || 0,
+          usersStats.mau || 0,
+          usersStats.total || 0
+        ];
         charts.growth.update();
       }
     }
 
-    function updateContentChart(content) {
-      if (charts.content && content) {
+    function updateContentChart(stats) {
+      if (charts.content && stats) {
+        const c = stats.content || {};
+        const e = stats.experiences || {};
         charts.content.data.datasets[0].data = [
-          content.reels || 15,
-          content.unfiltered || 10,
-          12,
-          content.totalPosts || 25,
-          8
+          c.reels || 0,
+          c.unfiltered || 0,
+          e.liveRooms || 0,
+          c.standardPosts || 0,
+          e.polls || 0
         ];
         charts.content.update();
       }

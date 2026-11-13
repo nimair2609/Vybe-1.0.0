@@ -1,59 +1,42 @@
 package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.VybeViewModel
-import com.example.ui.theme.VybeCyan
-import com.example.ui.theme.VybeMagenta
-import com.example.ui.theme.VybeOnlineGreen
-import com.example.ui.theme.VybeVerifiedGold
-import com.example.ui.theme.VybeViolet
+import com.example.ui.components.VybeSubScreenTopBar
+import com.example.ui.components.VybeSurfaceCard
+import com.example.ui.theme.*
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreatorStudioScreen(viewModel: VybeViewModel) {
   BackHandler {
     viewModel.navigateBack()
   }
 
+  val palette = LocalVybePalette.current
   val stats by viewModel.creatorStats.collectAsState()
 
   Scaffold(
+    containerColor = palette.canvas,
+    contentWindowInsets = WindowInsets(0.dp),
     topBar = {
-      TopAppBar(
-        navigationIcon = {
-          IconButton(
-            onClick = { viewModel.navigateBack() },
-            modifier = Modifier.testTag("creator_studio_back_button")
-          ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-          }
-        },
-        title = {
-          Column {
-            Text("VYBE Creator Studio", fontWeight = FontWeight.Bold)
-            Text("Growth insights & verified monetization", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-          }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-          containerColor = MaterialTheme.colorScheme.background
-        )
+      VybeSubScreenTopBar(
+        title = "VYBE Creator Studio",
+        subtitle = "Growth insights & verified monetization",
+        onBackClick = { viewModel.navigateBack() },
+        backTestTag = "creator_studio_back_button"
       )
     }
   ) { paddingValues ->
@@ -61,75 +44,85 @@ fun CreatorStudioScreen(viewModel: VybeViewModel) {
       modifier = Modifier
         .fillMaxSize()
         .padding(paddingValues)
-        .padding(16.dp),
-      verticalArrangement = Arrangement.spacedBy(14.dp)
+        .navigationBarsPadding()
+        .padding(horizontal = 16.dp),
+      verticalArrangement = Arrangement.spacedBy(14.dp),
+      contentPadding = PaddingValues(top = 14.dp, bottom = 72.dp)
     ) {
       // Monetization Summary Card
       item {
-        Card(
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          shape = RoundedCornerShape(20.dp),
-          border = androidx.compose.foundation.BorderStroke(1.dp, VybeViolet.copy(alpha = 0.5f))
+        VybeSurfaceCard(
+          borderColor = palette.accent.copy(alpha = 0.45f),
+          contentPadding = PaddingValues(18.dp)
         ) {
-          Column(modifier = Modifier.padding(18.dp)) {
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Text("Estimated Revenue (30d)", fontSize = 13.sp, color = palette.textSecondary)
+            Surface(
+              color = palette.success.copy(alpha = 0.14f),
+              shape = RoundedCornerShape(VybeTokens.Radius.xs)
             ) {
-              Text("Estimated Revenue (30d)", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              Surface(
-                color = VybeOnlineGreen.copy(alpha = 0.15f),
-                shape = RoundedCornerShape(8.dp)
-              ) {
-                Text(
-                  text = "VERIFIED CREATOR",
-                  fontSize = 10.sp,
-                  fontWeight = FontWeight.Bold,
-                  color = VybeOnlineGreen,
-                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                )
-              }
+              Text(
+                text = "VERIFIED CREATOR",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = palette.success,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+              )
+            }
+          }
+
+          Spacer(modifier = Modifier.height(8.dp))
+
+          Text(
+            text = "₹${stats.estimatedMonthlyEarningsInr}",
+            fontFamily = PlusJakartaSansFontFamily,
+            fontSize = 32.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = palette.textPrimary
+          )
+
+          Spacer(modifier = Modifier.height(14.dp))
+
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+          ) {
+            VybeSurfaceCard(
+              containerColor = palette.elevated,
+              cornerRadius = VybeTokens.Radius.md,
+              contentPadding = PaddingValues(12.dp),
+              modifier = Modifier.weight(1f)
+            ) {
+              Text("Confirmed Payout", fontSize = 11.sp, color = palette.textSecondary)
+              Spacer(modifier = Modifier.height(2.dp))
+              Text(
+                text = "₹${stats.confirmedPayoutInr}",
+                fontFamily = PlusJakartaSansFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = palette.success
+              )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-              text = "₹${stats.estimatedMonthlyEarningsInr}",
-              fontSize = 32.sp,
-              fontWeight = FontWeight.ExtraBold,
-              color = MaterialTheme.colorScheme.onSurface
-            )
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.spacedBy(10.dp)
+            VybeSurfaceCard(
+              containerColor = palette.elevated,
+              cornerRadius = VybeTokens.Radius.md,
+              contentPadding = PaddingValues(12.dp),
+              modifier = Modifier.weight(1f)
             ) {
-              Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.weight(1f)
-              ) {
-                Column(modifier = Modifier.padding(10.dp)) {
-                  Text("Confirmed Payout", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                  Spacer(modifier = Modifier.height(2.dp))
-                  Text("₹${stats.confirmedPayoutInr}", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = VybeOnlineGreen)
-                }
-              }
-
-              Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.weight(1f)
-              ) {
-                Column(modifier = Modifier.padding(10.dp)) {
-                  Text("Pending Clearance", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                  Spacer(modifier = Modifier.height(2.dp))
-                  Text("₹${stats.pendingPayoutInr}", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = VybeVerifiedGold)
-                }
-              }
+              Text("Pending Clearance", fontSize = 11.sp, color = palette.textSecondary)
+              Spacer(modifier = Modifier.height(2.dp))
+              Text(
+                text = "₹${stats.pendingPayoutInr}",
+                fontFamily = PlusJakartaSansFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = VybeVerifiedGold
+              )
             }
           }
         }
@@ -137,7 +130,13 @@ fun CreatorStudioScreen(viewModel: VybeViewModel) {
 
       // Performance Metrics Grid
       item {
-        Text("Content & Audience Analytics", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(
+          text = "Content & Audience Analytics",
+          fontFamily = PlusJakartaSansFontFamily,
+          fontSize = 16.sp,
+          fontWeight = FontWeight.Bold,
+          color = palette.textPrimary
+        )
       }
 
       item {
@@ -145,32 +144,26 @@ fun CreatorStudioScreen(viewModel: VybeViewModel) {
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-          Card(
-            modifier = Modifier.weight(1f),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RoundedCornerShape(14.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+          VybeSurfaceCard(
+            contentPadding = PaddingValues(14.dp),
+            modifier = Modifier.weight(1f)
           ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-              Text("Total Impressions", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              Spacer(modifier = Modifier.height(4.dp))
-              Text("${stats.totalImpressions30d / 1000}K", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-              Text("↑ +14.2% this month", fontSize = 10.sp, color = VybeOnlineGreen)
-            }
+            Text("Total Impressions", fontSize = 11.sp, color = palette.textSecondary)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("${stats.totalImpressions30d / 1000}K", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = palette.textPrimary)
+            Spacer(modifier = Modifier.height(2.dp))
+            Text("↑ +14.2% this month", fontSize = 10.sp, color = palette.success, fontWeight = FontWeight.SemiBold)
           }
 
-          Card(
-            modifier = Modifier.weight(1f),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RoundedCornerShape(14.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+          VybeSurfaceCard(
+            contentPadding = PaddingValues(14.dp),
+            modifier = Modifier.weight(1f)
           ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-              Text("Engagement Rate", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              Spacer(modifier = Modifier.height(4.dp))
-              Text("${stats.engagementRatePercent}%", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-              Text("Top 5% among Indian creators", fontSize = 10.sp, color = VybeViolet)
-            }
+            Text("Engagement Rate", fontSize = 11.sp, color = palette.textSecondary)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("${stats.engagementRatePercent}%", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = palette.textPrimary)
+            Spacer(modifier = Modifier.height(2.dp))
+            Text("Top 5% among Indian creators", fontSize = 10.sp, color = palette.accent, fontWeight = FontWeight.SemiBold)
           }
         }
       }
@@ -180,61 +173,55 @@ fun CreatorStudioScreen(viewModel: VybeViewModel) {
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-          Card(
-            modifier = Modifier.weight(1f),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RoundedCornerShape(14.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+          VybeSurfaceCard(
+            contentPadding = PaddingValues(14.dp),
+            modifier = Modifier.weight(1f)
           ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-              Text("Net LINKUP Gain", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              Spacer(modifier = Modifier.height(4.dp))
-              Text("+${stats.netFollowersGain30d}", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-              Text("Verified real users", fontSize = 10.sp, color = VybeCyan)
-            }
+            Text("Net LINKUP Gain", fontSize = 11.sp, color = palette.textSecondary)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("+${stats.netFollowersGain30d}", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = palette.textPrimary)
+            Spacer(modifier = Modifier.height(2.dp))
+            Text("Verified real users", fontSize = 10.sp, color = palette.accentSecondary, fontWeight = FontWeight.SemiBold)
           }
 
-          Card(
-            modifier = Modifier.weight(1f),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RoundedCornerShape(14.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+          VybeSurfaceCard(
+            contentPadding = PaddingValues(14.dp),
+            modifier = Modifier.weight(1f)
           ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-              Text("Profile Visits", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              Spacer(modifier = Modifier.height(4.dp))
-              Text("${stats.profileVisits30d}", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-              Text("Organic discovery", fontSize = 10.sp, color = VybeMagenta)
-            }
+            Text("Profile Visits", fontSize = 11.sp, color = palette.textSecondary)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("${stats.profileVisits30d}", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = palette.textPrimary)
+            Spacer(modifier = Modifier.height(2.dp))
+            Text("Organic discovery", fontSize = 10.sp, color = VybeBrandMagenta, fontWeight = FontWeight.SemiBold)
           }
         }
       }
 
       // Brand Collaboration Readiness
       item {
-        Card(
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-          shape = RoundedCornerShape(16.dp)
+        VybeSurfaceCard(
+          containerColor = palette.elevated,
+          contentPadding = PaddingValues(14.dp)
         ) {
-          Column(modifier = Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              Icon(Icons.Default.Verified, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(20.dp))
-              Spacer(modifier = Modifier.width(8.dp))
-              Text("Brand Deals & Sponsorships", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            }
-            Spacer(modifier = Modifier.height(4.dp))
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Verified, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.width(8.dp))
             Text(
-              text = "Status: ${stats.brandCollaborationReadiness}. Standardized Indian creator rate cards and direct in-app campaign contracts available for eligible verified creators.",
-              fontSize = 11.sp,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              lineHeight = 15.sp
+              text = "Brand Deals & Sponsorships",
+              fontFamily = PlusJakartaSansFontFamily,
+              fontWeight = FontWeight.Bold,
+              fontSize = 13.sp,
+              color = palette.textPrimary
             )
           }
+          Spacer(modifier = Modifier.height(6.dp))
+          Text(
+            text = "Status: ${stats.brandCollaborationReadiness}. Standardized Indian creator rate cards and direct in-app campaign contracts available for eligible verified creators.",
+            fontSize = 12.sp,
+            color = palette.textSecondary,
+            lineHeight = 16.sp
+          )
         }
-      }
-
-      item {
-        Spacer(modifier = Modifier.height(80.dp))
       }
     }
   }

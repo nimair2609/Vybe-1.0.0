@@ -6,6 +6,7 @@ import {
 import { useVybe } from '../context/VybeContext';
 import { OfficialBadge } from '../components/Badges';
 import { FingerHeartReaction } from '../components/FingerHeartReaction';
+import { VybeModeSwitch, VybeEmptyState } from '../components/VybeDesignSystem';
 import { LivePulseStatus } from '../types';
 
 export const ProfileView: React.FC = () => {
@@ -18,6 +19,8 @@ export const ProfileView: React.FC = () => {
     conversations,
     selectConversation,
     setSelectedTab,
+    appMode,
+    setAppMode,
     openModal,
     openSharedPostModal,
     toggleLikePost,
@@ -58,7 +61,7 @@ export const ProfileView: React.FC = () => {
   return (
     <div className="w-full max-w-2xl mx-auto pb-28">
       {/* Cover Banner */}
-      <div className="h-44 w-full relative bg-[#101322]">
+      <div className="h-44 w-full relative bg-[var(--vybe-elevated)]">
         <img
           src={
             targetUser.coverUrl ||
@@ -67,37 +70,44 @@ export const ProfileView: React.FC = () => {
           alt="Cover"
           className="w-full h-full object-cover"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#060714] via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[var(--vybe-bg)] via-transparent to-black/30" />
 
-        {/* Working Back Button when viewing another user's profile */}
+        {/* Back button */}
         {!isOwnProfile && (
           <button
             type="button"
             onClick={closeUserProfile}
             aria-label="Back from user profile"
-            className="absolute top-3.5 left-4 min-w-[44px] min-h-[44px] px-3 rounded-xl bg-black/60 backdrop-blur-md border border-white/15 text-white keep-white hover:bg-black/80 flex items-center gap-1.5 text-xs font-bold shadow-lg transition-colors z-20"
+            className="absolute top-3.5 left-4 min-w-[44px] min-h-[44px] px-3 rounded-xl bg-black/55 backdrop-blur-md border border-white/15 text-white keep-white hover:bg-black/75 flex items-center gap-1.5 text-xs font-bold shadow-lg transition-colors z-20"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Back</span>
           </button>
         )}
 
+        {/* Centered Social | Grow switcher matching Screen 2 */}
+        {isOwnProfile && (
+          <div className="absolute top-3.5 left-1/2 -translate-x-1/2 z-20">
+            <VybeModeSwitch mode={appMode} onChange={setAppMode} compact />
+          </div>
+        )}
+
         {/* Top Header Buttons for Own Profile */}
         {isOwnProfile && (
-          <div className="absolute top-4 right-4 flex items-center gap-2 z-20">
+          <div className="absolute top-3.5 right-4 flex items-center gap-2 z-20">
             <button
               type="button"
               onClick={() => openModal('QR_CODE')}
               title="Share Profile QR"
-              className="p-2.5 rounded-xl bg-black/50 backdrop-blur-md border border-white/10 text-white keep-white hover:bg-black/70 transition-colors"
+              className="p-2.5 rounded-xl bg-black/55 backdrop-blur-md border border-white/15 text-white keep-white hover:bg-black/75 transition-colors"
             >
               <QrCode className="w-4 h-4" />
             </button>
             <button
               type="button"
               onClick={() => openModal('SETTINGS')}
-              title="Settings & Software Updates"
-              className="p-2.5 rounded-xl bg-black/50 backdrop-blur-md border border-white/10 text-white keep-white hover:bg-black/70 transition-colors"
+              title="Settings & Preferences"
+              className="p-2.5 rounded-xl bg-black/55 backdrop-blur-md border border-white/15 text-white keep-white hover:bg-black/75 transition-colors"
             >
               <Settings className="w-4 h-4" />
             </button>
@@ -106,17 +116,17 @@ export const ProfileView: React.FC = () => {
       </div>
 
       {/* Profile Details Container */}
-      <div className="px-5 -mt-16 relative space-y-4">
+      <div className="px-5 -mt-14 relative space-y-4">
         {/* Avatar & Action Row */}
         <div className="flex items-end justify-between gap-3">
           <div className="relative">
             <img
               src={targetUser.avatarUrl}
               alt={targetUser.displayName}
-              className="w-24 h-24 rounded-full object-cover border-4 border-[#060714] shadow-2xl"
+              className="w-24 h-24 rounded-full object-cover border-4 border-[var(--vybe-bg)] shadow-lg"
             />
             {targetUser.isOnline && (
-              <span className="absolute bottom-1 right-1 w-4 h-4 rounded-full bg-[#22C55E] border-2 border-[#060714]" />
+              <span className="absolute bottom-1 right-1 w-4 h-4 rounded-full bg-[#22C55E] border-2 border-[var(--vybe-bg)]" />
             )}
           </div>
 
@@ -125,14 +135,14 @@ export const ProfileView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => openModal('VERIFICATION_CENTER')}
-                className="px-3 py-2 rounded-xl bg-[#101322] border border-[#262E4A] hover:border-[#00C6FF]/40 text-xs font-semibold text-gray-200 transition-colors"
+                className="px-3 py-2 rounded-full bg-[var(--vybe-surface)] border border-[var(--vybe-border)] hover:border-[var(--vybe-accent)] text-xs font-semibold text-[var(--vybe-text)] transition-colors"
               >
-                Get Verified
+                Verified
               </button>
               <button
                 type="button"
                 onClick={() => openModal('SETTINGS')}
-                className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#00C6FF] to-[#8B5CF6] text-white keep-white text-xs font-bold shadow hover:opacity-95 transition-all"
+                className="px-4 py-2 rounded-full bg-[var(--vybe-surface)] border border-[var(--vybe-border)] hover:border-[var(--vybe-accent)] text-xs font-bold text-[var(--vybe-text)] transition-colors"
               >
                 Edit Profile
               </button>
@@ -144,10 +154,10 @@ export const ProfileView: React.FC = () => {
                 onClick={() =>
                   setFollowedPeers(prev => ({ ...prev, [targetUser.id]: !isFollowingPeer }))
                 }
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                className={`px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all ${
                   isFollowingPeer
-                    ? 'bg-[#101322] border border-[#262E4A] text-white'
-                    : 'bg-gradient-to-r from-[#00C6FF] to-[#8B5CF6] text-white keep-white shadow'
+                    ? 'bg-[var(--vybe-surface)] border border-[var(--vybe-border)] text-[var(--vybe-text)]'
+                    : 'bg-[var(--vybe-accent)] text-white keep-white'
                 }`}
               >
                 {isFollowingPeer ? <Check className="w-3.5 h-3.5" /> : <UserPlus className="w-3.5 h-3.5" />}
@@ -156,9 +166,9 @@ export const ProfileView: React.FC = () => {
               <button
                 type="button"
                 onClick={handleMessagePeer}
-                className="px-3.5 py-2 rounded-xl bg-[#101322] border border-[#262E4A] hover:border-[#00C6FF]/50 text-xs font-bold text-white flex items-center gap-1.5 transition-colors"
+                className="px-4 py-2 rounded-full bg-[var(--vybe-surface)] border border-[var(--vybe-border)] hover:border-[var(--vybe-accent)] text-xs font-bold text-[var(--vybe-text)] flex items-center gap-1.5 transition-colors"
               >
-                <MessageCircle className="w-3.5 h-3.5 text-[#00C6FF]" />
+                <MessageCircle className="w-3.5 h-3.5 text-[var(--vybe-accent)]" />
                 <span>Message</span>
               </button>
             </div>
@@ -168,15 +178,15 @@ export const ProfileView: React.FC = () => {
         {/* Identity & Badges */}
         <div>
           <div className="flex items-center gap-1.5 flex-wrap">
-            <h1 className="text-xl font-bold text-white brand-font">{targetUser.displayName}</h1>
+            <h1 className="text-xl font-extrabold text-[var(--vybe-text)] brand-font">{targetUser.displayName}</h1>
             {targetUser.badges?.map(b => (
               <OfficialBadge key={b} badge={b} size="md" />
             ))}
           </div>
-          <div className="flex items-center gap-2 text-xs text-gray-400 font-mono mt-0.5">
+          <div className="flex items-center gap-2 text-xs text-[var(--vybe-text-secondary)] mt-0.5">
             <span>@{targetUser.username}</span>
-            <span>•</span>
-            <span className="text-[#00C6FF] font-semibold">{targetUser.publicVybeId}</span>
+            <span>·</span>
+            <span className="text-[var(--vybe-accent)] font-semibold">{targetUser.publicVybeId}</span>
           </div>
         </div>
 
@@ -217,44 +227,44 @@ export const ProfileView: React.FC = () => {
         </div>
 
         {/* Bio */}
-        <p className="text-xs text-gray-200 leading-relaxed max-w-lg">{targetUser.bio}</p>
+        <p className="text-xs text-[var(--vybe-text-secondary)] leading-relaxed max-w-lg">{targetUser.bio}</p>
 
         {/* Meta details */}
-        <div className="flex items-center gap-4 text-xs text-gray-400">
+        <div className="flex items-center gap-4 text-xs text-[var(--vybe-text-muted)]">
           {targetUser.location && (
             <span className="flex items-center gap-1">
-              <MapPin className="w-3.5 h-3.5 text-[#00C6FF]" />
+              <MapPin className="w-3.5 h-3.5 text-[var(--vybe-accent)]" />
               <span>{targetUser.location}</span>
             </span>
           )}
           <span className="flex items-center gap-1">
-            <Calendar className="w-3.5 h-3.5 text-gray-500" />
+            <Calendar className="w-3.5 h-3.5" />
             <span>{targetUser.joinedDate}</span>
           </span>
         </div>
 
         {/* Stats Row */}
-        <div className="grid grid-cols-3 gap-2 py-3 border-y border-[#262E4A]/60 text-center">
+        <div className="grid grid-cols-3 gap-2 py-3 border-y border-[var(--vybe-border)] text-center">
           <div>
-            <span className="block text-base font-bold text-white">{userPosts.length}</span>
-            <span className="text-[11px] text-gray-400">Posts</span>
+            <span className="block text-base font-bold text-[var(--vybe-text)]">{userPosts.length}</span>
+            <span className="text-[11px] text-[var(--vybe-text-secondary)]">Posts</span>
           </div>
           <div>
-            <span className="block text-base font-bold text-white">
+            <span className="block text-base font-bold text-[var(--vybe-text)]">
               {(targetUser.followersCount + (isFollowingPeer && !targetUser.isFollowedByMe ? 1 : 0)).toLocaleString()}
             </span>
-            <span className="text-[11px] text-gray-400">Followers</span>
+            <span className="text-[11px] text-[var(--vybe-text-secondary)]">Followers</span>
           </div>
           <div>
-            <span className="block text-base font-bold text-white">
+            <span className="block text-base font-bold text-[var(--vybe-text)]">
               {targetUser.followingCount.toLocaleString()}
             </span>
-            <span className="text-[11px] text-gray-400">Following</span>
+            <span className="text-[11px] text-[var(--vybe-text-secondary)]">Following</span>
           </div>
         </div>
 
-        {/* Tabs: Posts, Reels, Saved (Saved only on Own Profile) */}
-        <div className="flex items-center justify-around border-b border-[#262E4A]/60">
+        {/* Tabs */}
+        <div className="flex items-center justify-around border-b border-[var(--vybe-border)]">
           {[
             { id: 'POSTS', label: 'Posts', icon: Grid },
             { id: 'REELS', label: 'Reels', icon: PlaySquare },
@@ -267,10 +277,10 @@ export const ProfileView: React.FC = () => {
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-2 py-3 border-b-2 text-xs font-bold transition-all ${
+                className={`flex items-center gap-2 py-3 border-b-2 text-xs font-bold transition-colors ${
                   isSelected
-                    ? 'border-[#00C6FF] text-[#00C6FF]'
-                    : 'border-transparent text-gray-400 hover:text-gray-200'
+                    ? 'border-[var(--vybe-accent)] text-[var(--vybe-accent)]'
+                    : 'border-transparent text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)]'
                 }`}
               >
                 <Icon className="w-4 h-4" />

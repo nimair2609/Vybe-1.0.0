@@ -48,10 +48,9 @@ import com.example.ui.components.ReelReactionGestureButton
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VideoFitMode
 import com.example.ui.components.VybeAvatar
-import com.example.ui.components.VybeLikeIcon
-import com.example.ui.components.reactionColor
-import com.example.ui.components.VybeReactionOutlineIcon
-import com.example.ui.components.VybeReactionSelector
+import com.example.ui.components.VybePrimaryButton
+import com.example.ui.components.VybeSearchBar
+import com.example.ui.components.VybeSurfaceCard
 import com.example.ui.components.VybeVideoPlayer
 import com.example.ui.theme.*
 import com.example.util.QrCodeGenerator
@@ -62,6 +61,7 @@ import kotlinx.coroutines.delay
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReelsViewerScreen(viewModel: VybeViewModel) {
+  val palette = LocalVybePalette.current
   val context = LocalContext.current
   val currentScreen by viewModel.currentScreen.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
@@ -162,16 +162,11 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
           fontSize = 13.sp
         )
         Spacer(modifier = Modifier.height(18.dp))
-        Button(
-          onClick = { viewModel.navigateTo(Screen.CREATE_POST) },
-          colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-          shape = RoundedCornerShape(12.dp),
-          modifier = Modifier.heightIn(min = 48.dp)
-        ) {
-          Icon(Icons.Default.Videocam, contentDescription = null, modifier = Modifier.size(18.dp))
-          Spacer(modifier = Modifier.width(6.dp))
-          Text("Create VYBES Reel", fontWeight = FontWeight.Bold)
-        }
+        VybePrimaryButton(
+          text = "Create VYBES Reel",
+          icon = Icons.Default.Videocam,
+          onClick = { viewModel.navigateTo(Screen.CREATE_POST) }
+        )
       }
     }
     return
@@ -464,7 +459,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                 .background(Color.Black.copy(alpha = 0.5f)),
               contentAlignment = Alignment.Center
             ) {
-              Icon(Icons.Default.Visibility, contentDescription = "Views", tint = VybeBrandCyan)
+              Icon(Icons.Default.Visibility, contentDescription = "Views", tint = Color.White)
             }
             Text(
               text = "${reelPost.viewsCount}",
@@ -507,7 +502,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
               Icon(
                 imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
                 contentDescription = if (isMuted) "Unmute audio" else "Mute audio",
-                tint = if (isMuted) Color.White.copy(alpha = 0.7f) else VybeBrandCyan
+                tint = if (isMuted) Color.White.copy(alpha = 0.7f) else VybeSocialVioletBright
               )
             }
             Text(
@@ -635,7 +630,8 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
           },
           sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
           contentWindowInsets = { WindowInsets(0.dp) },
-          containerColor = MaterialTheme.colorScheme.surface
+          containerColor = palette.card,
+          contentColor = palette.textPrimary
         ) {
           Column(
             modifier = Modifier
@@ -652,13 +648,15 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
               Column(modifier = Modifier.weight(1f)) {
                 Text(
                   text = "Share VYBES Reel",
-                  style = MaterialTheme.typography.titleMedium,
-                  fontWeight = FontWeight.Bold
+                  fontFamily = PlusJakartaSansFontFamily,
+                  fontSize = 17.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = palette.textPrimary
                 )
                 Text(
                   text = "Send to contacts or share externally to other apps.",
                   fontSize = 12.sp,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                  color = palette.textSecondary
                 )
               }
               OutlinedButton(
@@ -679,25 +677,21 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                   viewModel.incrementLocalPostShares(currentReel.id)
                   showShareInboxSheet = false
                 },
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(VybeTokens.Radius.md),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 modifier = Modifier.testTag("reel_external_share_button")
               ) {
-                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp), tint = palette.accent)
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("External Share", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("External Share", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = palette.textPrimary)
               }
             }
             Spacer(modifier = Modifier.height(10.dp))
 
-            OutlinedTextField(
-              value = shareSearchQuery,
-              onValueChange = { shareSearchQuery = it },
-              placeholder = { Text("Search people by name or @username...", fontSize = 12.sp) },
-              leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
-              singleLine = true,
-              shape = RoundedCornerShape(12.dp),
-              modifier = Modifier.fillMaxWidth()
+            VybeSearchBar(
+              query = shareSearchQuery,
+              onQueryChange = { shareSearchQuery = it },
+              placeholder = "Search people by name or @username..."
             )
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -713,24 +707,21 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                     "Active Conversations",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = palette.textMuted
                   )
                 }
                 items(conversations, key = { it.id }) { conv ->
-                  Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
+                  VybeSurfaceCard(
+                    containerColor = palette.elevated,
+                    contentPadding = PaddingValues(10.dp),
                     modifier = Modifier.fillMaxWidth()
                   ) {
-                    Row(
-                      modifier = Modifier.padding(10.dp),
-                      verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                       VybeAvatar(user = conv.peerUser, size = 36.dp)
                       Spacer(modifier = Modifier.width(10.dp))
                       Column(modifier = Modifier.weight(1f)) {
-                        Text(conv.groupName ?: conv.peerUser.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        Text("@${conv.peerUser.username}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(conv.groupName ?: conv.peerUser.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = palette.textPrimary)
+                        Text("@${conv.peerUser.username}", fontSize = 11.sp, color = palette.textSecondary)
                       }
                       Button(
                         onClick = {
@@ -743,12 +734,12 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                           sharedFeedback = "Reel sent to ${conv.groupName ?: conv.peerUser.displayName}."
                           showShareInboxSheet = false
                         },
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                        shape = RoundedCornerShape(VybeTokens.Radius.pill),
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                         modifier = Modifier.heightIn(min = 38.dp)
                       ) {
-                        Text("Send", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Send", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
                       }
                     }
                   }
@@ -760,29 +751,26 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                   "Community Members",
                   fontSize = 11.sp,
                   fontWeight = FontWeight.Bold,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                  color = palette.textMuted
                 )
               }
               items(filteredUsers, key = { it.id }) { targetUser ->
                 val eligibility = viewModel.checkMessagingEligibility(targetUser)
                 val canMessage = eligibility is MessagingEligibility.Allowed
-                Surface(
-                  shape = RoundedCornerShape(12.dp),
-                  color = MaterialTheme.colorScheme.surfaceVariant,
+                VybeSurfaceCard(
+                  containerColor = palette.elevated,
+                  contentPadding = PaddingValues(10.dp),
                   modifier = Modifier.fillMaxWidth()
                 ) {
-                  Row(
-                    modifier = Modifier.padding(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                  ) {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
                     VybeAvatar(user = targetUser, size = 36.dp)
                     Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                      Text(targetUser.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                      Text(targetUser.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = palette.textPrimary)
                       Text(
                         text = if (canMessage) "@${targetUser.username}" else "Requires mutual LINKUP to message",
                         fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = palette.textSecondary
                       )
                     }
                     Button(
@@ -803,12 +791,12 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                         }
                       },
                       enabled = canMessage,
-                      shape = RoundedCornerShape(16.dp),
-                      colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+                      shape = RoundedCornerShape(VybeTokens.Radius.pill),
+                      colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
                       contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                       modifier = Modifier.heightIn(min = 38.dp)
                     ) {
-                      Text("Send", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                      Text("Send", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                   }
                 }
@@ -828,7 +816,8 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
           onDismissRequest = { showCommentsSheet = false },
           sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
           contentWindowInsets = { WindowInsets(0.dp) },
-          containerColor = MaterialTheme.colorScheme.surface
+          containerColor = palette.card,
+          contentColor = palette.textPrimary
         ) {
           Column(
             modifier = Modifier
@@ -840,8 +829,10 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
             val sheetCommentsCount = if (currentReel.comments.isNotEmpty()) currentReel.comments.size else currentReel.commentsCount.coerceAtLeast(0)
             Text(
               text = "Comments ($sheetCommentsCount)",
-              style = MaterialTheme.typography.titleMedium,
-              fontWeight = FontWeight.Bold
+              fontFamily = PlusJakartaSansFontFamily,
+              fontSize = 17.sp,
+              fontWeight = FontWeight.Bold,
+              color = palette.textPrimary
             )
             Spacer(modifier = Modifier.height(10.dp))
 
@@ -855,7 +846,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                 Text(
                   "No comments yet. Share your thoughts below.",
                   fontSize = 12.sp,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                  color = palette.textSecondary
                 )
               }
             } else {
@@ -875,20 +866,20 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                     Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                       Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(c.author.displayName, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text(c.author.displayName, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = palette.textPrimary)
                         VerificationBadge(user = c.author, iconSize = 14.dp)
                       }
-                      Text(c.content, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                      Text(c.content, fontSize = 13.sp, color = palette.textPrimary)
                       Row(verticalAlignment = Alignment.CenterVertically) {
                         if (commentTime.isNotBlank()) {
-                          Text(commentTime, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                          Text(commentTime, fontSize = 10.sp, color = palette.textMuted)
                           Spacer(modifier = Modifier.width(10.dp))
                         }
                         Text(
                           text = "Reply",
                           fontSize = 10.sp,
                           fontWeight = FontWeight.SemiBold,
-                          color = MaterialTheme.colorScheme.onSurfaceVariant,
+                          color = palette.textSecondary,
                           modifier = Modifier.clickable { reelCommentText = "@${c.author.username} " }
                         )
                       }
@@ -916,8 +907,16 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
               OutlinedTextField(
                 value = reelCommentText,
                 onValueChange = { reelCommentText = it },
-                placeholder = { Text("Add a comment...") },
-                shape = RoundedCornerShape(24.dp),
+                placeholder = { Text("Add a comment...", color = palette.textMuted) },
+                colors = OutlinedTextFieldDefaults.colors(
+                  focusedContainerColor = palette.elevated,
+                  unfocusedContainerColor = palette.elevated,
+                  focusedBorderColor = palette.accent,
+                  unfocusedBorderColor = palette.border,
+                  focusedTextColor = palette.textPrimary,
+                  unfocusedTextColor = palette.textPrimary
+                ),
+                shape = RoundedCornerShape(VybeTokens.Radius.pill),
                 modifier = Modifier.weight(1f),
                 singleLine = true
               )
@@ -932,7 +931,7 @@ fun ReelsViewerScreen(viewModel: VybeViewModel) {
                 modifier = Modifier
                   .size(48.dp)
                   .clip(CircleShape)
-                  .background(VybeViolet)
+                  .background(palette.accent)
               ) {
                 Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(18.dp))
               }

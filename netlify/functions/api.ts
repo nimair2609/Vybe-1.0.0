@@ -38,7 +38,7 @@ const CORS_HEADERS = {
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ADMIN_ROLES = new Set(['ADMIN', 'SUPER_ADMIN', 'OWNER_ADMIN', 'MODERATOR']);
+const ADMIN_ROLES = new Set(['ADMIN', 'SUPER_ADMIN', 'OWNER_ADMIN', 'MODERATOR', 'SUPPORT_ADMIN', 'ANALYST']);
 const SUPER_ADMIN_ROLES = new Set(['SUPER_ADMIN', 'OWNER_ADMIN']);
 
 async function verifyCallerAdmin(authHeader: string | undefined): Promise<{
@@ -79,45 +79,29 @@ async function verifyCallerAdmin(authHeader: string | undefined): Promise<{
       return { authorized: false, statusCode: 401, error: 'User identity could not be verified.' };
     }
 
-    // 2. Verify administrator role in profiles and active admin_users (fail closed; no hardcoded email bypasses)
+    // 2. Verify active administrator record in admin_users (fail closed; never accept profiles.role alone)
     const activeAuthKey = SUPABASE_SERVICE_ROLE_KEY || token;
     const roleHeaders: Record<string, string> = {
       'apikey': SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY,
       'Authorization': `Bearer ${activeAuthKey}`
     };
 
-    const [profileRes, adminUserRes] = await Promise.all([
-      fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=id,role&limit=1`, { headers: roleHeaders }),
-      fetch(`${SUPABASE_URL}/rest/v1/admin_users?user_id=eq.${encodeURIComponent(userId)}&is_active=eq.true&select=role&limit=1`, { headers: roleHeaders }).catch(() => null)
-    ]);
+    const adminUserRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/admin_users?user_id=eq.${encodeURIComponent(userId)}&select=user_id,role,is_active&limit=1`,
+      { headers: roleHeaders }
+    );
 
-    let resolvedRole = '';
-    let checkOk = false;
-
-    if (profileRes.ok) {
-      checkOk = true;
-      const rows = await profileRes.json();
-      const profile = Array.isArray(rows) ? rows[0] : rows;
-      const role = String(profile?.role || '').toUpperCase().trim();
-      if (ADMIN_ROLES.has(role)) resolvedRole = role;
-    }
-
-    if (adminUserRes && adminUserRes.ok) {
-      checkOk = true;
-      const aRows = await adminUserRes.json();
-      const adminRec = Array.isArray(aRows) ? aRows[0] : aRows;
-      const adminRole = String(adminRec?.role || '').toUpperCase().trim();
-      if (ADMIN_ROLES.has(adminRole)) {
-        if (!resolvedRole || SUPER_ADMIN_ROLES.has(adminRole)) resolvedRole = adminRole;
-      }
-    }
-
-    if (!checkOk) {
+    if (!adminUserRes.ok) {
       return { authorized: false, statusCode: 503, error: 'Unable to verify administrator role against Supabase.' };
     }
 
-    if (!ADMIN_ROLES.has(resolvedRole)) {
-      return { authorized: false, statusCode: 403, error: 'Forbidden: Account does not possess administrator privileges.' };
+    const aRows = await adminUserRes.json();
+    const adminRec = Array.isArray(aRows) ? aRows[0] : aRows;
+    const adminRole = String(adminRec?.role || '').toUpperCase().trim();
+    const matchesUser = !adminRec?.user_id || String(adminRec.user_id).toLowerCase() === String(userId).toLowerCase();
+
+    if (!adminRec || adminRec.is_active !== true || !matchesUser || !ADMIN_ROLES.has(adminRole)) {
+      return { authorized: false, statusCode: 403, error: 'Forbidden: Active administrator record required.' };
     }
 
     return {
@@ -125,11 +109,11 @@ async function verifyCallerAdmin(authHeader: string | undefined): Promise<{
       userId,
       email: typeof userData?.email === 'string' ? userData.email.toLowerCase() : 'admin',
       token,
-      role: resolvedRole,
-      isSuperAdmin: SUPER_ADMIN_ROLES.has(resolvedRole)
+      role: adminRole,
+      isSuperAdmin: SUPER_ADMIN_ROLES.has(adminRole)
     };
   } catch (err: any) {
-    return { authorized: false, statusCode: 502, error: err.message || 'Error validating administrator authorization.' };
+    return { authorized: false, statusCode: 503, error: err.message || 'Unable to verify administrator authorization.' };
   }
 }
 

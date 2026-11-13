@@ -1,118 +1,169 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-:root,
-:root[data-theme="dark"] {
-  --bg-primary: #060714;
-  --bg-surface: #101322;
-  --bg-elevated: #1A1F36;
-  --border-subtle: #262E4A;
-  --text-primary: #F8FAFC;
-  --text-secondary: #CBD5E1;
-  --text-muted: #94A3B8;
-  --brand-cyan: #00C6FF;
-  --brand-blue: #3B82F6;
-  --brand-violet: #8B5CF6;
-  --brand-magenta: #D946EF;
-  --vybe-online: #22C55E;
-  --vybe-gold: #FFB703;
-  --vybe-danger: #EF4444;
+:root {
+  --font-display: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* Default: VYBE Social Dark (Editorial Obsidian) */
+  --vybe-bg: #090A0F;
+  --vybe-surface: #12151E;
+  --vybe-elevated: #191D29;
+  --vybe-border: #23293A;
+  --vybe-text: #F8FAFC;
+  --vybe-text-secondary: #A1ACBE;
+  --vybe-text-muted: #64748B;
+  --vybe-accent: #7C3AED;
+  --vybe-accent-soft: #8B5CF6;
+  --vybe-accent-secondary: #2563EB;
+  --vybe-accent-tint: rgba(124, 58, 237, 0.14);
+  --vybe-nav-bg: rgba(12, 14, 20, 0.94);
+  --vybe-hero-start: #1E1B4B;
+  --vybe-hero-end: #131620;
 }
 
-:root[data-theme="light"] {
-  --bg-primary: #F8FAFC;
-  --bg-surface: #FFFFFF;
-  --bg-elevated: #F1F5F9;
-  --border-subtle: #CBD5E1;
-  --text-primary: #0F172A;
-  --text-secondary: #334155;
-  --text-muted: #64748B;
-  --brand-cyan: #0284C7;
-  --brand-blue: #2563EB;
-  --brand-violet: #6D28D9;
-  --brand-magenta: #C026D3;
-  --vybe-online: #16A34A;
-  --vybe-gold: #D97706;
-  --vybe-danger: #DC2626;
+html[data-mode="social"][data-theme="light"] {
+  --vybe-bg: #F8FAFC;
+  --vybe-surface: #FFFFFF;
+  --vybe-elevated: #F1F5F9;
+  --vybe-border: #E2E8F0;
+  --vybe-text: #0F172A;
+  --vybe-text-secondary: #475569;
+  --vybe-text-muted: #94A3B8;
+  --vybe-accent: #7C3AED;
+  --vybe-accent-soft: #8B5CF6;
+  --vybe-accent-secondary: #2563EB;
+  --vybe-accent-tint: rgba(124, 58, 237, 0.1);
+  --vybe-nav-bg: rgba(255, 255, 255, 0.95);
+  --vybe-hero-start: #EDE9FE;
+  --vybe-hero-end: #E0E7FF;
+}
+
+html[data-mode="grow"][data-theme="light"],
+html[data-mode="grow"] {
+  --vybe-bg: #F6F8FC;
+  --vybe-surface: #FFFFFF;
+  --vybe-elevated: #EEF2F7;
+  --vybe-border: #E2E8F0;
+  --vybe-text: #0F172A;
+  --vybe-text-secondary: #475569;
+  --vybe-text-muted: #94A3B8;
+  --vybe-accent: #2563EB;
+  --vybe-accent-soft: #3B82F6;
+  --vybe-accent-secondary: #0284C7;
+  --vybe-accent-tint: rgba(37, 99, 235, 0.1);
+  --vybe-nav-bg: rgba(255, 255, 255, 0.96);
+  --vybe-hero-start: #EDE9FE;
+  --vybe-hero-end: #DBEAFE;
+}
+
+html[data-mode="grow"][data-theme="dark"] {
+  --vybe-bg: #0B101B;
+  --vybe-surface: #111827;
+  --vybe-elevated: #1E293B;
+  --vybe-border: #263348;
+  --vybe-text: #F8FAFC;
+  --vybe-text-secondary: #94A3B8;
+  --vybe-text-muted: #64748B;
+  --vybe-accent: #3B82F6;
+  --vybe-accent-soft: #60A5FA;
+  --vybe-accent-secondary: #0EA5E9;
+  --vybe-accent-tint: rgba(59, 130, 246, 0.16);
+  --vybe-nav-bg: rgba(13, 19, 34, 0.95);
+  --vybe-hero-start: #1E1B4B;
+  --vybe-hero-end: #0F172A;
 }
 
 body {
-  margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
+  font-family: var(--font-body);
+  background-color: var(--vybe-bg);
+  color: var(--vybe-text);
   overflow-x: hidden;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-/* Harmonized Light Mode surface & contrast overrides across browser views */
-:root[data-theme="light"] .vybe-app-shell {
-  background-color: #F8FAFC;
-  color: #0F172A;
+h1, h2, h3, .brand-font {
+  font-family: var(--font-display);
 }
 
-:root[data-theme="light"] .vybe-app-shell .bg-\[\#060714\],
-:root[data-theme="light"] .vybe-app-shell .bg-\[\#060714\]\/90,
-:root[data-theme="light"] .vybe-app-shell .bg-\[\#060714\]\/80 {
-  background-color: #F8FAFC !important;
+/* Semantic surface overrides so existing components seamlessly honor Social/Grow & Dark/Light tokens */
+.vybe-app-shell {
+  background-color: var(--vybe-bg) !important;
+  color: var(--vybe-text) !important;
 }
 
-:root[data-theme="light"] .vybe-app-shell .bg-\[\#101322\],
-:root[data-theme="light"] .vybe-app-shell .bg-\[\#101322\]\/90,
-:root[data-theme="light"] .vybe-app-shell .bg-\[\#101322\]\/95 {
-  background-color: #FFFFFF !important;
+.vybe-surface {
+  background-color: var(--vybe-surface);
+  border: 1px solid var(--vybe-border);
+  color: var(--vybe-text);
 }
 
-:root[data-theme="light"] .vybe-app-shell .bg-\[\#1A1F36\] {
-  background-color: #F1F5F9 !important;
+.vybe-elevated {
+  background-color: var(--vybe-elevated);
+  border: 1px solid var(--vybe-border);
+  color: var(--vybe-text);
 }
 
-:root[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\],
-:root[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\]\/80,
-:root[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\]\/60,
-:root[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\]\/50,
-:root[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\]\/40,
-:root[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\]\/30 {
-  border-color: #E2E8F0 !important;
+html[data-theme="light"] .vybe-app-shell .bg-\[\#060714\],
+html[data-theme="light"] .vybe-app-shell .bg-\[\#090A0F\] {
+  background-color: var(--vybe-bg) !important;
 }
 
-:root[data-theme="light"] .vybe-app-shell .text-white:not(.keep-white) {
-  color: #0F172A !important;
+html[data-theme="light"] .vybe-app-shell .bg-\[\#060714\]\/90,
+html[data-theme="light"] .vybe-app-shell .bg-\[\#060714\]\/95,
+html[data-theme="light"] .vybe-app-shell .bg-\[\#060714\]\/80,
+html[data-theme="light"] .vybe-app-shell .bg-\[\#0C0E14\]\/95 {
+  background-color: var(--vybe-nav-bg) !important;
 }
 
-:root[data-theme="light"] .vybe-app-shell .text-gray-100,
-:root[data-theme="light"] .vybe-app-shell .text-gray-200 {
-  color: #1E293B !important;
+html[data-theme="light"] .vybe-app-shell .bg-\[\#101322\],
+html[data-theme="light"] .vybe-app-shell .bg-\[\#12151E\] {
+  background-color: var(--vybe-surface) !important;
 }
 
-:root[data-theme="light"] .vybe-app-shell .text-gray-300 {
-  color: #334155 !important;
+html[data-theme="light"] .vybe-app-shell .bg-\[\#1A1F36\],
+html[data-theme="light"] .vybe-app-shell .bg-\[\#191D29\],
+html[data-theme="light"] .vybe-app-shell .bg-\[\#1A1F36\]\/60 {
+  background-color: var(--vybe-elevated) !important;
 }
 
-:root[data-theme="light"] .vybe-app-shell .text-gray-400 {
-  color: #64748B !important;
+html[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\],
+html[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\]\/80,
+html[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\]\/60,
+html[data-theme="light"] .vybe-app-shell .border-\[\#23293A\] {
+  border-color: var(--vybe-border) !important;
 }
 
-h1, h2, h3, h4, .brand-font {
-  font-family: 'Outfit', sans-serif;
+html[data-theme="light"] .vybe-app-shell .text-white:not(.keep-white),
+html[data-theme="light"] .vybe-app-shell .text-gray-100:not(.keep-white),
+html[data-theme="light"] .vybe-app-shell .text-gray-200:not(.keep-white) {
+  color: var(--vybe-text) !important;
 }
 
-/* Custom Scrollbars */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--border-subtle);
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--brand-violet);
+html[data-theme="light"] .vybe-app-shell .text-gray-300:not(.keep-white),
+html[data-theme="light"] .vybe-app-shell .text-gray-400:not(.keep-white),
+html[data-theme="light"] .vybe-app-shell .text-gray-500:not(.keep-white) {
+  color: var(--vybe-text-secondary) !important;
 }
 
-/* Hide scrollbar for clean carousels */
+/* Map dark classes inside dark mode cleanly to unified obsidian tokens */
+html[data-theme="dark"] .vybe-app-shell .bg-\[\#060714\] {
+  background-color: var(--vybe-bg) !important;
+}
+html[data-theme="dark"] .vybe-app-shell .bg-\[\#101322\] {
+  background-color: var(--vybe-surface) !important;
+}
+html[data-theme="dark"] .vybe-app-shell .bg-\[\#1A1F36\] {
+  background-color: var(--vybe-elevated) !important;
+}
+html[data-theme="dark"] .vybe-app-shell .border-\[\#262E4A\],
+html[data-theme="dark"] .vybe-app-shell .border-\[\#262E4A\]\/80,
+html[data-theme="dark"] .vybe-app-shell .border-\[\#262E4A\]\/60 {
+  border-color: var(--vybe-border) !important;
+}
+
+/* Custom utility scrollbars */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
@@ -121,87 +172,11 @@ h1, h2, h3, h4, .brand-font {
   scrollbar-width: none;
 }
 
-/* Pulse animation */
-@keyframes breathingOrb {
-  0%, 100% {
-    transform: scale(0.85);
-    opacity: 0.6;
-  }
-  50% {
-    transform: scale(1.18);
-    opacity: 1;
-    filter: drop-shadow(0 0 35px rgba(0, 198, 255, 0.7));
-  }
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.animate-breathing {
-  animation: breathingOrb 16s ease-in-out infinite;
+.animate-fade-in {
+  animation: fadeIn 0.22s ease-out;
 }
-
-/* Global Finger Heart Reaction Animations */
-@keyframes vybeFingerHeartFloat {
-  0% {
-    transform: translate3d(0, 0, 0) scale(0.5);
-    opacity: 0.95;
-  }
-  70% {
-    opacity: 0.85;
-  }
-  100% {
-    transform: translate3d(var(--fh-dx, 10px), var(--fh-dy, -30px), 0) scale(1.05);
-    opacity: 0;
-  }
-}
-
-@keyframes vybeFingerHeartCenterBurst {
-  0% {
-    transform: scale(0.25) rotate(-10deg);
-    opacity: 0;
-  }
-  35% {
-    transform: scale(1.28) rotate(4deg);
-    opacity: 1;
-  }
-  65% {
-    transform: scale(1) rotate(0deg);
-    opacity: 1;
-  }
-  100% {
-    transform: scale(1.05) rotate(0deg);
-    opacity: 0;
-  }
-}
-
-
-@keyframes vybeFloatHeart {
-  0% {
-    opacity: 0.95;
-    transform: translate(0px, 0px) scale(0.45);
-  }
-  45% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-
-@keyframes vybeCenterHeartBurst {
-  0% {
-    opacity: 0;
-    transform: scale(0.35) rotate(-10deg);
-  }
-  38% {
-    opacity: 1;
-    transform: scale(1.28) rotate(6deg);
-  }
-  68% {
-    opacity: 0.95;
-    transform: scale(1.0) rotate(0deg);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(1.12) rotate(0deg);
-  }
-}
-

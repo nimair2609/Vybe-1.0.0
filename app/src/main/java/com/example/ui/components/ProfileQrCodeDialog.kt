@@ -60,6 +60,7 @@ fun ProfileQrCodeDialog(
     )
   }
 
+  val palette = LocalVybePalette.current
   Dialog(
     onDismissRequest = onDismiss,
     properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -67,7 +68,7 @@ fun ProfileQrCodeDialog(
     Box(
       modifier = Modifier
         .fillMaxSize()
-        .background(Color.Black.copy(alpha = 0.75f))
+        .background(Color.Black.copy(alpha = 0.78f))
         .padding(24.dp),
       contentAlignment = Alignment.Center
     ) {
@@ -75,15 +76,15 @@ fun ProfileQrCodeDialog(
         modifier = Modifier
           .fillMaxWidth()
           .widthIn(max = 400.dp)
-          .clip(RoundedCornerShape(24.dp))
+          .clip(RoundedCornerShape(VybeTokens.Radius.xl))
           .border(
-            width = 1.5.dp,
-            brush = Brush.linearGradient(listOf(VybeViolet, VybeMagenta, VybeBrandCyan)),
-            shape = RoundedCornerShape(24.dp)
+            width = 1.dp,
+            color = palette.border,
+            shape = RoundedCornerShape(VybeTokens.Radius.xl)
           )
           .testTag("profile_qr_code_card"),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(24.dp)
+        colors = CardDefaults.cardColors(containerColor = palette.card),
+        shape = RoundedCornerShape(VybeTokens.Radius.xl)
       ) {
         Column(
           modifier = Modifier
@@ -102,7 +103,7 @@ fun ProfileQrCodeDialog(
                 modifier = Modifier
                   .size(28.dp)
                   .clip(CircleShape)
-                  .background(Brush.linearGradient(listOf(VybeViolet, VybeMagenta))),
+                  .background(palette.accent),
                 contentAlignment = Alignment.Center
               ) {
                 Icon(
@@ -117,7 +118,8 @@ fun ProfileQrCodeDialog(
                 text = "VYBE Profile QR",
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 16.sp,
-                fontFamily = SyneFontFamily
+                fontFamily = PlusJakartaSansFontFamily,
+                color = palette.textPrimary
               )
             }
             IconButton(
@@ -126,7 +128,7 @@ fun ProfileQrCodeDialog(
                 .size(36.dp)
                 .testTag("close_qr_dialog_button")
             ) {
-              Icon(Icons.Default.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+              Icon(Icons.Default.Close, contentDescription = "Close", tint = palette.textSecondary)
             }
           }
 
@@ -138,25 +140,27 @@ fun ProfileQrCodeDialog(
           Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
               text = user.displayName.ifBlank { user.username },
+              fontFamily = PlusJakartaSansFontFamily,
               fontWeight = FontWeight.Bold,
-              fontSize = 18.sp
+              fontSize = 18.sp,
+              color = palette.textPrimary
             )
             VerificationBadge(user = user)
           }
           Text(
             text = "@${user.username}",
             fontSize = 13.sp,
-            color = VybeViolet,
+            color = palette.accent,
             fontWeight = FontWeight.SemiBold
           )
 
           Spacer(modifier = Modifier.height(18.dp))
 
-          // QR Code Container with High-Contrast White Background & Shadow
+          // QR Code Container with High-Contrast White Background & Border
           Box(
             modifier = Modifier
               .size(230.dp)
-              .clip(RoundedCornerShape(18.dp))
+              .clip(RoundedCornerShape(VybeTokens.Radius.lg))
               .background(Color.White)
               .padding(14.dp)
               .testTag("qr_code_image_container"),
@@ -169,7 +173,7 @@ fun ProfileQrCodeDialog(
                 modifier = Modifier.fillMaxSize()
               )
             } else {
-              CircularProgressIndicator(color = VybeViolet)
+              CircularProgressIndicator(color = palette.accent)
             }
           }
 
@@ -178,7 +182,7 @@ fun ProfileQrCodeDialog(
           Text(
             text = "Scan with any camera or QR scanner to view and LINK UP with @${user.username} on VYBE",
             fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = palette.textSecondary,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 8.dp)
           )
@@ -190,25 +194,23 @@ fun ProfileQrCodeDialog(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
           ) {
-            OutlinedButton(
+            VybeSecondaryButton(
+              text = "Copy Link",
+              icon = Icons.Default.ContentCopy,
+              testTag = "copy_profile_link_button",
               onClick = {
                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 val clip = ClipData.newPlainText("VYBE Profile Link", shareUrl)
                 clipboard.setPrimaryClip(clip)
                 Toast.makeText(context, "Copied profile link to clipboard!", Toast.LENGTH_SHORT).show()
               },
-              shape = RoundedCornerShape(12.dp),
-              modifier = Modifier
-                .weight(1f)
-                .heightIn(min = 46.dp)
-                .testTag("copy_profile_link_button")
-            ) {
-              Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text("Copy Link", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            }
+              modifier = Modifier.weight(1f)
+            )
 
-            Button(
+            VybePrimaryButton(
+              text = "Share Link",
+              icon = Icons.Default.Share,
+              testTag = "share_qr_profile_button",
               onClick = {
                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                   type = "text/plain"
@@ -220,17 +222,8 @@ fun ProfileQrCodeDialog(
                 }
                 context.startActivity(Intent.createChooser(shareIntent, "Share Profile QR"))
               },
-              colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-              shape = RoundedCornerShape(12.dp),
-              modifier = Modifier
-                .weight(1f)
-                .heightIn(min = 46.dp)
-                .testTag("share_qr_profile_button")
-            ) {
-              Icon(Icons.Default.Share, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text("Share Link", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
-            }
+              modifier = Modifier.weight(1f)
+            )
           }
         }
       }

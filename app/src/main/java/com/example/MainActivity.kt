@@ -206,6 +206,7 @@ class MainActivity : ComponentActivity() {
       }
 
       val themeMode by viewModel.themeMode.collectAsState()
+      val experienceMode by viewModel.experienceMode.collectAsState()
       val systemInDark = isSystemInDarkTheme()
       val isDark = when (themeMode) {
         AppThemeMode.DARK -> true
@@ -268,8 +269,11 @@ class MainActivity : ComponentActivity() {
         }
       }
 
-      VybeTheme(darkTheme = isDark) {
-        Surface(modifier = Modifier.fillMaxSize()) {
+      VybeTheme(themeMode = themeMode, darkTheme = isDark, experienceMode = experienceMode) {
+        Surface(
+          color = com.example.ui.theme.LocalVybePalette.current.canvas,
+          modifier = Modifier.fillMaxSize()
+        ) {
           Column(modifier = Modifier.fillMaxSize()) {
             OfflineStatusBanner(isOnline = isOnline)
 

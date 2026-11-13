@@ -27,11 +27,10 @@ import com.example.data.model.UserRole
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VybeAvatar
-import com.example.ui.theme.VybeBrandCyan
-import com.example.ui.theme.VybeDanger
-import com.example.ui.theme.VybeOnlineGreen
-import com.example.ui.theme.VybeVerifiedGold
-import com.example.ui.theme.VybeViolet
+import com.example.ui.components.VybeEmptyState
+import com.example.ui.components.VybeSubScreenTopBar
+import com.example.ui.components.VybeSurfaceCard
+import com.example.ui.theme.*
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
@@ -85,42 +84,58 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
     }
   }
 
+  val palette = LocalVybePalette.current
+
   if (isVerifyingRole) {
-    Box(
-      modifier = Modifier.fillMaxSize(),
-      contentAlignment = Alignment.Center
-    ) {
-      Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        CircularProgressIndicator(color = VybeVerifiedGold)
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-          "Verifying administrator authorization...",
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+    Surface(color = palette.canvas, modifier = Modifier.fillMaxSize()) {
+      Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+      ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+          CircularProgressIndicator(color = VybeVerifiedGold)
+          Spacer(modifier = Modifier.height(16.dp))
+          Text(
+            "Verifying administrator authorization...",
+            style = MaterialTheme.typography.bodyMedium,
+            color = palette.textSecondary
+          )
+        }
       }
     }
     return
   }
 
   if (currentUser?.role != UserRole.ADMIN) {
-    Box(
-      modifier = Modifier.fillMaxSize(),
-      contentAlignment = Alignment.Center
-    ) {
-      Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
-        Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(48.dp))
-        Spacer(modifier = Modifier.height(16.dp))
-        Text("Admin Access Restricted", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-          "This portal is reserved for authorized platform administrators and trust & safety moderators.",
-          textAlign = TextAlign.Center,
-          color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = { viewModel.navigateBack() }) {
-          Text("Go Back")
+    Surface(color = palette.canvas, modifier = Modifier.fillMaxSize()) {
+      Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+      ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
+          Icon(Icons.Default.Lock, contentDescription = null, tint = palette.danger, modifier = Modifier.size(48.dp))
+          Spacer(modifier = Modifier.height(16.dp))
+          Text(
+            "Admin Access Restricted",
+            fontFamily = PlusJakartaSansFontFamily,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = palette.textPrimary
+          )
+          Spacer(modifier = Modifier.height(8.dp))
+          Text(
+            "This portal is reserved for authorized platform administrators and trust & safety moderators.",
+            textAlign = TextAlign.Center,
+            color = palette.textSecondary
+          )
+          Spacer(modifier = Modifier.height(16.dp))
+          Button(
+            onClick = { viewModel.navigateBack() },
+            colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
+            shape = RoundedCornerShape(VybeTokens.Radius.md)
+          ) {
+            Text("Go Back", color = Color.White)
+          }
         }
       }
     }
@@ -150,24 +165,25 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
     return Instant.now().plus(days.toLong(), ChronoUnit.DAYS).toString()
   }
 
+  val adminFieldColors = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = palette.elevated,
+    unfocusedContainerColor = palette.elevated,
+    focusedBorderColor = palette.accent,
+    unfocusedBorderColor = palette.border,
+    focusedTextColor = palette.textPrimary,
+    unfocusedTextColor = palette.textPrimary
+  )
+
   Scaffold(
+    contentWindowInsets = WindowInsets(0.dp),
+    containerColor = palette.canvas,
     topBar = {
       Column {
-        TopAppBar(
-          navigationIcon = {
-            IconButton(
-              onClick = { viewModel.navigateBack() },
-              modifier = Modifier.testTag("admin_back_button")
-            ) {
-              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-            }
-          },
-          title = {
-            Column {
-              Text("Admin & Trust Safety", fontWeight = FontWeight.Bold)
-              Text("Authorized Admin Console", fontSize = 11.sp, color = VybeVerifiedGold)
-            }
-          },
+        VybeSubScreenTopBar(
+          title = "Admin & Trust Safety",
+          subtitle = "Authorized Admin Console",
+          onBackClick = { viewModel.navigateBack() },
+          backTestTag = "admin_back_button",
           actions = {
             IconButton(
               onClick = {
@@ -176,12 +192,12 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
               },
               modifier = Modifier.testTag("admin_refresh_button")
             ) {
-              Icon(Icons.Default.Refresh, contentDescription = "Refresh Admin Queues")
+              Icon(Icons.Default.Refresh, contentDescription = "Refresh Admin Queues", tint = palette.textPrimary)
             }
             Surface(
-              shape = RoundedCornerShape(8.dp),
-              color = VybeVerifiedGold.copy(alpha = 0.15f),
-              modifier = Modifier.padding(end = 12.dp)
+              shape = RoundedCornerShape(VybeTokens.Radius.sm),
+              color = VybeVerifiedGold.copy(alpha = 0.16f),
+              modifier = Modifier.padding(end = 8.dp)
             ) {
               Text(
                 text = "OWNER ADMIN",
@@ -191,16 +207,13 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
               )
             }
-          },
-          colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.background
-          )
+          }
         )
 
         TabRow(
           selectedTabIndex = selectedTab.ordinal,
-          containerColor = MaterialTheme.colorScheme.surface,
-          contentColor = MaterialTheme.colorScheme.primary
+          containerColor = palette.card,
+          contentColor = palette.accent
         ) {
           AdminTab.values().forEach { tab ->
             Tab(
@@ -209,7 +222,9 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
               text = {
                 Text(
                   tab.title,
-                  fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal,
+                  fontFamily = PlusJakartaSansFontFamily,
+                  fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Medium,
+                  color = if (selectedTab == tab) palette.accent else palette.textSecondary,
                   fontSize = 12.sp
                 )
               },
@@ -222,10 +237,12 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
     snackbarHost = {
       feedbackBanner?.let { msg ->
         Snackbar(
+          containerColor = palette.card,
+          contentColor = palette.textPrimary,
           modifier = Modifier.padding(16.dp),
           action = {
             TextButton(onClick = { feedbackBanner = null }) {
-              Text("OK", color = VybeBrandCyan)
+              Text("OK", color = palette.accent, fontWeight = FontWeight.Bold)
             }
           }
         ) {
@@ -244,57 +261,53 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
       when (selectedTab) {
         AdminTab.MODERATION -> {
           item {
-            Card(
-              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-              shape = RoundedCornerShape(16.dp)
-            ) {
-              Column(modifier = Modifier.padding(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                  Icon(Icons.Default.AdminPanelSettings, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(22.dp))
-                  Spacer(modifier = Modifier.width(8.dp))
-                  Text("Zero-Trust Security & Minimum Age Enforcement", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                }
-                Spacer(modifier = Modifier.height(4.dp))
+            VybeSurfaceCard(containerColor = palette.elevated) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.AdminPanelSettings, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(22.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                  text = "Indian IT Rules (Intermediary Guidelines) compliance active. Reports are reviewed with audit logging. Private messages remain inaccessible without lawful warrant.",
-                  fontSize = 11.sp,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                  lineHeight = 15.sp
+                  "Zero-Trust Security & Minimum Age Enforcement",
+                  fontFamily = PlusJakartaSansFontFamily,
+                  fontWeight = FontWeight.Bold,
+                  fontSize = 13.sp,
+                  color = palette.textPrimary
                 )
               }
+              Spacer(modifier = Modifier.height(4.dp))
+              Text(
+                text = "Indian IT Rules (Intermediary Guidelines) compliance active. Reports are reviewed with audit logging. Private messages remain inaccessible without lawful warrant.",
+                fontSize = 11.sp,
+                color = palette.textSecondary,
+                lineHeight = 15.sp
+              )
             }
           }
 
           item {
             Text(
               "Pending Incident & Violation Queue (${reports.size})",
+              fontFamily = PlusJakartaSansFontFamily,
               style = MaterialTheme.typography.titleMedium,
-              fontWeight = FontWeight.Bold
+              fontWeight = FontWeight.Bold,
+              color = palette.textPrimary
             )
           }
 
           if (reports.isEmpty()) {
             item {
-              Box(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .padding(32.dp),
-                contentAlignment = Alignment.Center
-              ) {
-                Text("No flagged reports in queue.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-              }
+              VybeEmptyState(
+                icon = Icons.Default.VerifiedUser,
+                title = "No Flagged Reports",
+                subtitle = "No moderation reports are currently waiting for review."
+              )
             }
           } else {
             items(reports, key = { it.id }) { report ->
-              Card(
+              VybeSurfaceCard(
                 modifier = Modifier
                   .fillMaxWidth()
-                  .testTag("report_card_${report.id}"),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+                  .testTag("report_card_${report.id}")
               ) {
-                Column(modifier = Modifier.padding(14.dp)) {
                   Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -316,24 +329,24 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                     Text(
                       text = report.timestamp,
                       fontSize = 11.sp,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                      color = palette.textSecondary
                     )
                   }
 
                   Spacer(modifier = Modifier.height(8.dp))
-                  Text(report.reason, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                  Text(report.reason, fontFamily = PlusJakartaSansFontFamily, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = palette.textPrimary)
                   Spacer(modifier = Modifier.height(4.dp))
                   Text(
                     text = report.summaryText,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = palette.textPrimary,
                     lineHeight = 18.sp
                   )
                   Spacer(modifier = Modifier.height(6.dp))
                   Text(
                     text = "Reported User: @${report.reportedUser} • Reporter: @${report.reportedByUsername}",
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = palette.textSecondary
                   )
                   Spacer(modifier = Modifier.height(12.dp))
 
@@ -347,13 +360,13 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                         onClick = { viewModel.submitAdminAction(report.id, ReportStatus.DISMISSED) },
                         modifier = Modifier.testTag("dismiss_report_${report.id}")
                       ) {
-                        Text("Dismiss")
+                        Text("Dismiss", color = palette.textSecondary)
                       }
                       Spacer(modifier = Modifier.width(8.dp))
                       Button(
                         onClick = { viewModel.submitAdminAction(report.id, ReportStatus.ACTION_TAKEN) },
-                        colors = ButtonDefaults.buttonColors(containerColor = VybeDanger),
-                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.danger, contentColor = Color.White),
+                        shape = RoundedCornerShape(VybeTokens.Radius.sm),
                         modifier = Modifier.testTag("action_report_${report.id}")
                       ) {
                         Text("Take Down / Suspend", fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -361,21 +374,20 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                     }
                   } else {
                     Surface(
-                      color = VybeOnlineGreen.copy(alpha = 0.15f),
-                      shape = RoundedCornerShape(8.dp),
+                      color = palette.success.copy(alpha = 0.15f),
+                      shape = RoundedCornerShape(VybeTokens.Radius.xs),
                       modifier = Modifier.align(Alignment.End)
                     ) {
                       Text(
                         text = "Status: ${report.status.name}",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = VybeOnlineGreen,
+                        color = palette.success,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                       )
                     }
                   }
                 }
-              }
             }
           }
         }
@@ -383,31 +395,29 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
         AdminTab.VERIFICATIONS -> {
           // 1. Direct Official Badge Assignment & Revocation Panel
           item {
-            Card(
-              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-              shape = RoundedCornerShape(16.dp),
-              border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.45f)),
+            VybeSurfaceCard(
+              borderColor = palette.accent.copy(alpha = 0.45f),
+              contentPadding = PaddingValues(16.dp),
               modifier = Modifier
                 .fillMaxWidth()
                 .testTag("admin_direct_badge_panel")
             ) {
-              Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-              ) {
+              Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                  Icon(Icons.Default.Verified, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(20.dp))
+                  Icon(Icons.Default.Verified, contentDescription = null, tint = palette.accent, modifier = Modifier.size(20.dp))
                   Spacer(modifier = Modifier.width(8.dp))
                   Text(
                     "Assign or Revoke Official VYBE Badges",
+                    fontFamily = PlusJakartaSansFontFamily,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = palette.textPrimary
                   )
                 }
                 Text(
                   "Changes execute via server-verified RPC with audit logging. Assigned badges notify the recipient for user acceptance.",
                   fontSize = 11.sp,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                  color = palette.textSecondary
                 )
 
                 OutlinedTextField(
@@ -415,7 +425,8 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                   onValueChange = { userSearchQuery = it },
                   label = { Text("Search Member (@username, Name, or VYBE ID)") },
                   singleLine = true,
-                  shape = RoundedCornerShape(10.dp),
+                  shape = RoundedCornerShape(VybeTokens.Radius.md),
+                  colors = adminFieldColors,
                   modifier = Modifier
                     .fillMaxWidth()
                     .testTag("admin_badge_user_search_input")
@@ -426,15 +437,15 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                     matchedUsersForBadge.forEach { member ->
                       val isSelected = selectedTargetUserId == member.id
                       Surface(
-                        color = if (isSelected) VybeViolet.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                        shape = RoundedCornerShape(10.dp),
+                        color = if (isSelected) palette.accent.copy(alpha = 0.16f) else palette.elevated,
+                        shape = RoundedCornerShape(VybeTokens.Radius.sm),
                         border = BorderStroke(
                           1.dp,
-                          if (isSelected) VybeViolet else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+                          if (isSelected) palette.accent else palette.border
                         ),
                         modifier = Modifier
                           .fillMaxWidth()
-                          .clip(RoundedCornerShape(10.dp))
+                          .clip(RoundedCornerShape(VybeTokens.Radius.sm))
                           .clickable { selectedTargetUserId = member.id }
                           .testTag("admin_select_member_${member.id}")
                       ) {
@@ -446,13 +457,13 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                           Spacer(modifier = Modifier.width(10.dp))
                           Column(modifier = Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                              Text(member.displayName.ifBlank { member.username }, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                              Text(member.displayName.ifBlank { member.username }, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = palette.textPrimary)
                               VerificationBadge(user = member, iconSize = 15.dp)
                             }
-                            Text("@${member.username} • ${member.publicVybeId}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("@${member.username} • ${member.publicVybeId}", fontSize = 11.sp, color = palette.textSecondary)
                           }
                           if (isSelected) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = "Selected", tint = VybeViolet, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.CheckCircle, contentDescription = "Selected", tint = palette.accent, modifier = Modifier.size(18.dp))
                           }
                         }
                       }
@@ -466,25 +477,25 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                   horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                   listOf(
-                    Triple("VERIFIED", "Blue Tick", Color(0xFF2563EB)),
-                    Triple("VIP", "VIP Gold", Color(0xFFD97706)),
-                    Triple("SHOP", "Shop Gold", Color(0xFFD97706)),
-                    Triple("WORKER", "Worker", Color(0xFF059669))
+                    Triple("VERIFIED", "Blue Tick", VybeGrowBlueBright),
+                    Triple("VIP", "VIP Gold", VybeVerifiedGold),
+                    Triple("SHOP", "Shop Gold", VybeVerifiedGold),
+                    Triple("WORKER", "Worker", palette.success)
                   ).forEach { (bType, bLabel, bColor) ->
                     val isSelected = selectedBadgeType == bType
                     Surface(
-                      color = if (isSelected) bColor.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                      shape = RoundedCornerShape(8.dp),
-                      border = BorderStroke(1.dp, if (isSelected) bColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
+                      color = if (isSelected) bColor.copy(alpha = 0.2f) else palette.elevated,
+                      shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                      border = BorderStroke(1.dp, if (isSelected) bColor else palette.border),
                       modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = 40.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .heightIn(min = 42.dp)
+                        .clip(RoundedCornerShape(VybeTokens.Radius.sm))
                         .clickable { selectedBadgeType = bType }
                         .testTag("admin_badge_type_$bType")
                     ) {
                       Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp)) {
-                        Text(bLabel, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isSelected) bColor else MaterialTheme.colorScheme.onSurface)
+                        Text(bLabel, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isSelected) bColor else palette.textPrimary)
                       }
                     }
                   }
@@ -492,7 +503,7 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
 
                 // Optional VIP Expiry Window
                 if (selectedBadgeType == "VIP") {
-                  Text("VIP Validity Window:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                  Text("VIP Validity Window:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = palette.textPrimary)
                   Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(
                       null to "No Expiry",
@@ -503,7 +514,11 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                       FilterChip(
                         selected = selectedVipDurationDays == days,
                         onClick = { selectedVipDurationDays = days },
-                        label = { Text(label, fontSize = 11.sp) }
+                        label = { Text(label, fontSize = 11.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                          selectedContainerColor = palette.accent.copy(alpha = 0.16f),
+                          containerColor = palette.elevated
+                        )
                       )
                     }
                   }
@@ -519,7 +534,8 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                     Text(
                       "Mandatory Public Staff Display",
                       fontSize = 12.sp,
-                      fontWeight = FontWeight.Medium
+                      fontWeight = FontWeight.Medium,
+                      color = palette.textPrimary
                     )
                     Switch(
                       checked = mandatoryWorkerDisplay,
@@ -533,9 +549,10 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                   value = adminActionReason,
                   onValueChange = { adminActionReason = it },
                   label = { Text("Audit Reason / Reviewer Note") },
-                  placeholder = { Text("e.g., Confirmed identity / Employment ended") },
+                  placeholder = { Text("e.g., Confirmed identity / Employment ended", color = palette.textMuted) },
                   singleLine = true,
-                  shape = RoundedCornerShape(10.dp),
+                  shape = RoundedCornerShape(VybeTokens.Radius.md),
+                  colors = adminFieldColors,
                   modifier = Modifier
                     .fillMaxWidth()
                     .testTag("admin_badge_reason_input")
@@ -546,7 +563,7 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                   Text(
                     "Security Policy: Administrators cannot self-grant badges to their own account.",
                     fontSize = 11.sp,
-                    color = VybeDanger,
+                    color = palette.danger,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.testTag("admin_self_grant_warning")
                   )
@@ -576,8 +593,8 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                       }
                     },
                     enabled = selectedTargetUserId.isNotBlank() && !isTargetingSelf && !isAssigningBadge,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
-                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
+                    shape = RoundedCornerShape(VybeTokens.Radius.md),
                     modifier = Modifier
                       .weight(1f)
                       .heightIn(min = 46.dp)
@@ -606,14 +623,14 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                       }
                     },
                     enabled = selectedTargetUserId.isNotBlank() && !isAssigningBadge,
-                    border = BorderStroke(1.dp, VybeDanger.copy(alpha = 0.7f)),
-                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, palette.danger.copy(alpha = 0.7f)),
+                    shape = RoundedCornerShape(VybeTokens.Radius.md),
                     modifier = Modifier
                       .weight(1f)
                       .heightIn(min = 46.dp)
                       .testTag("admin_revoke_badge_button")
                   ) {
-                    Text("Revoke Badge", color = VybeDanger, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("Revoke Badge", color = palette.danger, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                   }
                 }
               }
@@ -624,21 +641,20 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
           item {
             Text(
               "Badge Verification Applications (${verificationRequests.size})",
+              fontFamily = PlusJakartaSansFontFamily,
               style = MaterialTheme.typography.titleMedium,
-              fontWeight = FontWeight.Bold
+              fontWeight = FontWeight.Bold,
+              color = palette.textPrimary
             )
           }
 
           if (verificationRequests.isEmpty()) {
             item {
-              Box(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .padding(16.dp),
-                contentAlignment = Alignment.Center
-              ) {
-                Text("No badge applications in queue.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              }
+              VybeEmptyState(
+                icon = Icons.Default.Verified,
+                title = "No Badge Applications",
+                subtitle = "No verification requests are pending review."
+              )
             }
           } else {
             items(verificationRequests, key = { "vreq_${it.id}" }) { req ->
@@ -646,15 +662,11 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
               var reqVipDays by remember(req.id) { mutableStateOf<Int?>(365) }
               val isSelfApplicant = req.userId == currentUser?.id
 
-              Card(
+              VybeSurfaceCard(
                 modifier = Modifier
                   .fillMaxWidth()
-                  .testTag("verification_req_card_${req.id}"),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
+                  .testTag("verification_req_card_${req.id}")
               ) {
-                Column(modifier = Modifier.padding(14.dp)) {
                   Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -664,30 +676,31 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                       Text(
                         text = "${req.fullName.ifBlank { req.displayName }} (@${req.username.ifBlank { req.userId.take(8) }})",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
+                        fontSize = 14.sp,
+                        color = palette.textPrimary
                       )
                       Text(
                         text = "Requested: ${req.requestType} • ${req.category}",
                         fontSize = 11.sp,
-                        color = VybeBrandCyan,
+                        color = palette.accentSecondary,
                         fontWeight = FontWeight.SemiBold
                       )
                     }
                     Surface(
                       color = when (req.status) {
-                        "APPROVED" -> VybeOnlineGreen.copy(alpha = 0.18f)
-                        "REJECTED" -> VybeDanger.copy(alpha = 0.18f)
+                        "APPROVED" -> palette.success.copy(alpha = 0.18f)
+                        "REJECTED" -> palette.danger.copy(alpha = 0.18f)
                         else -> VybeVerifiedGold.copy(alpha = 0.18f)
                       },
-                      shape = RoundedCornerShape(6.dp)
+                      shape = RoundedCornerShape(VybeTokens.Radius.xs)
                     ) {
                       Text(
                         text = req.status,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = when (req.status) {
-                          "APPROVED" -> VybeOnlineGreen
-                          "REJECTED" -> VybeDanger
+                          "APPROVED" -> palette.success
+                          "REJECTED" -> palette.danger
                           else -> VybeVerifiedGold
                         },
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
@@ -697,11 +710,11 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
 
                   if (!req.identityDocumentUrl.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("Evidence / Link: ${req.identityDocumentUrl}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Evidence / Link: ${req.identityDocumentUrl}", fontSize = 11.sp, color = palette.textSecondary)
                   }
                   if (req.statement.isNotBlank()) {
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("Statement: ${req.statement}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
+                    Text("Statement: ${req.statement}", fontSize = 12.sp, color = palette.textPrimary)
                   }
 
                   if (req.status == "PENDING" || req.status == "MORE_INFO_REQUIRED") {
@@ -712,7 +725,11 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                           FilterChip(
                             selected = reqVipDays == d,
                             onClick = { reqVipDays = d },
-                            label = { Text(label, fontSize = 10.sp) }
+                            label = { Text(label, fontSize = 10.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                              selectedContainerColor = palette.accent.copy(alpha = 0.16f),
+                              containerColor = palette.elevated
+                            )
                           )
                         }
                       }
@@ -722,8 +739,9 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                       value = reviewerNoteInput,
                       onValueChange = { reviewerNoteInput = it },
                       label = { Text("Reviewer Decision Note") },
+                      colors = adminFieldColors,
                       singleLine = true,
-                      shape = RoundedCornerShape(8.dp),
+                      shape = RoundedCornerShape(VybeTokens.Radius.sm),
                       modifier = Modifier.fillMaxWidth()
                     )
 
@@ -732,7 +750,7 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                       Text(
                         "Cannot self-approve your own application. Another authorized admin must review.",
                         fontSize = 11.sp,
-                        color = VybeDanger,
+                        color = palette.danger,
                         fontWeight = FontWeight.SemiBold
                       )
                     }
@@ -750,10 +768,11 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                             notes = reviewerNoteInput.ifBlank { "Criteria not met at this time." }
                           ) { _, msg -> feedbackBanner = msg }
                         },
-                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, palette.danger.copy(alpha = 0.6f)),
+                        shape = RoundedCornerShape(VybeTokens.Radius.sm),
                         modifier = Modifier.weight(1f).testTag("reject_vreq_${req.id}")
                       ) {
-                        Text("Reject", color = VybeDanger, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Reject", color = palette.danger, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                       }
 
                       OutlinedButton(
@@ -764,10 +783,11 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                             notes = reviewerNoteInput.ifBlank { "Please provide an official verifiable link." }
                           ) { _, msg -> feedbackBanner = msg }
                         },
-                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, palette.border),
+                        shape = RoundedCornerShape(VybeTokens.Radius.sm),
                         modifier = Modifier.weight(1f).testTag("more_info_vreq_${req.id}")
                       ) {
-                        Text("More Info", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Text("More Info", color = palette.textPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                       }
 
                       Button(
@@ -780,16 +800,15 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
                           ) { _, msg -> feedbackBanner = msg }
                         },
                         enabled = !isSelfApplicant,
-                        colors = ButtonDefaults.buttonColors(containerColor = VybeOnlineGreen),
-                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.success, contentColor = Color.White),
+                        shape = RoundedCornerShape(VybeTokens.Radius.sm),
                         modifier = Modifier.weight(1f).testTag("approve_vreq_${req.id}")
                       ) {
-                        Text("Approve ✓", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Approve ✓", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                       }
                     }
                   }
                 }
-              }
             }
           }
 
@@ -798,98 +817,93 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
             Spacer(modifier = Modifier.height(6.dp))
             Text(
               "Commercial Shop Registry Applications (${businessApplications.size})",
+              fontFamily = PlusJakartaSansFontFamily,
               style = MaterialTheme.typography.titleMedium,
-              fontWeight = FontWeight.Bold
+              fontWeight = FontWeight.Bold,
+              color = palette.textPrimary
             )
           }
 
           item {
             if (businessApplications.isEmpty()) {
-              Box(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .padding(16.dp),
-                contentAlignment = Alignment.Center
-              ) {
-                Text("No pending commercial shop applications.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              }
+              VybeEmptyState(
+                icon = Icons.Default.Store,
+                title = "No Commercial Applications",
+                subtitle = "No commercial shop registry applications in the queue."
+              )
             } else {
               Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 businessApplications.forEach { app ->
-                  Card(
+                  VybeSurfaceCard(
+                    borderColor = VybeVerifiedGold.copy(alpha = 0.4f),
                     modifier = Modifier
                       .fillMaxWidth()
-                      .testTag("business_app_card_${app.id}"),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, VybeVerifiedGold.copy(alpha = 0.4f))
+                      .testTag("business_app_card_${app.id}")
                   ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.SpaceBetween,
+                      verticalAlignment = Alignment.CenterVertically
+                    ) {
+                      Text(app.businessName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = palette.textPrimary)
+                      Surface(
+                        color = when (app.status) {
+                          BusinessVerificationStatus.APPROVED -> palette.success.copy(alpha = 0.2f)
+                          BusinessVerificationStatus.PENDING -> VybeVerifiedGold.copy(alpha = 0.2f)
+                          else -> palette.danger.copy(alpha = 0.2f)
+                        },
+                        shape = RoundedCornerShape(VybeTokens.Radius.xs)
+                      ) {
+                        Text(
+                          text = app.status.name,
+                          fontSize = 10.sp,
+                          fontWeight = FontWeight.Bold,
+                          color = when (app.status) {
+                            BusinessVerificationStatus.APPROVED -> palette.success
+                            BusinessVerificationStatus.PENDING -> VybeVerifiedGold
+                            else -> palette.danger
+                          },
+                          modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                      }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("${app.category} • Reg/GST: ${app.registrationNumberOrGst}", fontSize = 11.sp, color = palette.textSecondary)
+                    Text("Address: ${app.address} • Contact: ${app.contactEmail}", fontSize = 11.sp, color = palette.textSecondary)
+
+                    if (app.status == BusinessVerificationStatus.PENDING) {
+                      Spacer(modifier = Modifier.height(10.dp))
                       Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement = Arrangement.End
                       ) {
-                        Text(app.businessName, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                        Surface(
-                          color = when (app.status) {
-                            BusinessVerificationStatus.APPROVED -> VybeOnlineGreen.copy(alpha = 0.2f)
-                            BusinessVerificationStatus.PENDING -> VybeVerifiedGold.copy(alpha = 0.2f)
-                            else -> VybeDanger.copy(alpha = 0.2f)
+                        TextButton(
+                          onClick = {
+                            viewModel.reviewBusinessApplication(
+                              app.id,
+                              BusinessVerificationStatus.REJECTED,
+                              "Missing trade license documentation."
+                            )
                           },
-                          shape = RoundedCornerShape(6.dp)
+                          modifier = Modifier.testTag("reject_biz_app_${app.id}")
                         ) {
-                          Text(
-                            text = app.status.name,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = when (app.status) {
-                              BusinessVerificationStatus.APPROVED -> VybeOnlineGreen
-                              BusinessVerificationStatus.PENDING -> VybeVerifiedGold
-                              else -> VybeDanger
-                            },
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                          )
+                          Text("Reject", color = palette.danger, fontSize = 11.sp)
                         }
-                      }
-
-                      Spacer(modifier = Modifier.height(4.dp))
-                      Text("${app.category} • Reg/GST: ${app.registrationNumberOrGst}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                      Text("Address: ${app.address} • Contact: ${app.contactEmail}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-                      if (app.status == BusinessVerificationStatus.PENDING) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Row(
-                          modifier = Modifier.fillMaxWidth(),
-                          horizontalArrangement = Arrangement.End
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                          onClick = {
+                            viewModel.reviewBusinessApplication(
+                              app.id,
+                              BusinessVerificationStatus.APPROVED,
+                              "Verified against commercial registry."
+                            )
+                          },
+                          colors = ButtonDefaults.buttonColors(containerColor = palette.success),
+                          shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                          modifier = Modifier.testTag("approve_biz_app_${app.id}")
                         ) {
-                          TextButton(
-                            onClick = {
-                              viewModel.reviewBusinessApplication(
-                                app.id,
-                                BusinessVerificationStatus.REJECTED,
-                                "Missing trade license documentation."
-                              )
-                            },
-                            modifier = Modifier.testTag("reject_biz_app_${app.id}")
-                          ) {
-                            Text("Reject", color = VybeDanger, fontSize = 11.sp)
-                          }
-                          Spacer(modifier = Modifier.width(8.dp))
-                          Button(
-                            onClick = {
-                              viewModel.reviewBusinessApplication(
-                                app.id,
-                                BusinessVerificationStatus.APPROVED,
-                                "Verified against commercial registry."
-                              )
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = VybeOnlineGreen),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.testTag("approve_biz_app_${app.id}")
-                          ) {
-                            Text("Approve Verification ✓", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                          }
+                          Text("Approve Verification ✓", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                       }
                     }
@@ -902,57 +916,52 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
 
         AdminTab.COMPLIANCE -> {
           item {
-            Card(
-              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-              shape = RoundedCornerShape(16.dp),
-              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-            ) {
-              Column(modifier = Modifier.padding(16.dp)) {
-                Text("VYBE Platform Compliance Status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(8.dp))
+            VybeSurfaceCard(contentPadding = PaddingValues(16.dp)) {
+              Text(
+                "VYBE Platform Compliance Status",
+                fontFamily = PlusJakartaSansFontFamily,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = palette.textPrimary
+              )
+              Spacer(modifier = Modifier.height(8.dp))
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                  Text("Brand:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                  Text("VYBE by NR Next | NR Group", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                  Text("Intermediary Rules:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                  Text("Active (24h Grievance Window)", fontSize = 12.sp, color = VybeOnlineGreen, fontWeight = FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                  Text("Badge Security & Audit:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                  Text("RLS Trigger + Audit Log Enforced", fontSize = 12.sp, color = VybeOnlineGreen, fontWeight = FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                  Text("Push Architecture:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                  Text("FCM HTTP v1 Data-Only + Event Dedup", fontSize = 12.sp, color = VybeOnlineGreen, fontWeight = FontWeight.Bold)
-                }
+              Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Brand:", fontSize = 12.sp, color = palette.textSecondary)
+                Text("VYBE by NR Next | NR Group", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = palette.textPrimary)
+              }
+              Spacer(modifier = Modifier.height(4.dp))
+              Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Intermediary Rules:", fontSize = 12.sp, color = palette.textSecondary)
+                Text("Active (24h Grievance Window)", fontSize = 12.sp, color = palette.success, fontWeight = FontWeight.Bold)
+              }
+              Spacer(modifier = Modifier.height(4.dp))
+              Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Badge Security & Audit:", fontSize = 12.sp, color = palette.textSecondary)
+                Text("RLS Trigger + Audit Log Enforced", fontSize = 12.sp, color = palette.success, fontWeight = FontWeight.Bold)
+              }
+              Spacer(modifier = Modifier.height(4.dp))
+              Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Push Architecture:", fontSize = 12.sp, color = palette.textSecondary)
+                Text("FCM HTTP v1 Data-Only + Event Dedup", fontSize = 12.sp, color = palette.success, fontWeight = FontWeight.Bold)
               }
             }
           }
 
           item {
-            Card(
-              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-              shape = RoundedCornerShape(16.dp)
-            ) {
-              Column(modifier = Modifier.padding(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                  Icon(Icons.Default.Language, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                  Spacer(modifier = Modifier.width(8.dp))
-                  Text("Web Admin Console Available", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                  "For large-screen management on Windows laptops and desktops, access the VYBE Web Admin Panel via the web portal with Owner Admin credentials.",
-                  fontSize = 11.sp,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                  lineHeight = 15.sp
-                )
+            VybeSurfaceCard(containerColor = palette.elevated) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Language, contentDescription = null, tint = palette.accent, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Web Admin Console Available", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = palette.textPrimary)
               }
+              Spacer(modifier = Modifier.height(4.dp))
+              Text(
+                "For large-screen management on Windows laptops and desktops, access the VYBE Web Admin Panel via the web portal with Owner Admin credentials.",
+                fontSize = 11.sp,
+                color = palette.textSecondary,
+                lineHeight = 15.sp
+              )
             }
           }
         }

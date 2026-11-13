@@ -157,7 +157,7 @@ fun CallScreen(viewModel: VybeViewModel) {
       .fillMaxSize()
       .background(
         Brush.verticalGradient(
-          listOf(ObsidianBackground, ObsidianSurface, ObsidianBackground)
+          listOf(ObsidianCanvas, ObsidianSurface, ObsidianCanvas)
         )
       )
   ) {
@@ -188,8 +188,8 @@ fun CallScreen(viewModel: VybeViewModel) {
           .statusBarsPadding()
           .padding(top = 84.dp, end = 16.dp)
           .size(width = 112.dp, height = 158.dp)
-          .clip(RoundedCornerShape(16.dp))
-          .border(1.5.dp, VybeCyan.copy(alpha = 0.75f), RoundedCornerShape(16.dp))
+          .clip(RoundedCornerShape(VybeTokens.Radius.lg))
+          .border(1.5.dp, VybeSocialVioletBright.copy(alpha = 0.85f), RoundedCornerShape(VybeTokens.Radius.lg))
           .background(ObsidianSurface)
       } else {
         Modifier.fillMaxSize()
@@ -224,22 +224,24 @@ fun CallScreen(viewModel: VybeViewModel) {
       // Top info: Call type + status + live MM:SS timer
       Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Surface(
-          color = VybeViolet.copy(alpha = 0.85f),
-          shape = RoundedCornerShape(12.dp)
+          color = ObsidianElevated.copy(alpha = 0.9f),
+          shape = RoundedCornerShape(VybeTokens.Radius.pill),
+          border = BorderStroke(1.dp, ObsidianBorder)
         ) {
           Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically
           ) {
             Icon(
               imageVector = if (call.isVideo) Icons.Default.Videocam else Icons.Default.Call,
               contentDescription = null,
-              tint = VybeCyan,
+              tint = VybeSocialVioletBright,
               modifier = Modifier.size(16.dp)
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
               text = if (call.isVideo) "VYBE HD Video Call" else "VYBE Encrypted Voice Call",
+              fontFamily = PlusJakartaSansFontFamily,
               fontSize = 12.sp,
               fontWeight = FontWeight.Bold,
               color = Color.White
@@ -261,6 +263,7 @@ fun CallScreen(viewModel: VybeViewModel) {
             CallState.FAILED -> "Connection failed"
             CallState.ENDED -> "Call ended"
           },
+          fontFamily = PlusJakartaSansFontFamily,
           fontSize = 16.sp,
           fontWeight = FontWeight.SemiBold,
           color = Color.White,
@@ -280,7 +283,8 @@ fun CallScreen(viewModel: VybeViewModel) {
           Spacer(modifier = Modifier.height(6.dp))
           Surface(
             color = ObsidianSurface.copy(alpha = 0.85f),
-            shape = RoundedCornerShape(10.dp)
+            shape = RoundedCornerShape(VybeTokens.Radius.sm),
+            border = BorderStroke(1.dp, ObsidianBorder)
           ) {
             Row(
               modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -303,7 +307,7 @@ fun CallScreen(viewModel: VybeViewModel) {
           Spacer(modifier = Modifier.height(8.dp))
           Surface(
             color = VybeDanger.copy(alpha = 0.22f),
-            shape = RoundedCornerShape(10.dp),
+            shape = RoundedCornerShape(VybeTokens.Radius.sm),
             border = BorderStroke(1.dp, VybeDanger.copy(alpha = 0.6f))
           ) {
             Row(
@@ -328,21 +332,21 @@ fun CallScreen(viewModel: VybeViewModel) {
                 },
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
               ) {
-                Text("Grant", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = VybeCyan)
+                Text("Grant", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = VybeSocialVioletBright)
               }
             }
           }
         }
       }
 
-      // Middle: Peer profile & avatar (hidden when remote video is playing full-screen to keep video unobstructed)
+      // Middle: Peer profile & avatar
       if (showRemoteVideo) {
         Spacer(modifier = Modifier.height(1.dp))
       } else if (showLocalCamera && call.state != CallState.INCOMING) {
         Surface(
-          color = ObsidianSurface.copy(alpha = 0.82f),
-          shape = RoundedCornerShape(16.dp),
-          border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.5f)),
+          color = ObsidianSurface.copy(alpha = 0.85f),
+          shape = RoundedCornerShape(VybeTokens.Radius.lg),
+          border = BorderStroke(1.dp, VybeSocialVioletBright.copy(alpha = 0.45f)),
           modifier = Modifier.padding(16.dp)
         ) {
           Row(
@@ -355,6 +359,7 @@ fun CallScreen(viewModel: VybeViewModel) {
               Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                   text = call.peerUser.displayName,
+                  fontFamily = PlusJakartaSansFontFamily,
                   fontWeight = FontWeight.Bold,
                   fontSize = 15.sp,
                   color = Color.White
@@ -383,7 +388,8 @@ fun CallScreen(viewModel: VybeViewModel) {
             modifier = Modifier
               .size(124.dp)
               .clip(CircleShape)
-              .background(VybeViolet.copy(alpha = 0.25f)),
+              .background(VybeSocialViolet.copy(alpha = 0.22f))
+              .border(1.5.dp, VybeSocialVioletBright.copy(alpha = 0.4f), CircleShape),
             contentAlignment = Alignment.Center
           ) {
             VybeAvatar(user = call.peerUser, size = 102.dp)
@@ -394,7 +400,8 @@ fun CallScreen(viewModel: VybeViewModel) {
           Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
               text = call.peerUser.displayName,
-              style = MaterialTheme.typography.titleLarge,
+              fontFamily = PlusJakartaSansFontFamily,
+              fontSize = 22.sp,
               fontWeight = FontWeight.Bold,
               color = Color.White
             )
@@ -461,9 +468,16 @@ fun CallScreen(viewModel: VybeViewModel) {
           }
         }
       } else {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Surface(
+          color = ObsidianSurface.copy(alpha = 0.85f),
+          shape = RoundedCornerShape(VybeTokens.Radius.xl),
+          border = BorderStroke(1.dp, ObsidianBorder),
+          modifier = Modifier.fillMaxWidth()
+        ) {
           Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 12.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
           ) {
@@ -473,7 +487,7 @@ fun CallScreen(viewModel: VybeViewModel) {
               modifier = Modifier
                 .size(52.dp)
                 .clip(CircleShape)
-                .background(if (call.isMuted) VybeDanger else MaterialTheme.colorScheme.surfaceVariant)
+                .background(if (call.isMuted) VybeDanger else ObsidianElevated)
                 .testTag("call_mute_button")
             ) {
               Icon(
@@ -489,7 +503,7 @@ fun CallScreen(viewModel: VybeViewModel) {
               modifier = Modifier
                 .size(52.dp)
                 .clip(CircleShape)
-                .background(if (call.isSpeakerOn) VybeViolet else MaterialTheme.colorScheme.surfaceVariant)
+                .background(if (call.isSpeakerOn) VybeSocialViolet else ObsidianElevated)
                 .testTag("call_speaker_button")
             ) {
               Icon(
@@ -506,7 +520,7 @@ fun CallScreen(viewModel: VybeViewModel) {
                 modifier = Modifier
                   .size(52.dp)
                   .clip(CircleShape)
-                  .background(if (call.isCameraOff) VybeDanger else MaterialTheme.colorScheme.surfaceVariant)
+                  .background(if (call.isCameraOff) VybeDanger else ObsidianElevated)
                   .testTag("call_camera_button")
               ) {
                 Icon(
@@ -521,7 +535,7 @@ fun CallScreen(viewModel: VybeViewModel) {
                 modifier = Modifier
                   .size(52.dp)
                   .clip(CircleShape)
-                  .background(MaterialTheme.colorScheme.surfaceVariant)
+                  .background(ObsidianElevated)
                   .testTag("call_flip_camera_button")
               ) {
                 Icon(
@@ -536,7 +550,7 @@ fun CallScreen(viewModel: VybeViewModel) {
             IconButton(
               onClick = { viewModel.endCall() },
               modifier = Modifier
-                .size(62.dp)
+                .size(58.dp)
                 .clip(CircleShape)
                 .background(VybeDanger)
                 .testTag("call_end_button")
@@ -545,7 +559,7 @@ fun CallScreen(viewModel: VybeViewModel) {
                 imageVector = Icons.Default.CallEnd,
                 contentDescription = "End Call",
                 tint = Color.White,
-                modifier = Modifier.size(28.dp)
+                modifier = Modifier.size(26.dp)
               )
             }
           }

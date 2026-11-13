@@ -9,6 +9,7 @@ import android.location.Geocoder
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.example.ui.theme.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -122,6 +124,8 @@ fun LocationPickerDialog(
     }
   }
 
+  val palette = LocalVybePalette.current
+
   Dialog(
     onDismissRequest = onDismiss,
     properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -131,9 +135,10 @@ fun LocationPickerDialog(
         .fillMaxWidth(0.95f)
         .wrapContentHeight()
         .padding(vertical = 20.dp),
-      shape = RoundedCornerShape(22.dp),
-      color = MaterialTheme.colorScheme.surface,
-      tonalElevation = 6.dp
+      shape = RoundedCornerShape(VybeTokens.Radius.lg),
+      color = palette.card,
+      border = BorderStroke(1.dp, palette.border),
+      tonalElevation = 0.dp
     ) {
       Column(
         modifier = Modifier
@@ -150,20 +155,22 @@ fun LocationPickerDialog(
             Icon(
               Icons.Default.LocationOn,
               contentDescription = null,
-              tint = MaterialTheme.colorScheme.primary
+              tint = palette.accent
             )
             Spacer(Modifier.width(8.dp))
             Text(
               text = "Select Location",
-              style = MaterialTheme.typography.titleMedium,
-              fontWeight = FontWeight.Bold
+              fontFamily = PlusJakartaSansFontFamily,
+              fontSize = 17.sp,
+              fontWeight = FontWeight.Bold,
+              color = palette.textPrimary
             )
           }
           IconButton(
             onClick = onDismiss,
             modifier = Modifier.size(48.dp).testTag("close_location_picker")
           ) {
-            Icon(Icons.Default.Close, contentDescription = "Close location picker")
+            Icon(Icons.Default.Close, contentDescription = "Close location picker", tint = palette.textSecondary)
           }
         }
 
@@ -174,12 +181,11 @@ fun LocationPickerDialog(
           value = searchOrManualText,
           onValueChange = {
             searchOrManualText = it
-            // If user edits text manually after dropping a pin, mark manual unless they re-select a geocoded pin
             if (it != resolvedAddressLabel) {
               selectedPin = null
             }
           },
-          placeholder = { Text("Search address, city, or enter manual place...") },
+          placeholder = { Text("Search address, city, or enter manual place...", color = palette.textMuted) },
           singleLine = true,
           trailingIcon = {
             IconButton(
@@ -213,13 +219,21 @@ fun LocationPickerDialog(
               modifier = Modifier.size(48.dp).testTag("search_location_button")
             ) {
               if (isSearchingPlaces) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = palette.accent)
               } else {
-                Icon(Icons.Default.Search, contentDescription = "Search place")
+                Icon(Icons.Default.Search, contentDescription = "Search place", tint = palette.accent)
               }
             }
           },
-          shape = RoundedCornerShape(14.dp),
+          colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = palette.elevated,
+            unfocusedContainerColor = palette.elevated,
+            focusedBorderColor = palette.accent,
+            unfocusedBorderColor = palette.border,
+            focusedTextColor = palette.textPrimary,
+            unfocusedTextColor = palette.textPrimary
+          ),
+          shape = RoundedCornerShape(VybeTokens.Radius.md),
           modifier = Modifier
             .fillMaxWidth()
             .testTag("location_input_field")
@@ -228,7 +242,9 @@ fun LocationPickerDialog(
         Spacer(Modifier.height(10.dp))
 
         // Action to request GPS only on explicit user tap
-        OutlinedButton(
+        VybeSecondaryButton(
+          text = if (isLocatingGps) "Detecting GPS location..." else "Use Current Location",
+          icon = Icons.Default.MyLocation,
           onClick = {
             val hasFine = ContextCompat.checkSelfPermission(
               context,
@@ -251,32 +267,18 @@ fun LocationPickerDialog(
             }
           },
           enabled = !isLocatingGps,
-          shape = RoundedCornerShape(12.dp),
-          modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .testTag("use_current_gps_button")
-        ) {
-          if (isLocatingGps) {
-            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-            Spacer(Modifier.width(8.dp))
-            Text("Detecting GPS location...")
-          } else {
-            Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Use Current Location")
-          }
-        }
+          modifier = Modifier.fillMaxWidth(),
+          testTag = "use_current_gps_button"
+        )
 
         Spacer(Modifier.height(12.dp))
 
-        // Interactive Google Map when GOOGLE_MAPS_API_KEY is configured; clear notice otherwise
         if (isMapsKeyConfigured) {
           Box(
             modifier = Modifier
               .fillMaxWidth()
               .height(230.dp)
-              .clip(RoundedCornerShape(16.dp))
+              .clip(RoundedCornerShape(VybeTokens.Radius.lg))
           ) {
             GoogleMap(
               modifier = Modifier.fillMaxSize(),
@@ -306,32 +308,32 @@ fun LocationPickerDialog(
           Spacer(Modifier.height(6.dp))
           Text(
             text = "Tap anywhere on the map to drop a pin.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            fontSize = 12.sp,
+            color = palette.textSecondary
           )
         } else {
           Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-            shape = RoundedCornerShape(12.dp),
+            color = palette.elevated,
+            shape = RoundedCornerShape(VybeTokens.Radius.md),
+            border = androidx.compose.foundation.BorderStroke(1.dp, palette.border),
             modifier = Modifier.fillMaxWidth()
           ) {
             Text(
               text = "Interactive map preview requires GOOGLE_MAPS_API_KEY in AI Studio Secrets. GPS lookup and manual location entry remain available.",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              fontSize = 12.sp,
+              color = palette.textSecondary,
               modifier = Modifier.padding(12.dp)
             )
           }
         }
 
-        // Geocoder search candidates
         if (geocodedCandidates.isNotEmpty()) {
           Spacer(Modifier.height(10.dp))
           Text(
             text = "Matched Places",
-            style = MaterialTheme.typography.labelMedium,
+            fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.primary
+            color = palette.accent
           )
           Spacer(Modifier.height(4.dp))
           LazyColumn(
@@ -343,7 +345,7 @@ fun LocationPickerDialog(
               Row(
                 modifier = Modifier
                   .fillMaxWidth()
-                  .clip(RoundedCornerShape(10.dp))
+                  .clip(RoundedCornerShape(VybeTokens.Radius.sm))
                   .clickable {
                     searchOrManualText = candidate.displayName
                     resolvedAddressLabel = candidate.displayName
@@ -357,13 +359,14 @@ fun LocationPickerDialog(
                 Icon(
                   Icons.Default.LocationOn,
                   contentDescription = null,
-                  tint = MaterialTheme.colorScheme.primary,
+                  tint = palette.accent,
                   modifier = Modifier.size(18.dp)
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
                   text = candidate.displayName,
-                  style = MaterialTheme.typography.bodyMedium,
+                  fontSize = 13.sp,
+                  color = palette.textPrimary,
                   modifier = Modifier.weight(1f)
                 )
               }
@@ -376,41 +379,36 @@ fun LocationPickerDialog(
           Text(
             text = statusBanner!!,
             fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = palette.textSecondary
           )
         }
 
         Spacer(Modifier.height(16.dp))
 
-        // Footer buttons
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
           if (!initialLocationName.isNullOrBlank()) {
-            OutlinedButton(
+            VybeSecondaryButton(
+              text = "Remove",
               onClick = {
                 onLocationSelected(null)
                 onDismiss()
               },
-              modifier = Modifier
-                .weight(1f)
-                .heightIn(min = 48.dp)
-            ) {
-              Text("Remove")
-            }
+              modifier = Modifier.weight(1f)
+            )
           } else {
-            OutlinedButton(
+            VybeSecondaryButton(
+              text = "Cancel",
               onClick = onDismiss,
-              modifier = Modifier
-                .weight(1f)
-                .heightIn(min = 48.dp)
-            ) {
-              Text("Cancel")
-            }
+              modifier = Modifier.weight(1f)
+            )
           }
 
-          Button(
+          VybePrimaryButton(
+            text = "Confirm",
+            icon = Icons.Default.Check,
             onClick = {
               val cleanText = searchOrManualText.trim()
               if (cleanText.isNotEmpty()) {
@@ -427,15 +425,9 @@ fun LocationPickerDialog(
               onDismiss()
             },
             enabled = searchOrManualText.trim().isNotEmpty(),
-            modifier = Modifier
-              .weight(1f)
-              .heightIn(min = 48.dp)
-              .testTag("confirm_location_button")
-          ) {
-            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Confirm")
-          }
+            modifier = Modifier.weight(1f),
+            testTag = "confirm_location_button"
+          )
         }
       }
     }

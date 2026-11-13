@@ -65,6 +65,9 @@ import com.example.ui.components.LocationPickerDialog
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VideoFitMode
 import com.example.ui.components.VybeAvatar
+import com.example.ui.components.VybeEmptyState
+import com.example.ui.components.VybePrimaryButton
+import com.example.ui.components.VybeSecondaryButton
 import com.example.ui.components.VybeVideoPlayer
 import com.example.ui.theme.*
 import com.example.util.MediaUtils
@@ -82,6 +85,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
     viewModel.navigateBack()
   }
 
+  val palette = LocalVybePalette.current
   val context = LocalContext.current
   val conversation by viewModel.selectedConversation.collectAsState()
   var messageInput by remember { mutableStateOf("") }
@@ -296,24 +300,29 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
 
   val conv = conversation!!
   val themeAccent = when (conv.chatTheme) {
-    "CYBER_LUXE" -> VybeBrandCyan
+    "CYBER_LUXE" -> VybeGrowBlueBright
     "SUNSET" -> Color(0xFFFF6B6B)
-    "NEON_VIOLET" -> VybeMagenta
-    else -> VybeViolet
+    "NEON_VIOLET" -> VybeSocialVioletBright
+    else -> palette.accent
   }
 
   Scaffold(
+    containerColor = palette.canvas,
     contentWindowInsets = WindowInsets(0.dp),
     topBar = {
-      TopAppBar(
-        navigationIcon = {
-          IconButton(
-            onClick = { viewModel.navigateBack() },
-            modifier = Modifier.testTag("chat_back_button")
-          ) {
-            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
-          }
-        },
+      Surface(color = palette.canvas) {
+        Column {
+          TopAppBar(
+            navigationIcon = {
+              IconButton(
+                onClick = { viewModel.navigateBack() },
+                modifier = Modifier
+                  .size(48.dp)
+                  .testTag("chat_back_button")
+              ) {
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = palette.textPrimary)
+              }
+            },
         title = {
           Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -326,226 +335,240 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
               ) {
-                Text(
-                  text = conv.groupName ?: (conv.customNickname ?: conv.peerUser.displayName),
-                  style = MaterialTheme.typography.titleMedium,
-                  fontWeight = FontWeight.Bold,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis
-                )
-                if (!conv.isGroup) {
-                  VerificationBadge(user = conv.peerUser)
-                }
-                if (conv.isBlocked) {
-                  Surface(
-                    color = VybeDanger.copy(alpha = 0.2f),
-                    shape = RoundedCornerShape(6.dp)
-                  ) {
-                    Text(
-                      text = "Blocked",
-                      color = VybeDanger,
-                      fontSize = 9.sp,
-                      fontWeight = FontWeight.Bold,
-                      modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                    )
+                  Text(
+                    text = conv.groupName ?: (conv.customNickname ?: conv.peerUser.displayName),
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = palette.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                  )
+                  if (!conv.isGroup) {
+                    VerificationBadge(user = conv.peerUser)
+                  }
+                  if (conv.isBlocked) {
+                    Surface(
+                      color = palette.danger.copy(alpha = 0.16f),
+                      shape = RoundedCornerShape(VybeTokens.Radius.xs)
+                    ) {
+                      Text(
+                        text = "Blocked",
+                        color = palette.danger,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                      )
+                    }
+                  }
+                  if (conv.isRestricted) {
+                    Surface(
+                      color = palette.warning.copy(alpha = 0.16f),
+                      shape = RoundedCornerShape(VybeTokens.Radius.xs)
+                    ) {
+                      Text(
+                        text = "Restricted",
+                        color = palette.warning,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                      )
+                    }
                   }
                 }
-                if (conv.isRestricted) {
-                  Surface(
-                    color = Color(0xFFFF9800).copy(alpha = 0.2f),
-                    shape = RoundedCornerShape(6.dp)
-                  ) {
-                    Text(
-                      text = "Restricted",
-                      color = Color(0xFFFF9800),
-                      fontSize = 9.sp,
-                      fontWeight = FontWeight.Bold,
-                      modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                  val showOnlineDot = conv.typingIndicator == null && !conv.isBlocked && !conv.isGroup && conv.peerUser.isOnline
+                  if (showOnlineDot) {
+                    Box(
+                      modifier = Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(palette.success)
                     )
                   }
-                }
-              }
-              Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
-              ) {
-                val showOnlineDot = conv.typingIndicator == null && !conv.isBlocked && !conv.isGroup && conv.peerUser.isOnline
-                if (showOnlineDot) {
-                  Box(
-                    modifier = Modifier
-                      .size(7.dp)
-                      .clip(CircleShape)
-                      .background(VybeOnlineGreen)
+                  Text(
+                    text = conv.typingIndicator
+                      ?: if (conv.isBlocked) "Blocked • Unblock in options"
+                      else if (conv.isGroup) "${conv.groupMembers.size} participants"
+                      else if (conv.peerUser.isOnline) "Active now • @${conv.peerUser.username}"
+                      else {
+                        val lastSeen = TimestampUtils.formatLastSeen(conv.peerUser.lastSeenAtIso)
+                        if (lastSeen.isNotBlank()) "$lastSeen • @${conv.peerUser.username}"
+                        else "@${conv.peerUser.username}"
+                      },
+                    fontSize = 12.sp,
+                    color = when {
+                      conv.typingIndicator != null -> themeAccent
+                      showOnlineDot -> palette.success
+                      else -> palette.textSecondary
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                   )
                 }
-                Text(
-                  text = conv.typingIndicator
-                    ?: if (conv.isBlocked) "Blocked • Unblock in options"
-                    else if (conv.isGroup) "${conv.groupMembers.size} participants"
-                    else if (conv.peerUser.isOnline) "Active now • @${conv.peerUser.username}"
-                    else {
-                      val lastSeen = TimestampUtils.formatLastSeen(conv.peerUser.lastSeenAtIso)
-                      if (lastSeen.isNotBlank()) "$lastSeen • @${conv.peerUser.username}"
-                      else "@${conv.peerUser.username}"
-                    },
-                  style = MaterialTheme.typography.bodySmall,
-                  color = when {
-                    conv.typingIndicator != null -> themeAccent
-                    showOnlineDot -> VybeOnlineGreen
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+              }
+            }
+          },
+          actions = {
+            if (!conv.isGroup) {
+              IconButton(
+                onClick = {
+                  when (val res = viewModel.initiateCall(conv.peerUser, isVideo = false)) {
+                    is CallAvailabilityResult.Unavailable -> callUnavailableReason = res.reason
+                    is CallAvailabilityResult.Offline -> callUnavailableReason = res.reason
+                    is CallAvailabilityResult.Blocked -> callUnavailableReason = res.reason
+                    is CallAvailabilityResult.Error -> callUnavailableReason = res.message
+                    else -> {}
+                  }
+                },
+                modifier = Modifier.size(48.dp).testTag("chat_voice_call_btn")
+              ) {
+                Icon(Icons.Outlined.Call, contentDescription = "Voice Call", tint = palette.textPrimary)
+              }
+              IconButton(
+                onClick = {
+                  when (val res = viewModel.initiateCall(conv.peerUser, isVideo = true)) {
+                    is CallAvailabilityResult.Unavailable -> callUnavailableReason = res.reason
+                    is CallAvailabilityResult.Offline -> callUnavailableReason = res.reason
+                    is CallAvailabilityResult.Blocked -> callUnavailableReason = res.reason
+                    is CallAvailabilityResult.Error -> callUnavailableReason = res.message
+                    else -> {}
+                  }
+                },
+                modifier = Modifier.size(48.dp).testTag("chat_video_call_btn")
+              ) {
+                Icon(Icons.Outlined.Videocam, contentDescription = "Video Call", tint = palette.textPrimary)
+              }
+            }
+            IconButton(
+              onClick = { showChatMenu = true },
+              modifier = Modifier.size(48.dp).testTag("chat_options_menu_btn")
+            ) {
+              Icon(Icons.Outlined.MoreVert, contentDescription = "Chat Options", tint = palette.textPrimary)
+            }
+
+            DropdownMenu(
+              expanded = showChatMenu,
+              onDismissRequest = { showChatMenu = false },
+              containerColor = palette.elevated
+            ) {
+              if (conv.isGroup) {
+                DropdownMenuItem(
+                  text = { Text("Group Members", color = palette.textPrimary) },
+                  onClick = {
+                    showChatMenu = false
+                    groupAddError = null
+                    showGroupMembersDialog = true
                   },
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis
+                  leadingIcon = { Icon(Icons.Default.Group, contentDescription = null, tint = palette.accent) }
+                )
+              } else {
+                DropdownMenuItem(
+                  text = { Text("View Profile", color = palette.textPrimary) },
+                  onClick = {
+                    showChatMenu = false
+                    viewModel.openUserProfile(conv.peerUser)
+                  },
+                  leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = palette.textSecondary) }
+                )
+                DropdownMenuItem(
+                  text = { Text("Set Nickname", color = palette.textPrimary) },
+                  onClick = {
+                    showChatMenu = false
+                    nicknameInput = conv.customNickname ?: ""
+                    showNicknameDialog = true
+                  },
+                  leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = palette.textSecondary) }
+                )
+              }
+              DropdownMenuItem(
+                text = { Text("Chat Theme", color = palette.textPrimary) },
+                onClick = {
+                  showChatMenu = false
+                  showThemeDialog = true
+                },
+                leadingIcon = { Icon(Icons.Default.Palette, contentDescription = null, tint = palette.accent) }
+              )
+              DropdownMenuItem(
+                text = { Text("Shared Media", color = palette.textPrimary) },
+                onClick = {
+                  showChatMenu = false
+                  showGalleryDialog = true
+                },
+                leadingIcon = { Icon(Icons.Default.Collections, contentDescription = null, tint = palette.textSecondary) }
+              )
+              HorizontalDivider(color = palette.border)
+              DropdownMenuItem(
+                text = { Text(if (conv.isMuted) "Unmute Chat" else "Mute Chat", color = palette.textPrimary) },
+                onClick = {
+                  showChatMenu = false
+                  viewModel.toggleMuteChat(conv.id)
+                },
+                leadingIcon = {
+                  Icon(
+                    if (conv.isMuted) Icons.Default.NotificationsOff else Icons.Default.Notifications,
+                    contentDescription = null,
+                    tint = palette.textSecondary
+                  )
+                }
+              )
+              if (!conv.isGroup) {
+                DropdownMenuItem(
+                  text = { Text(if (conv.isRestricted) "Unrestrict User" else "Restrict User", color = palette.textPrimary) },
+                  onClick = {
+                    showChatMenu = false
+                    viewModel.toggleRestrictUser(conv.peerUser.id)
+                  },
+                  leadingIcon = { Icon(Icons.Default.Shield, contentDescription = null, tint = palette.textSecondary) }
+                )
+                DropdownMenuItem(
+                  text = { Text(if (conv.isBlocked) "Unblock User" else "Block User", color = palette.danger) },
+                  onClick = {
+                    showChatMenu = false
+                    viewModel.toggleBlockUser(conv.peerUser.id)
+                  },
+                  leadingIcon = { Icon(Icons.Default.Block, contentDescription = null, tint = palette.danger) }
+                )
+                DropdownMenuItem(
+                  text = { Text("Report User", color = palette.danger) },
+                  onClick = {
+                    showChatMenu = false
+                    reportTargetType = "USER"
+                    reportTargetId = conv.peerUser.id
+                    reportReason = ""
+                    showReportDialog = true
+                  },
+                  leadingIcon = { Icon(Icons.Default.Report, contentDescription = null, tint = palette.danger) }
                 )
               }
             }
-          }
-        },
-        actions = {
-          if (!conv.isGroup) {
-            IconButton(
-              onClick = {
-                when (val res = viewModel.initiateCall(conv.peerUser, isVideo = false)) {
-                  is CallAvailabilityResult.Unavailable -> callUnavailableReason = res.reason
-                  is CallAvailabilityResult.Offline -> callUnavailableReason = res.reason
-                  is CallAvailabilityResult.Blocked -> callUnavailableReason = res.reason
-                  is CallAvailabilityResult.Error -> callUnavailableReason = res.message
-                  else -> {}
-                }
-              },
-              modifier = Modifier.testTag("chat_voice_call_btn")
-            ) {
-              Icon(Icons.Outlined.Call, contentDescription = "Voice Call", tint = MaterialTheme.colorScheme.onSurface)
-            }
-            IconButton(
-              onClick = {
-                when (val res = viewModel.initiateCall(conv.peerUser, isVideo = true)) {
-                  is CallAvailabilityResult.Unavailable -> callUnavailableReason = res.reason
-                  is CallAvailabilityResult.Offline -> callUnavailableReason = res.reason
-                  is CallAvailabilityResult.Blocked -> callUnavailableReason = res.reason
-                  is CallAvailabilityResult.Error -> callUnavailableReason = res.message
-                  else -> {}
-                }
-              },
-              modifier = Modifier.testTag("chat_video_call_btn")
-            ) {
-              Icon(Icons.Outlined.Videocam, contentDescription = "Video Call", tint = MaterialTheme.colorScheme.onSurface)
-            }
-          }
-          IconButton(
-            onClick = { showChatMenu = true },
-            modifier = Modifier.testTag("chat_options_menu_btn")
-          ) {
-            Icon(Icons.Outlined.MoreVert, contentDescription = "Chat Options")
-          }
-
-          DropdownMenu(
-            expanded = showChatMenu,
-            onDismissRequest = { showChatMenu = false }
-          ) {
-            if (conv.isGroup) {
-              DropdownMenuItem(
-                text = { Text("Group Members") },
-                onClick = {
-                  showChatMenu = false
-                  groupAddError = null
-                  showGroupMembersDialog = true
-                },
-                leadingIcon = { Icon(Icons.Default.Group, contentDescription = null, tint = VybeViolet) }
-              )
-            } else {
-              DropdownMenuItem(
-                text = { Text("View Profile") },
-                onClick = {
-                  showChatMenu = false
-                  viewModel.openUserProfile(conv.peerUser)
-                },
-                leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) }
-              )
-              DropdownMenuItem(
-                text = { Text("Set Nickname") },
-                onClick = {
-                  showChatMenu = false
-                  nicknameInput = conv.customNickname ?: ""
-                  showNicknameDialog = true
-                },
-                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
-              )
-            }
-            DropdownMenuItem(
-              text = { Text("Chat Theme") },
-              onClick = {
-                showChatMenu = false
-                showThemeDialog = true
-              },
-              leadingIcon = { Icon(Icons.Default.Palette, contentDescription = null) }
-            )
-            DropdownMenuItem(
-              text = { Text("Shared Media") },
-              onClick = {
-                showChatMenu = false
-                showGalleryDialog = true
-              },
-              leadingIcon = { Icon(Icons.Default.Collections, contentDescription = null) }
-            )
-            HorizontalDivider()
-            DropdownMenuItem(
-              text = { Text(if (conv.isMuted) "Unmute Chat" else "Mute Chat") },
-              onClick = {
-                showChatMenu = false
-                viewModel.toggleMuteChat(conv.id)
-              },
-              leadingIcon = { Icon(if (conv.isMuted) Icons.Default.NotificationsOff else Icons.Default.Notifications, contentDescription = null) }
-            )
-            if (!conv.isGroup) {
-              DropdownMenuItem(
-                text = { Text(if (conv.isRestricted) "Unrestrict User" else "Restrict User") },
-                onClick = {
-                  showChatMenu = false
-                  viewModel.toggleRestrictUser(conv.peerUser.id)
-                },
-                leadingIcon = { Icon(Icons.Default.Shield, contentDescription = null) }
-              )
-              DropdownMenuItem(
-                text = { Text(if (conv.isBlocked) "Unblock User" else "Block User", color = VybeDanger) },
-                onClick = {
-                  showChatMenu = false
-                  viewModel.toggleBlockUser(conv.peerUser.id)
-                },
-                leadingIcon = { Icon(Icons.Default.Block, contentDescription = null, tint = VybeDanger) }
-              )
-              DropdownMenuItem(
-                text = { Text("Report User", color = VybeDanger) },
-                onClick = {
-                  showChatMenu = false
-                  reportTargetType = "USER"
-                  reportTargetId = conv.peerUser.id
-                  reportReason = ""
-                  showReportDialog = true
-                },
-                leadingIcon = { Icon(Icons.Default.Report, contentDescription = null, tint = VybeDanger) }
-              )
-            }
-          }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
-      )
+          },
+          colors = TopAppBarDefaults.topAppBarColors(containerColor = palette.canvas)
+        )
+          HorizontalDivider(thickness = 0.8.dp, color = palette.border)
+        }
+      }
     },
     bottomBar = {
       Column(
         modifier = Modifier
           .fillMaxWidth()
-          .background(MaterialTheme.colorScheme.surface)
+          .background(palette.surface)
           .navigationBarsPadding()
           .imePadding()
       ) {
+        HorizontalDivider(thickness = 0.8.dp, color = palette.border)
         if (conv.isBlocked) {
           Surface(
-            color = VybeDanger.copy(alpha = 0.15f),
+            color = palette.danger.copy(alpha = 0.14f),
+            border = BorderStroke(1.dp, palette.danger.copy(alpha = 0.35f)),
             modifier = Modifier
               .fillMaxWidth()
               .padding(12.dp),
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(VybeTokens.Radius.md)
           ) {
             Row(
               modifier = Modifier.padding(12.dp),
@@ -553,21 +576,22 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
               horizontalArrangement = Arrangement.SpaceBetween
             ) {
               Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Block, contentDescription = null, tint = VybeDanger)
+                Icon(Icons.Default.Block, contentDescription = null, tint = palette.danger)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                   "You have blocked this account. Unblock to send messages.",
                   fontSize = 12.sp,
-                  color = MaterialTheme.colorScheme.onSurface
+                  fontFamily = PlusJakartaSansFontFamily,
+                  color = palette.textPrimary
                 )
               }
               Button(
                 onClick = { viewModel.toggleBlockUser(conv.peerUser.id) },
-                colors = ButtonDefaults.buttonColors(containerColor = VybeDanger),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                shape = RoundedCornerShape(8.dp)
+                colors = ButtonDefaults.buttonColors(containerColor = palette.danger, contentColor = Color.White),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                shape = RoundedCornerShape(VybeTokens.Radius.sm)
               ) {
-                Text("Unblock", fontSize = 11.sp, color = Color.White)
+                Text("Unblock", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily)
               }
             }
           }
@@ -575,42 +599,45 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
           AnimatedVisibility(visible = replyingToMessage != null) {
             if (replyingToMessage != null) {
               Surface(
-                color = themeAccent.copy(alpha = 0.15f),
+                color = palette.elevated,
                 modifier = Modifier.fillMaxWidth()
               ) {
                 Row(
                   modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                   verticalAlignment = Alignment.CenterVertically
                 ) {
-                  Icon(
-                    Icons.AutoMirrored.Outlined.Reply,
-                    contentDescription = null,
-                    tint = themeAccent,
-                    modifier = Modifier.size(16.dp)
+                  Box(
+                    modifier = Modifier
+                      .width(3.dp)
+                      .height(28.dp)
+                      .clip(RoundedCornerShape(2.dp))
+                      .background(themeAccent)
                   )
-                  Spacer(modifier = Modifier.width(8.dp))
+                  Spacer(modifier = Modifier.width(10.dp))
                   Column(modifier = Modifier.weight(1f)) {
                     Text(
                       text = "Replying to ${if (replyingToMessage!!.isMe) "yourself" else conv.peerUser.displayName}",
                       fontWeight = FontWeight.Bold,
+                      fontFamily = PlusJakartaSansFontFamily,
                       fontSize = 11.sp,
                       color = themeAccent
                     )
                     Text(
                       text = replyingToMessage!!.text.ifBlank { replyingToMessage!!.mediaType },
                       fontSize = 12.sp,
+                      fontFamily = PlusJakartaSansFontFamily,
                       maxLines = 1,
                       overflow = TextOverflow.Ellipsis,
-                      color = MaterialTheme.colorScheme.onSurface
+                      color = palette.textSecondary
                     )
                   }
                   IconButton(
                     onClick = { replyingToMessage = null },
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(32.dp)
                   ) {
-                    Icon(Icons.Default.Close, contentDescription = "Cancel reply", modifier = Modifier.size(14.dp))
+                    Icon(Icons.Default.Close, contentDescription = "Cancel reply", tint = palette.textSecondary, modifier = Modifier.size(16.dp))
                   }
                 }
               }
@@ -648,8 +675,16 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
             OutlinedTextField(
               value = messageInput,
               onValueChange = { messageInput = it },
-              placeholder = { Text("Write a message...", fontSize = 14.sp) },
-              shape = RoundedCornerShape(24.dp),
+              placeholder = { Text("Write a message...", fontSize = 14.sp, color = palette.textMuted) },
+              shape = RoundedCornerShape(VybeTokens.Radius.pill),
+              colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = palette.elevated,
+                unfocusedContainerColor = palette.elevated,
+                focusedBorderColor = themeAccent,
+                unfocusedBorderColor = palette.border,
+                focusedTextColor = palette.textPrimary,
+                unfocusedTextColor = palette.textPrimary
+              ),
               maxLines = 4,
               keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.Sentences,
@@ -671,13 +706,13 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
               modifier = Modifier
                 .size(48.dp)
                 .clip(CircleShape)
-                .background(if (messageInput.isNotBlank()) themeAccent else MaterialTheme.colorScheme.surfaceVariant)
+                .background(if (messageInput.isNotBlank()) themeAccent else palette.elevated)
                 .testTag("send_message_button")
             ) {
               Icon(
                 imageVector = Icons.AutoMirrored.Outlined.Send,
                 contentDescription = "Send",
-                tint = if (messageInput.isNotBlank()) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = if (messageInput.isNotBlank()) Color.White else palette.textMuted,
                 modifier = Modifier.size(18.dp)
               )
             }
@@ -691,13 +726,13 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
         modifier = Modifier
           .fillMaxSize()
           .padding(paddingValues)
-          .padding(32.dp),
+          .padding(24.dp),
         contentAlignment = Alignment.Center
       ) {
-        Text(
-          text = "No messages yet. Say hello to start the conversation.",
-          fontSize = 13.sp,
-          color = MaterialTheme.colorScheme.onSurfaceVariant
+        VybeEmptyState(
+          icon = Icons.Outlined.ChatBubbleOutline,
+          title = "Start the Conversation",
+          subtitle = "Say hello to ${conv.groupName ?: conv.peerUser.displayName}. Messages are delivered cleanly in real time."
         )
       }
     } else {
@@ -744,11 +779,11 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
               horizontalAlignment = if (isMe) Alignment.End else Alignment.Start
             ) {
               Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
-                shape = RoundedCornerShape(16.dp),
+                color = palette.card,
+                shape = RoundedCornerShape(VybeTokens.Radius.lg),
                 border = BorderStroke(
                   1.dp,
-                  if (isMissedOrDeclined) VybeDanger.copy(alpha = 0.45f) else VybeBrandCyan.copy(alpha = 0.4f)
+                  if (isMissedOrDeclined) palette.danger.copy(alpha = 0.45f) else palette.accent.copy(alpha = 0.4f)
                 ),
                 modifier = Modifier
                   .widthIn(min = 220.dp, max = 300.dp)
@@ -763,15 +798,15 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                       .size(38.dp)
                       .clip(CircleShape)
                       .background(
-                        if (isMissedOrDeclined) VybeDanger.copy(alpha = 0.16f)
-                        else VybeViolet.copy(alpha = 0.18f)
+                        if (isMissedOrDeclined) palette.danger.copy(alpha = 0.16f)
+                        else palette.accent.copy(alpha = 0.16f)
                       ),
                     contentAlignment = Alignment.Center
                   ) {
                     Icon(
                       imageVector = if (isVideoCallLog) Icons.Default.Videocam else Icons.Default.Call,
                       contentDescription = if (isVideoCallLog) "Video call" else "Voice call",
-                      tint = if (isMissedOrDeclined) VybeDanger else VybeBrandCyan,
+                      tint = if (isMissedOrDeclined) palette.danger else palette.accent,
                       modifier = Modifier.size(20.dp)
                     )
                   }
@@ -781,7 +816,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                       text = msg.text.ifBlank { if (isVideoCallLog) "Video call" else "Voice call" },
                       fontWeight = FontWeight.Bold,
                       fontSize = 13.sp,
-                      color = MaterialTheme.colorScheme.onSurface
+                      color = palette.textPrimary
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
@@ -792,7 +827,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                         append(dynamicCallTimestamp)
                       },
                       fontSize = 11.sp,
-                      color = if (isMissedOrDeclined) VybeDanger else MaterialTheme.colorScheme.onSurfaceVariant
+                      color = if (isMissedOrDeclined) palette.danger else palette.textSecondary
                     )
                   }
                   if (!conv.isGroup) {
@@ -806,7 +841,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                         text = "Call",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = VybeBrandCyan
+                        color = palette.accent
                       )
                     }
                   }
@@ -885,42 +920,54 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
     }
   }
 
-  // Real Attachment Options Sheet (Photo, Video, Google Maps Location Pin)
+  // Real Attachment Options Sheet
   if (showAttachmentMenu) {
     AlertDialog(
       onDismissRequest = { showAttachmentMenu = false },
-      title = { Text("Share in Chat", fontWeight = FontWeight.Bold) },
+      containerColor = palette.card,
+      titleContentColor = palette.textPrimary,
+      textContentColor = palette.textSecondary,
+      title = { Text("Share in Chat", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold) },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          ListItem(
-            headlineContent = { Text("Send Photo") },
-            leadingContent = { Icon(Icons.Default.Photo, contentDescription = null, tint = VybeViolet) },
-            modifier = Modifier.clickable {
+          listOf(
+            Triple("Send Photo", Icons.Default.Photo, palette.accent) to {
               showAttachmentMenu = false
               photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            }
-          )
-          ListItem(
-            headlineContent = { Text("Send Video") },
-            leadingContent = { Icon(Icons.Default.Videocam, contentDescription = null, tint = VybeMagenta) },
-            modifier = Modifier.clickable {
+            },
+            Triple("Send Video", Icons.Default.Videocam, palette.accentSecondary) to {
               showAttachmentMenu = false
               videoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
-            }
-          )
-          ListItem(
-            headlineContent = { Text("Share Location") },
-            leadingContent = { Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color(0xFFFFB74D)) },
-            modifier = Modifier.clickable {
+            },
+            Triple("Share Location pin", Icons.Default.LocationOn, palette.warning) to {
               showAttachmentMenu = false
               showLocationShareDialog = true
             }
-          )
+          ).forEach { (meta, onTap) ->
+            Surface(
+              color = palette.elevated,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              border = BorderStroke(1.dp, palette.border),
+              modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(VybeTokens.Radius.md))
+                .clickable { onTap() }
+            ) {
+              Row(
+                modifier = Modifier.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Icon(meta.second, contentDescription = null, tint = meta.third)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(meta.first, color = palette.textPrimary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+              }
+            }
+          }
         }
       },
       confirmButton = {},
       dismissButton = {
-        TextButton(onClick = { showAttachmentMenu = false }) { Text("Cancel") }
+        TextButton(onClick = { showAttachmentMenu = false }) { Text("Cancel", color = palette.textSecondary) }
       }
     )
   }
@@ -955,7 +1002,10 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
     val targetMsg = selectedMessageForActions!!
     AlertDialog(
       onDismissRequest = { selectedMessageForActions = null },
-      title = { Text("Message Options", fontWeight = FontWeight.Bold) },
+      containerColor = palette.card,
+      titleContentColor = palette.textPrimary,
+      textContentColor = palette.textSecondary,
+      title = { Text("Message Options", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold) },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
           Row(
@@ -965,9 +1015,10 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
             listOf("❤️", "🔥", "⚡", "😂", "👏").forEach { emoji ->
               Surface(
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceVariant,
+                color = palette.elevated,
+                border = BorderStroke(1.dp, palette.border),
                 modifier = Modifier
-                  .size(38.dp)
+                  .size(40.dp)
                   .clickable {
                     viewModel.addMessageReaction(conv.id, targetMsg.id, emoji)
                     selectedMessageForActions = null
@@ -980,11 +1031,12 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
             }
           }
 
-          HorizontalDivider()
+          HorizontalDivider(color = palette.border)
 
           ListItem(
-            headlineContent = { Text("Reply to Message") },
+            headlineContent = { Text("Reply to Message", color = palette.textPrimary) },
             leadingContent = { Icon(Icons.AutoMirrored.Outlined.Reply, contentDescription = null, tint = themeAccent) },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             modifier = Modifier
               .clickable {
                 replyingToMessage = targetMsg
@@ -995,8 +1047,9 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
 
           if (targetMsg.isMe && !targetMsg.isDeletedForEveryone) {
             ListItem(
-              headlineContent = { Text("Edit Message") },
-              leadingContent = { Icon(Icons.Outlined.Edit, contentDescription = null, tint = VybeBrandCyan) },
+              headlineContent = { Text("Edit Message", color = palette.textPrimary) },
+              leadingContent = { Icon(Icons.Outlined.Edit, contentDescription = null, tint = palette.accent) },
+              colors = ListItemDefaults.colors(containerColor = Color.Transparent),
               modifier = Modifier
                 .clickable {
                   editTextValue = targetMsg.text
@@ -1007,9 +1060,10 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
             )
 
             ListItem(
-              headlineContent = { Text("Delete for Everyone", color = VybeDanger, fontWeight = FontWeight.SemiBold) },
-              supportingContent = { Text("Permanently removes this message for all participants", fontSize = 11.sp) },
-              leadingContent = { Icon(Icons.Outlined.DeleteForever, contentDescription = null, tint = VybeDanger) },
+              headlineContent = { Text("Delete for Everyone", color = palette.danger, fontWeight = FontWeight.SemiBold) },
+              supportingContent = { Text("Permanently removes this message for all participants", fontSize = 11.sp, color = palette.textSecondary) },
+              leadingContent = { Icon(Icons.Outlined.DeleteForever, contentDescription = null, tint = palette.danger) },
+              colors = ListItemDefaults.colors(containerColor = Color.Transparent),
               modifier = Modifier
                 .clickable {
                   viewModel.deleteMessageForEveryone(conv.id, targetMsg.id)
@@ -1020,8 +1074,9 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
           }
 
           ListItem(
-            headlineContent = { Text("Delete for Me") },
-            leadingContent = { Icon(Icons.Outlined.DeleteOutline, contentDescription = null) },
+            headlineContent = { Text("Delete for Me", color = palette.textPrimary) },
+            leadingContent = { Icon(Icons.Outlined.DeleteOutline, contentDescription = null, tint = palette.textSecondary) },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             modifier = Modifier
               .clickable {
                 viewModel.deleteMessageForMe(conv.id, targetMsg.id)
@@ -1032,8 +1087,9 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
 
           if (!targetMsg.isMe) {
             ListItem(
-              headlineContent = { Text("Report Message", color = VybeDanger) },
-              leadingContent = { Icon(Icons.Outlined.Report, contentDescription = null, tint = VybeDanger) },
+              headlineContent = { Text("Report Message", color = palette.danger) },
+              leadingContent = { Icon(Icons.Outlined.Report, contentDescription = null, tint = palette.danger) },
+              colors = ListItemDefaults.colors(containerColor = Color.Transparent),
               modifier = Modifier.clickable {
                 reportTargetType = "MESSAGE"
                 reportTargetId = targetMsg.id
@@ -1047,7 +1103,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
       },
       confirmButton = {},
       dismissButton = {
-        TextButton(onClick = { selectedMessageForActions = null }) { Text("Close") }
+        TextButton(onClick = { selectedMessageForActions = null }) { Text("Close", color = palette.textSecondary) }
       }
     )
   }
@@ -1056,30 +1112,33 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
   if (messageToEdit != null) {
     AlertDialog(
       onDismissRequest = { messageToEdit = null },
-      title = { Text("Edit Message", fontWeight = FontWeight.Bold) },
+      containerColor = palette.card,
+      titleContentColor = palette.textPrimary,
+      textContentColor = palette.textSecondary,
+      title = { Text("Edit Message", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold) },
       text = {
         OutlinedTextField(
           value = editTextValue,
           onValueChange = { editTextValue = it },
           label = { Text("Updated message") },
+          shape = RoundedCornerShape(VybeTokens.Radius.md),
           modifier = Modifier.fillMaxWidth()
         )
       },
       confirmButton = {
-        Button(
+        VybePrimaryButton(
+          text = "Save",
+          containerColor = themeAccent,
           onClick = {
             if (editTextValue.isNotBlank()) {
               viewModel.editDirectMessage(conv.id, messageToEdit!!.id, editTextValue)
               messageToEdit = null
             }
-          },
-          colors = ButtonDefaults.buttonColors(containerColor = themeAccent)
-        ) {
-          Text("Save", color = Color.White)
-        }
+          }
+        )
       },
       dismissButton = {
-        TextButton(onClick = { messageToEdit = null }) { Text("Cancel") }
+        TextButton(onClick = { messageToEdit = null }) { Text("Cancel", color = palette.textSecondary) }
       }
     )
   }
@@ -1088,13 +1147,31 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
   if (showNicknameDialog) {
     AlertDialog(
       onDismissRequest = { showNicknameDialog = false },
-      title = { Text("Custom Chat Nickname", fontWeight = FontWeight.Bold) },
+      containerColor = palette.card,
+      shape = RoundedCornerShape(VybeTokens.Radius.lg),
+      title = {
+        Text(
+          "Custom Chat Nickname",
+          fontWeight = FontWeight.Bold,
+          fontFamily = PlusJakartaSansFontFamily,
+          color = palette.textPrimary
+        )
+      },
       text = {
         OutlinedTextField(
           value = nicknameInput,
           onValueChange = { nicknameInput = it },
-          label = { Text("Nickname for ${conv.peerUser.displayName}") },
+          label = { Text("Nickname for ${conv.peerUser.displayName}", fontFamily = PlusJakartaSansFontFamily) },
           singleLine = true,
+          shape = RoundedCornerShape(VybeTokens.Radius.sm),
+          colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = themeAccent,
+            unfocusedBorderColor = palette.border,
+            focusedContainerColor = palette.elevated,
+            unfocusedContainerColor = palette.elevated,
+            focusedTextColor = palette.textPrimary,
+            unfocusedTextColor = palette.textPrimary
+          ),
           modifier = Modifier.fillMaxWidth()
         )
       },
@@ -1104,13 +1181,16 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
             viewModel.updateChatNickname(conv.id, nicknameInput)
             showNicknameDialog = false
           },
-          colors = ButtonDefaults.buttonColors(containerColor = themeAccent)
+          shape = RoundedCornerShape(VybeTokens.Radius.pill),
+          colors = ButtonDefaults.buttonColors(containerColor = themeAccent, contentColor = Color.White)
         ) {
-          Text("Save", color = Color.White)
+          Text("Save", fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily)
         }
       },
       dismissButton = {
-        TextButton(onClick = { showNicknameDialog = false }) { Text("Cancel") }
+        TextButton(onClick = { showNicknameDialog = false }) {
+          Text("Cancel", color = palette.textSecondary, fontFamily = PlusJakartaSansFontFamily)
+        }
       }
     )
   }
@@ -1119,18 +1199,29 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
   if (showThemeDialog) {
     AlertDialog(
       onDismissRequest = { showThemeDialog = false },
-      title = { Text("Choose Chat Theme", fontWeight = FontWeight.Bold) },
+      containerColor = palette.card,
+      shape = RoundedCornerShape(VybeTokens.Radius.lg),
+      title = {
+        Text(
+          "Choose Chat Theme",
+          fontWeight = FontWeight.Bold,
+          fontFamily = PlusJakartaSansFontFamily,
+          color = palette.textPrimary
+        )
+      },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
           listOf(
             "DEFAULT" to "VYBE Signature Violet",
-            "CYBER_LUXE" to "Cyber Luxe Cyan",
+            "CYBER_LUXE" to "Cyber Luxe Blue-Cyan",
             "SUNSET" to "Sunset Coral & Gold",
             "NEON_VIOLET" to "Neon Magenta Pulse"
           ).forEach { (key, label) ->
+            val selected = conv.chatTheme == key
             Surface(
-              shape = RoundedCornerShape(12.dp),
-              color = if (conv.chatTheme == key) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              color = if (selected) themeAccent.copy(alpha = 0.16f) else palette.elevated,
+              border = BorderStroke(1.dp, if (selected) themeAccent else palette.border),
               modifier = Modifier
                 .fillMaxWidth()
                 .clickable {
@@ -1138,19 +1229,31 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                   showThemeDialog = false
                 }
             ) {
-              Text(
-                text = label,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(14.dp)
-              )
+              Row(
+                modifier = Modifier.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+              ) {
+                Text(
+                  text = label,
+                  fontWeight = FontWeight.SemiBold,
+                  fontFamily = PlusJakartaSansFontFamily,
+                  fontSize = 13.sp,
+                  color = if (selected) themeAccent else palette.textPrimary
+                )
+                if (selected) {
+                  Icon(Icons.Default.Check, contentDescription = null, tint = themeAccent, modifier = Modifier.size(16.dp))
+                }
+              }
             }
           }
         }
       },
       confirmButton = {},
       dismissButton = {
-        TextButton(onClick = { showThemeDialog = false }) { Text("Close") }
+        TextButton(onClick = { showThemeDialog = false }) {
+          Text("Close", color = palette.textSecondary, fontFamily = PlusJakartaSansFontFamily)
+        }
       }
     )
   }
@@ -1162,27 +1265,46 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
     }
     AlertDialog(
       onDismissRequest = { showGalleryDialog = false },
-      title = { Text("Shared Media", fontWeight = FontWeight.Bold) },
+      containerColor = palette.card,
+      shape = RoundedCornerShape(VybeTokens.Radius.lg),
+      title = {
+        Text(
+          "Shared Media",
+          fontWeight = FontWeight.Bold,
+          fontFamily = PlusJakartaSansFontFamily,
+          color = palette.textPrimary
+        )
+      },
       text = {
         if (mediaMessages.isEmpty()) {
           Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-            Text("No photos or videos shared yet in this chat.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+              "No photos or videos shared yet in this chat.",
+              fontSize = 12.sp,
+              fontFamily = PlusJakartaSansFontFamily,
+              color = palette.textSecondary
+            )
           }
         } else {
-          LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)) {
+          LazyColumn(
+            modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
             items(mediaMessages, key = { it.id }) { m ->
               Row(
                 modifier = Modifier
                   .fillMaxWidth()
-                  .padding(vertical = 4.dp),
+                  .clip(RoundedCornerShape(VybeTokens.Radius.sm))
+                  .background(palette.elevated)
+                  .padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
                 if (m.mediaType == "VIDEO") {
                   Box(
                     modifier = Modifier
-                      .size(60.dp)
-                      .clip(RoundedCornerShape(8.dp))
-                      .background(Color.Black),
+                      .size(56.dp)
+                      .clip(RoundedCornerShape(VybeTokens.Radius.sm))
+                      .background(ObsidianCanvas),
                     contentAlignment = Alignment.Center
                   ) {
                     Icon(Icons.Default.PlayCircle, contentDescription = null, tint = Color.White)
@@ -1192,18 +1314,25 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                     model = m.mediaUrl,
                     contentDescription = null,
                     modifier = Modifier
-                      .size(60.dp)
-                      .clip(RoundedCornerShape(8.dp)),
+                      .size(56.dp)
+                      .clip(RoundedCornerShape(VybeTokens.Radius.sm)),
                     contentScale = ContentScale.Crop
                   )
                 }
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
-                  Text(m.mediaType, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                  Text(
+                    m.mediaType,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontSize = 12.sp,
+                    color = palette.textPrimary
+                  )
                   Text(
                     "Shared ${TimestampUtils.formatMessageTimestamp(m.createdAtIso, m.timestamp)}",
                     fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontFamily = PlusJakartaSansFontFamily,
+                    color = palette.textSecondary
                   )
                 }
               }
@@ -1212,7 +1341,9 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
         }
       },
       confirmButton = {
-        TextButton(onClick = { showGalleryDialog = false }) { Text("Close") }
+        TextButton(onClick = { showGalleryDialog = false }) {
+          Text("Close", color = themeAccent, fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily)
+        }
       }
     )
   }
@@ -1221,20 +1352,32 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
   if (callUnavailableReason != null) {
     AlertDialog(
       onDismissRequest = { callUnavailableReason = null },
-      icon = { Icon(Icons.Default.PhoneMissed, contentDescription = null, tint = VybeDanger) },
-      title = { Text("Call Unavailable", fontWeight = FontWeight.Bold) },
+      containerColor = palette.card,
+      shape = RoundedCornerShape(VybeTokens.Radius.lg),
+      icon = { Icon(Icons.Default.PhoneMissed, contentDescription = null, tint = palette.danger) },
+      title = {
+        Text(
+          "Call Unavailable",
+          fontWeight = FontWeight.Bold,
+          fontFamily = PlusJakartaSansFontFamily,
+          color = palette.textPrimary
+        )
+      },
       text = {
         Text(
           text = callUnavailableReason ?: "User is currently unavailable for calls.",
-          fontSize = 13.sp
+          fontSize = 13.sp,
+          fontFamily = PlusJakartaSansFontFamily,
+          color = palette.textSecondary
         )
       },
       confirmButton = {
         Button(
           onClick = { callUnavailableReason = null },
-          colors = ButtonDefaults.buttonColors(containerColor = themeAccent)
+          shape = RoundedCornerShape(VybeTokens.Radius.pill),
+          colors = ButtonDefaults.buttonColors(containerColor = themeAccent, contentColor = Color.White)
         ) {
-          Text("OK", color = Color.White)
+          Text("OK", fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily)
         }
       }
     )
@@ -1252,20 +1395,31 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
     )
     AlertDialog(
       onDismissRequest = { showReportDialog = false },
+      containerColor = palette.card,
+      shape = RoundedCornerShape(VybeTokens.Radius.lg),
       title = {
         Text(
           text = if (reportTargetType == "USER") "Report @${conv.peerUser.username}" else "Report Message",
-          fontWeight = FontWeight.Bold
+          fontWeight = FontWeight.Bold,
+          fontFamily = PlusJakartaSansFontFamily,
+          color = palette.textPrimary
         )
       },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          Text("Select category:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+          Text(
+            "Select category:",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            fontFamily = PlusJakartaSansFontFamily,
+            color = palette.textSecondary
+          )
           categories.forEach { cat ->
+            val selected = reportCategory == cat
             Surface(
-              shape = RoundedCornerShape(8.dp),
-              color = if (reportCategory == cat) themeAccent.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
-              border = if (reportCategory == cat) BorderStroke(1.dp, themeAccent) else null,
+              shape = RoundedCornerShape(VybeTokens.Radius.sm),
+              color = if (selected) themeAccent.copy(alpha = 0.16f) else palette.elevated,
+              border = BorderStroke(1.dp, if (selected) themeAccent else palette.border),
               modifier = Modifier
                 .fillMaxWidth()
                 .clickable { reportCategory = cat }
@@ -1273,15 +1427,26 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
               Text(
                 text = cat,
                 fontSize = 12.sp,
-                fontWeight = if (reportCategory == cat) FontWeight.Bold else FontWeight.Normal,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                fontFamily = PlusJakartaSansFontFamily,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                color = if (selected) themeAccent else palette.textPrimary,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)
               )
             }
           }
           OutlinedTextField(
             value = reportReason,
             onValueChange = { reportReason = it },
-            label = { Text("Details (optional)") },
+            label = { Text("Details (optional)", fontFamily = PlusJakartaSansFontFamily) },
+            shape = RoundedCornerShape(VybeTokens.Radius.sm),
+            colors = OutlinedTextFieldDefaults.colors(
+              focusedBorderColor = themeAccent,
+              unfocusedBorderColor = palette.border,
+              focusedContainerColor = palette.elevated,
+              unfocusedContainerColor = palette.elevated,
+              focusedTextColor = palette.textPrimary,
+              unfocusedTextColor = palette.textPrimary
+            ),
             modifier = Modifier.fillMaxWidth(),
             maxLines = 3
           )
@@ -1301,13 +1466,16 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
             showReportDialog = false
             reportFeedbackMsg = "Thank you. Your report has been submitted for safety review."
           },
-          colors = ButtonDefaults.buttonColors(containerColor = VybeDanger)
+          shape = RoundedCornerShape(VybeTokens.Radius.pill),
+          colors = ButtonDefaults.buttonColors(containerColor = palette.danger, contentColor = Color.White)
         ) {
-          Text("Submit Report", color = Color.White)
+          Text("Submit Report", fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily)
         }
       },
       dismissButton = {
-        TextButton(onClick = { showReportDialog = false }) { Text("Cancel") }
+        TextButton(onClick = { showReportDialog = false }) {
+          Text("Cancel", color = palette.textSecondary, fontFamily = PlusJakartaSansFontFamily)
+        }
       }
     )
   }
@@ -1315,12 +1483,32 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
   if (reportFeedbackMsg != null) {
     AlertDialog(
       onDismissRequest = { reportFeedbackMsg = null },
-      icon = { Icon(Icons.Default.CheckCircle, contentDescription = null, tint = VybeOnlineGreen) },
-      title = { Text("Report Received", fontWeight = FontWeight.Bold) },
-      text = { Text(reportFeedbackMsg ?: "", fontSize = 13.sp) },
+      containerColor = palette.card,
+      shape = RoundedCornerShape(VybeTokens.Radius.lg),
+      icon = { Icon(Icons.Default.CheckCircle, contentDescription = null, tint = palette.success) },
+      title = {
+        Text(
+          "Report Received",
+          fontWeight = FontWeight.Bold,
+          fontFamily = PlusJakartaSansFontFamily,
+          color = palette.textPrimary
+        )
+      },
+      text = {
+        Text(
+          reportFeedbackMsg ?: "",
+          fontSize = 13.sp,
+          fontFamily = PlusJakartaSansFontFamily,
+          color = palette.textSecondary
+        )
+      },
       confirmButton = {
-        Button(onClick = { reportFeedbackMsg = null }) {
-          Text("Done")
+        Button(
+          onClick = { reportFeedbackMsg = null },
+          shape = RoundedCornerShape(VybeTokens.Radius.pill),
+          colors = ButtonDefaults.buttonColors(containerColor = themeAccent, contentColor = Color.White)
+        ) {
+          Text("Done", fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily)
         }
       }
     )
@@ -1334,11 +1522,19 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
 
     AlertDialog(
       onDismissRequest = { showGroupMembersDialog = false },
+      containerColor = palette.card,
+      shape = RoundedCornerShape(VybeTokens.Radius.lg),
       title = {
         Row(verticalAlignment = Alignment.CenterVertically) {
           Icon(Icons.Default.Group, contentDescription = null, tint = themeAccent)
           Spacer(modifier = Modifier.width(8.dp))
-          Text(conv.groupName ?: "Group Members", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+          Text(
+            conv.groupName ?: "Group Members",
+            fontWeight = FontWeight.Bold,
+            fontFamily = PlusJakartaSansFontFamily,
+            fontSize = 16.sp,
+            color = palette.textPrimary
+          )
         }
       },
       text = {
@@ -1352,6 +1548,7 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
             Text(
               text = "Participants (${conv.groupMembers.size})",
               fontWeight = FontWeight.Bold,
+              fontFamily = PlusJakartaSansFontFamily,
               fontSize = 12.sp,
               color = themeAccent
             )
@@ -1360,8 +1557,9 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
           items(conv.groupMembers, key = { it.id }) { member ->
             val isMemberAdmin = conv.groupAdminIds.contains(member.id)
             Surface(
-              color = MaterialTheme.colorScheme.surfaceVariant,
-              shape = RoundedCornerShape(10.dp),
+              color = palette.elevated,
+              border = BorderStroke(1.dp, palette.border),
+              shape = RoundedCornerShape(VybeTokens.Radius.sm),
               modifier = Modifier.fillMaxWidth()
             ) {
               Row(
@@ -1376,7 +1574,13 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                   Spacer(modifier = Modifier.width(8.dp))
                   Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                      Text(member.displayName, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                      Text(
+                        member.displayName,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = PlusJakartaSansFontFamily,
+                        fontSize = 12.sp,
+                        color = palette.textPrimary
+                      )
                       if (isMemberAdmin) {
                         Spacer(modifier = Modifier.width(4.dp))
                         Surface(
@@ -1393,17 +1597,18 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                         }
                       }
                     }
-                    Text("@${member.username}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("@${member.username}", fontSize = 10.sp, color = palette.textSecondary)
                   }
                 }
 
                 if (isGroupAdmin && member.id != currentUser?.id) {
                   OutlinedButton(
                     onClick = { viewModel.removeGroupMember(conv.id, member.id) },
-                    shape = RoundedCornerShape(6.dp),
+                    shape = RoundedCornerShape(VybeTokens.Radius.xs),
+                    border = BorderStroke(1.dp, palette.danger.copy(alpha = 0.5f)),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                   ) {
-                    Text("Remove", fontSize = 10.sp, color = VybeDanger)
+                    Text("Remove", fontSize = 10.sp, color = palette.danger, fontWeight = FontWeight.SemiBold)
                   }
                 }
               }
@@ -1412,8 +1617,14 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
 
           if (isGroupAdmin) {
             item {
-              HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-              Text("Add Registered User", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+              HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = palette.border)
+              Text(
+                "Add Registered User",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = PlusJakartaSansFontFamily,
+                color = palette.textPrimary
+              )
             }
             item {
               Row(
@@ -1426,10 +1637,18 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                     newMemberUsernameInput = it
                     groupAddError = null
                   },
-                  placeholder = { Text("@username", fontSize = 12.sp) },
+                  placeholder = { Text("@username", fontSize = 12.sp, color = palette.textMuted) },
                   singleLine = true,
+                  colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = themeAccent,
+                    unfocusedBorderColor = palette.border,
+                    focusedContainerColor = palette.elevated,
+                    unfocusedContainerColor = palette.elevated,
+                    focusedTextColor = palette.textPrimary,
+                    unfocusedTextColor = palette.textPrimary
+                  ),
                   modifier = Modifier.weight(1f),
-                  shape = RoundedCornerShape(10.dp)
+                  shape = RoundedCornerShape(VybeTokens.Radius.sm)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Button(
@@ -1444,17 +1663,17 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
                       groupAddError = null
                     }
                   },
-                  colors = ButtonDefaults.buttonColors(containerColor = themeAccent),
-                  shape = RoundedCornerShape(10.dp),
+                  colors = ButtonDefaults.buttonColors(containerColor = themeAccent, contentColor = Color.White),
+                  shape = RoundedCornerShape(VybeTokens.Radius.sm),
                   contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                 ) {
-                  Text("Add", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                  Text("Add", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily)
                 }
               }
               if (groupAddError != null) {
                 Text(
                   text = groupAddError ?: "",
-                  color = VybeDanger,
+                  color = palette.danger,
                   fontSize = 11.sp,
                   modifier = Modifier.padding(top = 4.dp)
                 )
@@ -1466,9 +1685,10 @@ fun ChatDetailScreen(viewModel: VybeViewModel) {
       confirmButton = {
         Button(
           onClick = { showGroupMembersDialog = false },
-          colors = ButtonDefaults.buttonColors(containerColor = themeAccent)
+          shape = RoundedCornerShape(VybeTokens.Radius.pill),
+          colors = ButtonDefaults.buttonColors(containerColor = themeAccent, contentColor = Color.White)
         ) {
-          Text("Done", color = Color.White)
+          Text("Done", fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily)
         }
       }
     )
@@ -1700,9 +1920,9 @@ private fun InstagramMessageBubbleItem(
               } else {
                 Modifier.background(
                   if (msg.isDeletedForEveryone) {
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                    LocalVybePalette.current.elevated.copy(alpha = 0.65f)
                   } else {
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
+                    LocalVybePalette.current.elevated
                   }
                 )
               }
@@ -1794,12 +2014,13 @@ private fun InstagramMessageBubbleItem(
 
               if (!sharedPostId.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(6.dp))
+                val palette = LocalVybePalette.current
                 Surface(
-                  color = if (isMe) Color.White.copy(alpha = 0.16f) else VybeViolet.copy(alpha = 0.14f),
+                  color = if (isMe) Color.White.copy(alpha = 0.16f) else palette.accent.copy(alpha = 0.14f),
                   shape = RoundedCornerShape(10.dp),
                   border = BorderStroke(
                     1.dp,
-                    if (isMe) Color.White.copy(alpha = 0.3f) else VybeViolet.copy(alpha = 0.4f)
+                    if (isMe) Color.White.copy(alpha = 0.3f) else palette.accent.copy(alpha = 0.4f)
                   ),
                   modifier = Modifier
                     .fillMaxWidth()
@@ -2130,10 +2351,11 @@ fun InstagramTypingBubble(
   ) {
     VybeAvatar(user = peerUser, size = 26.dp)
     Spacer(modifier = Modifier.width(8.dp))
+    val palette = LocalVybePalette.current
     Surface(
       shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomEnd = 18.dp, bottomStart = 4.dp),
-      color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
-      border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+      color = palette.elevated,
+      border = BorderStroke(1.dp, palette.border)
     ) {
       Row(
         modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),

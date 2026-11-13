@@ -257,7 +257,24 @@ class VybeViewModel : ViewModel() {
   val dismissedSuggestionUserIds = repository.dismissedSuggestionUserIds
   val commentReactionsByMe = repository.commentReactionsByMe
 
-  // --- VYBE 2.0: Feed Modes, Circle & Grow Flows ---
+  // --- VYBE 2.0: Feed Modes, Dual Experience (Social/Grow), Circle & Grow Flows ---
+  private val _experienceMode = MutableStateFlow(com.example.ui.theme.VybeExperienceMode.SOCIAL)
+  val experienceMode: StateFlow<com.example.ui.theme.VybeExperienceMode> = _experienceMode.asStateFlow()
+
+  private val _growTab = MutableStateFlow("HOME") // HOME, CIRCLE, PROJECTS, OPPORTUNITIES, PROFILE
+  val growTab: StateFlow<String> = _growTab.asStateFlow()
+
+  fun setExperienceMode(mode: com.example.ui.theme.VybeExperienceMode) {
+    _experienceMode.value = mode
+    if (mode == com.example.ui.theme.VybeExperienceMode.GROW && _growTab.value == "PROFILE") {
+      _growTab.value = "HOME"
+    }
+  }
+
+  fun selectGrowTab(tab: String) {
+    _growTab.value = tab
+  }
+
   val feedMode = repository.feedMode
   val circles = repository.circles
   val activeCircle = repository.activeCircle

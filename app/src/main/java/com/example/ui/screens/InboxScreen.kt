@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,6 +12,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,12 +31,18 @@ import com.example.data.model.User
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VybeAvatar
+import com.example.ui.components.VybeEmptyState
+import com.example.ui.components.VybePrimaryButton
+import com.example.ui.components.VybeSearchBar
+import com.example.ui.components.VybeSecondaryButton
+import com.example.ui.components.VybeSurfaceCard
 import com.example.ui.theme.*
 import com.example.util.rememberMessageTimestamp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InboxScreen(viewModel: VybeViewModel) {
+  val palette = LocalVybePalette.current
   val conversations by viewModel.conversations.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
   val allCommunityUsers by viewModel.allUsers.collectAsState()
@@ -95,40 +103,78 @@ fun InboxScreen(viewModel: VybeViewModel) {
   }
 
   Scaffold(
+    containerColor = palette.canvas,
+    contentWindowInsets = WindowInsets(0.dp),
     topBar = {
-      TopAppBar(
-        title = {
-          Text(
-            text = "Messages",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
-          )
-        },
-        actions = {
-          IconButton(
-            onClick = { viewModel.refreshAllData() },
-            modifier = Modifier.testTag("inbox_refresh_button")
+      Surface(color = palette.canvas) {
+        Column(modifier = Modifier.statusBarsPadding()) {
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .heightIn(min = VybeTokens.Size.topBarHeight)
+              .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
           ) {
-            Icon(Icons.Default.Refresh, contentDescription = "Sync Messages")
+            Column {
+              Text(
+                text = "Messages",
+                fontFamily = PlusJakartaSansFontFamily,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 22.sp,
+                color = palette.textPrimary
+              )
+              val activeCount = conversations.count { !it.isHidden }
+              Text(
+                text = "$activeCount conversations",
+                fontSize = 11.sp,
+                color = palette.textMuted
+              )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              IconButton(
+                onClick = { viewModel.refreshAllData() },
+                modifier = Modifier
+                  .size(48.dp)
+                  .testTag("inbox_refresh_button")
+              ) {
+                Icon(
+                  Icons.Default.Refresh,
+                  contentDescription = "Sync Messages",
+                  tint = palette.textSecondary
+                )
+              }
+              Spacer(modifier = Modifier.width(4.dp))
+              Surface(
+                color = palette.accent,
+                shape = CircleShape,
+                modifier = Modifier
+                  .size(40.dp)
+                  .clip(CircleShape)
+                  .clickable {
+                    searchUserInput = ""
+                    groupNameInput = ""
+                    newGroupMode = false
+                    newChatError = null
+                    selectedGroupMembers.clear()
+                    showNewChatModal = true
+                  }
+                  .testTag("new_chat_button")
+              ) {
+                Box(contentAlignment = Alignment.Center) {
+                  Icon(
+                    Icons.Default.Edit,
+                    contentDescription = "New Message",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                  )
+                }
+              }
+            }
           }
-          IconButton(
-            onClick = {
-              searchUserInput = ""
-              groupNameInput = ""
-              newGroupMode = false
-              newChatError = null
-              selectedGroupMembers.clear()
-              showNewChatModal = true
-            },
-            modifier = Modifier.testTag("new_chat_button")
-          ) {
-            Icon(Icons.Default.Edit, contentDescription = "New Message")
-          }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-          containerColor = MaterialTheme.colorScheme.background
-        )
-      )
+          HorizontalDivider(thickness = 0.8.dp, color = palette.border)
+        }
+      }
     }
   ) { paddingValues ->
     LazyColumn(
@@ -140,25 +186,18 @@ fun InboxScreen(viewModel: VybeViewModel) {
     ) {
       // Search Bar
       item(key = "inbox_search_bar") {
-        OutlinedTextField(
-          value = searchQuery,
-          onValueChange = { searchQuery = it },
-          placeholder = { Text("Search by @username, name, or message...", fontSize = 13.sp) },
-          leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-          trailingIcon = {
-            if (searchQuery.isNotEmpty()) {
-              IconButton(onClick = { searchQuery = "" }) {
-                Icon(Icons.Default.Clear, contentDescription = "Clear search", modifier = Modifier.size(16.dp))
-              }
-            }
-          },
-          singleLine = true,
-          shape = RoundedCornerShape(16.dp),
+        Box(
           modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-            .testTag("inbox_search_field")
-        )
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+        ) {
+          VybeSearchBar(
+            query = searchQuery,
+            onQueryChange = { searchQuery = it },
+            placeholder = "Search by @username, name, or message...",
+            testTag = "inbox_search_field"
+          )
+        }
       }
 
       // Sub tabs: Chats, Message Requests, Hidden Chats
@@ -166,16 +205,21 @@ fun InboxScreen(viewModel: VybeViewModel) {
         Row(
           modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .padding(horizontal = 16.dp, vertical = 4.dp),
           horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
           listOf("Chats", "Message Requests", "Hidden Chats").forEach { tab ->
             val isSelected = currentTab == tab
             Surface(
-              color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-              shape = RoundedCornerShape(14.dp),
+              color = if (isSelected) palette.accent else palette.elevated,
+              shape = RoundedCornerShape(VybeTokens.Radius.pill),
+              border = BorderStroke(
+                1.dp,
+                if (isSelected) palette.accent else palette.border
+              ),
               modifier = Modifier
                 .heightIn(min = 40.dp)
+                .clip(RoundedCornerShape(VybeTokens.Radius.pill))
                 .clickable {
                   if (tab == "Hidden Chats" && !isHiddenUnlocked) {
                     pinInput = ""
@@ -192,7 +236,7 @@ fun InboxScreen(viewModel: VybeViewModel) {
                 }
             ) {
               Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
                 if (tab == "Hidden Chats") {
@@ -200,14 +244,15 @@ fun InboxScreen(viewModel: VybeViewModel) {
                     imageVector = if (isHiddenUnlocked) Icons.Default.LockOpen else Icons.Default.Lock,
                     contentDescription = null,
                     modifier = Modifier.size(14.dp),
-                    tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = if (isSelected) Color.White else palette.textSecondary
                   )
-                  Spacer(modifier = Modifier.width(4.dp))
+                  Spacer(modifier = Modifier.width(5.dp))
                 }
                 Text(
                   text = tab,
-                  color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                  fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                  fontFamily = PlusJakartaSansFontFamily,
+                  color = if (isSelected) Color.White else palette.textSecondary,
+                  fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
                   fontSize = 12.sp,
                   maxLines = 1
                 )
@@ -215,92 +260,58 @@ fun InboxScreen(viewModel: VybeViewModel) {
             }
           }
         }
+        Spacer(modifier = Modifier.height(6.dp))
       }
 
       if (currentTab == "Hidden Chats" && !isHiddenUnlocked) {
         item {
-          Box(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(40.dp),
-            contentAlignment = Alignment.Center
-          ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-              Icon(Icons.Default.Lock, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(48.dp))
-              Spacer(modifier = Modifier.height(10.dp))
-              Text("Hidden Chats are Locked", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-              Spacer(modifier = Modifier.height(4.dp))
-              Text(
-                "Protected behind your private secret PIN. Plaintext PINs are never stored.",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-              )
-              Spacer(modifier = Modifier.height(14.dp))
-              Button(
-                onClick = {
-                  if (viewModel.hasHiddenChatPinSet()) {
-                    pinInput = ""
-                    pinError = false
-                    showPinDialog = true
-                  } else {
-                    newPinInput = ""
-                    showSetPinDialog = true
-                  }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = VybeViolet)
-              ) {
-                Text(if (viewModel.hasHiddenChatPinSet()) "Enter PIN to Unlock" else "Create Secret PIN")
+          Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp)) {
+            VybeEmptyState(
+              icon = Icons.Default.Lock,
+              title = "Hidden Chats are Locked",
+              subtitle = "Protected behind your private secret PIN. Plaintext PINs are never stored.",
+              actionLabel = if (viewModel.hasHiddenChatPinSet()) "Enter PIN to Unlock" else "Create Secret PIN",
+              onAction = {
+                if (viewModel.hasHiddenChatPinSet()) {
+                  pinInput = ""
+                  pinError = false
+                  showPinDialog = true
+                } else {
+                  newPinInput = ""
+                  showSetPinDialog = true
+                }
               }
-            }
+            )
           }
         }
       } else if (displayedConversations.isEmpty()) {
         item {
-          Box(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(horizontal = 32.dp, vertical = 48.dp),
-            contentAlignment = Alignment.Center
-          ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-              Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.size(64.dp)
-              ) {
-                Box(contentAlignment = Alignment.Center) {
-                  Icon(
-                    imageVector = if (currentTab == "Message Requests") Icons.Default.Shield else Icons.Default.ChatBubbleOutline,
-                    contentDescription = null,
-                    tint = VybeViolet,
-                    modifier = Modifier.size(30.dp)
-                  )
+          Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp)) {
+            VybeEmptyState(
+              icon = if (currentTab == "Message Requests") Icons.Default.Shield else Icons.Outlined.ChatBubbleOutline,
+              title = when {
+                searchQuery.isNotEmpty() -> "No conversations matching \"$searchQuery\""
+                currentTab == "Message Requests" -> "No Pending Message Requests"
+                currentTab == "Hidden Chats" -> "No Hidden Conversations"
+                else -> "Your Inbox is Empty"
+              },
+              subtitle = when {
+                currentTab == "Message Requests" -> "New requests and Crossed Paths handshakes appear here."
+                currentTab == "Hidden Chats" -> "Lock any conversation from its options menu to move it here."
+                else -> "Start a real conversation with people you connect with on VYBE."
+              },
+              actionLabel = if (currentTab == "Chats" && searchQuery.isEmpty()) "New Message" else null,
+              onAction = if (currentTab == "Chats" && searchQuery.isEmpty()) {
+                {
+                  searchUserInput = ""
+                  groupNameInput = ""
+                  newGroupMode = false
+                  newChatError = null
+                  selectedGroupMembers.clear()
+                  showNewChatModal = true
                 }
-              }
-              Spacer(modifier = Modifier.height(14.dp))
-              Text(
-                text = when {
-                  searchQuery.isNotEmpty() -> "No conversations matching \"$searchQuery\""
-                  currentTab == "Message Requests" -> "No Pending Message Requests"
-                  currentTab == "Hidden Chats" -> "No Hidden Conversations"
-                  else -> "Your Inbox is Empty"
-                },
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp
-              )
-              Spacer(modifier = Modifier.height(6.dp))
-              Text(
-                text = when {
-                  currentTab == "Message Requests" -> "New requests and Crossed Paths handshakes appear here."
-                  currentTab == "Hidden Chats" -> "Lock any conversation from its options menu to move it here."
-                  else -> "Start a real conversation with people you connect with on VYBE."
-                },
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-              )
-            }
+              } else null
+            )
           }
         }
       } else {
@@ -333,8 +344,8 @@ fun InboxScreen(viewModel: VybeViewModel) {
             backgroundContent = {
               val direction = dismissState.dismissDirection
               val color = when (direction) {
-                SwipeToDismissBoxValue.StartToEnd -> if (isUnread) VybeOnlineGreen.copy(alpha = 0.85f) else VybeViolet.copy(alpha = 0.85f)
-                SwipeToDismissBoxValue.EndToStart -> VybeDanger.copy(alpha = 0.85f)
+                SwipeToDismissBoxValue.StartToEnd -> if (isUnread) palette.success else palette.accent
+                SwipeToDismissBoxValue.EndToStart -> palette.danger
                 else -> Color.Transparent
               }
               val alignment = when (direction) {
@@ -350,7 +361,7 @@ fun InboxScreen(viewModel: VybeViewModel) {
                 modifier = Modifier
                   .fillMaxSize()
                   .padding(horizontal = 16.dp, vertical = 5.dp)
-                  .clip(RoundedCornerShape(16.dp))
+                  .clip(RoundedCornerShape(VybeTokens.Radius.lg))
                   .background(color)
                   .padding(horizontal = 20.dp),
                 contentAlignment = alignment
@@ -369,18 +380,17 @@ fun InboxScreen(viewModel: VybeViewModel) {
             },
             modifier = Modifier.fillMaxWidth()
           ) {
-            Card(
+            VybeSurfaceCard(
               modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 5.dp)
-                .clickable { viewModel.openConversation(conv) }
                 .testTag("conversation_item_${conv.id}"),
-              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-              shape = RoundedCornerShape(16.dp),
-              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+              onClick = { viewModel.openConversation(conv) },
+              borderColor = if (isUnread) palette.accent.copy(alpha = 0.45f) else palette.border,
+              contentPadding = PaddingValues(12.dp)
             ) {
               Row(
-                modifier = Modifier.padding(12.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
               ) {
                 Box {
@@ -388,19 +398,19 @@ fun InboxScreen(viewModel: VybeViewModel) {
                   if (!conv.isGroup && conv.peerUser.isOnline && !conv.isBlocked) {
                     Box(
                       modifier = Modifier
-                        .size(12.dp)
+                        .size(13.dp)
                         .align(Alignment.BottomEnd)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surface)
+                        .background(palette.card)
                         .padding(2.dp)
                         .clip(CircleShape)
-                        .background(VybeOnlineGreen)
+                        .background(palette.success)
                     )
                   }
                   if (conv.unreadCount > 0) {
                     Surface(
                       shape = CircleShape,
-                      color = VybeViolet,
+                      color = palette.accent,
                       modifier = Modifier
                         .align(Alignment.TopEnd)
                         .offset(x = 4.dp, y = (-4).dp)
@@ -421,12 +431,14 @@ fun InboxScreen(viewModel: VybeViewModel) {
                 Column(modifier = Modifier.weight(1f)) {
                   Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                   ) {
                     Text(
                       text = conv.groupName ?: (conv.customNickname ?: conv.peerUser.displayName),
-                      style = MaterialTheme.typography.titleMedium,
+                      fontFamily = PlusJakartaSansFontFamily,
                       fontWeight = FontWeight.Bold,
+                      fontSize = 15.sp,
+                      color = palette.textPrimary,
                       maxLines = 1,
                       overflow = TextOverflow.Ellipsis,
                       modifier = Modifier.weight(1f, fill = false)
@@ -436,15 +448,15 @@ fun InboxScreen(viewModel: VybeViewModel) {
                       VerificationBadge(user = conv.peerUser)
                     } else {
                       Surface(
-                        color = VybeViolet.copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(6.dp)
+                        color = palette.accent.copy(alpha = 0.16f),
+                        shape = RoundedCornerShape(VybeTokens.Radius.xs)
                       ) {
                         Text(
                           "Group",
                           fontSize = 9.sp,
-                          color = VybeViolet,
+                          color = palette.accent,
                           fontWeight = FontWeight.Bold,
-                          modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                          modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                         )
                       }
                     }
@@ -453,53 +465,55 @@ fun InboxScreen(viewModel: VybeViewModel) {
                       Icon(
                         Icons.Default.NotificationsOff,
                         contentDescription = "Muted",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = palette.textMuted,
                         modifier = Modifier.size(14.dp)
                       )
                     }
 
                     if (conv.isBlocked) {
                       Surface(
-                        color = VybeDanger.copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(6.dp)
+                        color = palette.danger.copy(alpha = 0.16f),
+                        shape = RoundedCornerShape(VybeTokens.Radius.xs)
                       ) {
                         Text(
                           "Blocked",
                           fontSize = 9.sp,
-                          color = VybeDanger,
+                          color = palette.danger,
                           fontWeight = FontWeight.Bold,
-                          modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                          modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                         )
                       }
                     }
 
                     if (conv.isRestricted) {
                       Surface(
-                        color = Color(0xFFFF9800).copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(6.dp)
+                        color = palette.warning.copy(alpha = 0.16f),
+                        shape = RoundedCornerShape(VybeTokens.Radius.xs)
                       ) {
                         Text(
                           "Restricted",
                           fontSize = 9.sp,
-                          color = Color(0xFFFF9800),
+                          color = palette.warning,
                           fontWeight = FontWeight.Bold,
-                          modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                          modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                         )
                       }
                     }
                   }
 
-                  Spacer(modifier = Modifier.height(2.dp))
+                  Spacer(modifier = Modifier.height(3.dp))
 
                   Text(
                     text = conv.lastMessage.ifBlank { "Tap to send a message" },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (conv.unreadCount > 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    color = if (conv.unreadCount > 0) palette.textPrimary else palette.textSecondary,
                     fontWeight = if (conv.unreadCount > 0) FontWeight.SemiBold else FontWeight.Normal,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                   )
                 }
+
+                Spacer(modifier = Modifier.width(6.dp))
 
                 Column(horizontalAlignment = Alignment.End) {
                   val relativeLastTime = rememberMessageTimestamp(
@@ -508,8 +522,9 @@ fun InboxScreen(viewModel: VybeViewModel) {
                   )
                   Text(
                     text = relativeLastTime,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 11.sp,
+                    color = if (conv.unreadCount > 0) palette.accent else palette.textMuted,
+                    fontWeight = if (conv.unreadCount > 0) FontWeight.Bold else FontWeight.Normal
                   )
                   Spacer(modifier = Modifier.height(4.dp))
                   Row(verticalAlignment = Alignment.CenterVertically) {
@@ -524,9 +539,11 @@ fun InboxScreen(viewModel: VybeViewModel) {
                             else -> {}
                           }
                         },
-                        modifier = Modifier.size(34.dp).testTag("voice_call_btn_${conv.id}")
+                        modifier = Modifier
+                          .size(36.dp)
+                          .testTag("voice_call_btn_${conv.id}")
                       ) {
-                        Icon(Icons.Default.Call, contentDescription = "Voice Call", tint = VybeViolet, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Call, contentDescription = "Voice Call", tint = palette.accent, modifier = Modifier.size(18.dp))
                       }
                       IconButton(
                         onClick = {
@@ -538,16 +555,18 @@ fun InboxScreen(viewModel: VybeViewModel) {
                             else -> {}
                           }
                         },
-                        modifier = Modifier.size(34.dp).testTag("video_call_btn_${conv.id}")
+                        modifier = Modifier
+                          .size(36.dp)
+                          .testTag("video_call_btn_${conv.id}")
                       ) {
-                        Icon(Icons.Default.Videocam, contentDescription = "Video Call", tint = VybeMagenta, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Videocam, contentDescription = "Video Call", tint = palette.accentSecondary, modifier = Modifier.size(18.dp))
                       }
                     }
                     IconButton(
                       onClick = { conversationToManage = conv },
-                      modifier = Modifier.size(34.dp)
+                      modifier = Modifier.size(36.dp)
                     ) {
-                      Icon(Icons.Default.MoreVert, contentDescription = "Manage", modifier = Modifier.size(16.dp))
+                      Icon(Icons.Default.MoreVert, contentDescription = "Manage", tint = palette.textSecondary, modifier = Modifier.size(17.dp))
                     }
                   }
                 }
@@ -568,43 +587,87 @@ fun InboxScreen(viewModel: VybeViewModel) {
     val targetConv = conversationToManage!!
     AlertDialog(
       onDismissRequest = { conversationToManage = null },
-      title = { Text(targetConv.groupName ?: targetConv.peerUser.displayName, fontWeight = FontWeight.Bold) },
+      containerColor = palette.card,
+      titleContentColor = palette.textPrimary,
+      textContentColor = palette.textSecondary,
+      title = {
+        Text(
+          targetConv.groupName ?: targetConv.peerUser.displayName,
+          fontFamily = PlusJakartaSansFontFamily,
+          fontWeight = FontWeight.Bold
+        )
+      },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          ListItem(
-            headlineContent = { Text(if (targetConv.isHidden) "Unhide Conversation" else "Hide Conversation (Lock behind PIN)") },
-            leadingContent = {
+          Surface(
+            color = palette.elevated,
+            shape = RoundedCornerShape(VybeTokens.Radius.md),
+            border = BorderStroke(1.dp, palette.border),
+            modifier = Modifier
+              .fillMaxWidth()
+              .clip(RoundedCornerShape(VybeTokens.Radius.md))
+              .clickable {
+                convToLock = targetConv
+                lockPinInput = ""
+                lockPinError = null
+                conversationToManage = null
+              }
+          ) {
+            Row(
+              modifier = Modifier.padding(14.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
               Icon(
                 if (targetConv.isHidden) Icons.Default.LockOpen else Icons.Default.Lock,
                 contentDescription = null,
-                tint = VybeMagenta
+                tint = palette.accent
               )
-            },
-            modifier = Modifier.clickable {
-              convToLock = targetConv
-              lockPinInput = ""
-              lockPinError = null
-              conversationToManage = null
+              Spacer(modifier = Modifier.width(12.dp))
+              Text(
+                if (targetConv.isHidden) "Unhide Conversation" else "Hide Conversation (Lock behind PIN)",
+                color = palette.textPrimary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold
+              )
             }
-          )
-          ListItem(
-            headlineContent = { Text(if (targetConv.isMuted) "Unmute" else "Mute Notifications") },
-            leadingContent = {
+          }
+          Surface(
+            color = palette.elevated,
+            shape = RoundedCornerShape(VybeTokens.Radius.md),
+            border = BorderStroke(1.dp, palette.border),
+            modifier = Modifier
+              .fillMaxWidth()
+              .clip(RoundedCornerShape(VybeTokens.Radius.md))
+              .clickable {
+                viewModel.toggleMuteChat(targetConv.id)
+                conversationToManage = null
+              }
+          ) {
+            Row(
+              modifier = Modifier.padding(14.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
               Icon(
                 if (targetConv.isMuted) Icons.Default.NotificationsOff else Icons.Default.Notifications,
-                contentDescription = null
+                contentDescription = null,
+                tint = palette.textSecondary
               )
-            },
-            modifier = Modifier.clickable {
-              viewModel.toggleMuteChat(targetConv.id)
-              conversationToManage = null
+              Spacer(modifier = Modifier.width(12.dp))
+              Text(
+                if (targetConv.isMuted) "Unmute Notifications" else "Mute Notifications",
+                color = palette.textPrimary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold
+              )
             }
-          )
+          }
         }
       },
       confirmButton = {},
       dismissButton = {
-        TextButton(onClick = { conversationToManage = null }) { Text("Cancel") }
+        TextButton(onClick = { conversationToManage = null }) {
+          Text("Cancel", color = palette.textSecondary)
+        }
       }
     )
   }
@@ -615,7 +678,10 @@ fun InboxScreen(viewModel: VybeViewModel) {
     val hasExistingPin = viewModel.hasHiddenChatPinSet()
     AlertDialog(
       onDismissRequest = { convToLock = null },
-      icon = { Icon(Icons.Default.Lock, contentDescription = null, tint = VybeMagenta) },
+      containerColor = palette.card,
+      titleContentColor = palette.textPrimary,
+      textContentColor = palette.textSecondary,
+      icon = { Icon(Icons.Default.Lock, contentDescription = null, tint = palette.accent) },
       title = {
         Text(
           text = when {
@@ -623,6 +689,7 @@ fun InboxScreen(viewModel: VybeViewModel) {
             hasExistingPin -> "Confirm PIN to Lock Chat"
             else -> "Set Secret PIN to Lock Chat"
           },
+          fontFamily = PlusJakartaSansFontFamily,
           fontWeight = FontWeight.Bold
         )
       },
@@ -635,7 +702,7 @@ fun InboxScreen(viewModel: VybeViewModel) {
               else -> "Create a 4-to-6 digit secret PIN to protect your Hidden Chats:"
             },
             fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = palette.textSecondary
           )
           OutlinedTextField(
             value = lockPinInput,
@@ -644,14 +711,16 @@ fun InboxScreen(viewModel: VybeViewModel) {
             singleLine = true,
             isError = lockPinError != null,
             supportingText = {
-              if (lockPinError != null) Text(lockPinError ?: "", color = VybeDanger)
+              if (lockPinError != null) Text(lockPinError ?: "", color = palette.danger)
             },
+            shape = RoundedCornerShape(VybeTokens.Radius.md),
             modifier = Modifier.fillMaxWidth()
           )
         }
       },
       confirmButton = {
-        Button(
+        VybePrimaryButton(
+          text = if (target.isHidden) "Unhide Chat" else "Lock Chat",
           onClick = {
             if (lockPinInput.length < 4) {
               lockPinError = "PIN must be at least 4 digits."
@@ -664,26 +733,28 @@ fun InboxScreen(viewModel: VybeViewModel) {
               viewModel.toggleHideConversation(target.id)
               convToLock = null
             }
-          },
-          colors = ButtonDefaults.buttonColors(containerColor = VybeMagenta)
-        ) {
-          Text(if (target.isHidden) "Unhide Chat" else "Lock Chat")
-        }
+          }
+        )
       },
       dismissButton = {
-        TextButton(onClick = { convToLock = null }) { Text("Cancel") }
+        TextButton(onClick = { convToLock = null }) { Text("Cancel", color = palette.textSecondary) }
       }
     )
   }
 
-  // PIN Unlock Dialog (Cryptographic verification only — no hardcoded default PIN)
+  // PIN Unlock Dialog
   if (showPinDialog) {
     AlertDialog(
       onDismissRequest = { showPinDialog = false },
-      title = { Text("Unlock Hidden Chats", fontWeight = FontWeight.Bold) },
+      containerColor = palette.card,
+      titleContentColor = palette.textPrimary,
+      textContentColor = palette.textSecondary,
+      title = {
+        Text("Unlock Hidden Chats", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold)
+      },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          Text("Enter your secret PIN:", fontSize = 12.sp)
+          Text("Enter your secret PIN:", fontSize = 12.sp, color = palette.textSecondary)
           OutlinedTextField(
             value = pinInput,
             onValueChange = { if (it.length <= 6 && it.all(Char::isDigit)) pinInput = it },
@@ -691,14 +762,16 @@ fun InboxScreen(viewModel: VybeViewModel) {
             singleLine = true,
             isError = pinError,
             supportingText = {
-              if (pinError) Text("Incorrect PIN.", color = VybeDanger)
+              if (pinError) Text("Incorrect PIN.", color = palette.danger)
             },
+            shape = RoundedCornerShape(VybeTokens.Radius.md),
             modifier = Modifier.fillMaxWidth()
           )
         }
       },
       confirmButton = {
-        Button(
+        VybePrimaryButton(
+          text = "Unlock",
           onClick = {
             if (viewModel.verifyHiddenChatPin(pinInput)) {
               isHiddenUnlocked = true
@@ -707,14 +780,11 @@ fun InboxScreen(viewModel: VybeViewModel) {
             } else {
               pinError = true
             }
-          },
-          colors = ButtonDefaults.buttonColors(containerColor = VybeViolet)
-        ) {
-          Text("Unlock")
-        }
+          }
+        )
       },
       dismissButton = {
-        TextButton(onClick = { showPinDialog = false }) { Text("Cancel") }
+        TextButton(onClick = { showPinDialog = false }) { Text("Cancel", color = palette.textSecondary) }
       }
     )
   }
@@ -723,24 +793,33 @@ fun InboxScreen(viewModel: VybeViewModel) {
   if (showSetPinDialog) {
     AlertDialog(
       onDismissRequest = { showSetPinDialog = false },
-      title = { Text("Create Secret PIN", fontWeight = FontWeight.Bold) },
+      containerColor = palette.card,
+      titleContentColor = palette.textPrimary,
+      textContentColor = palette.textSecondary,
+      title = {
+        Text("Create Secret PIN", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold)
+      },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
           Text(
             "Choose a 4-to-6 digit PIN for Hidden Chats. Only its SHA-256 hash is stored on your device.",
-            fontSize = 12.sp
+            fontSize = 12.sp,
+            color = palette.textSecondary
           )
           OutlinedTextField(
             value = newPinInput,
             onValueChange = { if (it.length <= 6 && it.all(Char::isDigit)) newPinInput = it },
             label = { Text("New PIN (4-6 digits)") },
             singleLine = true,
+            shape = RoundedCornerShape(VybeTokens.Radius.md),
             modifier = Modifier.fillMaxWidth()
           )
         }
       },
       confirmButton = {
-        Button(
+        VybePrimaryButton(
+          text = "Save PIN",
+          enabled = newPinInput.length >= 4,
           onClick = {
             if (newPinInput.length >= 4) {
               viewModel.setHiddenChatPin(newPinInput)
@@ -748,15 +827,11 @@ fun InboxScreen(viewModel: VybeViewModel) {
               currentTab = "Hidden Chats"
               showSetPinDialog = false
             }
-          },
-          enabled = newPinInput.length >= 4,
-          colors = ButtonDefaults.buttonColors(containerColor = VybeViolet)
-        ) {
-          Text("Save PIN")
-        }
+          }
+        )
       },
       dismissButton = {
-        TextButton(onClick = { showSetPinDialog = false }) { Text("Cancel") }
+        TextButton(onClick = { showSetPinDialog = false }) { Text("Cancel", color = palette.textSecondary) }
       }
     )
   }
@@ -770,7 +845,16 @@ fun InboxScreen(viewModel: VybeViewModel) {
 
     AlertDialog(
       onDismissRequest = { showNewChatModal = false },
-      title = { Text(if (newGroupMode) "Create Group Chat" else "New Message", fontWeight = FontWeight.Bold) },
+      containerColor = palette.card,
+      titleContentColor = palette.textPrimary,
+      textContentColor = palette.textSecondary,
+      title = {
+        Text(
+          if (newGroupMode) "Create Group Chat" else "New Message",
+          fontFamily = PlusJakartaSansFontFamily,
+          fontWeight = FontWeight.Bold
+        )
+      },
       text = {
         Column(
           modifier = Modifier.fillMaxWidth(),
@@ -781,44 +865,59 @@ fun InboxScreen(viewModel: VybeViewModel) {
             horizontalArrangement = Arrangement.spacedBy(8.dp)
           ) {
             Surface(
-              shape = RoundedCornerShape(12.dp),
-              color = if (!newGroupMode) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              color = if (!newGroupMode) palette.accent else palette.elevated,
+              border = BorderStroke(1.dp, if (!newGroupMode) palette.accent else palette.border),
               modifier = Modifier
                 .weight(1f)
+                .clip(RoundedCornerShape(VybeTokens.Radius.md))
                 .clickable {
                   newGroupMode = false
                   newChatError = null
                 }
             ) {
-              Box(modifier = Modifier.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                Text("Direct Chat", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+              Box(modifier = Modifier.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                Text(
+                  "Direct Chat",
+                  fontSize = 12.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = if (!newGroupMode) Color.White else palette.textSecondary
+                )
               }
             }
             Surface(
-              shape = RoundedCornerShape(12.dp),
-              color = if (newGroupMode) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              color = if (newGroupMode) palette.accent else palette.elevated,
+              border = BorderStroke(1.dp, if (newGroupMode) palette.accent else palette.border),
               modifier = Modifier
                 .weight(1f)
+                .clip(RoundedCornerShape(VybeTokens.Radius.md))
                 .clickable {
                   newGroupMode = true
                   newChatError = null
                 }
             ) {
-              Box(modifier = Modifier.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                Text("New Group", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+              Box(modifier = Modifier.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                Text(
+                  "New Group",
+                  fontSize = 12.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = if (newGroupMode) Color.White else palette.textSecondary
+                )
               }
             }
           }
 
           if (newChatError != null) {
             Surface(
-              color = VybeDanger.copy(alpha = 0.14f),
-              shape = RoundedCornerShape(10.dp),
+              color = palette.danger.copy(alpha = 0.14f),
+              shape = RoundedCornerShape(VybeTokens.Radius.sm),
+              border = BorderStroke(1.dp, palette.danger.copy(alpha = 0.35f)),
               modifier = Modifier.fillMaxWidth()
             ) {
               Text(
                 text = newChatError ?: "",
-                color = VybeDanger,
+                color = palette.danger,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(10.dp)
               )
@@ -832,20 +931,18 @@ fun InboxScreen(viewModel: VybeViewModel) {
               label = { Text("Group Name") },
               placeholder = { Text("Enter group name") },
               singleLine = true,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
               modifier = Modifier.fillMaxWidth()
             )
           }
 
-          OutlinedTextField(
-            value = searchUserInput,
-            onValueChange = {
+          VybeSearchBar(
+            query = searchUserInput,
+            onQueryChange = {
               searchUserInput = it
               viewModel.setSearchQuery(it)
             },
-            label = { Text("Search by Name or @username") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = VybeViolet) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
+            placeholder = "Search by Name or @username"
           )
 
           Text(
@@ -857,7 +954,7 @@ fun InboxScreen(viewModel: VybeViewModel) {
               "Matching Accounts (${candidateUsers.size}):"
             },
             fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = palette.textSecondary,
             fontWeight = FontWeight.SemiBold
           )
 
@@ -878,7 +975,7 @@ fun InboxScreen(viewModel: VybeViewModel) {
                   Text(
                     text = if (searchUserInput.isBlank()) "No community members available yet." else "No user found matching \"$searchUserInput\"",
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = palette.textSecondary,
                     textAlign = TextAlign.Center
                   )
                 }
@@ -886,12 +983,16 @@ fun InboxScreen(viewModel: VybeViewModel) {
             } else {
               items(candidateUsers, key = { it.id }) { user ->
                 val isSelectedForGroup = selectedGroupMembers.any { it.id == user.id }
-                Card(
-                  colors = CardDefaults.cardColors(
-                    containerColor = if (isSelectedForGroup) VybeViolet.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant
+                Surface(
+                  color = if (isSelectedForGroup) palette.accent.copy(alpha = 0.14f) else palette.elevated,
+                  shape = RoundedCornerShape(VybeTokens.Radius.md),
+                  border = BorderStroke(
+                    1.dp,
+                    if (isSelectedForGroup) palette.accent else palette.border
                   ),
                   modifier = Modifier
                     .fillMaxWidth()
+                    .clip(RoundedCornerShape(VybeTokens.Radius.md))
                     .clickable {
                       if (newGroupMode) {
                         if (isSelectedForGroup) {
@@ -919,11 +1020,11 @@ fun InboxScreen(viewModel: VybeViewModel) {
                     Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                       Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(user.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(user.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = palette.textPrimary)
                         Spacer(modifier = Modifier.width(4.dp))
                         VerificationBadge(user = user)
                       }
-                      Text("@${user.username}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      Text("@${user.username}", fontSize = 11.sp, color = palette.textSecondary)
                     }
                     if (newGroupMode) {
                       Checkbox(
@@ -931,7 +1032,7 @@ fun InboxScreen(viewModel: VybeViewModel) {
                         onCheckedChange = null
                       )
                     } else {
-                      Icon(Icons.Default.Chat, contentDescription = "Start Chat", tint = VybeViolet, modifier = Modifier.size(18.dp))
+                      Icon(Icons.Default.Chat, contentDescription = "Start Chat", tint = palette.accent, modifier = Modifier.size(18.dp))
                     }
                   }
                 }
@@ -942,7 +1043,8 @@ fun InboxScreen(viewModel: VybeViewModel) {
       },
       confirmButton = {
         if (newGroupMode) {
-          Button(
+          VybePrimaryButton(
+            text = "Create Group",
             onClick = {
               if (groupNameInput.isBlank()) {
                 newChatError = "Please enter a group name."
@@ -953,15 +1055,12 @@ fun InboxScreen(viewModel: VybeViewModel) {
                 viewModel.openConversation(group)
                 showNewChatModal = false
               }
-            },
-            colors = ButtonDefaults.buttonColors(containerColor = VybeViolet)
-          ) {
-            Text("Create Group", color = Color.White)
-          }
+            }
+          )
         }
       },
       dismissButton = {
-        TextButton(onClick = { showNewChatModal = false }) { Text("Cancel") }
+        TextButton(onClick = { showNewChatModal = false }) { Text("Cancel", color = palette.textSecondary) }
       }
     )
   }
@@ -971,26 +1070,34 @@ fun InboxScreen(viewModel: VybeViewModel) {
     val target = conversationToDelete!!
     AlertDialog(
       onDismissRequest = { conversationToDelete = null },
-      icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = VybeDanger) },
-      title = { Text("Delete Conversation?", fontWeight = FontWeight.Bold) },
+      containerColor = palette.card,
+      titleContentColor = palette.textPrimary,
+      textContentColor = palette.textSecondary,
+      icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = palette.danger) },
+      title = {
+        Text("Delete Conversation?", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold)
+      },
       text = {
-        Text("Delete your conversation with ${target.groupName ?: target.peerUser.displayName}? Messages in this thread will be removed from your inbox.")
+        Text(
+          "Delete your conversation with ${target.groupName ?: target.peerUser.displayName}? Messages in this thread will be removed from your inbox.",
+          color = palette.textSecondary
+        )
       },
       confirmButton = {
-        Button(
+        VybePrimaryButton(
+          text = "Delete Chat",
+          containerColor = palette.danger,
           onClick = {
             viewModel.deleteConversation(target.id)
             conversationToDelete = null
-          },
-          colors = ButtonDefaults.buttonColors(containerColor = VybeDanger)
-        ) {
-          Text("Delete Chat", fontWeight = FontWeight.Bold, color = Color.White)
-        }
+          }
+        )
       },
       dismissButton = {
-        OutlinedButton(onClick = { conversationToDelete = null }) {
-          Text("Cancel")
-        }
+        VybeSecondaryButton(
+          text = "Cancel",
+          onClick = { conversationToDelete = null }
+        )
       }
     )
   }

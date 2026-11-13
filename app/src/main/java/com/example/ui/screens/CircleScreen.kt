@@ -11,7 +11,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -26,8 +25,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.data.model.VybeCircle
 import com.example.ui.VybeViewModel
+import com.example.ui.components.VybeEmptyState
+import com.example.ui.components.VybePrimaryButton
+import com.example.ui.components.VybeSubScreenTopBar
+import com.example.ui.components.VybeSurfaceCard
 import com.example.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -37,14 +39,14 @@ fun CircleScreen(viewModel: VybeViewModel) {
     viewModel.navigateBack()
   }
 
+  val palette = LocalVybePalette.current
   val circles by viewModel.circles.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
 
-  var selectedTab by remember { mutableStateOf("DISCOVER") } // "DISCOVER" or "MY_CIRCLES"
+  var selectedTab by remember { mutableStateOf("DISCOVER") }
   var selectedCategory by remember { mutableStateOf("All") }
   var showCreateDialog by remember { mutableStateOf(false) }
 
-  // Create form state
   var newCircleName by remember { mutableStateOf("") }
   var newCircleDescription by remember { mutableStateOf("") }
   var newCircleCategory by remember { mutableStateOf("Tech & Founders") }
@@ -62,70 +64,39 @@ fun CircleScreen(viewModel: VybeViewModel) {
   }
 
   Scaffold(
+    contentWindowInsets = WindowInsets(0.dp),
+    containerColor = palette.canvas,
     topBar = {
-      TopAppBar(
-        windowInsets = WindowInsets.statusBars,
-        navigationIcon = {
-          IconButton(
-            onClick = { viewModel.navigateBack() },
-            modifier = Modifier.size(48.dp).testTag("circle_back_button")
-          ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-          }
-        },
-        title = {
-          Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              Text(
-                text = "VYBE Circle",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Black
-              )
-              Spacer(modifier = Modifier.width(6.dp))
-              Surface(
-                color = VybeBrandViolet.copy(alpha = 0.2f),
-                shape = RoundedCornerShape(6.dp)
-              ) {
-                Text(
-                  text = "COMMUNITIES",
-                  color = VybeBrandCyan,
-                  fontSize = 9.sp,
-                  fontWeight = FontWeight.Bold,
-                  modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                )
-              }
-            }
-            Text(
-              text = "Private circles & interest networks • AN NR NEXT PRODUCT",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-          }
-        },
+      VybeSubScreenTopBar(
+        title = "VYBE Circle",
+        subtitle = "Private circles & interest networks",
+        onBackClick = { viewModel.navigateBack() },
+        backTestTag = "circle_back_button",
         actions = {
           IconButton(
             onClick = { showCreateDialog = true },
             modifier = Modifier.size(48.dp).testTag("create_circle_button")
           ) {
-            Icon(Icons.Default.AddCircleOutline, contentDescription = "Create Circle", tint = VybeViolet)
+            Icon(Icons.Default.AddCircleOutline, contentDescription = "Create Circle", tint = palette.accent)
           }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+        }
       )
     }
   ) { paddingValues ->
     LazyColumn(
       modifier = Modifier
         .fillMaxSize()
-        .padding(paddingValues),
+        .padding(paddingValues)
+        .navigationBarsPadding(),
       contentPadding = PaddingValues(16.dp),
       verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
       // 1. Tab Selector: Discover vs My Circles
       item {
         Surface(
-          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-          shape = RoundedCornerShape(14.dp),
+          color = palette.elevated,
+          shape = RoundedCornerShape(VybeTokens.Radius.md),
+          border = BorderStroke(1.dp, palette.border),
           modifier = Modifier.fillMaxWidth()
         ) {
           Row(
@@ -136,17 +107,18 @@ fun CircleScreen(viewModel: VybeViewModel) {
             Box(
               modifier = Modifier
                 .weight(1f)
-                .clip(RoundedCornerShape(10.dp))
-                .background(if (isDiscover) VybeViolet else Color.Transparent)
+                .clip(RoundedCornerShape(VybeTokens.Radius.sm))
+                .background(if (isDiscover) palette.accent else Color.Transparent)
                 .clickable { selectedTab = "DISCOVER" }
                 .padding(vertical = 10.dp),
               contentAlignment = Alignment.Center
             ) {
               Text(
                 text = "Discover Circles",
+                fontFamily = PlusJakartaSansFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
-                color = if (isDiscover) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (isDiscover) Color.White else palette.textSecondary
               )
             }
 
@@ -154,17 +126,18 @@ fun CircleScreen(viewModel: VybeViewModel) {
             Box(
               modifier = Modifier
                 .weight(1f)
-                .clip(RoundedCornerShape(10.dp))
-                .background(if (isMy) VybeViolet else Color.Transparent)
+                .clip(RoundedCornerShape(VybeTokens.Radius.sm))
+                .background(if (isMy) palette.accent else Color.Transparent)
                 .clickable { selectedTab = "MY_CIRCLES" }
                 .padding(vertical = 10.dp),
               contentAlignment = Alignment.Center
             ) {
               Text(
                 text = "My Circles (${myCircles.size})",
+                fontFamily = PlusJakartaSansFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
-                color = if (isMy) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (isMy) Color.White else palette.textSecondary
               )
             }
           }
@@ -177,16 +150,18 @@ fun CircleScreen(viewModel: VybeViewModel) {
           items(categories) { cat ->
             val isSelected = selectedCategory == cat
             Surface(
-              color = if (isSelected) VybeBrandCyan.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-              shape = RoundedCornerShape(16.dp),
-              border = BorderStroke(1.dp, if (isSelected) VybeBrandCyan else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
-              modifier = Modifier.clickable { selectedCategory = cat }
+              color = if (isSelected) palette.accent.copy(alpha = 0.16f) else palette.elevated,
+              shape = RoundedCornerShape(VybeTokens.Radius.pill),
+              border = BorderStroke(1.dp, if (isSelected) palette.accent else palette.border),
+              modifier = Modifier
+                .clip(RoundedCornerShape(VybeTokens.Radius.pill))
+                .clickable { selectedCategory = cat }
             ) {
               Text(
                 text = cat,
                 fontSize = 12.sp,
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                color = if (isSelected) VybeBrandCyan else MaterialTheme.colorScheme.onSurface,
+                color = if (isSelected) palette.accent else palette.textPrimary,
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
               )
             }
@@ -197,144 +172,114 @@ fun CircleScreen(viewModel: VybeViewModel) {
       // 3. Circles List
       if (displayedCircles.isEmpty()) {
         item {
-          Card(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-            shape = RoundedCornerShape(18.dp)
-          ) {
-            Column(
-              modifier = Modifier.padding(28.dp),
-              horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-              Icon(Icons.Outlined.Groups, contentDescription = null, tint = VybeBrandViolet, modifier = Modifier.size(44.dp))
-              Spacer(modifier = Modifier.height(10.dp))
-              Text("No Circles Found", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-              Spacer(modifier = Modifier.height(4.dp))
-              Text(
-                "Create your own private circle to share moments with close friends, founders, or collaborators.",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                lineHeight = 18.sp
-              )
-              Spacer(modifier = Modifier.height(14.dp))
-              Button(
-                onClick = { showCreateDialog = true },
-                colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-                shape = RoundedCornerShape(12.dp)
-              ) {
-                Text("Create a Circle", fontWeight = FontWeight.Bold, color = Color.White)
-              }
-            }
-          }
+          VybeEmptyState(
+            icon = Icons.Outlined.Groups,
+            title = "No Circles Found",
+            subtitle = "Create your own private circle to share moments with close friends, founders, or collaborators.",
+            actionLabel = "Create a Circle",
+            onAction = { showCreateDialog = true }
+          )
         }
       } else {
         items(displayedCircles, key = { it.id }) { circle ->
-          Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RoundedCornerShape(18.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
+          VybeSurfaceCard(
             modifier = Modifier.fillMaxWidth().testTag("circle_card_${circle.id}")
           ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.SpaceBetween
+            ) {
               Row(
-                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                modifier = Modifier.weight(1f)
               ) {
-                Row(
-                  verticalAlignment = Alignment.CenterVertically,
-                  modifier = Modifier.weight(1f)
+                Box(
+                  modifier = Modifier
+                    .size(46.dp)
+                    .clip(CircleShape)
+                    .background(Brush.linearGradient(listOf(VybeSocialViolet, VybeGrowBlue))),
+                  contentAlignment = Alignment.Center
                 ) {
-                  Box(
-                    modifier = Modifier
-                      .size(46.dp)
-                      .clip(CircleShape)
-                      .background(
-                        Brush.linearGradient(
-                          listOf(VybeBrandViolet, VybeBrandCyan)
-                        )
-                      ),
-                    contentAlignment = Alignment.Center
-                  ) {
-                    Icon(
-                      imageVector = if (circle.isPrivate) Icons.Default.Lock else Icons.Default.Groups,
-                      contentDescription = null,
-                      tint = Color.White,
-                      modifier = Modifier.size(24.dp)
-                    )
-                  }
-                  Spacer(modifier = Modifier.width(12.dp))
-                  Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                      Text(
-                        text = circle.name,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                      )
-                      if (circle.isPrivate) {
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(Icons.Default.Lock, contentDescription = "Private", tint = VybeViolet, modifier = Modifier.size(14.dp))
-                      }
-                    }
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                      text = "${circle.membersCount} members • ${circle.category}",
-                      fontSize = 12.sp,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                  }
+                  Icon(
+                    imageVector = if (circle.isPrivate) Icons.Default.Lock else Icons.Default.Groups,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp)
+                  )
                 }
-
-                Button(
-                  onClick = {
-                    if (circle.isMember) {
-                      viewModel.leaveCircle(circle.id)
-                    } else {
-                      viewModel.joinCircle(circle.id)
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                      text = circle.name,
+                      fontFamily = PlusJakartaSansFontFamily,
+                      fontWeight = FontWeight.Bold,
+                      fontSize = 16.sp,
+                      color = palette.textPrimary,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
+                    )
+                    if (circle.isPrivate) {
+                      Spacer(modifier = Modifier.width(4.dp))
+                      Icon(Icons.Default.Lock, contentDescription = "Private", tint = palette.accent, modifier = Modifier.size(14.dp))
                     }
-                  },
-                  colors = ButtonDefaults.buttonColors(
-                    containerColor = if (circle.isMember) MaterialTheme.colorScheme.surfaceVariant else VybeViolet
-                  ),
-                  shape = RoundedCornerShape(12.dp),
-                  contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                ) {
+                  }
+                  Spacer(modifier = Modifier.height(2.dp))
                   Text(
-                    text = if (circle.isMember) "Joined" else "Join",
-                    color = if (circle.isMember) MaterialTheme.colorScheme.onSurfaceVariant else Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
+                    text = "${circle.membersCount} members • ${circle.category}",
+                    fontSize = 12.sp,
+                    color = palette.textSecondary
                   )
                 }
               }
 
-              Spacer(modifier = Modifier.height(10.dp))
-              Text(
-                text = circle.description,
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-              )
+              Button(
+                onClick = {
+                  if (circle.isMember) {
+                    viewModel.leaveCircle(circle.id)
+                  } else {
+                    viewModel.joinCircle(circle.id)
+                  }
+                },
+                colors = ButtonDefaults.buttonColors(
+                  containerColor = if (circle.isMember) palette.elevated else palette.accent
+                ),
+                shape = RoundedCornerShape(VybeTokens.Radius.md),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+              ) {
+                Text(
+                  text = if (circle.isMember) "Joined" else "Join",
+                  color = if (circle.isMember) palette.textSecondary else Color.White,
+                  fontWeight = FontWeight.Bold,
+                  fontSize = 12.sp
+                )
+              }
+            }
 
-              if (circle.tags.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                  circle.tags.forEach { tag ->
-                    Surface(
-                      color = VybeBrandCyan.copy(alpha = 0.12f),
-                      shape = RoundedCornerShape(8.dp)
-                    ) {
-                      Text(
-                        text = tag,
-                        color = VybeBrandCyan,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                      )
-                    }
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+              text = circle.description,
+              fontSize = 13.sp,
+              lineHeight = 18.sp,
+              color = palette.textSecondary
+            )
+
+            if (circle.tags.isNotEmpty()) {
+              Spacer(modifier = Modifier.height(10.dp))
+              Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                circle.tags.forEach { tag ->
+                  Surface(
+                    color = palette.accentSecondary.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(VybeTokens.Radius.xs)
+                  ) {
+                    Text(
+                      text = tag,
+                      color = palette.accentSecondary,
+                      fontSize = 11.sp,
+                      fontWeight = FontWeight.SemiBold,
+                      modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
                   }
                 }
               }
@@ -349,7 +294,11 @@ fun CircleScreen(viewModel: VybeViewModel) {
   if (showCreateDialog) {
     AlertDialog(
       onDismissRequest = { showCreateDialog = false },
-      title = { Text("Create a VYBE Circle", fontWeight = FontWeight.Bold) },
+      containerColor = palette.card,
+      titleContentColor = palette.textPrimary,
+      textContentColor = palette.textSecondary,
+      shape = RoundedCornerShape(VybeTokens.Radius.xl),
+      title = { Text("Create a VYBE Circle", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold) },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
           OutlinedTextField(
@@ -373,8 +322,8 @@ fun CircleScreen(viewModel: VybeViewModel) {
             horizontalArrangement = Arrangement.SpaceBetween
           ) {
             Column {
-              Text("Private Circle", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-              Text("Invite-only membership", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              Text("Private Circle", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = palette.textPrimary)
+              Text("Invite-only membership", fontSize = 12.sp, color = palette.textSecondary)
             }
             Switch(
               checked = newCircleIsPrivate,
@@ -384,7 +333,9 @@ fun CircleScreen(viewModel: VybeViewModel) {
         }
       },
       confirmButton = {
-        Button(
+        VybePrimaryButton(
+          text = "Create Circle",
+          enabled = newCircleName.isNotBlank(),
           onClick = {
             if (newCircleName.isNotBlank()) {
               viewModel.createCircle(
@@ -397,16 +348,12 @@ fun CircleScreen(viewModel: VybeViewModel) {
               newCircleDescription = ""
               showCreateDialog = false
             }
-          },
-          enabled = newCircleName.isNotBlank(),
-          colors = ButtonDefaults.buttonColors(containerColor = VybeViolet)
-        ) {
-          Text("Create Circle", color = Color.White, fontWeight = FontWeight.Bold)
-        }
+          }
+        )
       },
       dismissButton = {
         TextButton(onClick = { showCreateDialog = false }) {
-          Text("Cancel")
+          Text("Cancel", color = palette.textSecondary)
         }
       }
     )

@@ -278,6 +278,8 @@ fun StoryCreateDialog(
     }
   }
 
+  val palette = LocalVybePalette.current
+
   Dialog(
     onDismissRequest = { if (!isPublishingStory) onDismiss() },
     properties = DialogProperties(
@@ -286,104 +288,110 @@ fun StoryCreateDialog(
     )
   ) {
     Scaffold(
+      containerColor = palette.canvas,
       modifier = Modifier
         .fillMaxSize()
         .systemBarsPadding()
         .imePadding(),
       contentWindowInsets = WindowInsets(0, 0, 0, 0),
       topBar = {
-        TopAppBar(
-          title = {
-            Text(
-              text = "Create Story",
-              fontWeight = FontWeight.Bold,
-              fontSize = 18.sp
-            )
-          },
-          navigationIcon = {
-            IconButton(
-              onClick = { if (!isPublishingStory) onDismiss() },
-              enabled = !isPublishingStory,
-              modifier = Modifier.size(48.dp).testTag("close_story_dialog_button")
-            ) {
-              Icon(Icons.Default.Close, contentDescription = "Close")
-            }
-          },
-          actions = {
-            TextButton(
-              onClick = { showVybeMatchesManager = true },
-              enabled = !isPublishingStory,
-              modifier = Modifier
-                .heightIn(min = 48.dp)
-                .testTag("manage_vybe_matches_header_button")
-            ) {
-              Icon(
-                Icons.Default.Group,
-                contentDescription = null,
-                tint = Color(0xFF10B981),
-                modifier = Modifier.size(18.dp)
-              )
-              Spacer(modifier = Modifier.width(4.dp))
+        Column(modifier = Modifier.fillMaxWidth().background(palette.canvas)) {
+          TopAppBar(
+            title = {
               Text(
-                text = "Matches (${vybeMatches.size})",
-                color = Color(0xFF10B981),
+                text = "Create Story",
                 fontWeight = FontWeight.Bold,
-                fontSize = 11.sp
+                fontFamily = PlusJakartaSansFontFamily,
+                fontSize = 18.sp,
+                color = palette.textPrimary
               )
-            }
-
-            Button(
-              onClick = {
-                if (selectedAudience == StoryAudience.VYBE_MATCHES) {
-                  val (valid, errOrUri) = validateStoryInputs()
-                  if (!valid) {
-                    validationError = errOrUri
-                    return@Button
-                  }
-                  if (vybeMatches.isEmpty()) {
-                    showEmptyMatchesAlert = true
-                  } else {
-                    showMatchesConfirmDialog = true
-                  }
-                } else {
-                  executeStoryPublish(StoryAudience.EVERYONE)
-                }
-              },
-              enabled = !isPublishingStory,
-              colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-              shape = RoundedCornerShape(16.dp),
-              contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-              modifier = Modifier
-                .padding(end = 8.dp)
-                .heightIn(min = 36.dp)
-                .testTag("publish_story_header_button")
-            ) {
-              if (isPublishingStory) {
-                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(14.dp))
-              } else {
-                Icon(Icons.Default.Upload, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Share", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            },
+            navigationIcon = {
+              IconButton(
+                onClick = { if (!isPublishingStory) onDismiss() },
+                enabled = !isPublishingStory,
+                modifier = Modifier.size(48.dp).testTag("close_story_dialog_button")
+              ) {
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = palette.textPrimary)
               }
-            }
-          },
-          colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-        )
+            },
+            actions = {
+              TextButton(
+                onClick = { showVybeMatchesManager = true },
+                enabled = !isPublishingStory,
+                modifier = Modifier
+                  .heightIn(min = 48.dp)
+                  .testTag("manage_vybe_matches_header_button")
+              ) {
+                Icon(
+                  Icons.Default.Group,
+                  contentDescription = null,
+                  tint = palette.success,
+                  modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                  text = "Matches (${vybeMatches.size})",
+                  color = palette.success,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = PlusJakartaSansFontFamily,
+                  fontSize = 11.sp
+                )
+              }
+
+              Button(
+                onClick = {
+                  if (selectedAudience == StoryAudience.VYBE_MATCHES) {
+                    val (valid, errOrUri) = validateStoryInputs()
+                    if (!valid) {
+                      validationError = errOrUri
+                      return@Button
+                    }
+                    if (vybeMatches.isEmpty()) {
+                      showEmptyMatchesAlert = true
+                    } else {
+                      showMatchesConfirmDialog = true
+                    }
+                  } else {
+                    executeStoryPublish(StoryAudience.EVERYONE)
+                  }
+                },
+                enabled = !isPublishingStory,
+                colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = Color.White),
+                shape = RoundedCornerShape(VybeTokens.Radius.pill),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                modifier = Modifier
+                  .padding(end = 8.dp)
+                  .heightIn(min = 36.dp)
+                  .testTag("publish_story_header_button")
+              ) {
+                if (isPublishingStory) {
+                  CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(14.dp))
+                } else {
+                  Icon(Icons.Default.Upload, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text("Share", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily, fontSize = 12.sp)
+                }
+              }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = palette.canvas)
+          )
+          HorizontalDivider(thickness = 0.8.dp, color = palette.border)
+        }
       },
       bottomBar = {
-        Surface(
-          color = MaterialTheme.colorScheme.surface,
-          shadowElevation = 8.dp,
-          tonalElevation = 4.dp,
+        Column(
           modifier = Modifier
             .fillMaxWidth()
+            .background(palette.surface)
             .windowInsetsPadding(WindowInsets.navigationBars)
             .testTag("create_story_bottom_bar")
         ) {
+          HorizontalDivider(thickness = 0.8.dp, color = palette.border)
           Box(
             modifier = Modifier
               .fillMaxWidth()
-              .padding(horizontal = 14.dp, vertical = 8.dp),
+              .padding(horizontal = 14.dp, vertical = 10.dp),
             contentAlignment = Alignment.Center
           ) {
             Row(
@@ -408,25 +416,26 @@ fun StoryCreateDialog(
                   }
                 },
                 enabled = !isPublishingStory,
-                border = BorderStroke(1.5.dp, Color(0xFF10B981)),
-                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.2.dp, palette.success),
+                shape = RoundedCornerShape(VybeTokens.Radius.pill),
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                 modifier = Modifier
                   .weight(1f)
-                  .heightIn(min = 46.dp)
+                  .heightIn(min = 48.dp)
                   .testTag("publish_vybe_matches_button")
               ) {
                 Icon(
                   Icons.Default.Star,
                   contentDescription = null,
-                  tint = Color(0xFF10B981),
+                  tint = palette.success,
                   modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                   text = "Matches (${vybeMatches.size})",
-                  color = Color(0xFF10B981),
+                  color = palette.success,
                   fontWeight = FontWeight.Bold,
+                  fontFamily = PlusJakartaSansFontFamily,
                   fontSize = 12.sp,
                   maxLines = 1,
                   overflow = TextOverflow.Ellipsis
@@ -452,12 +461,12 @@ fun StoryCreateDialog(
                   }
                 },
                 enabled = !isPublishingStory,
-                colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = Color.White),
+                shape = RoundedCornerShape(VybeTokens.Radius.pill),
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                 modifier = Modifier
                   .weight(1f)
-                  .heightIn(min = 46.dp)
+                  .heightIn(min = 48.dp)
                   .testTag("publish_your_story_button")
               ) {
                 if (isPublishingStory) {
@@ -467,7 +476,7 @@ fun StoryCreateDialog(
                     modifier = Modifier.size(15.dp)
                   )
                   Spacer(modifier = Modifier.width(6.dp))
-                  Text("Sharing...", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                  Text("Sharing...", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily, fontSize = 12.sp)
                 } else {
                   Icon(
                     Icons.Default.Upload,
@@ -480,6 +489,7 @@ fun StoryCreateDialog(
                     text = "Share Story",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
+                    fontFamily = PlusJakartaSansFontFamily,
                     fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -518,20 +528,22 @@ fun StoryCreateDialog(
         ) {
           if (validationError != null) {
             Surface(
-              color = VybeDanger.copy(alpha = 0.14f),
-              shape = RoundedCornerShape(12.dp),
+              color = palette.danger.copy(alpha = 0.14f),
+              border = BorderStroke(1.dp, palette.danger.copy(alpha = 0.35f)),
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
               modifier = Modifier.fillMaxWidth()
             ) {
               Row(
                 modifier = Modifier.padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = VybeDanger, modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = palette.danger, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                   text = validationError ?: "",
-                  color = VybeDanger,
+                  color = palette.danger,
                   fontSize = 12.sp,
+                  fontFamily = PlusJakartaSansFontFamily,
                   fontWeight = FontWeight.Medium,
                   modifier = Modifier.weight(1f)
                 )
@@ -549,26 +561,30 @@ fun StoryCreateDialog(
               ?.progressPercent
               ?.let { (it / 100f).coerceIn(0.05f, 1f) }
             Surface(
-              color = VybeViolet.copy(alpha = 0.14f),
-              shape = RoundedCornerShape(12.dp),
+              color = palette.accent.copy(alpha = 0.14f),
+              border = BorderStroke(1.dp, palette.accent.copy(alpha = 0.35f)),
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
               modifier = Modifier.fillMaxWidth()
             ) {
               Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                   text = statusLabel,
-                  color = MaterialTheme.colorScheme.onSurface,
+                  color = palette.textPrimary,
                   fontSize = 12.sp,
+                  fontFamily = PlusJakartaSansFontFamily,
                   fontWeight = FontWeight.SemiBold
                 )
                 if (progressVal != null) {
                   LinearProgressIndicator(
                     progress = { progressVal },
-                    color = VybeViolet,
+                    color = palette.accent,
+                    trackColor = palette.border,
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
                   )
                 } else {
                   LinearProgressIndicator(
-                    color = VybeViolet,
+                    color = palette.accent,
+                    trackColor = palette.border,
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
                   )
                 }
@@ -581,7 +597,8 @@ fun StoryCreateDialog(
             text = "STORY FORMAT",
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
+            fontFamily = PlusJakartaSansFontFamily,
+            color = palette.accent,
             letterSpacing = 1.sp
           )
 
@@ -597,8 +614,9 @@ fun StoryCreateDialog(
             ).forEach { (mode, label, icon) ->
               val isSelected = selectedMode == mode
               Surface(
-                color = if (isSelected) VybeViolet else MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(12.dp),
+                color = if (isSelected) palette.accent else palette.elevated,
+                border = BorderStroke(1.dp, if (isSelected) palette.accent else palette.border),
+                shape = RoundedCornerShape(VybeTokens.Radius.md),
                 modifier = Modifier
                   .weight(1f)
                   .heightIn(min = 56.dp)
@@ -616,15 +634,16 @@ fun StoryCreateDialog(
                   Icon(
                     imageVector = icon,
                     contentDescription = label,
-                    tint = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = if (isSelected) Color.White else palette.textSecondary,
                     modifier = Modifier.size(20.dp)
                   )
                   Spacer(modifier = Modifier.height(4.dp))
                   Text(
                     text = label,
                     fontSize = 11.sp,
+                    fontFamily = PlusJakartaSansFontFamily,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (isSelected) Color.White else palette.textSecondary
                   )
                 }
               }
@@ -636,8 +655,9 @@ fun StoryCreateDialog(
             modifier = Modifier
               .fillMaxWidth()
               .height(adaptivePreviewHeight)
-              .clip(RoundedCornerShape(18.dp))
-              .background(Color(0xFF0A0A0F)),
+              .clip(RoundedCornerShape(VybeTokens.Radius.lg))
+              .border(1.dp, palette.border, RoundedCornerShape(VybeTokens.Radius.lg))
+              .background(ObsidianCanvas),
             contentAlignment = Alignment.Center
           ) {
             when (selectedMode) {
@@ -838,7 +858,8 @@ fun StoryCreateDialog(
             text = if (selectedMode == StoryCreateMode.TYPE_TEXT) "STORY TEXT" else "CAPTION (OPTIONAL)",
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
+            fontFamily = PlusJakartaSansFontFamily,
+            color = palette.accent,
             letterSpacing = 1.sp
           )
 
@@ -849,14 +870,28 @@ fun StoryCreateDialog(
               validationError = null
             },
             enabled = !isPublishingStory,
-            placeholder = { Text(if (selectedMode == StoryCreateMode.TYPE_TEXT) "Write what's on your mind..." else "Add a caption...") },
+            placeholder = { Text(if (selectedMode == StoryCreateMode.TYPE_TEXT) "Write what's on your mind..." else "Add a caption...", color = palette.textMuted) },
+            colors = OutlinedTextFieldDefaults.colors(
+              focusedBorderColor = palette.accent,
+              unfocusedBorderColor = palette.border,
+              focusedContainerColor = palette.elevated,
+              unfocusedContainerColor = palette.elevated,
+              focusedTextColor = palette.textPrimary,
+              unfocusedTextColor = palette.textPrimary
+            ),
             modifier = Modifier.fillMaxWidth().testTag("story_caption_input"),
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(VybeTokens.Radius.md),
             minLines = if (selectedMode == StoryCreateMode.TYPE_TEXT) 2 else 1
           )
 
           if (selectedMode == StoryCreateMode.TYPE_TEXT) {
-            Text("BACKGROUND GRADIENT", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+              "BACKGROUND GRADIENT",
+              fontSize = 10.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = PlusJakartaSansFontFamily,
+              color = palette.textSecondary
+            )
             LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
               items(StoryGradients) { (key, colors) ->
                 Box(
@@ -876,13 +911,20 @@ fun StoryCreateDialog(
           }
 
           if (selectedMode == StoryCreateMode.MUSIC) {
-            Text("SELECT SOUNDTRACK", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+              "SELECT SOUNDTRACK",
+              fontSize = 10.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = PlusJakartaSansFontFamily,
+              color = palette.textSecondary
+            )
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
               IndianIndieMusicTracks.forEach { track ->
                 val isTrackSelected = selectedTrack == track
                 Surface(
-                  color = if (isTrackSelected) VybeMagenta.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
-                  shape = RoundedCornerShape(10.dp),
+                  color = if (isTrackSelected) palette.accent.copy(alpha = 0.14f) else palette.elevated,
+                  border = BorderStroke(1.dp, if (isTrackSelected) palette.accent else palette.border),
+                  shape = RoundedCornerShape(VybeTokens.Radius.sm),
                   modifier = Modifier
                     .fillMaxWidth()
                     .clickable(enabled = !isPublishingStory) { selectedTrack = track }
@@ -894,16 +936,16 @@ fun StoryCreateDialog(
                     Icon(
                       imageVector = if (isTrackSelected) Icons.Default.GraphicEq else Icons.Default.MusicNote,
                       contentDescription = null,
-                      tint = if (isTrackSelected) VybeMagenta else MaterialTheme.colorScheme.onSurfaceVariant,
+                      tint = if (isTrackSelected) palette.accent else palette.textSecondary,
                       modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                      Text(track.first, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                      Text(track.second, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      Text(track.first, fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily, fontSize = 12.sp, color = palette.textPrimary)
+                      Text(track.second, fontSize = 10.sp, color = palette.textSecondary)
                     }
                     if (isTrackSelected) {
-                      Icon(Icons.Default.Check, contentDescription = null, tint = VybeMagenta, modifier = Modifier.size(16.dp))
+                      Icon(Icons.Default.Check, contentDescription = null, tint = palette.accent, modifier = Modifier.size(16.dp))
                     }
                   }
                 }
@@ -920,16 +962,22 @@ fun StoryCreateDialog(
             OutlinedButton(
               onClick = { showLocationPickerDialog = true },
               enabled = !isPublishingStory,
-              shape = RoundedCornerShape(12.dp),
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              border = BorderStroke(1.dp, palette.border),
+              colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = palette.elevated,
+                contentColor = palette.textPrimary
+              ),
               modifier = Modifier
                 .weight(1f)
                 .heightIn(min = 48.dp)
                 .testTag("story_open_location_picker_button")
             ) {
-              Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(18.dp))
+              Icon(Icons.Default.LocationOn, contentDescription = null, tint = palette.accent, modifier = Modifier.size(18.dp))
               Spacer(modifier = Modifier.width(8.dp))
               Text(
                 text = if (selectedLocation != null) "Location: $selectedLocation" else "Add Location",
+                fontFamily = PlusJakartaSansFontFamily,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
               )
@@ -940,7 +988,7 @@ fun StoryCreateDialog(
                 enabled = !isPublishingStory,
                 modifier = Modifier.size(48.dp)
               ) {
-                Icon(Icons.Default.Close, contentDescription = "Remove location")
+                Icon(Icons.Default.Close, contentDescription = "Remove location", tint = palette.textSecondary)
               }
             }
           }
@@ -955,7 +1003,8 @@ fun StoryCreateDialog(
               text = "AUDIENCE & PRIVACY",
               fontSize = 11.sp,
               fontWeight = FontWeight.Bold,
-              color = MaterialTheme.colorScheme.primary,
+              fontFamily = PlusJakartaSansFontFamily,
+              color = palette.accent,
               letterSpacing = 1.sp
             )
             TextButton(
@@ -963,7 +1012,13 @@ fun StoryCreateDialog(
               enabled = !isPublishingStory,
               modifier = Modifier.heightIn(min = 48.dp).testTag("story_edit_vybe_matches_button")
             ) {
-              Text("Add / Remove Matches (${vybeMatches.size})", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+              Text(
+                "Add / Remove Matches (${vybeMatches.size})",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = PlusJakartaSansFontFamily,
+                color = palette.accent
+              )
             }
           }
 
@@ -971,9 +1026,11 @@ fun StoryCreateDialog(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
           ) {
+            val isEveryone = selectedAudience == StoryAudience.EVERYONE
             Surface(
-              color = if (selectedAudience == StoryAudience.EVERYONE) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-              shape = RoundedCornerShape(12.dp),
+              color = if (isEveryone) palette.accent.copy(alpha = 0.14f) else palette.elevated,
+              border = BorderStroke(1.dp, if (isEveryone) palette.accent else palette.border),
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
               modifier = Modifier
                 .weight(1f)
                 .clickable(enabled = !isPublishingStory) { selectedAudience = StoryAudience.EVERYONE }
@@ -982,22 +1039,30 @@ fun StoryCreateDialog(
                 modifier = Modifier.padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Icon(Icons.Default.Public, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.Public, contentDescription = null, tint = palette.accent, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Column {
-                  Text("Your Story", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                  Text(
+                    "Your Story",
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontSize = 12.sp,
+                    color = palette.textPrimary
+                  )
                   Text(
                     text = if (currentUser?.isPrivate == true) "Approved LINKUPS" else "LINKUPS & public",
                     fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = palette.textSecondary
                   )
                 }
               }
             }
 
+            val isMatches = selectedAudience == StoryAudience.VYBE_MATCHES
             Surface(
-              color = if (selectedAudience == StoryAudience.VYBE_MATCHES) Color(0xFF10B981).copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
-              shape = RoundedCornerShape(12.dp),
+              color = if (isMatches) palette.success.copy(alpha = 0.16f) else palette.elevated,
+              border = BorderStroke(1.dp, if (isMatches) palette.success else palette.border),
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
               modifier = Modifier
                 .weight(1f)
                 .clickable(enabled = !isPublishingStory) { selectedAudience = StoryAudience.VYBE_MATCHES }
@@ -1006,19 +1071,20 @@ fun StoryCreateDialog(
                 modifier = Modifier.padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.Star, contentDescription = null, tint = palette.success, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Column {
                   Text(
                     "VYBE Matches",
                     fontWeight = FontWeight.Bold,
+                    fontFamily = PlusJakartaSansFontFamily,
                     fontSize = 12.sp,
-                    color = if (selectedAudience == StoryAudience.VYBE_MATCHES) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurface
+                    color = if (isMatches) palette.success else palette.textPrimary
                   )
                   Text(
                     "${vybeMatches.size} selected",
                     fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = palette.textSecondary
                   )
                 }
               }
@@ -1054,12 +1120,21 @@ fun StoryCreateDialog(
     if (showEmptyMatchesAlert) {
       AlertDialog(
         onDismissRequest = { showEmptyMatchesAlert = false },
+        containerColor = palette.card,
+        shape = RoundedCornerShape(VybeTokens.Radius.lg),
         title = {
-          Text("No VYBE Matches Selected", fontWeight = FontWeight.Bold)
+          Text(
+            "No VYBE Matches Selected",
+            fontWeight = FontWeight.Bold,
+            fontFamily = PlusJakartaSansFontFamily,
+            color = palette.textPrimary
+          )
         },
         text = {
           Text(
-            "You haven't added anyone to your VYBE Matches list yet. Add people first so your restricted story is shared only with your chosen audience."
+            "You haven't added anyone to your VYBE Matches list yet. Add people first so your restricted story is shared only with your chosen audience.",
+            fontFamily = PlusJakartaSansFontFamily,
+            color = palette.textSecondary
           )
         },
         confirmButton = {
@@ -1068,14 +1143,16 @@ fun StoryCreateDialog(
               showEmptyMatchesAlert = false
               showVybeMatchesManager = true
             },
+            shape = RoundedCornerShape(VybeTokens.Radius.pill),
+            colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = Color.White),
             modifier = Modifier.testTag("empty_matches_add_people_button")
           ) {
-            Text("Select People")
+            Text("Select People", fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily)
           }
         },
         dismissButton = {
           TextButton(onClick = { showEmptyMatchesAlert = false }) {
-            Text("Cancel")
+            Text("Cancel", color = palette.textSecondary, fontFamily = PlusJakartaSansFontFamily)
           }
         }
       )
@@ -1086,27 +1163,39 @@ fun StoryCreateDialog(
         if (vybeMatches.size > 5) " +${vybeMatches.size - 5} more" else ""
       AlertDialog(
         onDismissRequest = { showMatchesConfirmDialog = false },
+        containerColor = palette.card,
+        shape = RoundedCornerShape(VybeTokens.Radius.lg),
         title = {
           Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFF10B981))
+            Icon(Icons.Default.Star, contentDescription = null, tint = palette.success)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Confirm VYBE Matches Audience", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Text(
+              "Confirm VYBE Matches Audience",
+              fontWeight = FontWeight.Bold,
+              fontFamily = PlusJakartaSansFontFamily,
+              fontSize = 17.sp,
+              color = palette.textPrimary
+            )
           }
         },
         text = {
           Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-              "This story will be visible ONLY to your ${vybeMatches.size} selected VYBE Matches for 24 hours:"
+              "This story will be visible ONLY to your ${vybeMatches.size} selected VYBE Matches for 24 hours:",
+              fontFamily = PlusJakartaSansFontFamily,
+              color = palette.textSecondary
             )
             Surface(
-              color = MaterialTheme.colorScheme.surfaceVariant,
-              shape = RoundedCornerShape(10.dp),
+              color = palette.elevated,
+              border = BorderStroke(1.dp, palette.border),
+              shape = RoundedCornerShape(VybeTokens.Radius.sm),
               modifier = Modifier.fillMaxWidth()
             ) {
               Text(
                 text = namesPreview,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
+                color = palette.textPrimary,
                 modifier = Modifier.padding(10.dp)
               )
             }
@@ -1116,7 +1205,7 @@ fun StoryCreateDialog(
                 showVybeMatchesManager = true
               }
             ) {
-              Text("Edit VYBE Matches List")
+              Text("Edit VYBE Matches List", color = palette.accent, fontWeight = FontWeight.SemiBold)
             }
           }
         },
@@ -1126,15 +1215,16 @@ fun StoryCreateDialog(
               showMatchesConfirmDialog = false
               executeStoryPublish(StoryAudience.VYBE_MATCHES)
             },
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+            shape = RoundedCornerShape(VybeTokens.Radius.pill),
+            colors = ButtonDefaults.buttonColors(containerColor = palette.success, contentColor = Color.White),
             modifier = Modifier.testTag("confirm_publish_vybe_matches_button")
           ) {
-            Text("Confirm & Share", color = Color.White, fontWeight = FontWeight.Bold)
+            Text("Confirm & Share", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily)
           }
         },
         dismissButton = {
           TextButton(onClick = { showMatchesConfirmDialog = false }) {
-            Text("Cancel")
+            Text("Cancel", color = palette.textSecondary, fontFamily = PlusJakartaSansFontFamily)
           }
         }
       )

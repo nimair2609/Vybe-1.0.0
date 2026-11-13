@@ -14,7 +14,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -38,7 +37,12 @@ import com.example.data.model.MoodType
 import com.example.data.repository.UploadStatus
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VybeAvatar
+import com.example.ui.components.VybeEmptyState
 import com.example.ui.components.VybeMoodOutlineIcon
+import com.example.ui.components.VybePrimaryButton
+import com.example.ui.components.VybeSecondaryButton
+import com.example.ui.components.VybeSubScreenTopBar
+import com.example.ui.components.VybeSurfaceCard
 import com.example.ui.theme.*
 import com.example.util.MediaUtils
 import com.example.util.rememberRelativeTimestamp
@@ -53,12 +57,11 @@ import kotlinx.coroutines.launch
  * - Preview, retake, caption, mood selection, and verified publishing.
  * - NO Like button, NO Share button, NO engagement popularity rankings.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UnfilteredScreen(viewModel: VybeViewModel) {
   val context = LocalContext.current
   val coroutineScope = rememberCoroutineScope()
-  val isDark = LocalIsDarkTheme.current
+  val palette = LocalVybePalette.current
 
   BackHandler {
     viewModel.navigateBack()
@@ -82,6 +85,15 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
   var selectedMood by remember { mutableStateOf<MoodType?>(MoodType.CHILL) }
   var activeCommentPostId by remember { mutableStateOf<String?>(null) }
   var commentText by remember { mutableStateOf("") }
+
+  val fieldColors = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = palette.elevated,
+    unfocusedContainerColor = palette.elevated,
+    focusedBorderColor = palette.accent,
+    unfocusedBorderColor = palette.border,
+    focusedTextColor = palette.textPrimary,
+    unfocusedTextColor = palette.textPrimary
+  )
 
   // Full-resolution direct file capture — preserves 100% original camera bytes without thumbnail downscaling
   val cameraLauncher = rememberLauncherForActivityResult(
@@ -155,37 +167,35 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
   }
 
   Scaffold(
+    containerColor = palette.canvas,
     contentWindowInsets = WindowInsets(0.dp),
     topBar = {
-      TopAppBar(
-        navigationIcon = {
-          IconButton(
-            onClick = { viewModel.navigateBack() },
-            modifier = Modifier.size(48.dp).testTag("unfiltered_back_button")
-          ) {
-            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
-          }
-        },
-        title = {
-          Column {
-            Text("VYBE UNFILTERED", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
-            Text(
-              "Back to Real. Back to Us.",
-              fontSize = 11.sp,
-              color = if (isDark) VybeBrandCyan else VybeViolet,
-              fontWeight = FontWeight.Bold
-            )
-          }
-        },
+      VybeSubScreenTopBar(
+        title = "VYBE Unfiltered",
+        subtitle = "Back to Real. Back to Us.",
+        onBackClick = { viewModel.navigateBack() },
+        backTestTag = "unfiltered_back_button",
         actions = {
           IconButton(
             onClick = { launchCameraSafely() },
-            modifier = Modifier.size(48.dp).testTag("unfiltered_camera_button")
+            modifier = Modifier
+              .size(48.dp)
+              .testTag("unfiltered_camera_button")
           ) {
-            Icon(Icons.Outlined.PhotoCamera, contentDescription = "Take Raw Camera Photo", tint = VybeViolet)
+            Icon(
+              imageVector = Icons.Outlined.PhotoCamera,
+              contentDescription = "Take Raw Camera Photo",
+              tint = palette.accent
+            )
           }
-          FilledTonalButton(
+          Button(
             onClick = { launchCameraSafely() },
+            colors = ButtonDefaults.buttonColors(
+              containerColor = palette.accent,
+              contentColor = Color.White
+            ),
+            shape = RoundedCornerShape(VybeTokens.Radius.md),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
             modifier = Modifier
               .padding(end = 8.dp)
               .heightIn(min = 40.dp)
@@ -193,12 +203,14 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
           ) {
             Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(15.dp))
             Spacer(modifier = Modifier.width(6.dp))
-            Text("Capture", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(
+              text = "Capture",
+              fontFamily = PlusJakartaSansFontFamily,
+              fontSize = 12.sp,
+              fontWeight = FontWeight.Bold
+            )
           }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-          containerColor = MaterialTheme.colorScheme.background
-        )
+        }
       )
     }
   ) { paddingValues ->
@@ -209,24 +221,23 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
         .navigationBarsPadding()
         .imePadding()
         .padding(horizontal = 16.dp),
-      verticalArrangement = Arrangement.spacedBy(16.dp)
+      verticalArrangement = Arrangement.spacedBy(14.dp),
+      contentPadding = PaddingValues(top = 14.dp, bottom = 72.dp)
     ) {
       if (cameraErrorNotice != null) {
         item {
-          Surface(
-            color = VybeDanger.copy(alpha = 0.14f),
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.fillMaxWidth()
+          VybeSurfaceCard(
+            containerColor = palette.danger.copy(alpha = 0.12f),
+            borderColor = palette.danger.copy(alpha = 0.4f),
+            cornerRadius = VybeTokens.Radius.md,
+            contentPadding = PaddingValues(12.dp)
           ) {
-            Row(
-              modifier = Modifier.padding(12.dp),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = VybeDanger, modifier = Modifier.size(18.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = palette.danger, modifier = Modifier.size(18.dp))
               Spacer(modifier = Modifier.width(8.dp))
               Text(
                 text = cameraErrorNotice.orEmpty(),
-                color = VybeDanger,
+                color = palette.danger,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.weight(1f)
@@ -238,34 +249,40 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
 
       // Philosophy Banner
       item {
-        Spacer(modifier = Modifier.height(4.dp))
-        Card(
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-          shape = RoundedCornerShape(16.dp)
+        VybeSurfaceCard(
+          containerColor = palette.elevated,
+          contentPadding = PaddingValues(14.dp)
         ) {
-          Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Icon(
-              Icons.Default.CameraAlt,
-              contentDescription = null,
-              tint = if (isDark) VybeBrandCyan else VybeViolet,
-              modifier = Modifier.size(28.dp)
-            )
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+              modifier = Modifier
+                .size(42.dp)
+                .clip(RoundedCornerShape(VybeTokens.Radius.md))
+                .background(palette.accent.copy(alpha = 0.14f)),
+              contentAlignment = Alignment.Center
+            ) {
+              Icon(
+                imageVector = Icons.Default.CameraAlt,
+                contentDescription = null,
+                tint = palette.accent,
+                modifier = Modifier.size(22.dp)
+              )
+            }
             Spacer(modifier = Modifier.width(12.dp))
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
               Text(
-                "Live Camera Only • Original Quality",
+                text = "Live Camera Only • Original Quality",
+                fontFamily = PlusJakartaSansFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurface
+                color = palette.textPrimary
               )
+              Spacer(modifier = Modifier.height(2.dp))
               Text(
                 text = "UNFILTERED captures live camera photos at native sensor quality — no gallery uploads, no filters, no likes.",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                lineHeight = 15.sp
+                fontSize = 12.sp,
+                color = palette.textSecondary,
+                lineHeight = 16.sp
               )
             }
           }
@@ -274,243 +291,280 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
 
       // Quick Action Live Camera Card (Camera-Only)
       item {
-        Card(
-          colors = CardDefaults.cardColors(
-            containerColor = if (isDark) VybeVioletDark.copy(alpha = 0.3f) else VybeViolet.copy(alpha = 0.09f)
-          ),
-          shape = RoundedCornerShape(16.dp),
-          border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.4f))
+        VybeSurfaceCard(
+          containerColor = palette.accent.copy(alpha = 0.10f),
+          borderColor = palette.accent.copy(alpha = 0.35f),
+          contentPadding = PaddingValues(14.dp)
         ) {
           Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(14.dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
           ) {
             Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
               Text(
-                "Ready to show real life?",
+                text = "Ready to show real life?",
+                fontFamily = PlusJakartaSansFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurface
+                color = palette.textPrimary
               )
+              Spacer(modifier = Modifier.height(2.dp))
               Text(
-                "Snap directly from your camera with zero retouching or compression.",
-                fontSize = 11.sp,
-                color = if (isDark) VybeBrandCyan else MaterialTheme.colorScheme.onSurfaceVariant
+                text = "Snap directly from your camera with zero retouching or compression.",
+                fontSize = 12.sp,
+                color = palette.textSecondary,
+                lineHeight = 16.sp
               )
             }
-            Button(
+            VybePrimaryButton(
+              text = "Open Camera",
               onClick = { launchCameraSafely() },
-              colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-              shape = RoundedCornerShape(12.dp),
-              contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-              modifier = Modifier.heightIn(min = 48.dp).testTag("unfiltered_open_camera_cta")
-            ) {
-              Icon(Icons.Default.PhotoCamera, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text("Open Camera", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
-            }
+              icon = Icons.Default.PhotoCamera,
+              testTag = "unfiltered_open_camera_cta"
+            )
           }
+        }
+      }
+
+      if (unfilteredPosts.isEmpty()) {
+        item {
+          VybeEmptyState(
+            icon = Icons.Outlined.PhotoCamera,
+            title = "No Unfiltered Moments Yet",
+            subtitle = "Capture the first unedited, live-camera moment right now.",
+            actionLabel = "Open Live Camera",
+            onAction = { launchCameraSafely() }
+          )
         }
       }
 
       items(unfilteredPosts, key = { it.id }) { post ->
-        Card(
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          shape = RoundedCornerShape(16.dp),
-          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
-          modifier = Modifier.fillMaxWidth().testTag("unfiltered_post_${post.id}")
+        VybeSurfaceCard(
+          contentPadding = PaddingValues(0.dp),
+          modifier = Modifier
+            .fillMaxWidth()
+            .testTag("unfiltered_post_${post.id}")
         ) {
-          Column {
-            // Header
-            Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                VybeAvatar(user = post.author, size = 36.dp)
-                Spacer(modifier = Modifier.width(10.dp))
-                Column {
-                  val relativePostTime = rememberRelativeTimestamp(post.createdAtIso, post.timestamp)
-                  Text(
-                    post.author.displayName,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurface
-                  )
-                  Text(
-                    "@${post.author.username} • $relativePostTime",
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                  )
-                }
+          // Header
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+          ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+              VybeAvatar(user = post.author, size = 38.dp)
+              Spacer(modifier = Modifier.width(10.dp))
+              Column {
+                val relativePostTime = rememberRelativeTimestamp(post.createdAtIso, post.timestamp)
+                Text(
+                  text = post.author.displayName,
+                  fontFamily = PlusJakartaSansFontFamily,
+                  fontWeight = FontWeight.Bold,
+                  fontSize = 14.sp,
+                  color = palette.textPrimary
+                )
+                Text(
+                  text = "@${post.author.username} • $relativePostTime",
+                  fontSize = 11.sp,
+                  color = palette.textSecondary
+                )
               }
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                if (post.moodZone != null) {
-                  Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = post.moodZone.accentColor.copy(alpha = 0.2f)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              if (post.moodZone != null) {
+                Surface(
+                  shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                  color = post.moodZone.accentColor.copy(alpha = 0.16f),
+                  border = BorderStroke(1.dp, post.moodZone.accentColor.copy(alpha = 0.35f))
+                ) {
+                  Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                   ) {
-                    Row(
-                      modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                      verticalAlignment = Alignment.CenterVertically,
-                      horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                      VybeMoodOutlineIcon(
-                        mood = post.moodZone,
-                        tint = post.moodZone.accentColor,
-                        size = 13.dp
-                      )
-                      Text(
-                        text = post.moodZone.title,
-                        color = post.moodZone.accentColor,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                      )
-                    }
-                  }
-                }
-                if (currentUser?.id == post.author.id) {
-                  Spacer(modifier = Modifier.width(6.dp))
-                  IconButton(
-                    onClick = { viewModel.deletePost(post.id) },
-                    modifier = Modifier
-                      .size(48.dp)
-                      .testTag("delete_unfiltered_post_${post.id}")
-                  ) {
-                    Icon(
-                      Icons.Outlined.DeleteOutline,
-                      contentDescription = "Delete raw post",
-                      tint = VybeDanger,
-                      modifier = Modifier.size(18.dp)
+                    VybeMoodOutlineIcon(
+                      mood = post.moodZone,
+                      tint = post.moodZone.accentColor,
+                      size = 13.dp
+                    )
+                    Text(
+                      text = post.moodZone.title,
+                      color = post.moodZone.accentColor,
+                      fontSize = 11.sp,
+                      fontWeight = FontWeight.Bold
                     )
                   }
                 }
               }
-            }
-
-            // Raw Photo — natural aspect ratio preserved without cropping distortion
-            if (post.mediaUrls.isNotEmpty()) {
-              val ratio = (post.mediaAspectRatio ?: 0.75f).coerceIn(0.55f, 1.8f)
-              Box(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .aspectRatio(ratio)
-                  .background(Color.Black)
-              ) {
-                AsyncImage(
-                  model = post.mediaUrls.first(),
-                  contentDescription = "Unfiltered moment",
-                  contentScale = ContentScale.Fit,
-                  modifier = Modifier.fillMaxSize()
-                )
-                Surface(
-                  color = Color.Black.copy(alpha = 0.65f),
-                  shape = RoundedCornerShape(6.dp),
+              if (currentUser?.id == post.author.id) {
+                Spacer(modifier = Modifier.width(4.dp))
+                IconButton(
+                  onClick = { viewModel.deletePost(post.id) },
                   modifier = Modifier
-                    .padding(10.dp)
-                    .align(Alignment.BottomEnd)
+                    .size(48.dp)
+                    .testTag("delete_unfiltered_post_${post.id}")
                 ) {
-                  Text(
-                    text = "RAW CAMERA • ORIGINAL QUALITY",
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Color.White,
-                    letterSpacing = 0.8.sp,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                  Icon(
+                    imageVector = Icons.Outlined.DeleteOutline,
+                    contentDescription = "Delete raw post",
+                    tint = palette.danger,
+                    modifier = Modifier.size(18.dp)
                   )
                 }
               }
             }
+          }
 
-            if (post.caption.isNotBlank()) {
-              Text(
-                text = post.caption,
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-              )
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
-            Row(
+          // Raw Photo — natural aspect ratio preserved without cropping distortion
+          if (post.mediaUrls.isNotEmpty()) {
+            val ratio = (post.mediaAspectRatio ?: 0.75f).coerceIn(0.55f, 1.8f)
+            Box(
               modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically
+                .aspectRatio(ratio)
+                .background(Color.Black)
             ) {
-              TextButton(
-                onClick = {
-                  activeCommentPostId = if (activeCommentPostId == post.id) null else post.id
-                }
-              ) {
-                Icon(Icons.Default.ChatBubbleOutline, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Conversation (${post.comments.size})", fontSize = 12.sp)
-              }
-              Text("No Likes • Only Real Talk", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-
-            if (activeCommentPostId == post.id) {
-              Column(
+              AsyncImage(
+                model = post.mediaUrls.first(),
+                contentDescription = "Unfiltered moment",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize()
+              )
+              Surface(
+                color = Color.Black.copy(alpha = 0.68f),
+                shape = RoundedCornerShape(VybeTokens.Radius.xs),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
                 modifier = Modifier
-                  .fillMaxWidth()
-                  .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                  .padding(12.dp)
+                  .padding(10.dp)
+                  .align(Alignment.BottomEnd)
               ) {
-                post.comments.forEach { c ->
-                  val relativeCommentTime = rememberRelativeTimestamp(c.createdAtIso, c.timestamp)
-                  Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                  ) {
-                    Text(c.author.displayName, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = VybeViolet)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(c.content, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(relativeCommentTime, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                  }
-                }
-                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                  text = "RAW CAMERA • ORIGINAL QUALITY",
+                  fontSize = 9.sp,
+                  fontWeight = FontWeight.ExtraBold,
+                  color = Color.White,
+                  letterSpacing = 0.8.sp,
+                  modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                )
+              }
+            }
+          }
+
+          if (post.caption.isNotBlank()) {
+            Text(
+              text = post.caption,
+              fontSize = 13.sp,
+              lineHeight = 19.sp,
+              color = palette.textPrimary,
+              modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+            )
+          }
+
+          HorizontalDivider(thickness = 0.8.dp, color = palette.border)
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            TextButton(
+              onClick = {
+                activeCommentPostId = if (activeCommentPostId == post.id) null else post.id
+              },
+              modifier = Modifier.heightIn(min = 48.dp)
+            ) {
+              Icon(
+                imageVector = Icons.Default.ChatBubbleOutline,
+                contentDescription = null,
+                tint = palette.accent,
+                modifier = Modifier.size(16.dp)
+              )
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(
+                text = "Conversation (${post.comments.size})",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = palette.textPrimary
+              )
+            }
+            Text(
+              text = "No Likes • Only Real Talk",
+              fontSize = 11.sp,
+              color = palette.textMuted
+            )
+          }
+
+          if (activeCommentPostId == post.id) {
+            Column(
+              modifier = Modifier
+                .fillMaxWidth()
+                .background(palette.elevated)
+                .padding(14.dp)
+            ) {
+              post.comments.forEach { c ->
+                val relativeCommentTime = rememberRelativeTimestamp(c.createdAtIso, c.timestamp)
                 Row(
-                  modifier = Modifier.fillMaxWidth(),
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
                   verticalAlignment = Alignment.CenterVertically
                 ) {
-                  OutlinedTextField(
-                    value = commentText,
-                    onValueChange = { commentText = it },
-                    placeholder = { Text("Add honest thought...", fontSize = 12.sp) },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true
+                  Text(
+                    text = c.author.displayName,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    color = palette.accent
                   )
-                  Spacer(modifier = Modifier.width(8.dp))
-                  IconButton(
-                    onClick = {
-                      if (commentText.isNotBlank()) {
-                        viewModel.addUnfilteredComment(post.id, commentText)
-                        commentText = ""
-                      }
-                    },
-                    enabled = commentText.isNotBlank()
-                  ) {
-                    Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = "Send", tint = VybeViolet)
-                  }
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text(
+                    text = c.content,
+                    fontSize = 12.sp,
+                    color = palette.textPrimary,
+                    modifier = Modifier.weight(1f)
+                  )
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text(relativeCommentTime, fontSize = 10.sp, color = palette.textMuted)
+                }
+              }
+              Spacer(modifier = Modifier.height(8.dp))
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                OutlinedTextField(
+                  value = commentText,
+                  onValueChange = { commentText = it },
+                  placeholder = { Text("Add honest thought...", fontSize = 12.sp, color = palette.textMuted) },
+                  colors = fieldColors,
+                  shape = RoundedCornerShape(VybeTokens.Radius.md),
+                  modifier = Modifier.weight(1f),
+                  singleLine = true
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(
+                  onClick = {
+                    if (commentText.isNotBlank()) {
+                      viewModel.addUnfilteredComment(post.id, commentText)
+                      commentText = ""
+                    }
+                  },
+                  enabled = commentText.isNotBlank(),
+                  modifier = Modifier.size(48.dp)
+                ) {
+                  Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.Send,
+                    contentDescription = "Send",
+                    tint = if (commentText.isNotBlank()) palette.accent else palette.textMuted
+                  )
                 }
               }
             }
           }
         }
-      }
-
-      item {
-        Spacer(modifier = Modifier.height(60.dp))
       }
     }
   }
@@ -531,40 +585,28 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
       )
     ) {
       Scaffold(
+        containerColor = palette.canvas,
         contentWindowInsets = WindowInsets(0.dp),
         topBar = {
-          TopAppBar(
-            navigationIcon = {
-              IconButton(
-                onClick = {
-                  if (!isPublishingRaw) {
-                    showCreateSheet = false
-                    capturedCameraUri = null
-                    publishError = null
-                  }
-                },
-                enabled = !isPublishingRaw,
-                modifier = Modifier.size(48.dp)
-              ) {
-                Icon(Icons.Outlined.Close, contentDescription = "Close")
-              }
-            },
-            title = {
-              Column {
-                Text("Publish UNFILTERED", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Text(
-                  "Original camera resolution • 0% filters",
-                  fontSize = 11.sp,
-                  color = if (isDark) VybeBrandCyan else VybeViolet
-                )
+          VybeSubScreenTopBar(
+            title = "Publish Unfiltered",
+            subtitle = "Original camera resolution • 0% filters",
+            onBackClick = {
+              if (!isPublishingRaw) {
+                showCreateSheet = false
+                capturedCameraUri = null
+                publishError = null
               }
             },
             actions = {
               Button(
                 onClick = { executeRawPublish() },
                 enabled = !isPublishingRaw && capturedCameraUri != null,
-                colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                  containerColor = palette.accent,
+                  contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(VybeTokens.Radius.md),
                 modifier = Modifier
                   .padding(end = 8.dp)
                   .heightIn(min = 40.dp)
@@ -573,13 +615,15 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
                 if (isPublishingRaw) {
                   CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(15.dp))
                 } else {
-                  Text("Publish", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
+                  Text(
+                    text = "Publish",
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                  )
                 }
               }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-              containerColor = MaterialTheme.colorScheme.background
-            )
+            }
           )
         }
       ) { innerPadding ->
@@ -590,21 +634,23 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
             .navigationBarsPadding()
             .imePadding()
             .padding(horizontal = 16.dp),
-          verticalArrangement = Arrangement.spacedBy(14.dp)
+          verticalArrangement = Arrangement.spacedBy(14.dp),
+          contentPadding = PaddingValues(top = 14.dp, bottom = 30.dp)
         ) {
           if (publishError != null) {
             item {
-              Surface(
-                color = VybeDanger.copy(alpha = 0.14f),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
+              VybeSurfaceCard(
+                containerColor = palette.danger.copy(alpha = 0.12f),
+                borderColor = palette.danger.copy(alpha = 0.4f),
+                cornerRadius = VybeTokens.Radius.md,
+                contentPadding = PaddingValues(12.dp)
               ) {
-                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                  Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = VybeDanger, modifier = Modifier.size(18.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = palette.danger, modifier = Modifier.size(18.dp))
                   Spacer(modifier = Modifier.width(8.dp))
                   Text(
                     text = publishError.orEmpty(),
-                    color = VybeDanger,
+                    color = palette.danger,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.weight(1f)
@@ -621,26 +667,30 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
                 is UploadStatus.Processing -> st.label
                 else -> "Uploading original camera photo..."
               }
-              Surface(
-                color = VybeViolet.copy(alpha = 0.14f),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
+              VybeSurfaceCard(
+                containerColor = palette.accent.copy(alpha = 0.12f),
+                borderColor = palette.accent.copy(alpha = 0.35f),
+                cornerRadius = VybeTokens.Radius.md,
+                contentPadding = PaddingValues(12.dp)
               ) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                  Text(statusLabel, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                  LinearProgressIndicator(color = VybeViolet, modifier = Modifier.fillMaxWidth())
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                  Text(statusLabel, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = palette.textPrimary)
+                  LinearProgressIndicator(
+                    color = palette.accent,
+                    trackColor = palette.elevated,
+                    modifier = Modifier.fillMaxWidth()
+                  )
                 }
               }
             }
           }
 
           item {
-            Spacer(modifier = Modifier.height(4.dp))
             Box(
               modifier = Modifier
                 .fillMaxWidth()
                 .height(360.dp)
-                .clip(RoundedCornerShape(18.dp))
+                .clip(RoundedCornerShape(VybeTokens.Radius.lg))
                 .background(Color.Black),
               contentAlignment = Alignment.Center
             ) {
@@ -656,8 +706,9 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
               }
 
               Surface(
-                color = Color.Black.copy(alpha = 0.7f),
-                shape = RoundedCornerShape(8.dp),
+                color = Color.Black.copy(alpha = 0.72f),
+                shape = RoundedCornerShape(VybeTokens.Radius.xs),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
                 modifier = Modifier
                   .padding(12.dp)
                   .align(Alignment.BottomEnd)
@@ -676,39 +727,52 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
 
           // Retake Camera ONLY (Gallery strictly omitted)
           item {
-            OutlinedButton(
+            VybeSecondaryButton(
+              text = "Retake Live Camera Photo",
               onClick = { launchCameraSafely() },
               enabled = !isPublishingRaw,
-              modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .testTag("unfiltered_retake_camera_button"),
-              shape = RoundedCornerShape(12.dp)
-            ) {
-              Icon(Icons.Outlined.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp), tint = VybeViolet)
-              Spacer(modifier = Modifier.width(8.dp))
-              Text("Retake Live Camera Photo", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            }
+              icon = Icons.Outlined.PhotoCamera,
+              testTag = "unfiltered_retake_camera_button",
+              modifier = Modifier.fillMaxWidth()
+            )
           }
 
           item {
-            Text("Select Current Mood Zone", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+            Text(
+              text = "Select Current Mood Zone",
+              fontFamily = PlusJakartaSansFontFamily,
+              fontSize = 13.sp,
+              fontWeight = FontWeight.Bold,
+              color = palette.textPrimary
+            )
+            Spacer(modifier = Modifier.height(6.dp))
             LazyRow(
-              horizontalArrangement = Arrangement.spacedBy(6.dp),
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
               modifier = Modifier.fillMaxWidth()
             ) {
               items(MoodType.values()) { mood ->
+                val isSelected = selectedMood == mood
                 FilterChip(
-                  selected = selectedMood == mood,
+                  selected = isSelected,
                   onClick = { selectedMood = mood },
                   leadingIcon = {
                     VybeMoodOutlineIcon(
                       mood = mood,
-                      tint = if (selectedMood == mood) mood.accentColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                      tint = if (isSelected) mood.accentColor else palette.textSecondary,
                       size = 14.dp
                     )
                   },
-                  label = { Text(mood.title, fontSize = 11.sp) }
+                  label = {
+                    Text(
+                      mood.title,
+                      fontSize = 12.sp,
+                      color = if (isSelected) palette.textPrimary else palette.textSecondary
+                    )
+                  },
+                  colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = palette.accent.copy(alpha = 0.16f),
+                    containerColor = palette.elevated
+                  )
                 )
               }
             }
@@ -720,43 +784,42 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
               onValueChange = { postCaption = it },
               enabled = !isPublishingRaw,
               label = { Text("Add caption (Optional)") },
-              placeholder = { Text("What happened just now? No show-off, just life...", fontSize = 13.sp) },
+              placeholder = { Text("What happened just now? No show-off, just life...", fontSize = 13.sp, color = palette.textMuted) },
+              colors = fieldColors,
               minLines = 3,
               modifier = Modifier
                 .fillMaxWidth()
                 .testTag("unfiltered_caption_input"),
-              shape = RoundedCornerShape(14.dp)
+              shape = RoundedCornerShape(VybeTokens.Radius.md)
             )
           }
 
           item {
-            Surface(
-              color = if (isDark) VybeVioletDark.copy(alpha = 0.35f) else VybeViolet.copy(alpha = 0.09f),
-              shape = RoundedCornerShape(12.dp),
-              border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.3f))
+            VybeSurfaceCard(
+              containerColor = palette.elevated,
+              borderColor = palette.accent.copy(alpha = 0.3f),
+              cornerRadius = VybeTokens.Radius.md,
+              contentPadding = PaddingValues(12.dp)
             ) {
-              Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-              ) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                  Icons.Outlined.Lock,
+                  imageVector = Icons.Outlined.Lock,
                   contentDescription = null,
-                  tint = if (isDark) VybeBrandCyan else VybeViolet,
+                  tint = palette.accent,
                   modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                   Text(
-                    "0% Filter & Original Camera Quality Enforced",
+                    text = "0% Filter & Original Camera Quality Enforced",
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = palette.textPrimary
                   )
                   Text(
                     text = "Photos are uploaded directly from the camera output file without downscaling, re-compression, or gallery imports.",
                     fontSize = 11.sp,
-                    color = if (isDark) VybeBrandCyan else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = palette.textSecondary,
                     lineHeight = 15.sp
                   )
                 }
@@ -765,27 +828,14 @@ fun UnfilteredScreen(viewModel: VybeViewModel) {
           }
 
           item {
-            Button(
+            VybePrimaryButton(
+              text = if (isPublishingRaw) "Publishing Original Capture..." else "Publish Raw Moment",
               onClick = { executeRawPublish() },
               enabled = !isPublishingRaw && capturedCameraUri != null,
-              colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-              shape = RoundedCornerShape(14.dp),
-              modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .testTag("unfiltered_publish_primary_button")
-            ) {
-              Text(
-                if (isPublishingRaw) "Publishing Original Capture..." else "Publish Raw Moment",
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
-                color = Color.White
-              )
-            }
-          }
-
-          item {
-            Spacer(modifier = Modifier.height(30.dp))
+              isLoading = isPublishingRaw,
+              testTag = "unfiltered_publish_primary_button",
+              modifier = Modifier.fillMaxWidth()
+            )
           }
         }
       }

@@ -3,30 +3,18 @@ package com.example.ui.screens
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
-import androidx.compose.material.icons.automirrored.outlined.*
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,44 +23,29 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.example.R
 import com.example.data.model.MediaType
-import com.example.data.model.Post
-import com.example.data.model.User
-import com.example.data.model.VybeCircle
 import com.example.ui.MainTab
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VybeAvatar
+import com.example.ui.components.VybeBrandWordmark
+import com.example.ui.components.VybeEmptyState
+import com.example.ui.components.VybeNotificationBellButton
+import com.example.ui.components.VybeSearchBar
+import com.example.ui.components.VybeSurfaceCard
 import com.example.ui.theme.*
-import kotlinx.coroutines.launch
 
-/**
- * VYBE 2.1 – EXPLORE ZONE
- * Redesigned Discovery Experience based on the official VYBE 2.1 visual system.
- * Features:
- * - Brand wordmark & "Explore Zone ✦" header with unread notification badge
- * - Filter Pills: For You, Trending, People, Nearby, Circles, Interests
- * - Smart Search with recent history, instant suggestions, and categorized live results
- * - Trending Topics with real post-backed hashtags
- * - Featured Creators horizontal discovery cards with live follower counts and follow action
- * - Recommended for You rich media cards with likes and comments
- * - Nearby Discovery with privacy protection and city fallback
- * - Public Circles and Interest channels
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExploreScreen(viewModel: VybeViewModel) {
+  val palette = LocalVybePalette.current
   val searchQuery by viewModel.searchQuery.collectAsState()
   val searchHistory by viewModel.searchHistory.collectAsState()
   val posts by viewModel.posts.collectAsState()
@@ -84,18 +57,12 @@ fun ExploreScreen(viewModel: VybeViewModel) {
   val notifications by viewModel.notifications.collectAsState()
   val unreadNotificationsCount = remember(notifications) { notifications.count { !it.isRead } }
 
-  val coroutineScope = rememberCoroutineScope()
-  val context = LocalContext.current
-
-  // Filter Pills: "For You", "Trending", "People", "Nearby", "Circles", "Interests"
   val filterPills = listOf("For You", "Trending", "People", "Nearby", "Circles", "Interests")
   var selectedPill by remember { mutableStateOf("For You") }
 
-  // Search result category tabs
   val searchTabs = listOf("All", "People", "Hashtags", "Posts", "Reels", "Circles")
   var selectedSearchTab by remember { mutableStateOf("All") }
 
-  // Nearby Discovery state
   var nearbyLocationGranted by remember { mutableStateOf(false) }
   var selectedCityFilter by remember { mutableStateOf("All India") }
   val indianCities = listOf("All India", "Mumbai", "Bengaluru", "Delhi NCR", "Goa", "Hyderabad", "Kolkata", "Pune")
@@ -106,11 +73,9 @@ fun ExploreScreen(viewModel: VybeViewModel) {
     nearbyLocationGranted = perms.values.any { it }
   }
 
-  // Selected Interest Tag state
   val interestCategories = listOf("Travel", "Tech", "Music", "Fitness", "Lifestyle", "Design", "Food")
   var selectedInterest by remember { mutableStateOf("Travel") }
 
-  // Filtered nearby posts
   val nearbyPosts = remember(posts, selectedCityFilter) {
     if (selectedCityFilter == "All India") {
       posts.filter { !it.isArchived && !it.locationName.isNullOrBlank() }
@@ -119,7 +84,6 @@ fun ExploreScreen(viewModel: VybeViewModel) {
     }
   }
 
-  // Filtered interest posts
   val interestPosts = remember(posts, selectedInterest) {
     posts.filter { p ->
       !p.isArchived && (
@@ -129,7 +93,6 @@ fun ExploreScreen(viewModel: VybeViewModel) {
     }
   }
 
-  // Real Trending Hashtags calculated from published posts
   val trendingHashtags = remember(posts) {
     val regex = Regex("#([A-Za-z0-9_]{2,30})")
     val counts = posts
@@ -156,14 +119,12 @@ fun ExploreScreen(viewModel: VybeViewModel) {
     }
   }
 
-  // Real Featured Creators from published user records
   val featuredCreators = remember(allUsers, currentUser?.id) {
     allUsers
       .filter { it.id != currentUser?.id && !it.isBanned && !it.isDeactivated }
       .sortedByDescending { it.followersCount }
   }
 
-  // Recommended Posts
   val recommendedPosts = remember(posts, selectedPill) {
     val activePosts = posts.filter { !it.isArchived }
     when (selectedPill) {
@@ -172,7 +133,6 @@ fun ExploreScreen(viewModel: VybeViewModel) {
     }
   }
 
-  // Smart Search matching
   val isSearching = searchQuery.isNotBlank()
   val cleanQuery = remember(searchQuery) {
     searchQuery.trim().lowercase().removePrefix("@").removePrefix("#")
@@ -221,11 +181,11 @@ fun ExploreScreen(viewModel: VybeViewModel) {
   }
 
   Scaffold(
-    containerColor = MaterialTheme.colorScheme.background,
+    containerColor = palette.canvas,
     contentWindowInsets = WindowInsets(0.dp),
     topBar = {
       Surface(
-        color = MaterialTheme.colorScheme.background,
+        color = palette.canvas,
         modifier = Modifier
           .fillMaxWidth()
           .statusBarsPadding()
@@ -233,95 +193,35 @@ fun ExploreScreen(viewModel: VybeViewModel) {
         Column(
           modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
-          // Brand Wordmark + Explore Zone Title + Notification Bell
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
           ) {
             Column {
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                  text = "VYBE",
-                  fontSize = 24.sp,
-                  fontWeight = FontWeight.Black,
-                  letterSpacing = 2.sp,
-                  color = MaterialTheme.colorScheme.onBackground
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Surface(
-                  color = VybeBrandViolet.copy(alpha = 0.2f),
-                  shape = RoundedCornerShape(6.dp)
-                ) {
-                  Text(
-                    text = "2.1",
-                    color = VybeBrandCyan,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                  )
-                }
-              }
+              VybeBrandWordmark(isGrowMode = false)
               Spacer(modifier = Modifier.height(2.dp))
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                  text = "Explore Zone",
-                  fontSize = 18.sp,
-                  fontWeight = FontWeight.ExtraBold,
-                  color = MaterialTheme.colorScheme.onBackground
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                  text = "✦",
-                  fontSize = 16.sp,
-                  color = VybeBrandViolet
-                )
-              }
               Text(
-                text = "Discover. Connect. Vibe.",
+                text = "Explore Zone",
+                fontFamily = PlusJakartaSansFontFamily,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                color = palette.textPrimary
+              )
+              Text(
+                text = "Discover creators, circles & spaces",
                 fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = palette.textSecondary
               )
             }
 
-            // Top Right: Search Icon + Notification Bell with Badge
-            Row(
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-              Box(modifier = Modifier.size(42.dp)) {
-                IconButton(
-                  onClick = { viewModel.navigateTo(Screen.NOTIFICATIONS) },
-                  modifier = Modifier.fillMaxSize()
-                ) {
-                  Icon(
-                    imageVector = Icons.Outlined.Notifications,
-                    contentDescription = "Notifications",
-                    tint = MaterialTheme.colorScheme.onSurface
-                  )
-                }
-                if (unreadNotificationsCount > 0) {
-                  Box(
-                    modifier = Modifier
-                      .align(Alignment.TopEnd)
-                      .offset(x = (-2).dp, y = 4.dp)
-                      .size(16.dp)
-                      .clip(CircleShape)
-                      .background(VybeDanger),
-                    contentAlignment = Alignment.Center
-                  ) {
-                    Text(
-                      text = if (unreadNotificationsCount > 9) "9+" else unreadNotificationsCount.toString(),
-                      color = Color.White,
-                      fontSize = 9.sp,
-                      fontWeight = FontWeight.Bold
-                    )
-                  }
-                }
-              }
-            }
+            VybeNotificationBellButton(
+              unreadCount = unreadNotificationsCount,
+              onClick = { viewModel.navigateTo(Screen.NOTIFICATIONS) },
+              testTag = "explore_notification_bell"
+            )
           }
 
           Spacer(modifier = Modifier.height(10.dp))
@@ -337,136 +237,66 @@ fun ExploreScreen(viewModel: VybeViewModel) {
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-              Surface(
-                modifier = Modifier
-                  .weight(1f)
-                  .clip(RoundedCornerShape(12.dp))
-                  .clickable { viewModel.navigateTo(Screen.UNLOAD_VIEW) }
-                  .testTag("explore_header_feature_unload"),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant)
-              ) {
-                Row(
-                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                  Text("🎙️", fontSize = 13.sp)
-                  Text("UNLOAD", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                }
-              }
-
-              Surface(
-                modifier = Modifier
-                  .weight(1f)
-                  .clip(RoundedCornerShape(12.dp))
-                  .clickable { viewModel.navigateTo(Screen.UNFILTERED_VIEW) }
-                  .testTag("explore_header_feature_unfiltered"),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant)
-              ) {
-                Row(
-                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                  Text("✨", fontSize = 13.sp)
-                  Text("UNFILTERED", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                }
-              }
-
-              Surface(
-                modifier = Modifier
-                  .weight(1f)
-                  .clip(RoundedCornerShape(12.dp))
-                  .clickable { viewModel.navigateTo(Screen.WHAT_NEXT_VIEW) }
-                  .testTag("explore_header_feature_what_next"),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant)
-              ) {
-                Row(
-                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                  Text("🔮", fontSize = 13.sp)
-                  Text("WHAT NEXT", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                }
-              }
+              ExploreSignatureChip(
+                emoji = "🎙️",
+                label = "UNLOAD",
+                palette = palette,
+                testTag = "explore_header_feature_unload",
+                onClick = { viewModel.navigateTo(Screen.UNLOAD_VIEW) },
+                modifier = Modifier.weight(1f)
+              )
+              ExploreSignatureChip(
+                emoji = "✨",
+                label = "UNFILTERED",
+                palette = palette,
+                testTag = "explore_header_feature_unfiltered",
+                onClick = { viewModel.navigateTo(Screen.UNFILTERED_VIEW) },
+                modifier = Modifier.weight(1f)
+              )
+              ExploreSignatureChip(
+                emoji = "🔮",
+                label = "WHAT NEXT",
+                palette = palette,
+                testTag = "explore_header_feature_what_next",
+                onClick = { viewModel.navigateTo(Screen.WHAT_NEXT_VIEW) },
+                modifier = Modifier.weight(1f)
+              )
             }
 
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-              Surface(
-                modifier = Modifier
-                  .weight(1f)
-                  .clip(RoundedCornerShape(12.dp))
-                  .clickable { viewModel.navigateTo(Screen.TIME_CAPSULES_VIEW) }
-                  .testTag("explore_header_feature_time_capsule"),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant)
-              ) {
-                Row(
-                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                  Text("⏳", fontSize = 13.sp)
-                  Text("TIME CAPSULE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                }
-              }
-
-              Surface(
-                modifier = Modifier
-                  .weight(1f)
-                  .clip(RoundedCornerShape(12.dp))
-                  .clickable { viewModel.navigateTo(Screen.DOUBLE_TAKE_VIEW) }
-                  .testTag("explore_header_feature_double_take"),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant)
-              ) {
-                Row(
-                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                  Text("📸", fontSize = 13.sp)
-                  Text("DOUBLE TAKE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                }
-              }
-
-              Surface(
-                modifier = Modifier
-                  .weight(1f)
-                  .clip(RoundedCornerShape(12.dp))
-                  .clickable { viewModel.selectTab(MainTab.CROSSED_PATHS) }
-                  .testTag("explore_header_feature_crossed_paths"),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant)
-              ) {
-                Row(
-                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                  Text("🧭", fontSize = 13.sp)
-                  Text("CROSSED PATHS", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                }
-              }
+              ExploreSignatureChip(
+                emoji = "⏳",
+                label = "TIME CAPSULE",
+                palette = palette,
+                testTag = "explore_header_feature_time_capsule",
+                onClick = { viewModel.navigateTo(Screen.TIME_CAPSULES_VIEW) },
+                modifier = Modifier.weight(1f)
+              )
+              ExploreSignatureChip(
+                emoji = "📸",
+                label = "DOUBLE TAKE",
+                palette = palette,
+                testTag = "explore_header_feature_double_take",
+                onClick = { viewModel.navigateTo(Screen.DOUBLE_TAKE_VIEW) },
+                modifier = Modifier.weight(1f)
+              )
+              ExploreSignatureChip(
+                emoji = "🧭",
+                label = "CROSSED PATHS",
+                palette = palette,
+                testTag = "explore_header_feature_crossed_paths",
+                onClick = { viewModel.selectTab(MainTab.CROSSED_PATHS) },
+                modifier = Modifier.weight(1f)
+              )
             }
           }
 
           Spacer(modifier = Modifier.height(10.dp))
 
-          // Filter Pills Row (For You, Trending, People, Nearby, Circles, Interests)
+          // Filter Pills Row
           LazyRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -474,11 +304,11 @@ fun ExploreScreen(viewModel: VybeViewModel) {
             items(filterPills) { pill ->
               val isSelected = selectedPill == pill
               Surface(
-                color = if (isSelected) VybeBrandViolet else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(20.dp),
-                border = if (isSelected) null else BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant),
+                color = if (isSelected) palette.accent else palette.elevated,
+                shape = RoundedCornerShape(VybeTokens.Radius.pill),
+                border = if (isSelected) null else BorderStroke(1.dp, palette.border),
                 modifier = Modifier
-                  .clip(RoundedCornerShape(20.dp))
+                  .clip(RoundedCornerShape(VybeTokens.Radius.pill))
                   .clickable {
                     selectedPill = pill
                     if (isSearching) viewModel.setSearchQuery("")
@@ -487,9 +317,10 @@ fun ExploreScreen(viewModel: VybeViewModel) {
               ) {
                 Text(
                   text = pill,
+                  fontFamily = PlusJakartaSansFontFamily,
                   fontSize = 12.sp,
                   fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                  color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                  color = if (isSelected) Color.White else palette.textSecondary,
                   modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
                 )
               }
@@ -499,73 +330,15 @@ fun ExploreScreen(viewModel: VybeViewModel) {
           Spacer(modifier = Modifier.height(10.dp))
 
           // Smart Search Bar
-          Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-            shape = RoundedCornerShape(24.dp),
-            border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant),
-            modifier = Modifier.fillMaxWidth()
-          ) {
-            Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 4.dp),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Icon(
-                imageVector = Icons.Default.Search,
-                contentDescription = "Search",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
-              )
-              Spacer(modifier = Modifier.width(8.dp))
-              TextField(
-                value = searchQuery,
-                onValueChange = {
-                  viewModel.setSearchQuery(it)
-                  if (it.isNotBlank()) {
-                    viewModel.addSearchQueryToHistory(it)
-                  }
-                },
-                placeholder = {
-                  Text(
-                    text = "Search users, hashtags, or posts...",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                  )
-                },
-                singleLine = true,
-                colors = TextFieldDefaults.colors(
-                  focusedContainerColor = Color.Transparent,
-                  unfocusedContainerColor = Color.Transparent,
-                  focusedIndicatorColor = Color.Transparent,
-                  unfocusedIndicatorColor = Color.Transparent
-                ),
-                modifier = Modifier
-                  .weight(1f)
-                  .testTag("explore_smart_search_input")
-              )
-              if (searchQuery.isNotEmpty()) {
-                IconButton(
-                  onClick = { viewModel.setSearchQuery("") },
-                  modifier = Modifier.size(28.dp)
-                ) {
-                  Icon(
-                    Icons.Default.Close,
-                    contentDescription = "Clear",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp)
-                  )
-                }
-              } else {
-                Icon(
-                  imageVector = Icons.Default.FilterList,
-                  contentDescription = "Filter",
-                  tint = VybeBrandViolet,
-                  modifier = Modifier.size(18.dp)
-                )
-              }
-            }
-          }
+          VybeSearchBar(
+            query = searchQuery,
+            onQueryChange = {
+              viewModel.setSearchQuery(it)
+              if (it.isNotBlank()) viewModel.addSearchQueryToHistory(it)
+            },
+            placeholder = "Search users, hashtags, or posts...",
+            testTag = "explore_smart_search_input"
+          )
         }
       }
     }
@@ -574,15 +347,11 @@ fun ExploreScreen(viewModel: VybeViewModel) {
       modifier = Modifier
         .fillMaxSize()
         .padding(paddingValues),
-      contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+      contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
 
-      // ==========================================
-      // STATE 1: SEARCH RESULTS VIEW
-      // ==========================================
       if (isSearching) {
-        // Search Result Category Tabs
         item(key = "search_category_tabs") {
           LazyRow(
             modifier = Modifier.fillMaxWidth(),
@@ -591,17 +360,18 @@ fun ExploreScreen(viewModel: VybeViewModel) {
             items(searchTabs) { tab ->
               val isSelected = selectedSearchTab == tab
               Surface(
-                color = if (isSelected) VybeBrandViolet else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(16.dp),
+                color = if (isSelected) palette.accent else palette.elevated,
+                shape = RoundedCornerShape(VybeTokens.Radius.pill),
+                border = if (isSelected) null else BorderStroke(1.dp, palette.border),
                 modifier = Modifier
-                  .clip(RoundedCornerShape(16.dp))
+                  .clip(RoundedCornerShape(VybeTokens.Radius.pill))
                   .clickable { selectedSearchTab = tab }
               ) {
                 Text(
                   text = tab,
                   fontSize = 11.sp,
                   fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                  color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                  color = if (isSelected) Color.White else palette.textSecondary,
                   modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                 )
               }
@@ -609,7 +379,6 @@ fun ExploreScreen(viewModel: VybeViewModel) {
           }
         }
 
-        // Recent Searches Bar
         if (searchHistory.isNotEmpty()) {
           item(key = "search_history_bar") {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -618,17 +387,12 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Text(
-                  text = "Recent Searches",
-                  fontSize = 12.sp,
-                  fontWeight = FontWeight.Bold,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Text("Recent Searches", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = palette.textSecondary)
                 Text(
                   text = "Clear All",
                   fontSize = 11.sp,
                   fontWeight = FontWeight.SemiBold,
-                  color = VybeBrandViolet,
+                  color = palette.accent,
                   modifier = Modifier.clickable { viewModel.clearSearchHistory() }
                 )
               }
@@ -636,24 +400,21 @@ fun ExploreScreen(viewModel: VybeViewModel) {
               LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 items(searchHistory) { historyItem ->
                   Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                    shape = RoundedCornerShape(12.dp),
+                    color = palette.elevated,
+                    shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                    border = BorderStroke(1.dp, palette.border),
                     modifier = Modifier.clickable { viewModel.setSearchQuery(historyItem) }
                   ) {
                     Row(
-                      modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                      modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                       verticalAlignment = Alignment.CenterVertically
                     ) {
-                      Text(
-                        text = historyItem,
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                      )
-                      Spacer(modifier = Modifier.width(4.dp))
+                      Text(text = historyItem, fontSize = 11.sp, color = palette.textPrimary)
+                      Spacer(modifier = Modifier.width(6.dp))
                       Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Remove",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = palette.textMuted,
                         modifier = Modifier
                           .size(12.dp)
                           .clickable { viewModel.removeSearchQueryFromHistory(historyItem) }
@@ -666,71 +427,52 @@ fun ExploreScreen(viewModel: VybeViewModel) {
           }
         }
 
-        // Matched Users section
         if (selectedSearchTab == "All" || selectedSearchTab == "People") {
           if (matchedUsers.isNotEmpty()) {
             item(key = "matched_users_header") {
-              Text("People", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+              Text("People", fontFamily = PlusJakartaSansFontFamily, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = palette.textPrimary)
             }
             items(matchedUsers.take(6), key = { "search_u_${it.id}" }) { user ->
               val isFollowing = followingUserIds.contains(user.id)
               val isRequested = requestedFollowUserIds.contains(user.id)
-              Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant),
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .clickable { viewModel.openUserProfile(user) }
+              VybeSurfaceCard(
+                onClick = { viewModel.openUserProfile(user) },
+                contentPadding = PaddingValues(12.dp),
+                modifier = Modifier.fillMaxWidth()
               ) {
                 Row(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
+                  modifier = Modifier.fillMaxWidth(),
                   verticalAlignment = Alignment.CenterVertically,
                   horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                  Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically
-                  ) {
+                  Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                     VybeAvatar(user = user, size = 42.dp)
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                       Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                          text = user.displayName,
-                          fontWeight = FontWeight.Bold,
-                          fontSize = 13.sp,
-                          maxLines = 1,
-                          overflow = TextOverflow.Ellipsis
-                        )
+                        Text(user.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = palette.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (user.isVerified) {
                           Spacer(modifier = Modifier.width(4.dp))
                           VerificationBadge(user = user, iconSize = 14.dp)
                         }
                       }
-                      Text(
-                        text = "@${user.username} • ${user.followersCount} followers",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                      )
+                      Text("@${user.username} • ${user.followersCount} followers", fontSize = 11.sp, color = palette.textSecondary)
                     }
                   }
-
                   if (user.id != currentUser?.id) {
                     Surface(
-                      color = if (isFollowing) MaterialTheme.colorScheme.surfaceVariant else VybeBrandViolet,
-                      shape = RoundedCornerShape(16.dp),
+                      color = if (isFollowing) palette.elevated else palette.accent,
+                      shape = RoundedCornerShape(VybeTokens.Radius.pill),
+                      border = if (isFollowing) BorderStroke(1.dp, palette.border) else null,
                       modifier = Modifier
+                        .clip(RoundedCornerShape(VybeTokens.Radius.pill))
                         .clickable { viewModel.toggleFollowUser(user.id) }
-                        .padding(start = 8.dp)
                     ) {
                       Text(
                         text = if (isFollowing) "LINKED" else if (isRequested) "Requested" else "Follow",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (isFollowing) MaterialTheme.colorScheme.onSurfaceVariant else Color.White,
+                        color = if (isFollowing) palette.textSecondary else Color.White,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                       )
                     }
@@ -741,88 +483,64 @@ fun ExploreScreen(viewModel: VybeViewModel) {
           }
         }
 
-        // Matched Hashtags section
         if (selectedSearchTab == "All" || selectedSearchTab == "Hashtags") {
           if (matchedHashtags.isNotEmpty()) {
             item(key = "matched_tags_header") {
-              Text("Hashtags", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+              Text("Hashtags", fontFamily = PlusJakartaSansFontFamily, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = palette.textPrimary)
             }
             items(matchedHashtags, key = { "tag_${it.first}" }) { (tag, count, _) ->
-              Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant),
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .clickable { viewModel.setSearchQuery("#$tag") }
+              VybeSurfaceCard(
+                onClick = { viewModel.setSearchQuery("#$tag") },
+                contentPadding = PaddingValues(12.dp),
+                modifier = Modifier.fillMaxWidth()
               ) {
                 Row(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
+                  modifier = Modifier.fillMaxWidth(),
                   verticalAlignment = Alignment.CenterVertically,
                   horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                   Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                       modifier = Modifier
-                        .size(32.dp)
+                        .size(34.dp)
                         .clip(CircleShape)
-                        .background(VybeBrandCyan.copy(alpha = 0.15f)),
+                        .background(palette.accentSecondary.copy(alpha = 0.14f)),
                       contentAlignment = Alignment.Center
                     ) {
-                      Text("#", fontWeight = FontWeight.Bold, color = VybeBrandCyan)
+                      Text("#", fontWeight = FontWeight.Bold, color = palette.accentSecondary)
                     }
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
-                      Text("#$tag", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                      Text("$count posts", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      Text("#$tag", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = palette.textPrimary)
+                      Text("$count posts", fontSize = 11.sp, color = palette.textSecondary)
                     }
                   }
-                  Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(14.dp)
-                  )
+                  Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, contentDescription = null, tint = palette.textMuted, modifier = Modifier.size(14.dp))
                 }
               }
             }
           }
         }
 
-        // Matched Posts & Reels
         if (selectedSearchTab == "All" || selectedSearchTab == "Posts" || selectedSearchTab == "Reels") {
           val postList = if (selectedSearchTab == "Reels") matchedReels else matchedPosts
           if (postList.isNotEmpty()) {
             item(key = "matched_posts_header") {
-              Text(
-                if (selectedSearchTab == "Reels") "Reels" else "Posts",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold
-              )
+              Text(if (selectedSearchTab == "Reels") "Reels" else "Posts", fontFamily = PlusJakartaSansFontFamily, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = palette.textPrimary)
             }
             items(postList, key = { "search_p_${it.id}" }) { post ->
-              Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant),
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .clickable {
-                    if (post.mediaType == MediaType.REEL || post.isVybesReel) {
-                      viewModel.openReelViewer(post.id)
-                    } else {
-                      viewModel.openPostFromNotification(post.id)
-                    }
+              VybeSurfaceCard(
+                onClick = {
+                  if (post.mediaType == MediaType.REEL || post.isVybesReel) {
+                    viewModel.openReelViewer(post.id)
+                  } else {
+                    viewModel.openPostFromNotification(post.id)
                   }
+                },
+                contentPadding = PaddingValues(10.dp),
+                modifier = Modifier.fillMaxWidth()
               ) {
-                Row(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(10.dp),
-                  verticalAlignment = Alignment.CenterVertically
-                ) {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                   val mediaUrl = post.mediaUrls.firstOrNull().orEmpty()
                   if (mediaUrl.isNotBlank()) {
                     AsyncImage(
@@ -831,7 +549,7 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                       contentScale = ContentScale.Crop,
                       modifier = Modifier
                         .size(54.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(VybeTokens.Radius.sm))
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                   }
@@ -840,15 +558,12 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                       text = post.caption.ifBlank { "Post by @${post.author.username}" },
                       fontSize = 12.sp,
                       fontWeight = FontWeight.Medium,
+                      color = palette.textPrimary,
                       maxLines = 2,
                       overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                      text = "@${post.author.username} • ${post.likesCount} likes",
-                      fontSize = 10.sp,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Text("@${post.author.username} • ${post.likesCount} likes", fontSize = 10.sp, color = palette.textSecondary)
                   }
                 }
               }
@@ -856,53 +571,18 @@ fun ExploreScreen(viewModel: VybeViewModel) {
           }
         }
 
-        // Empty state when search yields nothing
         if (matchedUsers.isEmpty() && matchedPosts.isEmpty() && matchedHashtags.isEmpty() && matchedCircles.isEmpty()) {
           item(key = "search_empty_state") {
-            Card(
-              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-              shape = RoundedCornerShape(16.dp),
-              modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 20.dp)
-            ) {
-              Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-              ) {
-                Icon(
-                  imageVector = Icons.Default.SearchOff,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                  modifier = Modifier.size(36.dp)
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                  text = "No results found for \"$searchQuery\"",
-                  fontWeight = FontWeight.Bold,
-                  fontSize = 14.sp
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                  text = "Try searching for a different username, display name, #hashtag, or circle.",
-                  fontSize = 11.sp,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                  textAlign = TextAlign.Center
-                )
-              }
-            }
+            VybeEmptyState(
+              icon = Icons.Default.SearchOff,
+              title = "No results found for \"$searchQuery\"",
+              subtitle = "Try searching for a different username, display name, #hashtag, or circle."
+            )
           }
         }
-      }
-
-      // ==========================================
-      // STATE 2: LANDING DISCOVERY VIEW (BY PILL)
-      // ==========================================
-      else {
+      } else {
         when (selectedPill) {
-          // --- FOR YOU & TRENDING ---
           "For You", "Trending" -> {
-            // SECTION 1: TRENDING TOPICS 🔥
             item(key = "landing_trending_topics") {
               Column(modifier = Modifier.fillMaxWidth()) {
                 Row(
@@ -910,41 +590,34 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                   horizontalArrangement = Arrangement.SpaceBetween,
                   verticalAlignment = Alignment.CenterVertically
                 ) {
-                  Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                  ) {
-                    Text(
-                      text = "Trending Topics",
-                      fontSize = 16.sp,
-                      fontWeight = FontWeight.Bold,
-                      color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text("🔥", fontSize = 16.sp)
-                  }
+                  Text(
+                    text = "Trending Topics",
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = palette.textPrimary
+                  )
                   Text(
                     text = "See All →",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = VybeBrandViolet,
+                    color = palette.accent,
                     modifier = Modifier.clickable { selectedPill = "Trending" }
                   )
                 }
                 Spacer(modifier = Modifier.height(10.dp))
 
                 if (trendingHashtags.isNotEmpty()) {
-                  LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                  ) {
+                  LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(trendingHashtags) { (tag, count, thumbnail) ->
                       Surface(
-                        color = Color(0xFF131B2E),
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant),
+                        color = palette.elevated,
+                        shape = RoundedCornerShape(VybeTokens.Radius.md),
+                        border = BorderStroke(1.dp, palette.border),
                         modifier = Modifier
-                          .width(135.dp)
-                          .height(84.dp)
-                          .clip(RoundedCornerShape(14.dp))
+                          .width(138.dp)
+                          .height(86.dp)
+                          .clip(RoundedCornerShape(VybeTokens.Radius.md))
                           .clickable { viewModel.setSearchQuery("#$tag") }
                       ) {
                         Box(modifier = Modifier.fillMaxSize()) {
@@ -959,62 +632,38 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                             Box(
                               modifier = Modifier
                                 .fillMaxSize()
-                                .background(
-                                  Brush.linearGradient(listOf(VybeVioletDark, Color(0xFF1E1B4B)))
-                                )
+                                .background(Brush.linearGradient(listOf(VybeSocialViolet, VybeGrowBlue)))
                             )
                           }
                           Box(
                             modifier = Modifier
                               .fillMaxSize()
-                              .background(
-                                Brush.verticalGradient(
-                                  listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
-                                )
-                              )
+                              .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))))
                           )
                           Column(
                             modifier = Modifier
                               .align(Alignment.BottomStart)
                               .padding(8.dp)
                           ) {
-                            Text(
-                              text = "#$tag",
-                              color = Color.White,
-                              fontSize = 11.sp,
-                              fontWeight = FontWeight.Bold,
-                              maxLines = 1,
-                              overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                              text = "$count posts",
-                              color = VybeBrandCyan,
-                              fontSize = 10.sp
-                            )
+                            Text("#$tag", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("$count posts", color = Color.White.copy(alpha = 0.8f), fontSize = 10.sp)
                           }
                         }
                       }
                     }
                   }
                 } else {
-                  Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                    modifier = Modifier.fillMaxWidth()
-                  ) {
+                  VybeSurfaceCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
                       text = "No trending topics yet. Start a conversation and make something trend.",
                       fontSize = 12.sp,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
-                      modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+                      color = palette.textSecondary
                     )
                   }
                 }
               }
             }
 
-            // SECTION 2: FEATURED CREATORS
             item(key = "landing_featured_creators") {
               Column(modifier = Modifier.fillMaxWidth()) {
                 Row(
@@ -1024,34 +673,33 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                 ) {
                   Text(
                     text = "Featured Creators",
+                    fontFamily = PlusJakartaSansFontFamily,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = palette.textPrimary
                   )
                   Text(
                     text = "See All →",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = VybeBrandViolet,
+                    color = palette.accent,
                     modifier = Modifier.clickable { selectedPill = "People" }
                   )
                 }
                 Spacer(modifier = Modifier.height(10.dp))
 
-                LazyRow(
-                  horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                   items(featuredCreators.take(8), key = { "feat_c_${it.id}" }) { creator ->
                     val isFollowing = followingUserIds.contains(creator.id)
                     val isRequested = requestedFollowUserIds.contains(creator.id)
                     Surface(
-                      color = Color(0xFF131B2E),
-                      shape = RoundedCornerShape(16.dp),
-                      border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant),
+                      color = palette.elevated,
+                      shape = RoundedCornerShape(VybeTokens.Radius.lg),
+                      border = BorderStroke(1.dp, palette.border),
                       modifier = Modifier
-                        .width(130.dp)
-                        .height(190.dp)
-                        .clip(RoundedCornerShape(16.dp))
+                        .width(134.dp)
+                        .height(192.dp)
+                        .clip(RoundedCornerShape(VybeTokens.Radius.lg))
                         .clickable { viewModel.openUserProfile(creator) }
                     ) {
                       Box(modifier = Modifier.fillMaxSize()) {
@@ -1066,19 +714,13 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                           Box(
                             modifier = Modifier
                               .fillMaxSize()
-                              .background(
-                                Brush.linearGradient(listOf(VybeVioletDark, Color(0xFF312E81)))
-                              )
+                              .background(Brush.linearGradient(listOf(VybeSocialViolet, VybeGrowBlue)))
                           )
                         }
                         Box(
                           modifier = Modifier
                             .fillMaxSize()
-                            .background(
-                              Brush.verticalGradient(
-                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.88f))
-                              )
-                            )
+                            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.88f))))
                         )
                         Column(
                           modifier = Modifier
@@ -1086,38 +728,20 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                             .padding(8.dp),
                           horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                          Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                          ) {
-                            Text(
-                              text = "@${creator.username}",
-                              color = Color.White,
-                              fontSize = 11.sp,
-                              fontWeight = FontWeight.Bold,
-                              maxLines = 1,
-                              overflow = TextOverflow.Ellipsis
-                            )
-                            if (creator.isVerified) {
-                              VerificationBadge(user = creator, iconSize = 12.dp)
-                            }
+                          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text("@${creator.username}", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (creator.isVerified) VerificationBadge(user = creator, iconSize = 12.dp)
                           }
-                          Text(
-                            text = "${creator.followersCount} Followers",
-                            color = Color.White.copy(alpha = 0.75f),
-                            fontSize = 9.sp
-                          )
+                          Text("${creator.followersCount} Followers", color = Color.White.copy(alpha = 0.78f), fontSize = 9.sp)
                           Spacer(modifier = Modifier.height(8.dp))
                           Button(
                             onClick = { viewModel.toggleFollowUser(creator.id) },
-                            colors = ButtonDefaults.buttonColors(
-                              containerColor = if (isFollowing) Color.White.copy(alpha = 0.2f) else VybeBrandViolet
-                            ),
-                            shape = RoundedCornerShape(14.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isFollowing) Color.White.copy(alpha = 0.2f) else palette.accent),
+                            shape = RoundedCornerShape(VybeTokens.Radius.pill),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                             modifier = Modifier
                               .fillMaxWidth()
-                              .height(30.dp)
+                              .height(32.dp)
                           ) {
                             Text(
                               text = if (isFollowing) "LINKED" else if (isRequested) "Requested" else "Follow",
@@ -1134,7 +758,6 @@ fun ExploreScreen(viewModel: VybeViewModel) {
               }
             }
 
-            // SECTION 3: RECOMMENDED FOR YOU (Rich Media Cards)
             item(key = "landing_recommended_header") {
               Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1143,21 +766,21 @@ fun ExploreScreen(viewModel: VybeViewModel) {
               ) {
                 Text(
                   text = "Recommended for You",
+                  fontFamily = PlusJakartaSansFontFamily,
                   fontSize = 16.sp,
                   fontWeight = FontWeight.Bold,
-                  color = MaterialTheme.colorScheme.onSurface
+                  color = palette.textPrimary
                 )
                 Text(
-                  text = "See All →",
+                  text = "Refresh →",
                   fontSize = 12.sp,
                   fontWeight = FontWeight.Bold,
-                  color = VybeBrandViolet,
+                  color = palette.accent,
                   modifier = Modifier.clickable { viewModel.refreshAllData() }
                 )
               }
             }
 
-            // 2-Column Recommended Posts
             items(recommendedPosts.chunked(2), key = { chunk -> "rec_row_${chunk.first().id}" }) { pair ->
               Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1165,13 +788,13 @@ fun ExploreScreen(viewModel: VybeViewModel) {
               ) {
                 pair.forEach { post ->
                   Surface(
-                    color = Color(0xFF131B2E),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant),
+                    color = palette.elevated,
+                    shape = RoundedCornerShape(VybeTokens.Radius.md),
+                    border = BorderStroke(1.dp, palette.border),
                     modifier = Modifier
                       .weight(1f)
                       .height(180.dp)
-                      .clip(RoundedCornerShape(14.dp))
+                      .clip(RoundedCornerShape(VybeTokens.Radius.md))
                       .clickable {
                         if (post.mediaType == MediaType.REEL || post.isVybesReel) {
                           viewModel.openReelViewer(post.id)
@@ -1193,18 +816,13 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                       Box(
                         modifier = Modifier
                           .fillMaxSize()
-                          .background(
-                            Brush.verticalGradient(
-                              listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f))
-                            )
-                          )
+                          .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f))))
                       )
-                      // Top bookmark icon
                       IconButton(
                         onClick = { viewModel.toggleSave(post.id) },
                         modifier = Modifier
                           .align(Alignment.TopEnd)
-                          .size(32.dp)
+                          .size(36.dp)
                       ) {
                         Icon(
                           imageVector = if (post.isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
@@ -1213,7 +831,6 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                           modifier = Modifier.size(16.dp)
                         )
                       }
-                      // Bottom stats: Like count & comment count
                       Row(
                         modifier = Modifier
                           .align(Alignment.BottomStart)
@@ -1222,34 +839,14 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                       ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                          Icon(
-                            imageVector = Icons.Default.Favorite,
-                            contentDescription = "Likes",
-                            tint = Color.White,
-                            modifier = Modifier.size(12.dp)
-                          )
+                          Icon(Icons.Default.Favorite, contentDescription = "Likes", tint = Color.White, modifier = Modifier.size(12.dp))
                           Spacer(modifier = Modifier.width(3.dp))
-                          Text(
-                            text = "${post.likesCount}",
-                            color = Color.White,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                          )
+                          Text("${post.likesCount}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                          Icon(
-                            imageVector = Icons.Default.ChatBubbleOutline,
-                            contentDescription = "Comments",
-                            tint = Color.White,
-                            modifier = Modifier.size(12.dp)
-                          )
+                          Icon(Icons.Default.ChatBubbleOutline, contentDescription = "Comments", tint = Color.White, modifier = Modifier.size(12.dp))
                           Spacer(modifier = Modifier.width(3.dp))
-                          Text(
-                            text = "${post.commentsCount}",
-                            color = Color.White,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                          )
+                          Text("${post.commentsCount}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                       }
                     }
@@ -1261,153 +858,95 @@ fun ExploreScreen(viewModel: VybeViewModel) {
               }
             }
 
-            // Spiritual Mode Gateway Card
             item(key = "landing_spiritual_gateway") {
-              Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.45f)),
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .clickable { viewModel.navigateTo(Screen.SPIRITUAL_MODE) }
+              VybeSurfaceCard(
+                onClick = { viewModel.navigateTo(Screen.SPIRITUAL_MODE) },
+                modifier = Modifier.fillMaxWidth()
               ) {
                 Row(
-                  modifier = Modifier.padding(14.dp),
+                  modifier = Modifier.fillMaxWidth(),
                   verticalAlignment = Alignment.CenterVertically,
                   horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                  Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically
-                  ) {
+                  Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                     Box(
                       modifier = Modifier
-                        .size(36.dp)
+                        .size(38.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF10B981).copy(alpha = 0.2f)),
+                        .background(palette.success.copy(alpha = 0.14f)),
                       contentAlignment = Alignment.Center
                     ) {
-                      Icon(
-                        imageVector = Icons.Default.SelfImprovement,
-                        contentDescription = null,
-                        tint = Color(0xFF10B981),
-                        modifier = Modifier.size(20.dp)
-                      )
+                      Icon(Icons.Default.SelfImprovement, contentDescription = null, tint = palette.success, modifier = Modifier.size(20.dp))
                     }
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
                     Column {
-                      Text("Spiritual Mode", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                      Text("Enter a peaceful mindful zone without metrics", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      Text("Spiritual Mode", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = palette.textPrimary)
+                      Text("Enter a peaceful mindful zone without metrics", fontSize = 11.sp, color = palette.textSecondary)
                     }
                   }
-                  Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                    contentDescription = null,
-                    tint = Color(0xFF10B981),
-                    modifier = Modifier.size(18.dp)
-                  )
+                  Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = palette.success, modifier = Modifier.size(18.dp))
                 }
               }
             }
           }
 
-          // --- PEOPLE DISCOVERY ---
           "People" -> {
             item(key = "people_header") {
-              Text("Discover Creators & People", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+              Text("Discover Creators & People", fontFamily = PlusJakartaSansFontFamily, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = palette.textPrimary)
             }
             items(featuredCreators, key = { "p_creator_${it.id}" }) { user ->
               val isFollowing = followingUserIds.contains(user.id)
               val isRequested = requestedFollowUserIds.contains(user.id)
-              Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant),
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .clickable { viewModel.openUserProfile(user) }
+              VybeSurfaceCard(
+                onClick = { viewModel.openUserProfile(user) },
+                modifier = Modifier.fillMaxWidth()
               ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                  Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                  ) {
-                    Row(
-                      modifier = Modifier.weight(1f),
-                      verticalAlignment = Alignment.CenterVertically
-                    ) {
-                      VybeAvatar(user = user, size = 48.dp)
-                      Spacer(modifier = Modifier.width(10.dp))
-                      Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                          Text(
-                            text = user.displayName,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                          )
-                          if (user.isVerified) {
-                            Spacer(modifier = Modifier.width(4.dp))
-                            VerificationBadge(user = user, iconSize = 14.dp)
-                          }
-                        }
-                        Text(
-                          text = "@${user.username}",
-                          fontSize = 11.sp,
-                          color = VybeBrandViolet
-                        )
-                        if (user.followsMe) {
-                          Text(
-                            text = "Linked with you",
-                            fontSize = 10.sp,
-                            color = VybeBrandCyan,
-                            fontWeight = FontWeight.SemiBold
-                          )
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    VybeAvatar(user = user, size = 48.dp)
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                      Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(user.displayName, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = palette.textPrimary)
+                        if (user.isVerified) {
+                          Spacer(modifier = Modifier.width(4.dp))
+                          VerificationBadge(user = user, iconSize = 14.dp)
                         }
                       }
-                    }
-                    Button(
-                      onClick = { viewModel.toggleFollowUser(user.id) },
-                      colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isFollowing) MaterialTheme.colorScheme.surfaceVariant else VybeBrandViolet
-                      ),
-                      shape = RoundedCornerShape(12.dp)
-                    ) {
-                      Text(
-                        text = if (isFollowing) "LINKED" else if (isRequested) "Requested" else "Follow",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isFollowing) MaterialTheme.colorScheme.onSurfaceVariant else Color.White
-                      )
+                      Text("@${user.username}", fontSize = 11.sp, color = palette.accent)
+                      if (user.followsMe) {
+                        Text("Linked with you", fontSize = 10.sp, color = palette.accentSecondary, fontWeight = FontWeight.SemiBold)
+                      }
                     }
                   }
-
-                  if (user.bio.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                  Button(
+                    onClick = { viewModel.toggleFollowUser(user.id) },
+                    colors = ButtonDefaults.buttonColors(containerColor = if (isFollowing) palette.elevated else palette.accent),
+                    border = if (isFollowing) BorderStroke(1.dp, palette.border) else null,
+                    shape = RoundedCornerShape(VybeTokens.Radius.md)
+                  ) {
                     Text(
-                      text = user.bio,
-                      fontSize = 12.sp,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
-                      maxLines = 2,
-                      overflow = TextOverflow.Ellipsis
+                      text = if (isFollowing) "LINKED" else if (isRequested) "Requested" else "Follow",
+                      fontSize = 11.sp,
+                      fontWeight = FontWeight.Bold,
+                      color = if (isFollowing) palette.textSecondary else Color.White
                     )
                   }
-
-                  if (user.interestTags.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                      user.interestTags.take(3).forEach { tag ->
-                        Surface(
-                          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                          shape = RoundedCornerShape(8.dp)
-                        ) {
-                          Text(
-                            text = "#$tag",
-                            fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                          )
-                        }
+                }
+                if (user.bio.isNotBlank()) {
+                  Spacer(modifier = Modifier.height(8.dp))
+                  Text(user.bio, fontSize = 12.sp, color = palette.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                if (user.interestTags.isNotEmpty()) {
+                  Spacer(modifier = Modifier.height(8.dp))
+                  Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    user.interestTags.take(3).forEach { tag ->
+                      Surface(color = palette.elevated, shape = RoundedCornerShape(VybeTokens.Radius.xs)) {
+                        Text("#$tag", fontSize = 10.sp, color = palette.textSecondary, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                       }
                     }
                   }
@@ -1416,71 +955,45 @@ fun ExploreScreen(viewModel: VybeViewModel) {
             }
           }
 
-          // --- NEARBY DISCOVERY ---
           "Nearby" -> {
             item(key = "nearby_header") {
               Column(modifier = Modifier.fillMaxWidth()) {
-                Surface(
-                  color = VybeBrandCyan.copy(alpha = 0.12f),
-                  shape = RoundedCornerShape(16.dp),
-                  border = BorderStroke(1.dp, VybeBrandCyan.copy(alpha = 0.35f)),
-                  modifier = Modifier.fillMaxWidth()
-                ) {
-                  Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                  ) {
+                VybeSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                       modifier = Modifier
-                        .size(36.dp)
+                        .size(38.dp)
                         .clip(CircleShape)
-                        .background(VybeBrandCyan.copy(alpha = 0.2f)),
+                        .background(palette.accentSecondary.copy(alpha = 0.14f)),
                       contentAlignment = Alignment.Center
                     ) {
-                      Icon(
-                        imageVector = Icons.Default.LocationOn,
-                        contentDescription = null,
-                        tint = VybeBrandCyan,
-                        modifier = Modifier.size(20.dp)
-                      )
+                      Icon(Icons.Default.LocationOn, contentDescription = null, tint = palette.accentSecondary, modifier = Modifier.size(20.dp))
                     }
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                      Text(
-                        text = "Nearby Safe Discovery",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                      )
-                      Text(
-                        text = "Explore public creators and moments around you. Exact GPS is never shared.",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                      )
+                      Text("Nearby Safe Discovery", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = palette.textPrimary)
+                      Text("Explore public creators and moments around you. Exact GPS is never shared.", fontSize = 11.sp, color = palette.textSecondary)
                     }
                   }
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Location Permission & City Filter Bar
                 Row(
                   modifier = Modifier.fillMaxWidth(),
                   horizontalArrangement = Arrangement.SpaceBetween,
                   verticalAlignment = Alignment.CenterVertically
                 ) {
-                  Text("Select Location Area", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                  Text("Select Location Area", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = palette.textPrimary)
                   if (!nearbyLocationGranted) {
                     Text(
                       text = "Enable GPS",
                       fontSize = 11.sp,
-                      color = VybeBrandCyan,
+                      color = palette.accentSecondary,
                       fontWeight = FontWeight.Bold,
                       modifier = Modifier.clickable {
                         locationPermissionLauncher.launch(
-                          arrayOf(
-                            Manifest.permission.ACCESS_FINE_LOCATION,
-                            Manifest.permission.ACCESS_COARSE_LOCATION
-                          )
+                          arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
                         )
                       }
                     )
@@ -1491,17 +1004,18 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                   items(indianCities) { city ->
                     val isCitySelected = selectedCityFilter == city
                     Surface(
-                      color = if (isCitySelected) VybeBrandCyan else MaterialTheme.colorScheme.surfaceVariant,
-                      shape = RoundedCornerShape(14.dp),
+                      color = if (isCitySelected) palette.accentSecondary else palette.elevated,
+                      shape = RoundedCornerShape(VybeTokens.Radius.pill),
+                      border = if (isCitySelected) null else BorderStroke(1.dp, palette.border),
                       modifier = Modifier
-                        .clip(RoundedCornerShape(14.dp))
+                        .clip(RoundedCornerShape(VybeTokens.Radius.pill))
                         .clickable { selectedCityFilter = city }
                     ) {
                       Text(
                         text = city,
                         fontSize = 11.sp,
                         fontWeight = if (isCitySelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isCitySelected) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (isCitySelected) Color.White else palette.textSecondary,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                       )
                     }
@@ -1512,53 +1026,20 @@ fun ExploreScreen(viewModel: VybeViewModel) {
 
             if (nearbyPosts.isEmpty()) {
               item(key = "nearby_empty") {
-                Surface(
-                  color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                  shape = RoundedCornerShape(16.dp),
-                  modifier = Modifier.fillMaxWidth()
-                ) {
-                  Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                  ) {
-                    Icon(
-                      imageVector = Icons.Default.Place,
-                      contentDescription = null,
-                      tint = VybeBrandCyan,
-                      modifier = Modifier.size(32.dp)
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                      text = "No public moments in $selectedCityFilter yet",
-                      fontWeight = FontWeight.Bold,
-                      fontSize = 14.sp
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                      text = "Be the first to share a moment with location tag in $selectedCityFilter!",
-                      fontSize = 11.sp,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
-                      textAlign = TextAlign.Center
-                    )
-                  }
-                }
+                VybeEmptyState(
+                  icon = Icons.Default.Place,
+                  title = "No public moments in $selectedCityFilter yet",
+                  subtitle = "Be the first to share a moment with a location tag in $selectedCityFilter."
+                )
               }
             } else {
               items(nearbyPosts, key = { "nearby_p_${it.id}" }) { post ->
-                Surface(
-                  color = MaterialTheme.colorScheme.surface,
-                  shape = RoundedCornerShape(14.dp),
-                  border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant),
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { viewModel.openPostFromNotification(post.id) }
+                VybeSurfaceCard(
+                  onClick = { viewModel.openPostFromNotification(post.id) },
+                  contentPadding = PaddingValues(12.dp),
+                  modifier = Modifier.fillMaxWidth()
                 ) {
-                  Row(
-                    modifier = Modifier
-                      .fillMaxWidth()
-                      .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                  ) {
+                  Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     val mediaUrl = post.mediaUrls.firstOrNull().orEmpty()
                     if (mediaUrl.isNotBlank()) {
                       AsyncImage(
@@ -1567,38 +1048,19 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                           .size(54.dp)
-                          .clip(RoundedCornerShape(8.dp))
+                          .clip(RoundedCornerShape(VybeTokens.Radius.sm))
                       )
                       Spacer(modifier = Modifier.width(10.dp))
                     }
                     Column(modifier = Modifier.weight(1f)) {
                       Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                          imageVector = Icons.Default.LocationOn,
-                          contentDescription = null,
-                          tint = VybeBrandCyan,
-                          modifier = Modifier.size(13.dp)
-                        )
+                        Icon(Icons.Default.LocationOn, contentDescription = null, tint = palette.accentSecondary, modifier = Modifier.size(13.dp))
                         Spacer(modifier = Modifier.width(3.dp))
-                        Text(
-                          text = post.locationName ?: "India",
-                          fontSize = 11.sp,
-                          fontWeight = FontWeight.Bold,
-                          color = VybeBrandCyan
-                        )
+                        Text(post.locationName ?: "India", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = palette.accentSecondary)
                       }
                       Spacer(modifier = Modifier.height(2.dp))
-                      Text(
-                        text = post.caption,
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                      )
-                      Text(
-                        text = "Shared by @${post.author.username}",
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                      )
+                      Text(post.caption, fontSize = 12.sp, color = palette.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                      Text("Shared by @${post.author.username}", fontSize = 10.sp, color = palette.textSecondary)
                     }
                   }
                 }
@@ -1606,7 +1068,6 @@ fun ExploreScreen(viewModel: VybeViewModel) {
             }
           }
 
-          // --- CIRCLES ---
           "Circles" -> {
             item(key = "circles_header") {
               Row(
@@ -1614,77 +1075,52 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Text("Public & Interest Circles", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text("Public & Interest Circles", fontFamily = PlusJakartaSansFontFamily, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = palette.textPrimary)
                 Text(
                   text = "Create Circle →",
                   fontSize = 12.sp,
                   fontWeight = FontWeight.Bold,
-                  color = VybeBrandViolet,
+                  color = palette.accent,
                   modifier = Modifier.clickable { viewModel.navigateTo(Screen.VYBE_CIRCLE) }
                 )
               }
             }
             items(circles, key = { "circle_${it.id}" }) { circle ->
-              Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant),
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .clickable { viewModel.navigateTo(Screen.VYBE_CIRCLE) }
+              VybeSurfaceCard(
+                onClick = { viewModel.navigateTo(Screen.VYBE_CIRCLE) },
+                modifier = Modifier.fillMaxWidth()
               ) {
                 Row(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
+                  modifier = Modifier.fillMaxWidth(),
                   verticalAlignment = Alignment.CenterVertically,
                   horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                  Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically
-                  ) {
+                  Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                     Box(
                       modifier = Modifier
                         .size(42.dp)
                         .clip(CircleShape)
-                        .background(VybeBrandViolet.copy(alpha = 0.2f)),
+                        .background(palette.accent.copy(alpha = 0.14f)),
                       contentAlignment = Alignment.Center
                     ) {
-                      Icon(
-                        imageVector = Icons.Default.Group,
-                        contentDescription = null,
-                        tint = VybeBrandViolet,
-                        modifier = Modifier.size(20.dp)
-                      )
+                      Icon(Icons.Default.Group, contentDescription = null, tint = palette.accent, modifier = Modifier.size(20.dp))
                     }
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
-                      Text(
-                        text = circle.name,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                      )
-                      Text(
-                        text = "#${circle.category} • ${circle.membersCount} members",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                      )
+                      Text(circle.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = palette.textPrimary)
+                      Text("#${circle.category} • ${circle.membersCount} members", fontSize = 11.sp, color = palette.textSecondary)
                     }
                   }
                   Button(
-                    onClick = {
-                      if (circle.isMember) viewModel.leaveCircle(circle.id) else viewModel.joinCircle(circle.id)
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                      containerColor = if (circle.isMember) MaterialTheme.colorScheme.surfaceVariant else VybeBrandViolet
-                    ),
-                    shape = RoundedCornerShape(12.dp)
+                    onClick = { if (circle.isMember) viewModel.leaveCircle(circle.id) else viewModel.joinCircle(circle.id) },
+                    colors = ButtonDefaults.buttonColors(containerColor = if (circle.isMember) palette.elevated else palette.accent),
+                    border = if (circle.isMember) BorderStroke(1.dp, palette.border) else null,
+                    shape = RoundedCornerShape(VybeTokens.Radius.md)
                   ) {
                     Text(
                       text = if (circle.isMember) "Joined" else "Join",
                       fontSize = 11.sp,
-                      color = if (circle.isMember) MaterialTheme.colorScheme.onSurfaceVariant else Color.White
+                      color = if (circle.isMember) palette.textSecondary else Color.White
                     )
                   }
                 }
@@ -1692,27 +1128,27 @@ fun ExploreScreen(viewModel: VybeViewModel) {
             }
           }
 
-          // --- INTERESTS ---
           "Interests" -> {
             item(key = "interests_header") {
               Column(modifier = Modifier.fillMaxWidth()) {
-                Text("Browse by Interest", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text("Browse by Interest", fontFamily = PlusJakartaSansFontFamily, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = palette.textPrimary)
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                   items(interestCategories) { cat ->
                     val isCatSelected = selectedInterest == cat
                     Surface(
-                      color = if (isCatSelected) VybeBrandViolet else MaterialTheme.colorScheme.surfaceVariant,
-                      shape = RoundedCornerShape(14.dp),
+                      color = if (isCatSelected) palette.accent else palette.elevated,
+                      shape = RoundedCornerShape(VybeTokens.Radius.pill),
+                      border = if (isCatSelected) null else BorderStroke(1.dp, palette.border),
                       modifier = Modifier
-                        .clip(RoundedCornerShape(14.dp))
+                        .clip(RoundedCornerShape(VybeTokens.Radius.pill))
                         .clickable { selectedInterest = cat }
                     ) {
                       Text(
                         text = cat,
                         fontSize = 11.sp,
                         fontWeight = if (isCatSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isCatSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (isCatSelected) Color.White else palette.textSecondary,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                       )
                     }
@@ -1723,45 +1159,20 @@ fun ExploreScreen(viewModel: VybeViewModel) {
 
             if (interestPosts.isEmpty()) {
               item(key = "interest_empty") {
-                Surface(
-                  color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                  shape = RoundedCornerShape(16.dp),
-                  modifier = Modifier.fillMaxWidth()
-                ) {
-                  Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                  ) {
-                    Text(
-                      text = "No moments in #$selectedInterest yet",
-                      fontWeight = FontWeight.Bold,
-                      fontSize = 14.sp
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                      text = "Tag your next post with #$selectedInterest to appear here!",
-                      fontSize = 11.sp,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                  }
-                }
+                VybeEmptyState(
+                  icon = Icons.Default.Tag,
+                  title = "No moments in #$selectedInterest yet",
+                  subtitle = "Tag your next post with #$selectedInterest to appear here."
+                )
               }
             } else {
               items(interestPosts, key = { "int_p_${it.id}" }) { post ->
-                Surface(
-                  color = MaterialTheme.colorScheme.surface,
-                  shape = RoundedCornerShape(14.dp),
-                  border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant),
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { viewModel.openPostFromNotification(post.id) }
+                VybeSurfaceCard(
+                  onClick = { viewModel.openPostFromNotification(post.id) },
+                  contentPadding = PaddingValues(12.dp),
+                  modifier = Modifier.fillMaxWidth()
                 ) {
-                  Row(
-                    modifier = Modifier
-                      .fillMaxWidth()
-                      .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                  ) {
+                  Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     val mediaUrl = post.mediaUrls.firstOrNull().orEmpty()
                     if (mediaUrl.isNotBlank()) {
                       AsyncImage(
@@ -1770,24 +1181,14 @@ fun ExploreScreen(viewModel: VybeViewModel) {
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                           .size(54.dp)
-                          .clip(RoundedCornerShape(8.dp))
+                          .clip(RoundedCornerShape(VybeTokens.Radius.sm))
                       )
                       Spacer(modifier = Modifier.width(10.dp))
                     }
                     Column(modifier = Modifier.weight(1f)) {
-                      Text(
-                        text = post.caption,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                      )
+                      Text(post.caption, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = palette.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                       Spacer(modifier = Modifier.height(2.dp))
-                      Text(
-                        text = "@${post.author.username} • ${post.likesCount} likes",
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                      )
+                      Text("@${post.author.username} • ${post.likesCount} likes", fontSize = 10.sp, color = palette.textSecondary)
                     }
                   }
                 }
@@ -1800,6 +1201,43 @@ fun ExploreScreen(viewModel: VybeViewModel) {
       item {
         Spacer(modifier = Modifier.height(24.dp))
       }
+    }
+  }
+}
+
+@Composable
+private fun ExploreSignatureChip(
+  emoji: String,
+  label: String,
+  palette: VybePalette,
+  testTag: String,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier
+) {
+  Surface(
+    modifier = modifier
+      .clip(RoundedCornerShape(VybeTokens.Radius.md))
+      .clickable(onClick = onClick)
+      .testTag(testTag),
+    color = palette.elevated,
+    shape = RoundedCornerShape(VybeTokens.Radius.md),
+    border = BorderStroke(1.dp, palette.border)
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+      Text(emoji, fontSize = 12.sp)
+      Text(
+        text = label,
+        fontFamily = PlusJakartaSansFontFamily,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Bold,
+        color = palette.textPrimary,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+      )
     }
   }
 }

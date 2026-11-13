@@ -45,10 +45,11 @@ fun VybeAvatar(
   showPulseDot: Boolean = true,
   onClick: (() -> Unit)? = null
 ) {
+  val palette = LocalVybePalette.current
   val borderBrush = if (user.currentMood != null) {
-    Brush.sweepGradient(listOf(user.currentMood.accentColor, VybeBrandViolet, user.currentMood.accentColor))
+    Brush.sweepGradient(listOf(user.currentMood.accentColor, VybeSocialVioletBright, user.currentMood.accentColor))
   } else {
-    Brush.linearGradient(listOf(VybeBrandCyan, VybeBrandViolet, VybeBrandMagenta))
+    Brush.linearGradient(listOf(VybeSocialVioletBright, VybeGrowBlueBright))
   }
 
   Box(
@@ -64,7 +65,7 @@ fun VybeAvatar(
         .background(borderBrush)
         .padding(2.dp)
         .clip(CircleShape)
-        .background(MaterialTheme.colorScheme.surface)
+        .background(palette.card)
     ) {
       if (user.avatarUrl.isNotEmpty()) {
         AsyncImage(
@@ -77,12 +78,13 @@ fun VybeAvatar(
         Box(
           modifier = Modifier
             .fillMaxSize()
-            .background(Brush.linearGradient(listOf(VybeBrandViolet, VybeBrandMagenta))),
+            .background(Brush.linearGradient(listOf(VybeSocialViolet, VybeGrowBlue))),
           contentAlignment = Alignment.Center
         ) {
           Text(
             text = user.displayName.take(1).uppercase(),
             color = Color.White,
+            fontFamily = PlusJakartaSansFontFamily,
             fontWeight = FontWeight.Bold,
             fontSize = (size.value * 0.4).sp
           )
@@ -96,11 +98,11 @@ fun VybeAvatar(
         modifier = Modifier
           .size(size * 0.35f)
           .align(Alignment.TopEnd)
-        .clip(CircleShape)
-        .background(MaterialTheme.colorScheme.surface)
-        .padding(1.dp)
-        .clip(CircleShape)
-        .background(VybeBrandMagenta),
+          .clip(CircleShape)
+          .background(palette.card)
+          .padding(1.dp)
+          .clip(CircleShape)
+          .background(palette.accent),
         contentAlignment = Alignment.Center
       ) {
         Text("▶", fontSize = (size.value * 0.16).sp, color = Color.White)
@@ -113,10 +115,10 @@ fun VybeAvatar(
           .size(size * 0.32f)
           .align(Alignment.BottomEnd)
           .clip(CircleShape)
-          .background(MaterialTheme.colorScheme.surface)
+          .background(palette.card)
           .padding(1.5.dp)
           .clip(CircleShape)
-          .background(VybeOnlineGreen)
+          .background(palette.success)
       )
     }
   }
@@ -140,18 +142,18 @@ fun VerificationBadge(
   iconSize: Dp = 18.dp,
   enableExplanationDialog: Boolean = false
 ) {
+  val palette = LocalVybePalette.current
   val activeBadges = user.activePublicBadges
   if (activeBadges.isEmpty()) return
 
   var showExplanation by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-  val glyphSize = (iconSize.value * 0.66f).dp
 
   Row(
     verticalAlignment = Alignment.CenterVertically,
     modifier = modifier.then(
       if (enableExplanationDialog) {
         Modifier
-          .clip(RoundedCornerShape(8.dp))
+          .clip(RoundedCornerShape(VybeTokens.Radius.sm))
           .clickable { showExplanation = true }
           .testTag("badge_explanation_trigger")
       } else {
@@ -191,9 +193,14 @@ fun VerificationBadge(
   if (showExplanation) {
     AlertDialog(
       onDismissRequest = { showExplanation = false },
+      containerColor = palette.card,
+      titleContentColor = palette.textPrimary,
+      textContentColor = palette.textSecondary,
+      shape = RoundedCornerShape(VybeTokens.Radius.xl),
       title = {
         Text(
           text = "Official VYBE Verification",
+          fontFamily = PlusJakartaSansFontFamily,
           fontWeight = FontWeight.Bold
         )
       },
@@ -201,20 +208,21 @@ fun VerificationBadge(
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
           activeBadges.forEach { badge ->
             val accent = when (badge) {
-              com.example.data.model.OfficialVybeBadge.VERIFIED_BLUE -> Color(0xFF2563EB)
+              com.example.data.model.OfficialVybeBadge.VERIFIED_BLUE -> VybeGrowBlue
               com.example.data.model.OfficialVybeBadge.VIP_GOLD,
               com.example.data.model.OfficialVybeBadge.SHOP_GOLD -> Color(0xFFD97706)
               com.example.data.model.OfficialVybeBadge.WORKER_GREEN -> Color(0xFF059669)
             }
             Surface(
               color = accent.copy(alpha = 0.12f),
-              shape = RoundedCornerShape(10.dp),
+              shape = RoundedCornerShape(VybeTokens.Radius.sm),
               border = BorderStroke(1.dp, accent.copy(alpha = 0.35f)),
               modifier = Modifier.fillMaxWidth()
             ) {
               Column(modifier = Modifier.padding(10.dp)) {
                 Text(
                   text = badge.title,
+                  fontFamily = PlusJakartaSansFontFamily,
                   fontWeight = FontWeight.Bold,
                   fontSize = 13.sp,
                   color = accent
@@ -223,7 +231,7 @@ fun VerificationBadge(
                 Text(
                   text = badge.description,
                   fontSize = 12.sp,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  color = palette.textSecondary,
                   lineHeight = 16.sp
                 )
                 if (badge == com.example.data.model.OfficialVybeBadge.VIP_GOLD && !user.vipExpiresAtIso.isNullOrBlank()) {
@@ -242,7 +250,7 @@ fun VerificationBadge(
       },
       confirmButton = {
         TextButton(onClick = { showExplanation = false }) {
-          Text("Got it", fontWeight = FontWeight.Bold)
+          Text("Got it", fontWeight = FontWeight.Bold, color = palette.accent)
         }
       },
       modifier = Modifier.testTag("badge_explanation_dialog")
@@ -268,6 +276,7 @@ fun VybeFollowButton(
   compact: Boolean = false,
   testTag: String? = null
 ) {
+  val palette = LocalVybePalette.current
   var showUnlinkConfirm by remember { mutableStateOf(false) }
 
   val label = when {
@@ -275,14 +284,14 @@ fun VybeFollowButton(
     isFollowRequested -> "LINKUP Requested"
     else -> "+ LINK UP"
   }
-  val shape = RoundedCornerShape(if (compact) 14.dp else 12.dp)
+  val shape = RoundedCornerShape(if (compact) VybeTokens.Radius.md else VybeTokens.Radius.md)
 
   when {
     isFollowing -> {
       Surface(
-        color = MaterialTheme.colorScheme.secondaryContainer,
+        color = palette.elevated,
         shape = shape,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+        border = BorderStroke(1.dp, palette.border),
         modifier = modifier
           .minimumInteractiveComponentSize()
           .clip(shape)
@@ -300,15 +309,16 @@ fun VybeFollowButton(
           Icon(
             imageVector = Icons.Default.Check,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            tint = palette.textPrimary,
             modifier = Modifier.size(if (compact) 13.dp else 15.dp)
           )
           Spacer(modifier = Modifier.width(4.dp))
           Text(
             text = label,
+            fontFamily = PlusJakartaSansFontFamily,
             fontSize = if (compact) 12.sp else 13.sp,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            color = palette.textPrimary,
             maxLines = 1
           )
         }
@@ -316,9 +326,9 @@ fun VybeFollowButton(
     }
     isFollowRequested -> {
       Surface(
-        color = Color(0xFFD97706).copy(alpha = 0.16f),
+        color = palette.warning.copy(alpha = 0.14f),
         shape = shape,
-        border = BorderStroke(1.dp, Color(0xFFD97706).copy(alpha = 0.8f)),
+        border = BorderStroke(1.dp, palette.warning.copy(alpha = 0.7f)),
         modifier = modifier
           .minimumInteractiveComponentSize()
           .clip(shape)
@@ -334,9 +344,10 @@ fun VybeFollowButton(
         ) {
           Text(
             text = label,
+            fontFamily = PlusJakartaSansFontFamily,
             fontSize = if (compact) 11.sp else 13.sp,
             fontWeight = FontWeight.SemiBold,
-            color = Color(0xFFD97706),
+            color = palette.warning,
             maxLines = 1
           )
         }
@@ -348,7 +359,7 @@ fun VybeFollowButton(
         modifier = modifier
           .minimumInteractiveComponentSize()
           .clip(shape)
-          .background(VybeViolet)
+          .background(palette.accent)
           .testTag(testTag ?: "follow_button_active")
           .clickable { onClick() }
           .padding(
@@ -358,6 +369,7 @@ fun VybeFollowButton(
       ) {
         Text(
           text = label,
+          fontFamily = PlusJakartaSansFontFamily,
           fontSize = if (compact) 12.sp else 14.sp,
           fontWeight = FontWeight.Bold,
           color = Color.White,
@@ -370,7 +382,17 @@ fun VybeFollowButton(
   if (showUnlinkConfirm) {
     AlertDialog(
       onDismissRequest = { showUnlinkConfirm = false },
-      title = { Text("UNLINK", fontWeight = FontWeight.Bold) },
+      containerColor = palette.card,
+      titleContentColor = palette.textPrimary,
+      textContentColor = palette.textSecondary,
+      shape = RoundedCornerShape(VybeTokens.Radius.xl),
+      title = {
+        Text(
+          "UNLINK",
+          fontFamily = PlusJakartaSansFontFamily,
+          fontWeight = FontWeight.Bold
+        )
+      },
       text = {
         val target = if (!targetUsername.isNullOrBlank()) "@$targetUsername" else "this user"
         Text("Are you sure you want to UNLINK $target? You will no longer see their posts and stories in your LINKED feed.")
@@ -381,14 +403,14 @@ fun VybeFollowButton(
             showUnlinkConfirm = false
             onClick()
           },
-          colors = ButtonDefaults.buttonColors(containerColor = VybeDanger)
+          colors = ButtonDefaults.buttonColors(containerColor = palette.danger)
         ) {
           Text("UNLINK", color = Color.White, fontWeight = FontWeight.Bold)
         }
       },
       dismissButton = {
         TextButton(onClick = { showUnlinkConfirm = false }) {
-          Text("Cancel")
+          Text("Cancel", color = palette.textSecondary)
         }
       }
     )
@@ -402,28 +424,38 @@ fun VybeGradientButton(
   modifier: Modifier = Modifier,
   enabled: Boolean = true
 ) {
+  val palette = LocalVybePalette.current
   Button(
     onClick = onClick,
     enabled = enabled,
     modifier = modifier
-      .height(48.dp)
+      .heightIn(min = VybeTokens.Size.buttonHeight)
       .fillMaxWidth(),
-    colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+    colors = ButtonDefaults.buttonColors(
+      containerColor = Color.Transparent,
+      disabledContainerColor = palette.elevated
+    ),
     contentPadding = PaddingValues(),
-    shape = RoundedCornerShape(14.dp)
+    shape = RoundedCornerShape(VybeTokens.Radius.md)
   ) {
     Box(
       modifier = Modifier
-        .fillMaxSize()
+        .fillMaxWidth()
+        .heightIn(min = VybeTokens.Size.buttonHeight)
         .background(
-          brush = Brush.horizontalGradient(listOf(VybeBrandCyan, VybeBrandViolet, VybeBrandMagenta)),
-          shape = RoundedCornerShape(14.dp)
+          brush = if (enabled) {
+            Brush.horizontalGradient(listOf(VybeSocialViolet, VybeGrowBlue))
+          } else {
+            Brush.horizontalGradient(listOf(palette.elevated, palette.elevated))
+          },
+          shape = RoundedCornerShape(VybeTokens.Radius.md)
         ),
       contentAlignment = Alignment.Center
     ) {
       Text(
         text = text,
-        color = Color.White,
+        color = if (enabled) Color.White else palette.textMuted,
+        fontFamily = PlusJakartaSansFontFamily,
         fontWeight = FontWeight.Bold,
         fontSize = 15.sp
       )

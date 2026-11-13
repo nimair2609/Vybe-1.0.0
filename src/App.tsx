@@ -14,6 +14,7 @@ import { InboxView } from './views/InboxView';
 import { CommunityView } from './views/CommunityView';
 import { ProfileView } from './views/ProfileView';
 import { ExploreView } from './views/ExploreView';
+import { GrowWorkspaceView } from './views/GrowWorkspaceView';
 
 // Modals
 import { GitHubUpdateModal } from './components/GitHubUpdateModal';
@@ -34,6 +35,7 @@ import { NotificationsModal } from './views/NotificationsModal';
 
 export const App: React.FC = () => {
   const {
+    appMode,
     selectedTab,
     activeModal,
     callState,
@@ -59,6 +61,9 @@ export const App: React.FC = () => {
   );
 
   const renderCurrentTab = () => {
+    if (appMode === 'GROW') {
+      return <GrowWorkspaceView />;
+    }
     switch (selectedTab) {
       case 'FEED':
         return <FeedView />;
@@ -82,17 +87,17 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="vybe-app-shell min-h-screen bg-[#060714] text-[#F8FAFC] flex flex-col antialiased transition-colors">
+    <div className="vybe-app-shell min-h-screen bg-[var(--vybe-bg)] text-[var(--vybe-text)] flex flex-col antialiased transition-colors">
       {/* Top Navbar */}
       <Navbar />
 
       {/* In-App Confirmation Banner */}
       {inAppNotificationBanner && (
-        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-[#101322] border border-[#8B5CF6]/50 shadow-2xl flex items-center gap-3 text-xs font-semibold text-white">
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-[var(--vybe-surface)] border border-[var(--vybe-border)] shadow-2xl flex items-center gap-3 text-xs font-semibold text-[var(--vybe-text)]">
           <span>{inAppNotificationBanner}</span>
           <button
             onClick={dismissBanner}
-            className="text-[#00C6FF] font-bold hover:underline"
+            className="text-[var(--vybe-accent)] font-bold hover:underline"
           >
             OK
           </button>
@@ -101,18 +106,18 @@ export const App: React.FC = () => {
 
       {/* Incoming Call Floating Banner */}
       {callState.isActive && callState.isIncoming && callState.peerUser && (
-        <div className="fixed top-16 inset-x-4 z-50 max-w-md mx-auto p-4 rounded-2xl bg-[#101322] border border-[#00C6FF]/50 shadow-2xl flex items-center justify-between gap-3 animate-bounce">
+        <div className="fixed top-16 inset-x-4 z-50 max-w-md mx-auto p-4 rounded-2xl bg-[var(--vybe-surface)] border border-[var(--vybe-accent)] shadow-2xl flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <img
               src={callState.peerUser.avatarUrl}
               alt={callState.peerUser.displayName}
-              className="w-10 h-10 rounded-full object-cover border border-[#00C6FF]"
+              className="w-10 h-10 rounded-full object-cover border border-[var(--vybe-border)]"
             />
             <div>
-              <p className="text-xs font-bold text-white">
+              <p className="text-xs font-bold text-[var(--vybe-text)]">
                 Incoming {callState.isVideo ? 'Video' : 'Voice'} Call...
               </p>
-              <p className="text-[11px] text-gray-300">{callState.peerUser.displayName}</p>
+              <p className="text-[11px] text-[var(--vybe-text-secondary)]">{callState.peerUser.displayName}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -124,7 +129,7 @@ export const App: React.FC = () => {
             </button>
             <button
               onClick={acceptCall}
-              className="px-3 py-1.5 rounded-xl bg-[#22C55E] hover:bg-emerald-600 text-white keep-white text-xs font-bold shadow"
+              className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white keep-white text-xs font-bold shadow"
             >
               Accept
             </button>
@@ -138,15 +143,15 @@ export const App: React.FC = () => {
       {/* Bottom Floating Navigation Dock */}
       <BottomNav />
 
-      {/* Shared Post Deep-Link Modal (/post/:postId or #post_:postId) */}
+      {/* Shared Post Deep-Link Modal */}
       {sharedPostModalId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
-          <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto bg-[#101322] border border-[#262E4A] rounded-3xl shadow-2xl p-4 space-y-3 no-scrollbar">
-            <div className="flex items-center justify-between px-2 pb-2 border-b border-[#262E4A]">
-              <h3 className="text-sm font-bold text-white">Shared Post</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto bg-[var(--vybe-surface)] border border-[var(--vybe-border)] rounded-3xl shadow-2xl p-4 space-y-3 no-scrollbar">
+            <div className="flex items-center justify-between px-2 pb-2 border-b border-[var(--vybe-border)]">
+              <h3 className="text-sm font-bold text-[var(--vybe-text)]">Shared Post</h3>
               <button
                 onClick={closeSharedPostModal}
-                className="p-1.5 rounded-full text-gray-400 hover:text-white"
+                className="p-1.5 rounded-full text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)]"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -155,8 +160,8 @@ export const App: React.FC = () => {
             {!resolvedSharedPost || isSharedPostPrivateBlocked ? (
               <div className="p-6 text-center space-y-2">
                 <Lock className="w-8 h-8 text-red-400 mx-auto" />
-                <p className="text-sm font-bold text-white">Post Unavailable</p>
-                <p className="text-xs text-gray-400">
+                <p className="text-sm font-bold text-[var(--vybe-text)]">Post Unavailable</p>
+                <p className="text-xs text-[var(--vybe-text-secondary)]">
                   {isSharedPostPrivateBlocked
                     ? 'This post belongs to a private account.'
                     : 'This post may have been deleted or the link is invalid.'}

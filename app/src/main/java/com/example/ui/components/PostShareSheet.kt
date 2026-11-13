@@ -104,11 +104,13 @@ fun PostShareBottomSheet(
     }
   }
 
+  val palette = LocalVybePalette.current
   ModalBottomSheet(
     onDismissRequest = onDismiss,
     sheetState = sheetState,
-    containerColor = MaterialTheme.colorScheme.surface,
-    dragHandle = { BottomSheetDefaults.DragHandle() }
+    containerColor = palette.card,
+    contentColor = palette.textPrimary,
+    dragHandle = { BottomSheetDefaults.DragHandle(color = palette.border) }
   ) {
     Column(
       modifier = Modifier
@@ -252,8 +254,8 @@ fun PostShareBottomSheet(
               onDismiss()
             },
             enabled = canShareExternally,
-            colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
+            shape = RoundedCornerShape(VybeTokens.Radius.md),
             modifier = Modifier
               .weight(1f)
               .heightIn(min = 48.dp)
@@ -274,9 +276,17 @@ fun PostShareBottomSheet(
             noteInput = it
             errorMessage = null
           },
-          placeholder = { Text("Write a message (optional)...", fontSize = 12.sp) },
+          placeholder = { Text("Write a message (optional)...", fontSize = 12.sp, color = palette.textMuted) },
           singleLine = true,
-          shape = RoundedCornerShape(12.dp),
+          shape = RoundedCornerShape(VybeTokens.Radius.md),
+          colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = palette.elevated,
+            unfocusedContainerColor = palette.elevated,
+            focusedBorderColor = palette.accent,
+            unfocusedBorderColor = palette.border,
+            focusedTextColor = palette.textPrimary,
+            unfocusedTextColor = palette.textPrimary
+          ),
           modifier = Modifier
             .fillMaxWidth()
             .testTag("post_share_note_input")
@@ -288,10 +298,18 @@ fun PostShareBottomSheet(
         OutlinedTextField(
           value = searchQuery,
           onValueChange = { searchQuery = it },
-          placeholder = { Text("Search people or conversations...", fontSize = 12.sp) },
-          leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
+          placeholder = { Text("Search people or conversations...", fontSize = 12.sp, color = palette.textMuted) },
+          leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp), tint = palette.textMuted) },
           singleLine = true,
-          shape = RoundedCornerShape(12.dp),
+          shape = RoundedCornerShape(VybeTokens.Radius.md),
+          colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = palette.elevated,
+            unfocusedContainerColor = palette.elevated,
+            focusedBorderColor = palette.accent,
+            unfocusedBorderColor = palette.border,
+            focusedTextColor = palette.textPrimary,
+            unfocusedTextColor = palette.textPrimary
+          ),
           modifier = Modifier
             .fillMaxWidth()
             .testTag("post_share_search_input")
@@ -453,9 +471,11 @@ private fun ShareRecipientRow(
   testTag: String,
   onSend: () -> Unit
 ) {
+  val palette = LocalVybePalette.current
   Surface(
-    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
-    shape = RoundedCornerShape(14.dp),
+    color = palette.elevated,
+    shape = RoundedCornerShape(VybeTokens.Radius.md),
+    border = BorderStroke(1.dp, palette.border),
     modifier = Modifier.fillMaxWidth()
   ) {
     Row(
@@ -470,7 +490,7 @@ private fun ShareRecipientRow(
             text = title,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = palette.textPrimary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
           )
@@ -479,7 +499,7 @@ private fun ShareRecipientRow(
         Text(
           text = subtitle,
           fontSize = 11.sp,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          color = palette.textSecondary,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis
         )
@@ -489,10 +509,10 @@ private fun ShareRecipientRow(
         onClick = onSend,
         enabled = enabled && !isSending && !isSent,
         colors = ButtonDefaults.buttonColors(
-          containerColor = if (isSent) VybeOnlineGreen else VybeViolet,
-          disabledContainerColor = if (isSent) VybeOnlineGreen.copy(alpha = 0.85f) else MaterialTheme.colorScheme.surfaceVariant
+          containerColor = if (isSent) palette.success else palette.accent,
+          disabledContainerColor = if (isSent) palette.success.copy(alpha = 0.85f) else palette.elevated
         ),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(VybeTokens.Radius.pill),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
         modifier = Modifier
           .defaultMinSize(minWidth = 74.dp, minHeight = 40.dp)
@@ -535,57 +555,33 @@ fun SharedPostDetailDialog(viewModel: VybeViewModel) {
 
   if (!isResolving && openedPost == null && lookupError == null) return
 
+  val palette = LocalVybePalette.current
   Dialog(
     onDismissRequest = { viewModel.dismissSharedPostModal() },
     properties = DialogProperties(usePlatformDefaultWidth = false)
   ) {
     Surface(
-      color = MaterialTheme.colorScheme.background,
+      color = palette.canvas,
       modifier = Modifier
         .fillMaxSize()
-        .statusBarsPadding()
         .navigationBarsPadding()
         .testTag("shared_post_detail_dialog")
     ) {
       Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(
-              onClick = { viewModel.dismissSharedPostModal() },
-              modifier = Modifier.size(48.dp)
-            ) {
-              Icon(
-                imageVector = Icons.Default.Close,
-                contentDescription = "Close shared post",
-                tint = MaterialTheme.colorScheme.onBackground
-              )
-            }
-            Text(
-              text = "Shared Post",
-              style = MaterialTheme.typography.titleMedium,
-              fontWeight = FontWeight.Bold,
-              color = MaterialTheme.colorScheme.onBackground
-            )
-          }
-        }
-
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+        VybeSubScreenTopBar(
+          title = "Shared Post",
+          onBackClick = { viewModel.dismissSharedPostModal() }
+        )
 
         when {
           isResolving -> {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
               Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator(color = VybeViolet)
+                CircularProgressIndicator(color = palette.accent)
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
                   text = "Loading shared post...",
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  color = palette.textSecondary,
                   fontSize = 13.sp
                 )
               }
@@ -598,43 +594,39 @@ fun SharedPostDetailDialog(viewModel: VybeViewModel) {
                 .padding(24.dp),
               contentAlignment = Alignment.Center
             ) {
-              Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier.widthIn(max = 420.dp).fillMaxWidth()
+              VybeSurfaceCard(
+                modifier = Modifier.widthIn(max = 420.dp).fillMaxWidth(),
+                contentPadding = PaddingValues(24.dp)
               ) {
                 Column(
-                  modifier = Modifier.padding(24.dp),
+                  modifier = Modifier.fillMaxWidth(),
                   horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                   Icon(
                     imageVector = Icons.Outlined.Lock,
                     contentDescription = null,
-                    tint = VybeDanger,
+                    tint = palette.danger,
                     modifier = Modifier.size(40.dp)
                   )
                   Spacer(modifier = Modifier.height(12.dp))
                   Text(
                     text = "Post Unavailable",
+                    fontFamily = PlusJakartaSansFontFamily,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = palette.textPrimary
                   )
                   Spacer(modifier = Modifier.height(6.dp))
                   Text(
                     text = lookupError!!,
                     fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = palette.textSecondary
                   )
                   Spacer(modifier = Modifier.height(16.dp))
-                  Button(
-                    onClick = { viewModel.dismissSharedPostModal() },
-                    colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.heightIn(min = 48.dp)
-                  ) {
-                    Text("Close", color = Color.White, fontWeight = FontWeight.Bold)
-                  }
+                  VybePrimaryButton(
+                    text = "Close",
+                    onClick = { viewModel.dismissSharedPostModal() }
+                  )
                 }
               }
             }

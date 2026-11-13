@@ -6,19 +6,15 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -28,23 +24,26 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.example.data.model.CapsuleInvitationStatus
-import com.example.data.model.TimeCapsule
 import com.example.ui.VybeViewModel
+import com.example.ui.components.VybeEmptyState
+import com.example.ui.components.VybePrimaryButton
+import com.example.ui.components.VybeSecondaryButton
+import com.example.ui.components.VybeSubScreenTopBar
+import com.example.ui.components.VybeSurfaceCard
 import com.example.ui.theme.*
 
 /**
  * VYBE TIME CAPSULE 2.0
  * Future sealed messages and media capsules.
- * - Create for yourself or tag/invite friends.
- * - Phone photo and video attachment uploads via system photo picker.
- * - Tagged friends accept/refuse invitation workflow.
- * - Server-enforced 24-hour expiry upon unlocking.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,6 +52,7 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
     viewModel.navigateBack()
   }
 
+  val palette = LocalVybePalette.current
   val capsules by viewModel.timeCapsules.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
   val allUsers by viewModel.allUsers.collectAsState()
@@ -60,7 +60,7 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
   var showCreateDialog by remember { mutableStateOf(false) }
   var titleInput by remember { mutableStateOf("") }
   var messageInput by remember { mutableStateOf("") }
-  var recipientType by remember { mutableStateOf("myself") } // "myself", "friends", or "invite_link"
+  var recipientType by remember { mutableStateOf("myself") }
   var selectedFriendUsername by remember { mutableStateOf("") }
   var unlockDateInput by remember { mutableStateOf("Jan 01, 2027") }
   var pickedMediaUri by remember { mutableStateOf<Uri?>(null) }
@@ -71,23 +71,24 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
     pickedMediaUri = uri
   }
 
+  val fieldColors = OutlinedTextFieldDefaults.colors(
+    focusedBorderColor = palette.accent,
+    unfocusedBorderColor = palette.border,
+    focusedContainerColor = palette.elevated,
+    unfocusedContainerColor = palette.elevated,
+    focusedTextColor = palette.textPrimary,
+    unfocusedTextColor = palette.textPrimary
+  )
+
   Scaffold(
+    containerColor = palette.canvas,
+    contentWindowInsets = WindowInsets(0.dp),
     topBar = {
-      TopAppBar(
-        navigationIcon = {
-          IconButton(
-            onClick = { viewModel.navigateBack() },
-            modifier = Modifier.testTag("capsules_back_button")
-          ) {
-            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
-          }
-        },
-        title = {
-          Column {
-            Text("VYBE Time Capsule", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            Text("Sealed memories & future delivery", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-          }
-        },
+      VybeSubScreenTopBar(
+        title = "VYBE Time Capsule",
+        subtitle = "Sealed memories & future delivery",
+        onBackClick = { viewModel.navigateBack() },
+        backTestTag = "capsules_back_button",
         actions = {
           Button(
             onClick = {
@@ -97,20 +98,19 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
               pickedMediaUri = null
               showCreateDialog = true
             },
-            colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = Color.White),
+            shape = RoundedCornerShape(VybeTokens.Radius.pill),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
             modifier = Modifier
-              .padding(end = 8.dp)
+              .padding(end = 4.dp)
+              .heightIn(min = 40.dp)
               .testTag("seal_capsule_button")
           ) {
             Icon(Icons.Default.LockClock, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(4.dp))
-            Text("Seal Capsule", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("Seal Capsule", fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily)
           }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-          containerColor = MaterialTheme.colorScheme.background
-        )
+        }
       )
     }
   ) { paddingValues ->
@@ -118,27 +118,32 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
       modifier = Modifier
         .fillMaxSize()
         .padding(paddingValues)
+        .navigationBarsPadding()
         .padding(16.dp),
+      contentPadding = PaddingValues(bottom = 24.dp),
       verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
       // Explainer card
       item {
-        Card(
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-          shape = RoundedCornerShape(16.dp)
-        ) {
+        VybeSurfaceCard(elevated = true) {
           Row(
             modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
           ) {
-            Icon(Icons.Default.HourglassBottom, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(32.dp))
+            Icon(Icons.Default.HourglassBottom, contentDescription = null, tint = palette.accent, modifier = Modifier.size(32.dp))
             Spacer(modifier = Modifier.width(12.dp))
             Column {
-              Text("Cryptographically Locked Until Due Date", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+              Text(
+                "Cryptographically Locked Until Due Date",
+                fontWeight = FontWeight.Bold,
+                fontFamily = PlusJakartaSansFontFamily,
+                fontSize = 13.sp,
+                color = palette.textPrimary
+              )
               Text(
                 text = "Seal photos, videos, and heartfelt messages. When unlocked, capsules remain accessible for 24 hours before automatic cryptographic purge.",
                 fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = palette.textSecondary,
                 lineHeight = 15.sp
               )
             }
@@ -146,32 +151,41 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
         }
       }
 
+      if (capsules.isEmpty()) {
+        item {
+          VybeEmptyState(
+            icon = Icons.Outlined.LockClock,
+            title = "No Time Capsules yet",
+            subtitle = "Seal a message or media memory for your future self or close friends.",
+            actionLabel = "Seal Capsule",
+            onAction = { showCreateDialog = true }
+          )
+        }
+      }
+
       items(capsules, key = { it.id }) { capsule ->
         val isUnlocked = capsule.isUnlocked
 
-        Card(
-          colors = CardDefaults.cardColors(
-            containerColor = if (isUnlocked) VybeViolet.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface
-          ),
-          shape = RoundedCornerShape(16.dp),
-          border = androidx.compose.foundation.BorderStroke(
+        Surface(
+          color = if (isUnlocked) palette.accent.copy(alpha = 0.08f) else palette.card,
+          shape = RoundedCornerShape(VybeTokens.Radius.lg),
+          border = BorderStroke(
             1.dp,
-            if (isUnlocked) VybeOnlineGreen.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+            if (isUnlocked) palette.success.copy(alpha = 0.5f) else palette.border
           ),
           modifier = Modifier
             .fillMaxWidth()
             .testTag("capsule_card_${capsule.id}")
         ) {
           Column(modifier = Modifier.padding(16.dp)) {
-            // Header
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.SpaceBetween,
               verticalAlignment = Alignment.CenterVertically
             ) {
               Surface(
-                color = if (isUnlocked) VybeOnlineGreen.copy(alpha = 0.2f) else VybeViolet.copy(alpha = 0.2f),
-                shape = RoundedCornerShape(8.dp)
+                color = if (isUnlocked) palette.success.copy(alpha = 0.16f) else palette.accent.copy(alpha = 0.16f),
+                shape = RoundedCornerShape(VybeTokens.Radius.xs)
               ) {
                 Row(
                   modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
@@ -181,14 +195,14 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
                   Icon(
                     imageVector = if (isUnlocked) Icons.Outlined.LockOpen else Icons.Outlined.Lock,
                     contentDescription = null,
-                    tint = if (isUnlocked) VybeOnlineGreen else VybeViolet,
+                    tint = if (isUnlocked) palette.success else palette.accent,
                     modifier = Modifier.size(12.dp)
                   )
                   Text(
                     text = if (isUnlocked) "UNLOCKED" else "LOCKED",
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (isUnlocked) VybeOnlineGreen else VybeViolet
+                    color = if (isUnlocked) palette.success else palette.accent
                   )
                 }
               }
@@ -196,7 +210,7 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
                 text = "Unlocks: ${capsule.unlockDateFormatted}",
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = palette.textSecondary
               )
             }
 
@@ -205,22 +219,24 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
             Text(
               text = capsule.title,
               fontWeight = FontWeight.Bold,
-              fontSize = 16.sp
+              fontFamily = PlusJakartaSansFontFamily,
+              fontSize = 16.sp,
+              color = palette.textPrimary
             )
 
             Spacer(modifier = Modifier.height(4.dp))
             Text(
               text = "Recipient: ${capsule.recipientSummary} • Category: ${capsule.categoryTheme}",
               fontSize = 11.sp,
-              color = VybeBrandCyan
+              color = palette.accentSecondary
             )
 
-            // Invitation handling if pending
             if (capsule.myInvitationStatus == CapsuleInvitationStatus.PENDING) {
               Spacer(modifier = Modifier.height(10.dp))
               Surface(
-                color = VybeMagenta.copy(alpha = 0.15f),
-                shape = RoundedCornerShape(10.dp),
+                color = palette.accent.copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, palette.accent.copy(alpha = 0.35f)),
+                shape = RoundedCornerShape(VybeTokens.Radius.sm),
                 modifier = Modifier.fillMaxWidth()
               ) {
                 Row(
@@ -230,13 +246,19 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
                   horizontalArrangement = Arrangement.SpaceBetween,
                   verticalAlignment = Alignment.CenterVertically
                 ) {
-                  Text("You are invited to this Capsule", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = VybeMagenta)
+                  Text(
+                    "You are invited to this Capsule",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = palette.accent,
+                    modifier = Modifier.weight(1f)
+                  )
                   Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(
                       onClick = { viewModel.respondToCapsuleInvitation(capsule.id, true) },
-                      colors = ButtonDefaults.buttonColors(containerColor = VybeOnlineGreen),
+                      colors = ButtonDefaults.buttonColors(containerColor = palette.success, contentColor = Color.White),
                       contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                      shape = RoundedCornerShape(8.dp),
+                      shape = RoundedCornerShape(VybeTokens.Radius.pill),
                       modifier = Modifier.testTag("accept_capsule_invite_${capsule.id}")
                     ) {
                       Text("Accept", fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -244,10 +266,11 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
                     OutlinedButton(
                       onClick = { viewModel.respondToCapsuleInvitation(capsule.id, false) },
                       contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                      shape = RoundedCornerShape(8.dp),
+                      shape = RoundedCornerShape(VybeTokens.Radius.pill),
+                      border = BorderStroke(1.dp, palette.border),
                       modifier = Modifier.testTag("decline_capsule_invite_${capsule.id}")
                     ) {
-                      Text("Decline", fontSize = 11.sp)
+                      Text("Decline", fontSize = 11.sp, color = palette.textPrimary)
                     }
                   }
                 }
@@ -257,13 +280,12 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
             Spacer(modifier = Modifier.height(12.dp))
 
             if (isUnlocked) {
-              // Unlocked content view
               if (capsule.mediaAttachmentUrl != null) {
                 Box(
                   modifier = Modifier
                     .fillMaxWidth()
                     .height(180.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(VybeTokens.Radius.md))
                 ) {
                   AsyncImage(
                     model = capsule.mediaAttachmentUrl,
@@ -276,8 +298,9 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
               }
 
               Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(10.dp),
+                color = palette.elevated,
+                border = BorderStroke(1.dp, palette.border),
+                shape = RoundedCornerShape(VybeTokens.Radius.sm),
                 modifier = Modifier.fillMaxWidth()
               ) {
                 Column(modifier = Modifier.padding(12.dp)) {
@@ -285,54 +308,59 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
                     text = "“${capsule.sealedMessage}”",
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
+                    color = palette.textPrimary,
                     fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                   )
                   Spacer(modifier = Modifier.height(6.dp))
                   Text(
                     text = "Sealed on ${capsule.createdAtFormatted} by @${capsule.sender.username}",
                     fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = palette.textSecondary
                   )
                 }
               }
 
               Spacer(modifier = Modifier.height(10.dp))
-              // 24-hour server-enforced expiry indicator
               Surface(
-                color = Color(0xFFFF9800).copy(alpha = 0.15f),
-                shape = RoundedCornerShape(8.dp),
+                color = palette.warning.copy(alpha = 0.14f),
+                border = BorderStroke(1.dp, palette.warning.copy(alpha = 0.35f)),
+                shape = RoundedCornerShape(VybeTokens.Radius.sm),
                 modifier = Modifier.fillMaxWidth()
               ) {
                 Row(
-                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                   verticalAlignment = Alignment.CenterVertically
                 ) {
-                  Icon(Icons.Default.Timer, contentDescription = null, tint = Color(0xFFFF9800), modifier = Modifier.size(16.dp))
+                  Icon(Icons.Default.Timer, contentDescription = null, tint = palette.warning, modifier = Modifier.size(16.dp))
                   Spacer(modifier = Modifier.width(6.dp))
                   Text(
-                    text = "Server-enforced 24h Purge Active • 18h 42m remaining until auto-deletion",
-                    fontSize = 10.sp,
+                    text = "Server-enforced 24h Purge Active",
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFF9800)
+                    color = palette.warning
                   )
                 }
               }
             } else {
-              // Locked teaser
               Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(10.dp),
+                color = palette.elevated,
+                border = BorderStroke(1.dp, palette.border),
+                shape = RoundedCornerShape(VybeTokens.Radius.sm),
                 modifier = Modifier.fillMaxWidth()
               ) {
                 Row(
                   modifier = Modifier.padding(14.dp),
                   verticalAlignment = Alignment.CenterVertically
                 ) {
-                  Icon(Icons.Default.Lock, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(20.dp))
+                  Icon(Icons.Default.Lock, contentDescription = null, tint = palette.accent, modifier = Modifier.size(20.dp))
                   Spacer(modifier = Modifier.width(10.dp))
                   Column {
-                    Text("Contents Sealed", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                    Text("Media and personal message are encrypted and unavailable until due date.", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Contents Sealed", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = palette.textPrimary)
+                    Text(
+                      "Media and personal message are encrypted and unavailable until due date.",
+                      fontSize = 10.sp,
+                      color = palette.textSecondary
+                    )
                   }
                 }
               }
@@ -345,9 +373,9 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
                 TextButton(
                   onClick = { viewModel.unlockTimeCapsule(capsule.id) }
                 ) {
-                  Icon(Icons.Default.LockOpen, contentDescription = null, modifier = Modifier.size(14.dp))
+                  Icon(Icons.Default.LockOpen, contentDescription = null, tint = palette.accentSecondary, modifier = Modifier.size(14.dp))
                   Spacer(modifier = Modifier.width(4.dp))
-                  Text("Simulate Unlock Date", fontSize = 11.sp, color = VybeBrandCyan)
+                  Text("Check Unlock Status", fontSize = 11.sp, color = palette.accentSecondary, fontWeight = FontWeight.SemiBold)
                 }
               }
             }
@@ -370,20 +398,13 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
       )
     ) {
       Scaffold(
+        containerColor = palette.canvas,
         contentWindowInsets = WindowInsets(0.dp),
         topBar = {
-          TopAppBar(
-            navigationIcon = {
-              IconButton(onClick = { showCreateDialog = false }) {
-                Icon(Icons.Outlined.Close, contentDescription = "Close")
-              }
-            },
-            title = {
-              Column {
-                Text("Seal a Time Capsule", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Text("VYBE TIME CAPSULE • Cryptographically Sealed", fontSize = 11.sp, color = VybeBrandCyan)
-              }
-            },
+          VybeSubScreenTopBar(
+            title = "Seal a Time Capsule",
+            subtitle = "Cryptographically Sealed",
+            onBackClick = { showCreateDialog = false },
             actions = {
               Button(
                 onClick = {
@@ -403,18 +424,16 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
                   }
                 },
                 enabled = titleInput.isNotBlank() && messageInput.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = Color.White),
+                shape = RoundedCornerShape(VybeTokens.Radius.pill),
                 modifier = Modifier
-                  .padding(end = 8.dp)
+                  .padding(end = 4.dp)
+                  .heightIn(min = 40.dp)
                   .testTag("confirm_seal_capsule_button")
               ) {
-                Text("Seal Capsule", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text("Seal Capsule", fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily, fontSize = 12.sp)
               }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-              containerColor = MaterialTheme.colorScheme.background
-            )
+            }
           )
         }
       ) { innerPadding ->
@@ -428,38 +447,44 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
           verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
           item {
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(6.dp))
             OutlinedTextField(
               value = titleInput,
               onValueChange = { titleInput = it },
               label = { Text("Capsule Title") },
-              placeholder = { Text("e.g., Graduation Day / Letter to 2027") },
+              placeholder = { Text("e.g., Graduation Day / Letter to 2027", color = palette.textMuted) },
+              colors = fieldColors,
               modifier = Modifier
                 .fillMaxWidth()
                 .testTag("capsule_title_input"),
               singleLine = true,
-              shape = RoundedCornerShape(14.dp)
+              shape = RoundedCornerShape(VybeTokens.Radius.md)
             )
           }
 
           item {
-            Text("Recipient Access", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text("Recipient Access", fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily, color = palette.textPrimary)
+            Spacer(modifier = Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-              FilterChip(
-                selected = recipientType == "myself",
-                onClick = { recipientType = "myself" },
-                label = { Text("To Myself", fontSize = 11.sp) }
-              )
-              FilterChip(
-                selected = recipientType == "friends",
-                onClick = { recipientType = "friends" },
-                label = { Text("Tag Friends", fontSize = 11.sp) }
-              )
-              FilterChip(
-                selected = recipientType == "invite_link",
-                onClick = { recipientType = "invite_link" },
-                label = { Text("Share Invite Link", fontSize = 11.sp) }
-              )
+              listOf(
+                "myself" to "To Myself",
+                "friends" to "Tag Friends",
+                "invite_link" to "Invite Link"
+              ).forEach { (key, label) ->
+                val selected = recipientType == key
+                FilterChip(
+                  selected = selected,
+                  onClick = { recipientType = key },
+                  shape = RoundedCornerShape(VybeTokens.Radius.pill),
+                  colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = palette.accent,
+                    selectedLabelColor = Color.White,
+                    containerColor = palette.elevated,
+                    labelColor = palette.textSecondary
+                  ),
+                  label = { Text(label, fontSize = 11.sp) }
+                )
+              }
             }
           }
 
@@ -468,24 +493,32 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
               val realFriends = remember(allUsers, currentUser?.id) {
                 allUsers.filter { it.id != currentUser?.id }.map { it.username }.distinct().take(12)
               }
-              Text("Tag VYBE Friend:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              Text("Tag VYBE Friend:", fontSize = 11.sp, color = palette.textSecondary)
               Spacer(modifier = Modifier.height(4.dp))
               OutlinedTextField(
                 value = selectedFriendUsername,
                 onValueChange = { selectedFriendUsername = it.removePrefix("@").trim() },
-                placeholder = { Text("Enter @username", fontSize = 12.sp) },
+                placeholder = { Text("Enter @username", fontSize = 12.sp, color = palette.textMuted) },
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
+                colors = fieldColors,
+                shape = RoundedCornerShape(VybeTokens.Radius.md),
                 modifier = Modifier.fillMaxWidth()
               )
               if (realFriends.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(6.dp))
-                androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                   items(realFriends.size) { index ->
                     val username = realFriends[index]
                     FilterChip(
                       selected = selectedFriendUsername == username,
                       onClick = { selectedFriendUsername = username },
+                      shape = RoundedCornerShape(VybeTokens.Radius.pill),
+                      colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = palette.accent,
+                        selectedLabelColor = Color.White,
+                        containerColor = palette.elevated,
+                        labelColor = palette.textSecondary
+                      ),
                       label = { Text("@$username", fontSize = 10.sp) }
                     )
                   }
@@ -494,39 +527,38 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
             }
           } else if (recipientType == "invite_link") {
             item {
-              Card(
-                colors = CardDefaults.cardColors(containerColor = VybeVioletDark.copy(alpha = 0.35f)),
-                shape = RoundedCornerShape(14.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, VybeViolet.copy(alpha = 0.4f))
-              ) {
+              VybeSurfaceCard(elevated = true) {
                 Column(modifier = Modifier.padding(14.dp)) {
                   Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Link, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Link, contentDescription = null, tint = palette.accentSecondary, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Shareable Capsule Invite Link", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White)
+                    Text("Shareable Capsule Invite Link", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = palette.textPrimary)
                   }
                   Spacer(modifier = Modifier.height(4.dp))
                   Text(
                     text = "Anyone who clicks this link can join and unlock this capsule when the time arrives.",
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = palette.textSecondary
                   )
                   Spacer(modifier = Modifier.height(8.dp))
                   Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    shape = RoundedCornerShape(8.dp),
+                    color = palette.card,
+                    border = BorderStroke(1.dp, palette.border),
+                    shape = RoundedCornerShape(VybeTokens.Radius.sm),
                     modifier = Modifier.fillMaxWidth()
                   ) {
                     Text(
                       text = generatedInviteLink,
                       fontSize = 11.sp,
-                      color = VybeBrandCyan,
+                      color = palette.accentSecondary,
                       fontWeight = FontWeight.SemiBold,
-                      modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                      modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
                     )
                   }
                   Spacer(modifier = Modifier.height(8.dp))
-                  OutlinedButton(
+                  VybeSecondaryButton(
+                    text = "Share Invite Link",
+                    icon = Icons.Default.Share,
                     onClick = {
                       val shareIntent = Intent(Intent.ACTION_SEND).apply {
                         type = "text/plain"
@@ -535,13 +567,8 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
                       }
                       context.startActivity(Intent.createChooser(shareIntent, "Share Capsule Link"))
                     },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
-                  ) {
-                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(14.dp), tint = VybeBrandCyan)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Share Invite Link", fontSize = 11.sp, color = VybeBrandCyan, fontWeight = FontWeight.Bold)
-                  }
+                    modifier = Modifier.fillMaxWidth()
+                  )
                 }
               }
             }
@@ -552,10 +579,11 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
               value = unlockDateInput,
               onValueChange = { unlockDateInput = it },
               label = { Text("Unlock Date") },
-              placeholder = { Text("e.g., Jan 01, 2027") },
+              placeholder = { Text("e.g., Jan 01, 2027", color = palette.textMuted) },
+              colors = fieldColors,
               modifier = Modifier.fillMaxWidth(),
               singleLine = true,
-              shape = RoundedCornerShape(14.dp)
+              shape = RoundedCornerShape(VybeTokens.Radius.md)
             )
           }
 
@@ -564,24 +592,26 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
               value = messageInput,
               onValueChange = { messageInput = it },
               label = { Text("Sealed Message") },
-              placeholder = { Text("Words that your future self or friend will read...") },
+              placeholder = { Text("Words that your future self or friend will read...", color = palette.textMuted) },
+              colors = fieldColors,
               modifier = Modifier
                 .fillMaxWidth()
                 .testTag("capsule_message_input"),
               minLines = 3,
               maxLines = 5,
-              shape = RoundedCornerShape(14.dp)
+              shape = RoundedCornerShape(VybeTokens.Radius.md)
             )
           }
 
           item {
-            Text("Photo or Video Attachment", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text("Photo or Video Attachment", fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily, color = palette.textPrimary)
+            Spacer(modifier = Modifier.height(6.dp))
             if (pickedMediaUri != null) {
               Box(
                 modifier = Modifier
                   .fillMaxWidth()
                   .height(140.dp)
-                  .clip(RoundedCornerShape(12.dp))
+                  .clip(RoundedCornerShape(VybeTokens.Radius.md))
               ) {
                 AsyncImage(
                   model = pickedMediaUri,
@@ -593,29 +623,28 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
                   onClick = { pickedMediaUri = null },
                   modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                    .size(32.dp)
+                    .padding(6.dp)
+                    .background(ObsidianCanvas.copy(alpha = 0.72f), CircleShape)
+                    .size(36.dp)
                 ) {
                   Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(16.dp))
                 }
               }
             } else {
-              OutlinedButton(
+              VybeSecondaryButton(
+                text = "Upload Photo / Video from Phone",
+                icon = Icons.Default.AttachFile,
                 onClick = {
                   photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
                 },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-              ) {
-                Icon(Icons.Default.AttachFile, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Upload Photo / Video from Phone", fontSize = 12.sp)
-              }
+                modifier = Modifier.fillMaxWidth()
+              )
             }
           }
 
           item {
-            Button(
+            VybePrimaryButton(
+              text = "Cryptographically Seal Capsule",
               onClick = {
                 if (titleInput.isNotBlank() && messageInput.isNotBlank()) {
                   val recipientSummary = when (recipientType) {
@@ -633,15 +662,10 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
                 }
               },
               enabled = titleInput.isNotBlank() && messageInput.isNotBlank(),
-              colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-              shape = RoundedCornerShape(14.dp),
               modifier = Modifier
                 .fillMaxWidth()
-                .height(48.dp)
                 .testTag("confirm_seal_capsule_large_button")
-            ) {
-              Text("Cryptographically Seal Capsule", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            }
+            )
           }
 
           item {

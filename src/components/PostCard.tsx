@@ -126,7 +126,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
     isPlayingAudio && currentAudioTrack === (post.musicAttachment?.title || post.audioTrackTitle);
 
   return (
-    <article className="bg-[#101322] border border-[#262E4A]/80 rounded-2xl shadow-xl overflow-hidden transition-all hover:border-[#8B5CF6]/40">
+    <article className="bg-[var(--vybe-surface)] border border-[var(--vybe-border)] rounded-2xl overflow-hidden transition-colors hover:border-[var(--vybe-accent)]/50">
       {/* Post Header — Single clean circular avatar border */}
       <div className="flex items-center justify-between p-4">
         <div className="flex items-center gap-3">
@@ -139,17 +139,17 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
               alt={post.author.displayName}
               loading="lazy"
               decoding="async"
-              className="w-11 h-11 rounded-full object-cover border border-[#8B5CF6]/60"
+              className="w-10 h-10 rounded-full object-cover border border-[var(--vybe-border)]"
             />
             {post.author.isOnline && (
-              <span className="absolute bottom-0 right-0 w-3 h-3 bg-[#22C55E] border-2 border-[#101322] rounded-full" />
+              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-[#22C55E] border-2 border-[var(--vybe-surface)] rounded-full" />
             )}
           </div>
           <div>
             <div className="flex items-center gap-1.5 flex-wrap">
               <span
                 onClick={() => openUserProfile(post.author)}
-                className="font-bold text-white text-sm hover:underline cursor-pointer"
+                className="font-bold text-[var(--vybe-text)] text-sm hover:underline cursor-pointer"
               >
                 {post.author.displayName}
               </span>
@@ -158,21 +158,19 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
               ))}
               <span
                 onClick={() => openUserProfile(post.author)}
-                className="text-xs text-gray-400 font-mono cursor-pointer hover:underline"
+                className="text-xs text-[var(--vybe-text-secondary)] cursor-pointer hover:underline"
               >
                 @{post.author.username}
               </span>
             </div>
-            <div className="flex items-center gap-2 mt-0.5 text-[11px] text-gray-400">
+            <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-[var(--vybe-text-muted)]">
               <span>{displayTimestamp}</span>
-              <span>•</span>
-              <span className="font-mono text-[#00C6FF] font-semibold">{post.author.publicVybeId}</span>
               {post.locationName && (
                 <>
-                  <span>•</span>
-                  <span className="flex items-center gap-0.5 text-gray-300">
-                    <MapPin className="w-3 h-3 text-[#FFB703]" />
-                    <span className="truncate max-w-[120px]">{post.locationName}</span>
+                  <span>·</span>
+                  <span className="flex items-center gap-0.5 text-[var(--vybe-text-secondary)]">
+                    <MapPin className="w-3 h-3 text-[var(--vybe-accent)]" />
+                    <span className="truncate max-w-[140px]">{post.locationName}</span>
                   </span>
                 </>
               )}
@@ -192,11 +190,11 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
 
       {/* Caption & Tags */}
       <div className="px-4 pb-3">
-        <p className="text-sm text-gray-100 leading-relaxed whitespace-pre-line">{post.caption}</p>
+        <p className="text-sm text-[var(--vybe-text)] leading-relaxed whitespace-pre-line">{post.caption}</p>
         {post.tags?.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-2">
             {post.tags.map(tag => (
-              <span key={tag} className="text-xs font-medium text-[#00C6FF] hover:underline cursor-pointer">
+              <span key={tag} className="text-xs font-medium text-[var(--vybe-accent)] hover:underline cursor-pointer">
                 #{tag}
               </span>
             ))}
@@ -204,51 +202,53 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
         )}
       </div>
 
-      {/* Media Attachment with Safe Double-Tap Finger Heart Burst */}
+      {/* Media Attachment with Double-Tap Finger Heart Burst */}
       {post.mediaUrls?.length > 0 && (
-        <FingerHeartDoubleTapOverlay
-          onDoubleTap={() => ensurePostLoved(post.id)}
-          className="w-full max-h-[500px] bg-[#060714] overflow-hidden flex items-center justify-center"
-        >
-          {post.mediaType === 'VIDEO' || post.mediaType === 'REEL' ? (
-            <video
-              ref={videoRef}
-              src={resolveMediaUrl(post.mediaUrls[0])}
-              controls
-              playsInline
-              preload="none"
-              className="w-full h-full object-cover max-h-[500px]"
-            />
-          ) : (
-            <img
-              src={resolveMediaUrl(post.mediaUrls[0])}
-              alt="Post content"
-              loading="lazy"
-              decoding="async"
-              className="w-full h-full object-cover max-h-[500px]"
-            />
-          )}
-          {post.isVybesReel && (
-            <div className="absolute top-3 right-3 px-2 py-1 rounded-lg bg-black/60 backdrop-blur-md text-[10px] font-bold text-white keep-white uppercase tracking-wider">
-              VYBES Reel
-            </div>
-          )}
-        </FingerHeartDoubleTapOverlay>
+        <div className="px-3 pb-1">
+          <FingerHeartDoubleTapOverlay
+            onDoubleTap={() => ensurePostLoved(post.id)}
+            className="w-full max-h-[500px] bg-[var(--vybe-elevated)] rounded-xl overflow-hidden flex items-center justify-center"
+          >
+            {post.mediaType === 'VIDEO' || post.mediaType === 'REEL' ? (
+              <video
+                ref={videoRef}
+                src={resolveMediaUrl(post.mediaUrls[0])}
+                controls
+                playsInline
+                preload="none"
+                className="w-full h-full object-cover max-h-[500px]"
+              />
+            ) : (
+              <img
+                src={resolveMediaUrl(post.mediaUrls[0])}
+                alt="Post content"
+                loading="lazy"
+                decoding="async"
+                className="w-full h-full object-cover max-h-[500px]"
+              />
+            )}
+            {post.isVybesReel && (
+              <div className="absolute top-3 right-3 px-2 py-1 rounded-lg bg-black/60 backdrop-blur-md text-[10px] font-bold text-white keep-white uppercase tracking-wider">
+                VYBE Reel
+              </div>
+            )}
+          </FingerHeartDoubleTapOverlay>
+        </div>
       )}
 
       {/* Music Track Banner if attached */}
       {(post.musicAttachment || post.audioTrackTitle) && (
-        <div className="px-4 py-2.5 bg-[#060714]/80 border-t border-[#262E4A]/40 flex items-center justify-between">
+        <div className="mx-3 mt-2 px-3 py-2 rounded-xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] flex items-center justify-between">
           <div className="flex items-center gap-2.5 overflow-hidden">
-            <div className="p-1.5 rounded-lg bg-[#8B5CF6]/20 text-[#00C6FF]">
+            <div className="p-1.5 rounded-lg bg-[var(--vybe-accent-soft)] text-[var(--vybe-accent)]">
               <Music className={`w-4 h-4 ${isCurrentTrackPlaying ? 'animate-bounce' : ''}`} />
             </div>
             <div className="truncate">
-              <p className="text-xs font-semibold text-white truncate">
+              <p className="text-xs font-semibold text-[var(--vybe-text)] truncate">
                 {post.musicAttachment ? post.musicAttachment.title : post.audioTrackTitle}
               </p>
               {post.musicAttachment?.artist && (
-                <p className="text-[10px] text-gray-400 truncate">{post.musicAttachment.artist}</p>
+                <p className="text-[10px] text-[var(--vybe-text-secondary)] truncate">{post.musicAttachment.artist}</p>
               )}
             </div>
           </div>
@@ -259,19 +259,19 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
                 post.musicAttachment?.previewUrl
               )
             }
-            className="p-1.5 rounded-full bg-[#1A1F36] hover:bg-[#262E4A] text-white text-xs transition-colors shrink-0"
+            className="p-1.5 rounded-full bg-[var(--vybe-surface)] border border-[var(--vybe-border)] text-[var(--vybe-text)] text-xs transition-colors shrink-0"
           >
             {isCurrentTrackPlaying ? (
-              <Volume2 className="w-4 h-4 text-[#00C6FF]" />
+              <Volume2 className="w-4 h-4 text-[var(--vybe-accent)]" />
             ) : (
-              <VolumeX className="w-4 h-4 text-gray-400" />
+              <VolumeX className="w-4 h-4 text-[var(--vybe-text-muted)]" />
             )}
           </button>
         </div>
       )}
 
-      {/* Engagement Actions Bar — Uniform h-9 row, optically centered 20px icons, equal spacing */}
-      <div className="p-4 border-t border-[#262E4A]/50">
+      {/* Engagement Actions Bar */}
+      <div className="px-4 py-3">
         <div className="flex items-center justify-between min-h-[36px]">
           <div className="flex items-center gap-5 relative">
             {/* 1. Global VYBE Universal Reaction */}
@@ -316,7 +316,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
             <button
               type="button"
               onClick={() => setShowComments(!showComments)}
-              className="inline-flex items-center justify-center gap-1.5 h-9 px-1.5 rounded-lg text-xs font-semibold text-gray-400 hover:text-white transition-colors"
+              className="inline-flex items-center justify-center gap-1.5 h-9 px-1.5 rounded-lg text-xs font-semibold text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)] transition-colors"
             >
               <span className="w-5 h-5 inline-flex items-center justify-center">
                 <MessageCircle className="w-5 h-5" />
@@ -324,20 +324,20 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
               {post.commentsCount > 0 && <span>{post.commentsCount}</span>}
             </button>
 
-            {/* 3. Share — Optically centered & aligned on identical baseline */}
+            {/* 3. Share */}
             <button
               type="button"
               onClick={() => setShowShareSheet(!showShareSheet)}
               aria-label="Share post"
-              className="inline-flex items-center justify-center gap-1.5 h-9 px-1.5 rounded-lg text-xs font-semibold text-gray-400 hover:text-white transition-colors relative"
+              className="inline-flex items-center justify-center gap-1.5 h-9 px-1.5 rounded-lg text-xs font-semibold text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)] transition-colors relative"
             >
               <span className="w-5 h-5 inline-flex items-center justify-center">
                 <Send className="w-[19px] h-[19px]" />
               </span>
               {post.sharesCount > 0 && <span>{post.sharesCount}</span>}
               {copyFeedback && (
-                <span className="absolute -top-7 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded bg-[#00C6FF] text-[#060714] text-[10px] font-bold shadow whitespace-nowrap">
-                  Link copied!
+                <span className="absolute -top-7 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded bg-[var(--vybe-accent)] text-white keep-white text-[10px] font-bold shadow whitespace-nowrap">
+                  Copied!
                 </span>
               )}
             </button>
@@ -349,7 +349,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
             onClick={() => toggleSavePost(post.id)}
             aria-label="Save post"
             className={`inline-flex items-center justify-center w-9 h-9 rounded-lg transition-colors ${
-              post.isSaved ? 'text-[#00C6FF]' : 'text-gray-400 hover:text-white'
+              post.isSaved ? 'text-[var(--vybe-accent)]' : 'text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)]'
             }`}
           >
             <Bookmark className={`w-5 h-5 ${post.isSaved ? 'fill-current' : ''}`} />

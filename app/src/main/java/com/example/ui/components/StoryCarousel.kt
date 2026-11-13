@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -38,20 +39,19 @@ import com.example.data.model.User
 import com.example.ui.theme.*
 import com.example.util.TimestampUtils
 
-// VYBE signature story ring gradients
 private val VybeStoryRingGradient = Brush.sweepGradient(
   listOf(
-    VybeViolet,
-    VybeMagenta,
-    VybeBrandCyan,
-    VybeViolet
+    VybeSocialVioletBright,
+    VybeGrowBlueBright,
+    VybeBrandMagenta,
+    VybeSocialVioletBright
   )
 )
 
 private val VybeMatchesRingGradient = Brush.sweepGradient(
   listOf(
     Color(0xFF10B981),
-    Color(0xFF06B6D4),
+    Color(0xFF38BDF8),
     Color(0xFF34D399),
     Color(0xFF10B981)
   )
@@ -71,6 +71,7 @@ fun StoryCarousel(
   onJoinLiveStream: ((LiveStreamSession) -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
+  val palette = LocalVybePalette.current
   val nowMillis = System.currentTimeMillis()
   val activeStories = remember(stories) {
     stories.filter { s ->
@@ -87,7 +88,6 @@ fun StoryCarousel(
   val userOwnStory = ownStories.firstOrNull { !it.isViewed } ?: ownStories.firstOrNull()
   val hasUnviewedOwnStory = ownStories.any { !it.isViewed }
 
-  // Group peer stories by author so each user has exactly ONE bubble in the carousel
   val peerStoryGroups = remember(activeStories, currentUser?.id) {
     activeStories
       .filter { currentUser == null || !it.author.id.equals(currentUser.id, ignoreCase = true) }
@@ -105,17 +105,17 @@ fun StoryCarousel(
   }
 
   Surface(
-    color = MaterialTheme.colorScheme.surface,
+    color = palette.canvas,
     modifier = modifier.fillMaxWidth()
   ) {
     Column(modifier = Modifier.fillMaxWidth()) {
       LazyRow(
         modifier = Modifier
           .fillMaxWidth()
-          .padding(top = 4.dp, bottom = 4.dp)
+          .padding(top = 4.dp, bottom = 6.dp)
           .testTag("story_carousel_row"),
-        contentPadding = PaddingValues(horizontal = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
       ) {
         // 1. Current user "Your Story" bubble
@@ -123,12 +123,12 @@ fun StoryCarousel(
           Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
-              .width(60.dp)
+              .width(62.dp)
               .testTag("your_story_item")
           ) {
             Box(
               modifier = Modifier
-                .size(54.dp)
+                .size(56.dp)
                 .clickable {
                   if (userHasStory && userOwnStory != null) {
                     onStoryClick(userOwnStory)
@@ -142,45 +142,41 @@ fun StoryCarousel(
                 if (hasUnviewedOwnStory) {
                   Box(
                     modifier = Modifier
-                      .size(54.dp)
+                      .size(56.dp)
                       .clip(CircleShape)
                       .background(VybeStoryRingGradient)
                       .padding(2.dp)
                       .clip(CircleShape)
-                      .background(MaterialTheme.colorScheme.surface)
+                      .background(palette.canvas)
                       .padding(1.5.dp)
                       .clip(CircleShape),
                     contentAlignment = Alignment.Center
                   ) {
-                    AvatarContent(currentUser?.avatarUrl, currentUser?.displayName ?: "Me", 46.dp)
+                    AvatarContent(currentUser?.avatarUrl, currentUser?.displayName ?: "Me", 48.dp)
                   }
                 } else {
                   Box(
                     modifier = Modifier
-                      .size(52.dp)
+                      .size(54.dp)
                       .clip(CircleShape)
-                      .border(
-                        width = 1.2.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f),
-                        shape = CircleShape
-                      )
+                      .border(1.2.dp, palette.border, CircleShape)
                       .padding(2.dp)
                       .clip(CircleShape),
                     contentAlignment = Alignment.Center
                   ) {
-                    AvatarContent(currentUser?.avatarUrl, currentUser?.displayName ?: "Me", 46.dp)
+                    AvatarContent(currentUser?.avatarUrl, currentUser?.displayName ?: "Me", 48.dp)
                   }
                 }
 
                 Box(
                   modifier = Modifier
-                    .size(18.dp)
+                    .size(19.dp)
                     .align(Alignment.BottomEnd)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(1.2.dp)
+                    .background(palette.canvas)
+                    .padding(1.5.dp)
                     .clip(CircleShape)
-                    .background(VybeViolet)
+                    .background(palette.accent)
                     .clickable { onAddStoryClick() },
                   contentAlignment = Alignment.Center
                 ) {
@@ -194,13 +190,9 @@ fun StoryCarousel(
               } else {
                 Box(
                   modifier = Modifier
-                    .size(50.dp)
+                    .size(52.dp)
                     .clip(CircleShape)
-                    .border(
-                      width = 1.dp,
-                      color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
-                      shape = CircleShape
-                    ),
+                    .border(1.dp, palette.border, CircleShape),
                   contentAlignment = Alignment.Center
                 ) {
                   AvatarContent(currentUser?.avatarUrl, currentUser?.displayName ?: "Me", 48.dp)
@@ -208,13 +200,13 @@ fun StoryCarousel(
 
                 Box(
                   modifier = Modifier
-                    .size(18.dp)
+                    .size(19.dp)
                     .align(Alignment.BottomEnd)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface)
+                    .background(palette.canvas)
                     .padding(1.5.dp)
                     .clip(CircleShape)
-                    .background(VybeViolet),
+                    .background(palette.accent),
                   contentAlignment = Alignment.Center
                 ) {
                   Icon(
@@ -227,13 +219,13 @@ fun StoryCarousel(
               }
             }
 
-            Spacer(modifier = Modifier.height(3.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
               text = "Your Story",
-              style = MaterialTheme.typography.labelSmall,
-              color = if (userHasStory) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-              fontWeight = if (userHasStory) FontWeight.SemiBold else FontWeight.Normal,
-              fontSize = 10.5.sp,
+              fontFamily = InterFontFamily,
+              color = if (userHasStory) palette.textPrimary else palette.textSecondary,
+              fontWeight = if (userHasStory) FontWeight.SemiBold else FontWeight.Medium,
+              fontSize = 11.sp,
               maxLines = 1,
               textAlign = TextAlign.Center,
               overflow = TextOverflow.Ellipsis
@@ -241,14 +233,13 @@ fun StoryCarousel(
           }
         }
 
-        // Visual separator between My Story and other users' stories / live items
         if (peerStoryGroups.isNotEmpty() || activeLiveStreams.any { it.isLive } || activeLiveRooms.any { it.isActive } || onManageVybeMatchesClick != null) {
           item(key = "my_story_divider") {
             Box(
               modifier = Modifier
-                .height(48.dp)
+                .height(46.dp)
                 .width(1.dp)
-                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+                .background(palette.border)
             )
           }
         }
@@ -259,41 +250,35 @@ fun StoryCarousel(
           Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
-              .width(60.dp)
+              .width(62.dp)
               .clickable { onJoinLiveStream?.invoke(stream) }
               .testTag("carousel_live_stream_${stream.id}")
           ) {
             Box(
-              modifier = Modifier.size(54.dp),
+              modifier = Modifier.size(56.dp),
               contentAlignment = Alignment.Center
             ) {
               Box(
                 modifier = Modifier
-                  .size(54.dp)
+                  .size(56.dp)
                   .clip(CircleShape)
                   .background(
                     Brush.sweepGradient(
-                      listOf(
-                        Color(0xFFEF4444),
-                        VybeMagenta,
-                        Color(0xFFF59E0B),
-                        Color(0xFFEF4444)
-                      )
+                      listOf(palette.danger, VybeBrandMagenta, palette.warning, palette.danger)
                     )
                   )
                   .padding(2.dp)
                   .clip(CircleShape)
-                  .background(MaterialTheme.colorScheme.surface)
+                  .background(palette.canvas)
                   .padding(1.5.dp)
                   .clip(CircleShape),
                 contentAlignment = Alignment.Center
               ) {
-                AvatarContent(stream.host.avatarUrl, stream.host.displayName, 46.dp)
+                AvatarContent(stream.host.avatarUrl, stream.host.displayName, 48.dp)
               }
 
-              // Glowing Red "LIVE" Badge
               Surface(
-                color = Color(0xFFEF4444),
+                color = palette.danger,
                 shape = RoundedCornerShape(4.dp),
                 modifier = Modifier
                   .align(Alignment.BottomCenter)
@@ -309,12 +294,13 @@ fun StoryCarousel(
               }
             }
 
-            Spacer(modifier = Modifier.height(3.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
               text = stream.host.displayName.ifBlank { stream.title },
-              fontSize = 10.5.sp,
+              fontFamily = InterFontFamily,
+              fontSize = 11.sp,
               fontWeight = FontWeight.Bold,
-              color = Color(0xFFEF4444),
+              color = palette.danger,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
               textAlign = TextAlign.Center
@@ -329,49 +315,37 @@ fun StoryCarousel(
             Column(
               horizontalAlignment = Alignment.CenterHorizontally,
               modifier = Modifier
-                .width(60.dp)
+                .width(62.dp)
                 .clickable { onJoinLiveRoom?.invoke(firstActiveRoom) }
                 .testTag("live_highlight_item")
             ) {
               Box(
-                modifier = Modifier.size(54.dp),
+                modifier = Modifier.size(56.dp),
                 contentAlignment = Alignment.Center
               ) {
-                // Pulsing Gradient Ring for Active Live Session
                 Box(
                   modifier = Modifier
-                    .size(54.dp)
+                    .size(56.dp)
                     .clip(CircleShape)
-                    .background(
-                      Brush.sweepGradient(
-                        listOf(
-                          VybeMagenta,
-                          Color(0xFFEF4444),
-                          VybeViolet,
-                          Color(0xFF10B981),
-                          VybeMagenta
-                        )
-                      )
-                    )
+                    .background(VybeStoryRingGradient)
                     .padding(2.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface)
+                    .background(palette.canvas)
                     .padding(1.5.dp)
                     .clip(CircleShape)
-                    .background(VybeMagenta.copy(alpha = 0.2f)),
+                    .background(palette.accent.copy(alpha = 0.16f)),
                   contentAlignment = Alignment.Center
                 ) {
                   Icon(
                     imageVector = Icons.Default.GraphicEq,
                     contentDescription = "Active Live Room",
-                    tint = VybeMagenta,
+                    tint = palette.accent,
                     modifier = Modifier.size(24.dp)
                   )
                 }
 
-                // "LIVE" Badge
                 Surface(
-                  color = Color(0xFFEF4444),
+                  color = palette.danger,
                   shape = RoundedCornerShape(4.dp),
                   modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -387,12 +361,13 @@ fun StoryCarousel(
                 }
               }
 
-              Spacer(modifier = Modifier.height(3.dp))
+              Spacer(modifier = Modifier.height(4.dp))
               Text(
                 text = firstActiveRoom.topicTag.ifBlank { "Live Room" },
-                fontSize = 10.5.sp,
+                fontFamily = InterFontFamily,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
-                color = VybeMagenta,
+                color = palette.accent,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center
@@ -401,33 +376,33 @@ fun StoryCarousel(
           }
         }
 
-        // 2. Quick VYBE Matches Circle Action
+        // 4. Quick VYBE Matches Circle Action
         if (onManageVybeMatchesClick != null) {
           item(key = "manage_vybe_matches_chip") {
             Column(
               horizontalAlignment = Alignment.CenterHorizontally,
               modifier = Modifier
-                .width(60.dp)
+                .width(62.dp)
                 .clickable { onManageVybeMatchesClick() }
                 .testTag("story_tray_vybe_matches_button")
             ) {
               Box(
                 modifier = Modifier
-                  .size(50.dp)
+                  .size(52.dp)
                   .clip(CircleShape)
-                  .border(1.2.dp, Color(0xFF10B981).copy(alpha = 0.7f), CircleShape)
-                  .background(Color(0xFF10B981).copy(alpha = 0.1f)),
+                  .border(1.2.dp, palette.success.copy(alpha = 0.7f), CircleShape)
+                  .background(palette.success.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
               ) {
                 Icon(
                   imageVector = Icons.Default.Group,
                   contentDescription = "Manage VYBE Matches",
-                  tint = Color(0xFF10B981),
+                  tint = palette.success,
                   modifier = Modifier.size(22.dp)
                 )
                 if (vybeMatchesCount > 0) {
                   Surface(
-                    color = Color(0xFF10B981),
+                    color = palette.success,
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.align(Alignment.BottomEnd)
                   ) {
@@ -441,13 +416,13 @@ fun StoryCarousel(
                   }
                 }
               }
-              Spacer(modifier = Modifier.height(3.dp))
+              Spacer(modifier = Modifier.height(4.dp))
               Text(
                 text = "Matches",
-                style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFF10B981),
+                fontFamily = InterFontFamily,
+                color = palette.success,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 10.5.sp,
+                fontSize = 11.sp,
                 maxLines = 1,
                 textAlign = TextAlign.Center,
                 overflow = TextOverflow.Ellipsis
@@ -456,12 +431,10 @@ fun StoryCarousel(
           }
         }
 
-        // 3. Active Peer Stories (one bubble per user, unviewed gradient ring vs viewed muted ring)
+        // 5. Active Peer Stories
         items(peerStoryGroups, key = { "user_story_${it.first.author.id}" }) { (representativeStory, hasUnviewed, isMatchesStory) ->
-          val mutedBrush = androidx.compose.ui.graphics.SolidColor(
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
-          )
-          val ringBrush: androidx.compose.ui.graphics.Brush = when {
+          val mutedBrush = SolidColor(palette.border)
+          val ringBrush = when {
             !hasUnviewed -> mutedBrush
             isMatchesStory -> VybeMatchesRingGradient
             else -> VybeStoryRingGradient
@@ -470,27 +443,27 @@ fun StoryCarousel(
           Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
-              .width(60.dp)
+              .width(62.dp)
               .clickable { onStoryClick(representativeStory) }
               .testTag("story_user_${representativeStory.author.id}")
           ) {
             Box(
-              modifier = Modifier.size(54.dp),
+              modifier = Modifier.size(56.dp),
               contentAlignment = Alignment.Center
             ) {
               Box(
                 modifier = Modifier
-                  .size(54.dp)
+                  .size(56.dp)
                   .clip(CircleShape)
                   .background(ringBrush)
                   .padding(2.dp)
                   .clip(CircleShape)
-                  .background(MaterialTheme.colorScheme.surface)
+                  .background(palette.canvas)
                   .padding(1.5.dp)
                   .clip(CircleShape),
                 contentAlignment = Alignment.Center
               ) {
-                AvatarContent(representativeStory.author.avatarUrl, representativeStory.author.displayName, 46.dp)
+                AvatarContent(representativeStory.author.avatarUrl, representativeStory.author.displayName, 48.dp)
               }
 
               if (isMatchesStory) {
@@ -499,10 +472,10 @@ fun StoryCarousel(
                     .size(16.dp)
                     .align(Alignment.BottomEnd)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface)
+                    .background(palette.canvas)
                     .padding(1.2.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFF10B981)),
+                    .background(palette.success),
                   contentAlignment = Alignment.Center
                 ) {
                   Icon(
@@ -515,13 +488,13 @@ fun StoryCarousel(
               }
             }
 
-            Spacer(modifier = Modifier.height(3.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
               text = representativeStory.author.displayName.split(" ").firstOrNull()?.takeIf { it.isNotBlank() } ?: representativeStory.author.username,
-              style = MaterialTheme.typography.labelSmall,
-              color = MaterialTheme.colorScheme.onSurface,
-              fontWeight = FontWeight.SemiBold,
-              fontSize = 10.5.sp,
+              fontFamily = InterFontFamily,
+              color = palette.textPrimary,
+              fontWeight = if (hasUnviewed) FontWeight.SemiBold else FontWeight.Normal,
+              fontSize = 11.sp,
               maxLines = 1,
               textAlign = TextAlign.Center,
               overflow = TextOverflow.Ellipsis
@@ -531,8 +504,8 @@ fun StoryCarousel(
       }
 
       HorizontalDivider(
-        thickness = 0.6.dp,
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+        thickness = 0.8.dp,
+        color = palette.border
       )
     }
   }
@@ -554,9 +527,7 @@ private fun AvatarContent(url: String?, name: String, size: Dp) {
       modifier = Modifier
         .size(size)
         .clip(CircleShape)
-        .background(
-          Brush.linearGradient(listOf(VybeViolet, VybeMagenta))
-        ),
+        .background(Brush.linearGradient(listOf(VybeSocialViolet, VybeGrowBlue))),
       contentAlignment = Alignment.Center
     ) {
       Text(

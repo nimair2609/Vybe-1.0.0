@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VybeGradientButton
+import com.example.ui.components.VybeSurfaceCard
 import com.example.ui.theme.*
 
 /**
@@ -44,6 +45,15 @@ import com.example.ui.theme.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AuthScreen(viewModel: VybeViewModel) {
+  val palette = LocalVybePalette.current
+  val fieldColors = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = palette.elevated,
+    unfocusedContainerColor = palette.elevated,
+    focusedBorderColor = palette.accent,
+    unfocusedBorderColor = palette.border,
+    focusedTextColor = palette.textPrimary,
+    unfocusedTextColor = palette.textPrimary
+  )
   var isRegisterMode by remember { mutableStateOf(false) }
 
   // Account Type Selection (Section 2 & 11)
@@ -191,7 +201,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
   Box(
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background)
+      .background(palette.canvas)
       .windowInsetsPadding(WindowInsets.safeDrawing)
       .imePadding()
       .padding(horizontal = 24.dp)
@@ -209,7 +219,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
       Box(
         modifier = Modifier
           .size(72.dp)
-          .clip(RoundedCornerShape(18.dp))
+          .clip(RoundedCornerShape(VybeTokens.Radius.lg))
       ) {
         androidx.compose.foundation.Image(
           painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.vybe_app_icon_clean),
@@ -221,19 +231,21 @@ fun AuthScreen(viewModel: VybeViewModel) {
       Spacer(modifier = Modifier.height(10.dp))
 
       Text(
-        text = "vybe",
+        text = "VYBE",
+        fontFamily = PlusJakartaSansFontFamily,
         style = MaterialTheme.typography.displayMedium,
         fontWeight = FontWeight.ExtraBold,
         letterSpacing = 1.sp,
-        color = MaterialTheme.colorScheme.onBackground
+        color = palette.textPrimary
       )
 
       Text(
-        text = "CONNECT • SHARE • BE YOU",
+        text = "CONNECT • SHARE • GROW",
+        fontFamily = PlusJakartaSansFontFamily,
         fontSize = 11.sp,
         fontWeight = FontWeight.Bold,
         letterSpacing = 1.5.sp,
-        color = VybeBrandCyan
+        color = palette.accentSecondary
       )
 
       Spacer(modifier = Modifier.height(4.dp))
@@ -241,15 +253,15 @@ fun AuthScreen(viewModel: VybeViewModel) {
       Text(
         text = if (isRegisterMode) "Create your verified VYBE profile" else "Welcome back to your vibe",
         style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
+        color = palette.textSecondary
       )
 
       // Age Policy Banner (16+ community requirement)
-      Spacer(modifier = Modifier.height(10.dp))
+      Spacer(modifier = Modifier.height(12.dp))
       Surface(
-        color = VybeViolet.copy(alpha = 0.12f),
-        shape = RoundedCornerShape(12.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, VybeViolet.copy(alpha = 0.3f)),
+        color = palette.accent.copy(alpha = 0.12f),
+        shape = RoundedCornerShape(VybeTokens.Radius.md),
+        border = androidx.compose.foundation.BorderStroke(1.dp, palette.accent.copy(alpha = 0.3f)),
         modifier = Modifier.fillMaxWidth()
       ) {
         Row(
@@ -259,14 +271,14 @@ fun AuthScreen(viewModel: VybeViewModel) {
           Icon(
             imageVector = Icons.Default.Shield,
             contentDescription = "Age policy",
-            tint = VybeViolet,
+            tint = palette.accent,
             modifier = Modifier.size(20.dp)
           )
           Spacer(modifier = Modifier.width(10.dp))
           Text(
             text = "16+ Community Gate • Teen accounts (16-17) receive enhanced privacy shields.",
             fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = palette.textSecondary,
             lineHeight = 15.sp
           )
         }
@@ -312,42 +324,50 @@ fun AuthScreen(viewModel: VybeViewModel) {
             horizontalArrangement = Arrangement.spacedBy(10.dp)
           ) {
             Surface(
-              color = if (accountType == "INDIVIDUAL") VybeViolet.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant,
-              shape = RoundedCornerShape(12.dp),
-              border = if (accountType == "INDIVIDUAL") androidx.compose.foundation.BorderStroke(1.5.dp, VybeViolet) else null,
+              color = if (accountType == "INDIVIDUAL") palette.accent.copy(alpha = 0.16f) else palette.card,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              border = androidx.compose.foundation.BorderStroke(
+                if (accountType == "INDIVIDUAL") 1.5.dp else 1.dp,
+                if (accountType == "INDIVIDUAL") palette.accent else palette.border
+              ),
               modifier = Modifier
                 .weight(1f)
+                .clip(RoundedCornerShape(VybeTokens.Radius.md))
                 .clickable { accountType = "INDIVIDUAL" }
                 .testTag("account_type_individual")
             ) {
               Column(
-                modifier = Modifier.padding(10.dp),
+                modifier = Modifier.padding(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
               ) {
-                Icon(Icons.Default.Person, contentDescription = null, tint = if (accountType == "INDIVIDUAL") VybeViolet else MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(Icons.Default.Person, contentDescription = null, tint = if (accountType == "INDIVIDUAL") palette.accent else palette.textSecondary)
                 Spacer(modifier = Modifier.height(4.dp))
-                Text("Individual", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                Text("Personal Account", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Individual", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = palette.textPrimary)
+                Text("Personal Account", fontSize = 10.sp, color = palette.textSecondary)
               }
             }
 
             Surface(
-              color = if (accountType == "BUSINESS") VybeVerifiedGold.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant,
-              shape = RoundedCornerShape(12.dp),
-              border = if (accountType == "BUSINESS") androidx.compose.foundation.BorderStroke(1.5.dp, VybeVerifiedGold) else null,
+              color = if (accountType == "BUSINESS") VybeVerifiedGold.copy(alpha = 0.16f) else palette.card,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              border = androidx.compose.foundation.BorderStroke(
+                if (accountType == "BUSINESS") 1.5.dp else 1.dp,
+                if (accountType == "BUSINESS") VybeVerifiedGold else palette.border
+              ),
               modifier = Modifier
                 .weight(1f)
+                .clip(RoundedCornerShape(VybeTokens.Radius.md))
                 .clickable { accountType = "BUSINESS" }
                 .testTag("account_type_business")
             ) {
               Column(
-                modifier = Modifier.padding(10.dp),
+                modifier = Modifier.padding(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
               ) {
-                Icon(Icons.Default.Store, contentDescription = null, tint = if (accountType == "BUSINESS") VybeVerifiedGold else MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(Icons.Default.Store, contentDescription = null, tint = if (accountType == "BUSINESS") VybeVerifiedGold else palette.textSecondary)
                 Spacer(modifier = Modifier.height(4.dp))
-                Text("Business", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                Text("Shop & Verification", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Business", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = palette.textPrimary)
+                Text("Shop & Verification", fontSize = 10.sp, color = palette.textSecondary)
               }
             }
           }
@@ -355,38 +375,43 @@ fun AuthScreen(viewModel: VybeViewModel) {
           if (accountType == "INDIVIDUAL") {
             if (registrationStep == 2) {
               // Dual Email + Phone SMS OTP Verification Step (Section 9)
-              Surface(
-                color = VybeViolet.copy(alpha = 0.10f),
-                shape = RoundedCornerShape(16.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, VybeViolet.copy(alpha = 0.35f)),
+              VybeSurfaceCard(
+                borderColor = palette.accent.copy(alpha = 0.38f),
+                containerColor = palette.card,
+                contentPadding = PaddingValues(16.dp),
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
               ) {
                 Column(
-                  modifier = Modifier.padding(16.dp),
+                  modifier = Modifier.fillMaxWidth(),
                   horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                   Text(
                     "Step 2 of 2: Dual Account Verification",
+                    fontFamily = PlusJakartaSansFontFamily,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
+                    fontSize = 16.sp,
+                    color = palette.textPrimary
                   )
                   Spacer(modifier = Modifier.height(4.dp))
                   Text(
                     text = "Verify both your Email Address and Phone Number to mark your VYBE account fully verified.",
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = palette.textSecondary,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                   )
                   Spacer(modifier = Modifier.height(12.dp))
 
-                  // Separate Verification Status Pills
                   Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                   ) {
                     Surface(
-                      color = if (isEmailVerifiedState) VybeOnlineGreen.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
-                      shape = RoundedCornerShape(10.dp),
+                      color = if (isEmailVerifiedState) palette.success.copy(alpha = 0.16f) else palette.elevated,
+                      shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                      border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isEmailVerifiedState) palette.success.copy(alpha = 0.4f) else palette.border
+                      ),
                       modifier = Modifier.weight(1f).testTag("auth_email_verified_status")
                     ) {
                       Row(
@@ -396,7 +421,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
                         Icon(
                           imageVector = if (isEmailVerifiedState) Icons.Default.CheckCircle else Icons.Default.MarkEmailUnread,
                           contentDescription = null,
-                          tint = if (isEmailVerifiedState) VybeOnlineGreen else VybeViolet,
+                          tint = if (isEmailVerifiedState) palette.success else palette.accent,
                           modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
@@ -404,14 +429,18 @@ fun AuthScreen(viewModel: VybeViewModel) {
                           text = if (isEmailVerifiedState) "Email Verified" else "Email Pending",
                           fontSize = 11.sp,
                           fontWeight = FontWeight.Bold,
-                          color = if (isEmailVerifiedState) VybeOnlineGreen else MaterialTheme.colorScheme.onSurface
+                          color = if (isEmailVerifiedState) palette.success else palette.textPrimary
                         )
                       }
                     }
 
                     Surface(
-                      color = if (isPhoneVerifiedState) VybeOnlineGreen.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
-                      shape = RoundedCornerShape(10.dp),
+                      color = if (isPhoneVerifiedState) palette.success.copy(alpha = 0.16f) else palette.elevated,
+                      shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                      border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isPhoneVerifiedState) palette.success.copy(alpha = 0.4f) else palette.border
+                      ),
                       modifier = Modifier.weight(1f).testTag("auth_phone_verified_status")
                     ) {
                       Row(
@@ -421,7 +450,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
                         Icon(
                           imageVector = if (isPhoneVerifiedState) Icons.Default.CheckCircle else Icons.Default.Sms,
                           contentDescription = null,
-                          tint = if (isPhoneVerifiedState) VybeOnlineGreen else VybeBrandCyan,
+                          tint = if (isPhoneVerifiedState) palette.success else palette.accentSecondary,
                           modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
@@ -429,7 +458,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
                           text = if (isPhoneVerifiedState) "Phone Verified" else "Phone Pending",
                           fontSize = 11.sp,
                           fontWeight = FontWeight.Bold,
-                          color = if (isPhoneVerifiedState) VybeOnlineGreen else MaterialTheme.colorScheme.onSurface
+                          color = if (isPhoneVerifiedState) palette.success else palette.textPrimary
                         )
                       }
                     }
@@ -438,87 +467,89 @@ fun AuthScreen(viewModel: VybeViewModel) {
                   Spacer(modifier = Modifier.height(14.dp))
 
                   // --- 1. EMAIL OTP CARD ---
-                  Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    shape = RoundedCornerShape(12.dp),
+                  VybeSurfaceCard(
+                    containerColor = palette.elevated,
+                    cornerRadius = VybeTokens.Radius.md,
+                    contentPadding = PaddingValues(12.dp),
                     modifier = Modifier.fillMaxWidth()
                   ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                      Text(
-                        text = if (isEmailVerifiedState) "1. Email Confirmed ($verifyEmailInput)" else "1. Verify Email ($verifyEmailInput)",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        color = if (isEmailVerifiedState) VybeOnlineGreen else MaterialTheme.colorScheme.onSurface
+                    Text(
+                      text = if (isEmailVerifiedState) "1. Email Confirmed ($verifyEmailInput)" else "1. Verify Email ($verifyEmailInput)",
+                      fontWeight = FontWeight.Bold,
+                      fontSize = 13.sp,
+                      color = if (isEmailVerifiedState) palette.success else palette.textPrimary
+                    )
+                    if (!isEmailVerifiedState) {
+                      Spacer(modifier = Modifier.height(8.dp))
+                      OutlinedTextField(
+                        value = verifyOtpInput,
+                        onValueChange = {
+                          verifyOtpInput = it.filter { ch -> ch.isDigit() || ch.isLetter() }.take(8)
+                          verifyError = null
+                        },
+                        label = { Text("Email Verification Code") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(VybeTokens.Radius.md),
+                        colors = fieldColors,
+                        modifier = Modifier.fillMaxWidth().testTag("auth_verify_otp_input")
                       )
-                      if (!isEmailVerifiedState) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
-                          value = verifyOtpInput,
-                          onValueChange = {
-                            verifyOtpInput = it.filter { ch -> ch.isDigit() || ch.isLetter() }.take(8)
+                      if (verifyError != null) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(verifyError!!, color = palette.danger, fontSize = 11.sp)
+                      }
+                      Spacer(modifier = Modifier.height(10.dp))
+                      Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                      ) {
+                        Button(
+                          onClick = {
                             verifyError = null
+                            coroutineScope.launch {
+                              verifyLoading = true
+                              val (ok, msg) = viewModel.verifyOtp(verifyEmailInput.trim(), verifyOtpInput.trim(), "signup")
+                              verifyLoading = false
+                              if (!ok) {
+                                verifyError = msg
+                              } else {
+                                statusMessage = msg.removePrefix("EMAIL_VERIFIED_NEEDS_PHONE:").trim()
+                                if (msg.startsWith("EMAIL_VERIFIED_NEEDS_PHONE")) {
+                                  phoneResendCooldownSec = 60
+                                }
+                              }
+                            }
                           },
-                          label = { Text("Email Verification Code") },
-                          singleLine = true,
-                          shape = RoundedCornerShape(12.dp),
-                          modifier = Modifier.fillMaxWidth().testTag("auth_verify_otp_input")
-                        )
-                        if (verifyError != null) {
-                          Spacer(modifier = Modifier.height(6.dp))
-                          Text(verifyError!!, color = VybeDanger, fontSize = 11.sp)
-                        }
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Row(
-                          modifier = Modifier.fillMaxWidth(),
-                          horizontalArrangement = Arrangement.spacedBy(8.dp),
-                          verticalAlignment = Alignment.CenterVertically
+                          enabled = !verifyLoading && verifyOtpInput.isNotBlank(),
+                          colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
+                          shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                          modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("auth_confirm_otp_button")
                         ) {
-                          Button(
-                            onClick = {
-                              verifyError = null
-                              coroutineScope.launch {
-                                verifyLoading = true
-                                val (ok, msg) = viewModel.verifyOtp(verifyEmailInput.trim(), verifyOtpInput.trim(), "signup")
-                                verifyLoading = false
-                                if (!ok) {
-                                  verifyError = msg
-                                } else {
-                                  statusMessage = msg.removePrefix("EMAIL_VERIFIED_NEEDS_PHONE:").trim()
-                                  if (msg.startsWith("EMAIL_VERIFIED_NEEDS_PHONE")) {
-                                    phoneResendCooldownSec = 60
-                                  }
-                                }
+                          Text(if (verifyLoading) "Verifying..." else "Verify Email OTP", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White)
+                        }
+                        OutlinedButton(
+                          onClick = {
+                            verifyError = null
+                            coroutineScope.launch {
+                              val (ok, msg) = viewModel.resendEmailVerificationCode(verifyEmailInput.trim())
+                              if (ok) {
+                                emailResendCooldownSec = 60
+                                statusMessage = msg
+                              } else {
+                                verifyError = msg
                               }
-                            },
-                            enabled = !verifyLoading && verifyOtpInput.isNotBlank(),
-                            colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("auth_confirm_otp_button")
-                          ) {
-                            Text(if (verifyLoading) "Verifying..." else "Verify Email OTP", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                          }
-                          OutlinedButton(
-                            onClick = {
-                              verifyError = null
-                              coroutineScope.launch {
-                                val (ok, msg) = viewModel.resendEmailVerificationCode(verifyEmailInput.trim())
-                                if (ok) {
-                                  emailResendCooldownSec = 60
-                                  statusMessage = msg
-                                } else {
-                                  verifyError = msg
-                                }
-                              }
-                            },
-                            enabled = !verifyLoading && emailResendCooldownSec == 0 && verifyEmailInput.isNotBlank(),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.heightIn(min = 48.dp).testTag("auth_resend_email_otp_button")
-                          ) {
-                            Text(
-                              if (emailResendCooldownSec > 0) "Resend (${emailResendCooldownSec}s)" else "Resend",
-                              fontSize = 11.sp
-                            )
-                          }
+                            }
+                          },
+                          enabled = !verifyLoading && emailResendCooldownSec == 0 && verifyEmailInput.isNotBlank(),
+                          shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                          border = androidx.compose.foundation.BorderStroke(1.dp, palette.border),
+                          modifier = Modifier.heightIn(min = 48.dp).testTag("auth_resend_email_otp_button")
+                        ) {
+                          Text(
+                            if (emailResendCooldownSec > 0) "Resend (${emailResendCooldownSec}s)" else "Resend",
+                            fontSize = 11.sp,
+                            color = palette.textPrimary
+                          )
                         }
                       }
                     }
@@ -527,109 +558,112 @@ fun AuthScreen(viewModel: VybeViewModel) {
                   Spacer(modifier = Modifier.height(12.dp))
 
                   // --- 2. PHONE SMS OTP CARD ---
-                  Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    shape = RoundedCornerShape(12.dp),
+                  VybeSurfaceCard(
+                    containerColor = palette.elevated,
+                    cornerRadius = VybeTokens.Radius.md,
+                    contentPadding = PaddingValues(12.dp),
                     modifier = Modifier.fillMaxWidth()
                   ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                      Text(
-                        text = if (isPhoneVerifiedState) "2. Phone Confirmed ($verifyPhoneInput)" else "2. Verify Phone Number via SMS",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        color = if (isPhoneVerifiedState) VybeOnlineGreen else MaterialTheme.colorScheme.onSurface
+                    Text(
+                      text = if (isPhoneVerifiedState) "2. Phone Confirmed ($verifyPhoneInput)" else "2. Verify Phone Number via SMS",
+                      fontWeight = FontWeight.Bold,
+                      fontSize = 13.sp,
+                      color = if (isPhoneVerifiedState) palette.success else palette.textPrimary
+                    )
+                    if (!isPhoneVerifiedState) {
+                      Spacer(modifier = Modifier.height(8.dp))
+                      OutlinedTextField(
+                        value = verifyPhoneInput,
+                        onValueChange = {
+                          verifyPhoneInput = it
+                          phoneVerifyError = null
+                        },
+                        label = { Text("Phone Number (with country code, e.g. +91...)") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(VybeTokens.Radius.md),
+                        colors = fieldColors,
+                        modifier = Modifier.fillMaxWidth().testTag("auth_verify_phone_input")
                       )
-                      if (!isPhoneVerifiedState) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
-                          value = verifyPhoneInput,
-                          onValueChange = {
-                            verifyPhoneInput = it
-                            phoneVerifyError = null
-                          },
-                          label = { Text("Phone Number (with country code, e.g. +91...)") },
-                          singleLine = true,
-                          shape = RoundedCornerShape(12.dp),
-                          modifier = Modifier.fillMaxWidth().testTag("auth_verify_phone_input")
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedButton(
-                          onClick = {
-                            phoneVerifyError = null
-                            phoneVerifyInfo = null
-                            coroutineScope.launch {
-                              phoneVerifyLoading = true
-                              val (ok, msg) = viewModel.requestPhoneVerificationCode(verifyPhoneInput.trim())
-                              phoneVerifyLoading = false
-                              if (ok) {
-                                phoneResendCooldownSec = 60
-                                phoneVerifyInfo = msg
-                              } else {
-                                phoneVerifyError = msg
-                              }
+                      Spacer(modifier = Modifier.height(8.dp))
+                      OutlinedButton(
+                        onClick = {
+                          phoneVerifyError = null
+                          phoneVerifyInfo = null
+                          coroutineScope.launch {
+                            phoneVerifyLoading = true
+                            val (ok, msg) = viewModel.requestPhoneVerificationCode(verifyPhoneInput.trim())
+                            phoneVerifyLoading = false
+                            if (ok) {
+                              phoneResendCooldownSec = 60
+                              phoneVerifyInfo = msg
+                            } else {
+                              phoneVerifyError = msg
                             }
+                          }
+                        },
+                        enabled = !phoneVerifyLoading && phoneResendCooldownSec == 0 && verifyPhoneInput.isNotBlank(),
+                        shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, palette.border),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("auth_send_phone_otp_button")
+                      ) {
+                        Text(
+                          when {
+                            phoneVerifyLoading -> "Requesting SMS..."
+                            phoneResendCooldownSec > 0 -> "Resend SMS Code (${phoneResendCooldownSec}s)"
+                            else -> "Send / Resend SMS Verification Code"
                           },
-                          enabled = !phoneVerifyLoading && phoneResendCooldownSec == 0 && verifyPhoneInput.isNotBlank(),
-                          shape = RoundedCornerShape(10.dp),
-                          modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("auth_send_phone_otp_button")
-                        ) {
-                          Text(
-                            when {
-                              phoneVerifyLoading -> "Requesting SMS..."
-                              phoneResendCooldownSec > 0 -> "Resend SMS Code (${phoneResendCooldownSec}s)"
-                              else -> "Send / Resend SMS Verification Code"
-                            },
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                          )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
-                          value = verifyPhoneOtpInput,
-                          onValueChange = {
-                            verifyPhoneOtpInput = it.filter { ch -> ch.isDigit() }.take(8)
-                            phoneVerifyError = null
-                          },
-                          label = { Text("6-Digit SMS OTP Code") },
-                          singleLine = true,
-                          shape = RoundedCornerShape(12.dp),
-                          modifier = Modifier.fillMaxWidth().testTag("auth_verify_phone_otp_input")
+                          fontSize = 12.sp,
+                          fontWeight = FontWeight.SemiBold,
+                          color = palette.textPrimary
                         )
-                        if (phoneVerifyInfo != null) {
-                          Spacer(modifier = Modifier.height(6.dp))
-                          Text(phoneVerifyInfo!!, color = VybeOnlineGreen, fontSize = 11.sp)
-                        }
-                        if (phoneVerifyError != null) {
-                          Spacer(modifier = Modifier.height(6.dp))
-                          Text(phoneVerifyError!!, color = VybeDanger, fontSize = 11.sp)
-                        }
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Button(
-                          onClick = {
-                            phoneVerifyError = null
-                            coroutineScope.launch {
-                              phoneVerifyLoading = true
-                              val (ok, msg) = viewModel.verifyPhoneOtpCode(verifyPhoneInput.trim(), verifyPhoneOtpInput.trim())
-                              phoneVerifyLoading = false
-                              if (!ok) {
-                                phoneVerifyError = msg
-                              } else {
-                                statusMessage = msg.removePrefix("PHONE_VERIFIED_NEEDS_EMAIL:").trim()
-                              }
+                      }
+                      Spacer(modifier = Modifier.height(8.dp))
+                      OutlinedTextField(
+                        value = verifyPhoneOtpInput,
+                        onValueChange = {
+                          verifyPhoneOtpInput = it.filter { ch -> ch.isDigit() }.take(8)
+                          phoneVerifyError = null
+                        },
+                        label = { Text("6-Digit SMS OTP Code") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(VybeTokens.Radius.md),
+                        colors = fieldColors,
+                        modifier = Modifier.fillMaxWidth().testTag("auth_verify_phone_otp_input")
+                      )
+                      if (phoneVerifyInfo != null) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(phoneVerifyInfo!!, color = palette.success, fontSize = 11.sp)
+                      }
+                      if (phoneVerifyError != null) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(phoneVerifyError!!, color = palette.danger, fontSize = 11.sp)
+                      }
+                      Spacer(modifier = Modifier.height(10.dp))
+                      Button(
+                        onClick = {
+                          phoneVerifyError = null
+                          coroutineScope.launch {
+                            phoneVerifyLoading = true
+                            val (ok, msg) = viewModel.verifyPhoneOtpCode(verifyPhoneInput.trim(), verifyPhoneOtpInput.trim())
+                            phoneVerifyLoading = false
+                            if (!ok) {
+                              phoneVerifyError = msg
+                            } else {
+                              statusMessage = msg.removePrefix("PHONE_VERIFIED_NEEDS_EMAIL:").trim()
                             }
-                          },
-                          enabled = !phoneVerifyLoading && verifyPhoneOtpInput.isNotBlank(),
-                          colors = ButtonDefaults.buttonColors(containerColor = VybeBrandCyan),
-                          shape = RoundedCornerShape(10.dp),
-                          modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("auth_confirm_phone_otp_button")
-                        ) {
-                          Text(
-                            if (phoneVerifyLoading) "Verifying SMS..." else "Verify Phone OTP",
-                            color = Color.Black,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
-                          )
-                        }
+                          }
+                        },
+                        enabled = !phoneVerifyLoading && verifyPhoneOtpInput.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.accentSecondary),
+                        shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("auth_confirm_phone_otp_button")
+                      ) {
+                        Text(
+                          if (phoneVerifyLoading) "Verifying SMS..." else "Verify Phone OTP",
+                          color = Color.White,
+                          fontWeight = FontWeight.Bold,
+                          fontSize = 12.sp
+                        )
                       }
                     }
                   }
@@ -673,9 +707,11 @@ fun AuthScreen(viewModel: VybeViewModel) {
                 label = { Text("First Name *") },
                 isError = isFirstNameInvalid,
                 supportingText = if (isFirstNameInvalid) {
-                  { Text("Enter first name (2+ chars)", color = VybeDanger, fontSize = 10.sp) }
+                  { Text("Enter first name (2+ chars)", color = palette.danger, fontSize = 10.sp) }
                 } else null,
                 singleLine = true,
+                shape = RoundedCornerShape(VybeTokens.Radius.md),
+                colors = fieldColors,
                 modifier = Modifier.weight(1f).testTag("auth_first_name_input")
               )
               OutlinedTextField(
@@ -684,9 +720,11 @@ fun AuthScreen(viewModel: VybeViewModel) {
                 label = { Text("Last Name *") },
                 isError = isLastNameInvalid,
                 supportingText = if (isLastNameInvalid) {
-                  { Text("Required", color = VybeDanger, fontSize = 10.sp) }
+                  { Text("Required", color = palette.danger, fontSize = 10.sp) }
                 } else null,
                 singleLine = true,
+                shape = RoundedCornerShape(VybeTokens.Radius.md),
+                colors = fieldColors,
                 modifier = Modifier.weight(1f).testTag("auth_last_name_input")
               )
             }
@@ -710,7 +748,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
                 }
               },
               label = { Text("Unique Username (@username) *") },
-              leadingIcon = { Text("@", fontWeight = FontWeight.Bold, color = VybeViolet) },
+              leadingIcon = { Text("@", fontWeight = FontWeight.Bold, color = palette.accent) },
               trailingIcon = {
                 if (firstName.isNotBlank() && (username.isBlank() || !isUserIdAvailable)) {
                   TextButton(
@@ -728,7 +766,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
                       userIdAvailabilityMessage = msg
                     }
                   ) {
-                    Text("Suggest", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = VybeBrandCyan)
+                    Text("Suggest", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = palette.accentSecondary)
                   }
                 }
               },
@@ -736,18 +774,20 @@ fun AuthScreen(viewModel: VybeViewModel) {
               supportingText = {
                 when {
                   attemptedRegisterSubmit && cleanUsername.isEmpty() ->
-                    Text("Username is required.", color = VybeDanger, fontWeight = FontWeight.SemiBold)
+                    Text("Username is required.", color = palette.danger, fontWeight = FontWeight.SemiBold)
                   isUsernameFormatInvalid ->
-                    Text("Use 3–24 letters, numbers, dots, or underscores.", color = VybeDanger, fontWeight = FontWeight.SemiBold)
+                    Text("Use 3–24 letters, numbers, dots, or underscores.", color = palette.danger, fontWeight = FontWeight.SemiBold)
                   userIdAvailabilityMessage != null ->
                     Text(
                       text = userIdAvailabilityMessage ?: "",
-                      color = if (isUserIdAvailable) VybeOnlineGreen else VybeDanger,
+                      color = if (isUserIdAvailable) palette.success else palette.danger,
                       fontWeight = FontWeight.SemiBold
                     )
                 }
               },
               singleLine = true,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              colors = fieldColors,
               modifier = Modifier.fillMaxWidth().testTag("auth_username_input")
             )
 
@@ -758,12 +798,14 @@ fun AuthScreen(viewModel: VybeViewModel) {
               value = email,
               onValueChange = { email = it; errorMessage = null },
               label = { Text("Email Address *") },
-              leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
+              leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = palette.textSecondary) },
               isError = isEmailInvalid,
               supportingText = if (isEmailInvalid) {
-                { Text("Enter a valid email address.", color = VybeDanger) }
+                { Text("Enter a valid email address.", color = palette.danger) }
               } else null,
               singleLine = true,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              colors = fieldColors,
               modifier = Modifier.fillMaxWidth().testTag("auth_email_input")
             )
 
@@ -774,12 +816,14 @@ fun AuthScreen(viewModel: VybeViewModel) {
               value = phone,
               onValueChange = { phone = it; errorMessage = null },
               label = { Text("Phone Number (e.g. +91 9876543210) *") },
-              leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
+              leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = palette.textSecondary) },
               isError = isPhoneInvalid,
               supportingText = if (isPhoneInvalid) {
-                { Text("Enter a valid 10–15 digit phone number.", color = VybeDanger) }
+                { Text("Enter a valid 10–15 digit phone number.", color = palette.danger) }
               } else null,
               singleLine = true,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              colors = fieldColors,
               modifier = Modifier.fillMaxWidth().testTag("auth_phone_input")
             )
 
@@ -790,14 +834,14 @@ fun AuthScreen(viewModel: VybeViewModel) {
               value = dateOfBirth,
               onValueChange = { dateOfBirth = it; errorMessage = null },
               label = { Text("Date of Birth (YYYY-MM-DD) *") },
-              placeholder = { Text("YYYY-MM-DD") },
-              leadingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null) },
+              placeholder = { Text("YYYY-MM-DD", color = palette.textMuted) },
+              leadingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null, tint = palette.textSecondary) },
               trailingIcon = {
                 IconButton(
                   onClick = { showDobDatePicker = true },
                   modifier = Modifier.testTag("auth_dob_picker_button")
                 ) {
-                  Icon(Icons.Default.EditCalendar, contentDescription = "Pick Date of Birth", tint = VybeBrandCyan)
+                  Icon(Icons.Default.EditCalendar, contentDescription = "Pick Date of Birth", tint = palette.accentSecondary)
                 }
               },
               isError = isDobInvalid,
@@ -805,14 +849,16 @@ fun AuthScreen(viewModel: VybeViewModel) {
                 if (isDobInvalid) {
                   Text(
                     dobAgeCheck ?: "Date of birth is required (YYYY-MM-DD, 16+).",
-                    color = VybeDanger,
+                    color = palette.danger,
                     fontWeight = FontWeight.SemiBold
                   )
                 } else {
-                  Text("Must be 16 or older to create an account.")
+                  Text("Must be 16 or older to create an account.", color = palette.textSecondary)
                 }
               },
               singleLine = true,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              colors = fieldColors,
               modifier = Modifier.fillMaxWidth().testTag("auth_dob_input")
             )
 
@@ -823,21 +869,24 @@ fun AuthScreen(viewModel: VybeViewModel) {
               value = createPassword,
               onValueChange = { createPassword = it; errorMessage = null },
               label = { Text("Password (8+ characters) *") },
-              leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+              leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = palette.textSecondary) },
               trailingIcon = {
                 IconButton(onClick = { showCreatePassword = !showCreatePassword }) {
                   Icon(
                     imageVector = if (showCreatePassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                    contentDescription = "Show/Hide Password"
+                    contentDescription = "Show/Hide Password",
+                    tint = palette.textSecondary
                   )
                 }
               },
               isError = isCreatePassInvalid,
               supportingText = if (isCreatePassInvalid) {
-                { Text("Password must be at least 8 characters.", color = VybeDanger) }
+                { Text("Password must be at least 8 characters.", color = palette.danger) }
               } else null,
               visualTransformation = if (showCreatePassword) VisualTransformation.None else PasswordVisualTransformation(),
               singleLine = true,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              colors = fieldColors,
               modifier = Modifier.fillMaxWidth().testTag("auth_create_password_input")
             )
 
@@ -848,21 +897,24 @@ fun AuthScreen(viewModel: VybeViewModel) {
               value = confirmPassword,
               onValueChange = { confirmPassword = it; errorMessage = null },
               label = { Text("Confirm Password *") },
-              leadingIcon = { Icon(Icons.Default.LockReset, contentDescription = null) },
+              leadingIcon = { Icon(Icons.Default.LockReset, contentDescription = null, tint = palette.textSecondary) },
               trailingIcon = {
                 IconButton(onClick = { showConfirmPassword = !showConfirmPassword }) {
                   Icon(
                     imageVector = if (showConfirmPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                    contentDescription = "Show/Hide Confirm Password"
+                    contentDescription = "Show/Hide Confirm Password",
+                    tint = palette.textSecondary
                   )
                 }
               },
               isError = isConfirmPassInvalid,
               supportingText = if (isConfirmPassInvalid) {
-                { Text("Passwords do not match.", color = VybeDanger) }
+                { Text("Passwords do not match.", color = palette.danger) }
               } else null,
               visualTransformation = if (showConfirmPassword) VisualTransformation.None else PasswordVisualTransformation(),
               singleLine = true,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              colors = fieldColors,
               modifier = Modifier.fillMaxWidth().testTag("auth_confirm_password_input")
             )
 
@@ -883,12 +935,12 @@ fun AuthScreen(viewModel: VybeViewModel) {
                 Text(
                   text = "I agree to the Terms of Service & Privacy Policy",
                   fontSize = 12.sp,
-                  color = MaterialTheme.colorScheme.onSurface
+                  color = palette.textPrimary
                 )
                 Text(
                   text = "Tap to read full v2.0 Community Policy",
                   fontSize = 11.sp,
-                  color = VybeBrandCyan,
+                  color = palette.accentSecondary,
                   fontWeight = FontWeight.SemiBold,
                   modifier = Modifier.clickable { showLegalReader = true }
                 )
@@ -963,6 +1015,8 @@ fun AuthScreen(viewModel: VybeViewModel) {
               label = { Text("Registered Business Name") },
               leadingIcon = { Icon(Icons.Default.Store, contentDescription = null, tint = VybeVerifiedGold) },
               singleLine = true,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              colors = fieldColors,
               modifier = Modifier.fillMaxWidth().testTag("business_name_input")
             )
 
@@ -972,8 +1026,10 @@ fun AuthScreen(viewModel: VybeViewModel) {
               value = ownerName,
               onValueChange = { ownerName = it },
               label = { Text("Owner / Representative Legal Name") },
-              leadingIcon = { Icon(Icons.Default.Badge, contentDescription = null) },
+              leadingIcon = { Icon(Icons.Default.Badge, contentDescription = null, tint = palette.textSecondary) },
               singleLine = true,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              colors = fieldColors,
               modifier = Modifier.fillMaxWidth().testTag("business_owner_input")
             )
 
@@ -988,6 +1044,8 @@ fun AuthScreen(viewModel: VybeViewModel) {
                 onValueChange = { businessType = it },
                 label = { Text("Business Type") },
                 singleLine = true,
+                shape = RoundedCornerShape(VybeTokens.Radius.md),
+                colors = fieldColors,
                 modifier = Modifier.weight(1f).testTag("business_type_input")
               )
               OutlinedTextField(
@@ -995,6 +1053,8 @@ fun AuthScreen(viewModel: VybeViewModel) {
                 onValueChange = { businessCategory = it },
                 label = { Text("Category") },
                 singleLine = true,
+                shape = RoundedCornerShape(VybeTokens.Radius.md),
+                colors = fieldColors,
                 modifier = Modifier.weight(1f).testTag("business_category_input")
               )
             }
@@ -1005,8 +1065,10 @@ fun AuthScreen(viewModel: VybeViewModel) {
               value = businessAddress,
               onValueChange = { businessAddress = it },
               label = { Text("Official Business Address") },
-              leadingIcon = { Icon(Icons.Default.LocationOn, contentDescription = null) },
+              leadingIcon = { Icon(Icons.Default.LocationOn, contentDescription = null, tint = palette.textSecondary) },
               singleLine = true,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              colors = fieldColors,
               modifier = Modifier.fillMaxWidth().testTag("business_address_input")
             )
 
@@ -1016,8 +1078,10 @@ fun AuthScreen(viewModel: VybeViewModel) {
               value = businessContactEmail,
               onValueChange = { businessContactEmail = it },
               label = { Text("Business Contact Email") },
-              leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
+              leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = palette.textSecondary) },
               singleLine = true,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              colors = fieldColors,
               modifier = Modifier.fillMaxWidth().testTag("business_email_input")
             )
 
@@ -1027,82 +1091,80 @@ fun AuthScreen(viewModel: VybeViewModel) {
               value = businessContactPhone,
               onValueChange = { businessContactPhone = it },
               label = { Text("Business Contact Phone (+91)") },
-              leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
+              leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = palette.textSecondary) },
               singleLine = true,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              colors = fieldColors,
               modifier = Modifier.fillMaxWidth().testTag("business_phone_input")
             )
 
             Spacer(modifier = Modifier.height(12.dp))
 
             // Document & Logo Upload Preview Card (PDF / JPEG to backend team)
-            Surface(
-              color = MaterialTheme.colorScheme.surfaceVariant,
-              shape = RoundedCornerShape(14.dp),
-              border = androidx.compose.foundation.BorderStroke(1.dp, VybeVerifiedGold.copy(alpha = 0.5f)),
+            VybeSurfaceCard(
+              borderColor = VybeVerifiedGold.copy(alpha = 0.45f),
               modifier = Modifier.fillMaxWidth()
             ) {
-              Column(modifier = Modifier.padding(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                  Icon(Icons.Default.UploadFile, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(22.dp))
-                  Spacer(modifier = Modifier.width(8.dp))
-                  Text("Verification Document (PDF / JPEG)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.height(6.dp))
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.UploadFile, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(22.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Verification Document (PDF / JPEG)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = palette.textPrimary)
+              }
+              Spacer(modifier = Modifier.height(6.dp))
+              Text(
+                text = "File: $businessDocName",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = palette.textPrimary
+              )
+              Spacer(modifier = Modifier.height(4.dp))
+              Surface(
+                color = VybeVerifiedGold.copy(alpha = 0.15f),
+                shape = RoundedCornerShape(VybeTokens.Radius.xs)
+              ) {
                 Text(
-                  text = "File: $businessDocName",
-                  fontSize = 12.sp,
-                  fontWeight = FontWeight.SemiBold,
-                  color = MaterialTheme.colorScheme.onSurface
+                  text = "🔒 Direct Channel to NR Next Backend Verification Team",
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = VybeVerifiedGold,
+                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Surface(
-                  color = VybeVerifiedGold.copy(alpha = 0.15f),
-                  shape = RoundedCornerShape(6.dp)
+              }
+              Spacer(modifier = Modifier.height(10.dp))
+              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                  onClick = {
+                    try {
+                      docPickerLauncher.launch("application/pdf")
+                    } catch (e: Exception) {
+                      businessDocName = "Registration_Certificate_${System.currentTimeMillis().toString().takeLast(4)}.pdf"
+                    }
+                  },
+                  shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                  modifier = Modifier.weight(1f)
                 ) {
-                  Text(
-                    text = "🔒 Direct Channel to NR Next Backend Verification Team",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = VybeVerifiedGold,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                  )
+                  Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp), tint = palette.danger)
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text("Select PDF", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
-                Spacer(modifier = Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                  OutlinedButton(
-                    onClick = {
-                      try {
-                        docPickerLauncher.launch("application/pdf")
-                      } catch (e: Exception) {
-                        businessDocName = "Registration_Certificate_${System.currentTimeMillis().toString().takeLast(4)}.pdf"
-                      }
-                    },
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.weight(1f)
-                  ) {
-                    Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFFFF5252))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Select PDF", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                  }
-                  OutlinedButton(
-                    onClick = {
-                      try {
-                        photoDocPickerLauncher.launch(
-                          androidx.activity.result.PickVisualMediaRequest(
-                            androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
-                          )
+                OutlinedButton(
+                  onClick = {
+                    try {
+                      photoDocPickerLauncher.launch(
+                        androidx.activity.result.PickVisualMediaRequest(
+                          androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
                         )
-                      } catch (e: Exception) {
-                        businessDocName = "Shop_License_Photo_${System.currentTimeMillis().toString().takeLast(4)}.jpeg"
-                      }
-                    },
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.weight(1f)
-                  ) {
-                    Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(16.dp), tint = VybeBrandCyan)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Select JPEG", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                  }
+                      )
+                    } catch (e: Exception) {
+                      businessDocName = "Shop_License_Photo_${System.currentTimeMillis().toString().takeLast(4)}.jpeg"
+                    }
+                  },
+                  shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                  modifier = Modifier.weight(1f)
+                ) {
+                  Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(16.dp), tint = palette.accentSecondary)
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text("Select JPEG", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
               }
             }
@@ -1124,12 +1186,12 @@ fun AuthScreen(viewModel: VybeViewModel) {
                 Text(
                   text = "I agree to Merchant Terms & Safety Guidelines",
                   fontSize = 12.sp,
-                  color = MaterialTheme.colorScheme.onSurface
+                  color = palette.textPrimary
                 )
                 Text(
                   text = "Read complete Business Policies & Fee Schedule (v2.0)",
                   fontSize = 11.sp,
-                  color = VybeBrandCyan,
+                  color = palette.accentSecondary,
                   fontWeight = FontWeight.SemiBold,
                   modifier = Modifier.clickable { showLegalReader = true }
                 )
@@ -1158,7 +1220,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
                 }
               },
               colors = ButtonDefaults.buttonColors(containerColor = VybeVerifiedGold),
-              shape = RoundedCornerShape(14.dp),
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
               modifier = Modifier.fillMaxWidth().height(48.dp).testTag("business_submit_button")
             ) {
               Text("Submit Business Application", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -1173,11 +1235,13 @@ fun AuthScreen(viewModel: VybeViewModel) {
               errorMessage = null
             },
             label = { Text("Email, Phone Number (+91), or @Username") },
-            leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+            leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = palette.textSecondary) },
             supportingText = {
-              Text("Sign in with your verified Email, Phone Number, or VYBE @username.", fontSize = 11.sp)
+              Text("Sign in with your verified Email, Phone Number, or VYBE @username.", fontSize = 11.sp, color = palette.textSecondary)
             },
             singleLine = true,
+            shape = RoundedCornerShape(VybeTokens.Radius.md),
+            colors = fieldColors,
             modifier = Modifier.fillMaxWidth().testTag("auth_identifier_input")
           )
 
@@ -1190,17 +1254,20 @@ fun AuthScreen(viewModel: VybeViewModel) {
               errorMessage = null
             },
             label = { Text("Password") },
-            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = palette.textSecondary) },
             trailingIcon = {
               IconButton(onClick = { showLoginPassword = !showLoginPassword }) {
                 Icon(
                   imageVector = if (showLoginPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                  contentDescription = "Show/Hide Password"
+                  contentDescription = "Show/Hide Password",
+                  tint = palette.textSecondary
                 )
               }
             },
             visualTransformation = if (showLoginPassword) VisualTransformation.None else PasswordVisualTransformation(),
             singleLine = true,
+            shape = RoundedCornerShape(VybeTokens.Radius.md),
+            colors = fieldColors,
             modifier = Modifier.fillMaxWidth().testTag("auth_password_input")
           )
           Row(
@@ -1217,24 +1284,25 @@ fun AuthScreen(viewModel: VybeViewModel) {
               },
               modifier = Modifier.testTag("auth_forgot_password_button")
             ) {
-              Text("Forgot password?", fontSize = 12.sp, color = VybeBrandCyan, fontWeight = FontWeight.SemiBold)
+              Text("Forgot password?", fontSize = 12.sp, color = palette.accentSecondary, fontWeight = FontWeight.SemiBold)
             }
           }
 
           if (errorMessage != null) {
             Spacer(modifier = Modifier.height(10.dp))
             Surface(
-              color = VybeDanger.copy(alpha = 0.15f),
-              shape = RoundedCornerShape(10.dp),
+              color = palette.danger.copy(alpha = 0.14f),
+              border = androidx.compose.foundation.BorderStroke(1.dp, palette.danger.copy(alpha = 0.35f)),
+              shape = RoundedCornerShape(VybeTokens.Radius.sm),
               modifier = Modifier.fillMaxWidth().testTag("auth_login_error_banner")
             ) {
               Column(modifier = Modifier.padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                  Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = VybeDanger, modifier = Modifier.size(20.dp))
+                  Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = palette.danger, modifier = Modifier.size(20.dp))
                   Spacer(modifier = Modifier.width(10.dp))
                   Text(
                     text = errorMessage ?: "Unable to log in. Please check credentials.",
-                    color = VybeDanger,
+                    color = palette.danger,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium
                   )
@@ -1256,7 +1324,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
                       registrationStep = 2
                       errorMessage = null
                     },
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(VybeTokens.Radius.sm),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)
                   ) {
                     Text("Verify Email / Phone OTP Now", fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -1269,19 +1337,20 @@ fun AuthScreen(viewModel: VybeViewModel) {
           if (statusMessage != null) {
             Spacer(modifier = Modifier.height(10.dp))
             Surface(
-              color = VybeOnlineGreen.copy(alpha = 0.15f),
-              shape = RoundedCornerShape(10.dp),
+              color = palette.success.copy(alpha = 0.14f),
+              border = androidx.compose.foundation.BorderStroke(1.dp, palette.success.copy(alpha = 0.35f)),
+              shape = RoundedCornerShape(VybeTokens.Radius.sm),
               modifier = Modifier.fillMaxWidth().testTag("auth_login_status_banner")
             ) {
               Row(
                 modifier = Modifier.padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = VybeOnlineGreen, modifier = Modifier.size(20.dp))
+                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = palette.success, modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
                   text = statusMessage ?: "",
-                  color = VybeOnlineGreen,
+                  color = palette.success,
                   fontSize = 12.sp,
                   fontWeight = FontWeight.Medium
                 )
@@ -1319,19 +1388,19 @@ fun AuthScreen(viewModel: VybeViewModel) {
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
           ) {
-            Text("By signing in, you agree to our ", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("By signing in, you agree to our ", fontSize = 11.sp, color = palette.textSecondary)
             Text(
               "Terms",
               fontSize = 11.sp,
-              color = VybeBrandCyan,
+              color = palette.accentSecondary,
               fontWeight = FontWeight.Bold,
               modifier = Modifier.clickable { showLegalReader = true }.testTag("login_terms_link")
             )
-            Text(" & ", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(" & ", fontSize = 11.sp, color = palette.textSecondary)
             Text(
               "Privacy Policy",
               fontSize = 11.sp,
-              color = VybeBrandCyan,
+              color = palette.accentSecondary,
               fontWeight = FontWeight.Bold,
               modifier = Modifier.clickable { showLegalReader = true }.testTag("login_privacy_link")
             )
@@ -1350,7 +1419,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
       ) {
         Text(
           text = if (isRegisterMode) "Already have an account? Log In" else "New to VYBE? Create an Account",
-          color = MaterialTheme.colorScheme.primary,
+          color = palette.accent,
           fontWeight = FontWeight.SemiBold
         )
       }
@@ -1362,11 +1431,15 @@ fun AuthScreen(viewModel: VybeViewModel) {
     if (showOtpVerifyDialog) {
       AlertDialog(
         onDismissRequest = { if (!verifyLoading) showOtpVerifyDialog = false },
+        containerColor = palette.card,
+        titleContentColor = palette.textPrimary,
+        textContentColor = palette.textSecondary,
+        shape = RoundedCornerShape(VybeTokens.Radius.xl),
         title = {
           Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.MarkEmailRead, contentDescription = null, tint = VybeViolet)
+            Icon(Icons.Default.MarkEmailRead, contentDescription = null, tint = palette.accent)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Verify Your Email", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Verify Your Email", fontFamily = PlusJakartaSansFontFamily, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
           }
         },
         text = {
@@ -1374,7 +1447,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
             Text(
               "Enter the 6-digit verification code sent to your email.",
               style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
+              color = palette.textSecondary
             )
             Spacer(modifier = Modifier.height(12.dp))
             OutlinedTextField(
@@ -1382,6 +1455,8 @@ fun AuthScreen(viewModel: VybeViewModel) {
               onValueChange = { verifyEmailInput = it },
               label = { Text("Email Address") },
               singleLine = true,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              colors = fieldColors,
               modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(10.dp))
@@ -1390,6 +1465,8 @@ fun AuthScreen(viewModel: VybeViewModel) {
               onValueChange = { verifyOtpInput = it },
               label = { Text("6-Digit Verification Code") },
               singleLine = true,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              colors = fieldColors,
               modifier = Modifier.fillMaxWidth()
             )
             if (verifyError != null) {
@@ -1435,12 +1512,17 @@ fun AuthScreen(viewModel: VybeViewModel) {
     if (showForgotPasswordDialog) {
       AlertDialog(
         onDismissRequest = { if (!resetLoading) showForgotPasswordDialog = false },
+        containerColor = palette.card,
+        titleContentColor = palette.textPrimary,
+        textContentColor = palette.textSecondary,
+        shape = RoundedCornerShape(VybeTokens.Radius.xl),
         title = {
           Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.LockReset, contentDescription = null, tint = VybeBrandCyan)
+            Icon(Icons.Default.LockReset, contentDescription = null, tint = palette.accentSecondary)
             Spacer(modifier = Modifier.width(8.dp))
             Text(
               if (resetStep == 1) "Forgot Password" else "Check Your Email",
+              fontFamily = PlusJakartaSansFontFamily,
               style = MaterialTheme.typography.titleMedium,
               fontWeight = FontWeight.Bold
             )
@@ -1452,7 +1534,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
               Text(
                 "Enter your registered email address. VYBE will send a secure password-recovery link to your inbox.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = palette.textSecondary
               )
               Spacer(modifier = Modifier.height(12.dp))
               OutlinedTextField(
@@ -1463,19 +1545,21 @@ fun AuthScreen(viewModel: VybeViewModel) {
                 },
                 label = { Text("Registered Email Address") },
                 singleLine = true,
+                shape = RoundedCornerShape(VybeTokens.Radius.md),
+                colors = fieldColors,
                 modifier = Modifier.fillMaxWidth().testTag("forgot_password_email_input")
               )
             } else {
               Text(
                 resetMessage ?: "If an account exists for $resetEmail, a secure password recovery link has been sent.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface
+                color = palette.textPrimary
               )
               Spacer(modifier = Modifier.height(10.dp))
               Text(
                 "Tap the link in the email on this device to open VYBE's dedicated Password Recovery screen and choose your new password.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = palette.textSecondary
               )
               Spacer(modifier = Modifier.height(12.dp))
               OutlinedButton(
@@ -1484,7 +1568,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
                   showForgotPasswordDialog = false
                   viewModel.openManualPasswordRecovery(targetEmail)
                 },
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(VybeTokens.Radius.sm),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("open_recovery_screen_button")
               ) {
                 Text("Have a Recovery Token? Verify Here", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -1492,7 +1576,7 @@ fun AuthScreen(viewModel: VybeViewModel) {
             }
             if (resetError != null) {
               Spacer(modifier = Modifier.height(8.dp))
-              Text(resetError!!, color = VybeDanger, fontSize = 11.sp)
+              Text(resetError!!, color = palette.danger, fontSize = 11.sp)
             }
           }
         },
@@ -1514,12 +1598,12 @@ fun AuthScreen(viewModel: VybeViewModel) {
                 }
               },
               enabled = !resetLoading && resetEmail.trim().isNotEmpty(),
-              colors = ButtonDefaults.buttonColors(containerColor = VybeBrandCyan),
+              colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
               modifier = Modifier.testTag("send_recovery_link_button")
             ) {
               Text(
                 if (resetLoading) "Sending..." else "Send Recovery Link",
-                color = Color.Black,
+                color = Color.White,
                 fontWeight = FontWeight.Bold
               )
             }
@@ -1529,9 +1613,9 @@ fun AuthScreen(viewModel: VybeViewModel) {
                 showForgotPasswordDialog = false
                 statusMessage = "Check your email ($resetEmail) and open the VYBE password recovery link."
               },
-              colors = ButtonDefaults.buttonColors(containerColor = VybeBrandCyan)
+              colors = ButtonDefaults.buttonColors(containerColor = palette.accent)
             ) {
-              Text("Done", color = Color.Black, fontWeight = FontWeight.Bold)
+              Text("Done", color = Color.White, fontWeight = FontWeight.Bold)
             }
           }
         },
@@ -1550,14 +1634,14 @@ fun AuthScreen(viewModel: VybeViewModel) {
               },
               enabled = !resetLoading
             ) {
-              Text("Resend Link")
+              Text("Resend Link", color = palette.accent)
             }
           } else {
             TextButton(
               onClick = { showForgotPasswordDialog = false },
               enabled = !resetLoading
             ) {
-              Text("Cancel")
+              Text("Cancel", color = palette.textSecondary)
             }
           }
         }
@@ -1624,14 +1708,19 @@ private fun validateRegistrationDob(rawDob: String): String? {
 
 @Composable
 fun TermsAndPrivacyReaderDialog(onDismiss: () -> Unit) {
+  val palette = LocalVybePalette.current
   var selectedTab by remember { mutableStateOf(0) } // 0 = Terms, 1 = Privacy
   AlertDialog(
     onDismissRequest = onDismiss,
+    containerColor = palette.card,
+    titleContentColor = palette.textPrimary,
+    textContentColor = palette.textSecondary,
+    shape = RoundedCornerShape(VybeTokens.Radius.xl),
     title = {
       Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Default.Gavel, contentDescription = null, tint = VybeBrandCyan)
+        Icon(Icons.Default.Gavel, contentDescription = null, tint = palette.accentSecondary)
         Spacer(modifier = Modifier.width(8.dp))
-        Text("VYBE Community & Legal", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+        Text("VYBE Community & Legal", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
       }
     },
     text = {
@@ -1642,8 +1731,8 @@ fun TermsAndPrivacyReaderDialog(onDismiss: () -> Unit) {
       ) {
         TabRow(
           selectedTabIndex = selectedTab,
-          containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-          contentColor = VybeBrandCyan
+          containerColor = palette.elevated,
+          contentColor = palette.accent
         ) {
           Tab(
             selected = selectedTab == 0,
@@ -1666,8 +1755,8 @@ fun TermsAndPrivacyReaderDialog(onDismiss: () -> Unit) {
             .verticalScroll(rememberScrollState())
         ) {
           if (selectedTab == 0) {
-            Text("VYBE Terms of Service", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
-            Text("Version 3.0 • Effective October 2026 • Product of NR Next | NR Group", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("VYBE Terms of Service", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = palette.textPrimary)
+            Text("Version 3.0 • Effective October 2026 • Product of NR Next | NR Group", fontSize = 10.sp, color = palette.textSecondary)
             Spacer(modifier = Modifier.height(8.dp))
             Text(
               "1. Age Requirement: VYBE is exclusively built for individuals aged 16 and older. Users aged 16-17 are automatically placed in Teen Safety Protected Mode.\n\n" +
@@ -1675,12 +1764,12 @@ fun TermsAndPrivacyReaderDialog(onDismiss: () -> Unit) {
               "3. Content Ownership: You retain ownership of all media and posts you publish on VYBE. You grant VYBE the license to display and distribute your posts per your chosen visibility settings.\n\n" +
               "4. Unfiltered Policy: VYBE Unfiltered posts emphasize raw, authentic self-expression without algorithmic like-farming.",
               fontSize = 12.sp,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              color = palette.textSecondary,
               lineHeight = 17.sp
             )
           } else {
-            Text("VYBE Privacy Policy", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
-            Text("Zero-Trust Architecture • Protected Community Cloud", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("VYBE Privacy Policy", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = palette.textPrimary)
+            Text("Zero-Trust Architecture • Protected Community Cloud", fontSize = 10.sp, color = palette.textSecondary)
             Spacer(modifier = Modifier.height(8.dp))
             Text(
               "1. Data Privacy: We never sell your personal data. Private phone numbers and email addresses are never exposed to other community members or publicly indexable.\n\n" +
@@ -1688,7 +1777,7 @@ fun TermsAndPrivacyReaderDialog(onDismiss: () -> Unit) {
               "3. End-to-End Control: You can request complete account deletion or data export anytime via Settings.\n\n" +
               "4. Protected Messaging: Direct messages are protected with Row Level Security so only conversation participants can read them.",
               fontSize = 12.sp,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              color = palette.textSecondary,
               lineHeight = 17.sp
             )
           }
@@ -1698,9 +1787,10 @@ fun TermsAndPrivacyReaderDialog(onDismiss: () -> Unit) {
     confirmButton = {
       Button(
         onClick = onDismiss,
-        colors = ButtonDefaults.buttonColors(containerColor = VybeViolet)
+        colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
+        shape = RoundedCornerShape(VybeTokens.Radius.sm)
       ) {
-        Text("I Understand & Close", fontWeight = FontWeight.Bold)
+        Text("I Understand & Close", fontWeight = FontWeight.Bold, color = Color.White)
       }
     }
   )

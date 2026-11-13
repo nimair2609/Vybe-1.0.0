@@ -165,21 +165,17 @@ export const FindYourVybeSection: React.FC = () => {
     <>
       <section
         data-testid="find-your-vybe-section"
-        className={`rounded-2xl border p-4 shadow-xl transition-colors ${
-          isLight
-            ? 'bg-white border-indigo-200/80 text-slate-900'
-            : 'bg-gradient-to-b from-[#13182E] to-[#0E1222] border-[#262E4A] text-white'
-        }`}
+        className="rounded-2xl border border-[var(--vybe-border)] bg-[var(--vybe-surface)] p-4 text-[var(--vybe-text)] transition-colors"
       >
         {/* Header */}
         <div className="flex items-center justify-between gap-2 mb-3">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#00C6FF]/20 to-[#8B5CF6]/25 flex items-center justify-center border border-[#8B5CF6]/30">
-              <Sparkles className="w-4 h-4 text-[#00C6FF]" />
+            <div className="w-9 h-9 rounded-xl bg-[var(--vybe-accent-soft)] flex items-center justify-center border border-[var(--vybe-border)]">
+              <Sparkles className="w-4 h-4 text-[var(--vybe-accent)]" />
             </div>
             <div>
-              <h2 className="text-sm font-extrabold tracking-tight">Find Your Vybe</h2>
-              <p className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
+              <h2 className="text-sm font-extrabold tracking-tight text-[var(--vybe-text)]">Find Your Vybe</h2>
+              <p className="text-[11px] text-[var(--vybe-text-secondary)]">
                 {activeTab === 'LINK_UP'
                   ? 'Discover people & mutual connections'
                   : 'Personalized people recommendations'}
@@ -190,7 +186,7 @@ export const FindYourVybeSection: React.FC = () => {
           <button
             type="button"
             onClick={() => setShowSeeAll(true)}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-[#00C6FF] hover:bg-[#00C6FF]/10 transition-colors"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-[var(--vybe-accent)] hover:bg-[var(--vybe-accent-soft)] transition-colors"
           >
             <span>See All</span>
             <ArrowRight className="w-3.5 h-3.5" />
@@ -198,20 +194,14 @@ export const FindYourVybeSection: React.FC = () => {
         </div>
 
         {/* Neo Segmented Tabs: Link Up & Suggest */}
-        <div
-          className={`grid grid-cols-2 gap-1.5 p-1 rounded-xl border mb-3.5 ${
-            isLight ? 'bg-slate-100 border-slate-200' : 'bg-[#080B18] border-[#1E293B]'
-          }`}
-        >
+        <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl border border-[var(--vybe-border)] bg-[var(--vybe-elevated)] mb-3.5">
           <button
             type="button"
             onClick={() => setActiveTab('LINK_UP')}
-            className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-colors ${
               activeTab === 'LINK_UP'
-                ? 'bg-gradient-to-r from-[#2563EB] to-[#7C3AED] text-white keep-white shadow'
-                : isLight
-                  ? 'text-slate-600 hover:text-slate-900'
-                  : 'text-slate-400 hover:text-white'
+                ? 'bg-[var(--vybe-accent)] text-white keep-white'
+                : 'text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)]'
             }`}
           >
             <Users className="w-3.5 h-3.5" />
@@ -222,12 +212,10 @@ export const FindYourVybeSection: React.FC = () => {
           <button
             type="button"
             onClick={() => setActiveTab('SUGGEST')}
-            className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-colors ${
               activeTab === 'SUGGEST'
-                ? 'bg-gradient-to-r from-[#2563EB] to-[#7C3AED] text-white keep-white shadow'
-                : isLight
-                  ? 'text-slate-600 hover:text-slate-900'
-                  : 'text-slate-400 hover:text-white'
+                ? 'bg-[var(--vybe-accent)] text-white keep-white'
+                : 'text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)]'
             }`}
           >
             <Sparkles className="w-3.5 h-3.5" />

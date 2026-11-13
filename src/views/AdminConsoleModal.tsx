@@ -242,7 +242,7 @@ export const AdminConsoleModal: React.FC = () => {
       }
       setBroadcastTitle('');
       setBroadcastMessage('');
-      showToast(`System broadcast sent (${data.totalDevices || 1} active target(s)).`);
+      showToast(`System broadcast sent (${data.totalDevices ?? 0} active target(s)).`);
       loadLiveAdminData(true);
     } catch (err: any) {
       showToast(err?.message || 'Error dispatching system broadcast.');

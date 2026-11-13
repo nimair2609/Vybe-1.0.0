@@ -536,5 +536,239 @@ describe('VYBE Security Gateway Regression Tests', () => {
     });
     assert.equal(directManifest.status, 403);
   });
+
+  it('rejects profile-role-only users when admin_users has no active record (403)', async () => {
+    globalThis.fetch = async (url, init) => {
+      const urlStr = String(url);
+      if (urlStr.startsWith(baseUrl)) return originalFetch(url, init);
+      if (urlStr.includes('/auth/v1/user')) {
+        return jsonResponse({ id: USER_ID_A, email: 'spoofed_profile_admin@example.com' });
+      }
+      if (urlStr.includes('/rest/v1/profiles')) {
+        return jsonResponse([{ id: USER_ID_A, role: 'OWNER_ADMIN' }]);
+      }
+      if (urlStr.includes('/rest/v1/admin_users')) {
+        return jsonResponse([]);
+      }
+      return jsonResponse({}, 404);
+    };
+
+    try {
+      const authRes = await verifyAdminAuth({ headers: { authorization: `Bearer ${FAKE_JWT_USER}` } });
+      assert.equal(authRes.ok, false);
+      assert.equal(authRes.status, 403);
+
+      const httpRes = await originalFetch(`${baseUrl}/api/v1/admin/users`, {
+        headers: { Authorization: `Bearer ${FAKE_JWT_USER}`, 'x-forwarded-for': '10.0.0.32' }
+      });
+      assert.equal(httpRes.status, 403);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('rejects inactive, missing, unpermitted-role, and mismatched-user_id admin_users records (403)', async () => {
+    let adminRows = [{ user_id: ADMIN_ID, role: 'OWNER_ADMIN', is_active: false }];
+    globalThis.fetch = async (url, init) => {
+      const urlStr = String(url);
+      if (urlStr.startsWith(baseUrl)) return originalFetch(url, init);
+      if (urlStr.includes('/auth/v1/user')) {
+        return jsonResponse({ id: ADMIN_ID, email: 'admin@example.com' });
+      }
+      if (urlStr.includes('/rest/v1/admin_users')) {
+        return jsonResponse(adminRows);
+      }
+      return jsonResponse([], 200);
+    };
+
+    try {
+      // 1. Inactive admin_users record -> 403
+      const inactiveRes = await originalFetch(`${baseUrl}/api/v1/admin/overview-stats`, {
+        headers: { Authorization: `Bearer ${FAKE_JWT_ADMIN}`, 'x-forwarded-for': '10.0.0.33' }
+      });
+      assert.equal(inactiveRes.status, 403);
+
+      // 2. Missing admin_users record -> 403
+      adminRows = [];
+      const missingRes = await verifyAdminAuth({ headers: { authorization: `Bearer ${FAKE_JWT_ADMIN}` } });
+      assert.equal(missingRes.ok, false);
+      assert.equal(missingRes.status, 403);
+
+      // 3. Unpermitted role in admin_users -> 403
+      adminRows = [{ user_id: ADMIN_ID, role: 'USER', is_active: true }];
+      const unpermittedRes = await verifyAdminAuth({ headers: { authorization: `Bearer ${FAKE_JWT_ADMIN}` } });
+      assert.equal(unpermittedRes.ok, false);
+      assert.equal(unpermittedRes.status, 403);
+
+      // 4. Mismatched user_id -> 403
+      adminRows = [{ user_id: USER_ID_B, role: 'OWNER_ADMIN', is_active: true }];
+      const mismatchRes = await verifyAdminAuth({ headers: { authorization: `Bearer ${FAKE_JWT_ADMIN}` } });
+      assert.equal(mismatchRes.ok, false);
+      assert.equal(mismatchRes.status, 403);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('fails closed with 503 when admin_users lookup encounters a database error or network failure', async () => {
+    let mode = 'http500';
+    globalThis.fetch = async (url, init) => {
+      const urlStr = String(url);
+      if (urlStr.startsWith(baseUrl)) return originalFetch(url, init);
+      if (urlStr.includes('/auth/v1/user')) {
+        return jsonResponse({ id: ADMIN_ID, email: 'admin@example.com' });
+      }
+      if (urlStr.includes('/rest/v1/admin_users')) {
+        if (mode === 'throw') throw new Error('ECONNREFUSED');
+        return jsonResponse({ message: 'database unavailable' }, 500);
+      }
+      return jsonResponse({}, 404);
+    };
+
+    try {
+      const httpErrRes = await originalFetch(`${baseUrl}/api/v1/admin/users`, {
+        headers: { Authorization: `Bearer ${FAKE_JWT_ADMIN}`, 'x-forwarded-for': '10.0.0.34' }
+      });
+      assert.equal(httpErrRes.status, 503);
+
+      mode = 'throw';
+      const throwRes = await verifyAdminAuth({ headers: { authorization: `Bearer ${FAKE_JWT_ADMIN}` } });
+      assert.equal(throwRes.ok, false);
+      assert.equal(throwRes.status, 503);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('enforces active admin_users and fail-closed 503 in compiled backend requireAdmin middleware', async () => {
+    const prevServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.service_key.sig';
+
+    let adminQueryResult = { data: null, error: null, status: 200 };
+    globalThis.fetch = async (url, init) => {
+      const urlStr = String(url);
+      if (urlStr.startsWith(baseUrl)) return originalFetch(url, init);
+      if (urlStr.includes('/auth/v1/user')) {
+        return jsonResponse({ id: USER_ID_A, email: 'usera@example.com' });
+      }
+      if (urlStr.includes('/rest/v1/admin_users')) {
+        return jsonResponse(adminQueryResult.data, adminQueryResult.status);
+      }
+      if (urlStr.includes('/rest/v1/profiles')) {
+        return jsonResponse([{ id: USER_ID_A, role: 'SUPER_ADMIN' }]);
+      }
+      return jsonResponse([], 200);
+    };
+
+    try {
+      const { requireAdmin } = require('../dist/server.js');
+      const invokeRequireAdmin = async () => {
+        let statusCode = 200;
+        let payload = null;
+        let nextCalled = false;
+        const req = { headers: { authorization: `Bearer ${FAKE_JWT_USER}` } };
+        const res = {
+          status(code) { statusCode = code; return this; },
+          json(body) { payload = body; return this; }
+        };
+        await requireAdmin(req, res, () => { nextCalled = true; });
+        return { statusCode, payload, nextCalled, req };
+      };
+
+      // Profile-role-only (admin_users empty) -> 403
+      adminQueryResult = { data: null, status: 200 };
+      const rMissing = await invokeRequireAdmin();
+      assert.equal(rMissing.nextCalled, false);
+      assert.equal(rMissing.statusCode, 403);
+
+      // Inactive admin_users record -> 403
+      adminQueryResult = { data: { user_id: USER_ID_A, role: 'OWNER_ADMIN', is_active: false }, status: 200 };
+      const rInactive = await invokeRequireAdmin();
+      assert.equal(rInactive.nextCalled, false);
+      assert.equal(rInactive.statusCode, 403);
+
+      // Database error on admin_users -> 503
+      adminQueryResult = { data: { message: 'db error' }, status: 500 };
+      const rDbErr = await invokeRequireAdmin();
+      assert.equal(rDbErr.nextCalled, false);
+      assert.equal(rDbErr.statusCode, 503);
+
+      // Active admin_users record -> passes
+      adminQueryResult = { data: { user_id: USER_ID_A, role: 'OWNER_ADMIN', is_active: true }, status: 200 };
+      const rValid = await invokeRequireAdmin();
+      assert.equal(rValid.nextCalled, true);
+      assert.equal(rValid.req.adminRole, 'OWNER_ADMIN');
+      assert.equal(rValid.req.isSuperAdmin, true);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (prevServiceKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      else process.env.SUPABASE_SERVICE_ROLE_KEY = prevServiceKey;
+    }
+  });
+
+  it('returns genuine empty states with zero synthetic mock records across admin dashboard endpoints', async () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    assert.equal(fs.existsSync(path.resolve(process.cwd(), 'backend/admin_state_override.json')), false);
+
+    globalThis.fetch = async (url, init) => {
+      const urlStr = String(url);
+      if (urlStr.startsWith(baseUrl)) return originalFetch(url, init);
+      if (urlStr.includes('/auth/v1/user')) {
+        return jsonResponse({ id: ADMIN_ID, email: 'owner@vybe.app' });
+      }
+      if (urlStr.includes('/rest/v1/admin_users')) {
+        return jsonResponse([{ user_id: ADMIN_ID, role: 'OWNER_ADMIN', is_active: true }]);
+      }
+      if (urlStr.includes('/rest/v1/sponsored_campaigns')) {
+        return jsonResponse({ message: 'relation does not exist' }, 404);
+      }
+      return jsonResponse([], 200);
+    };
+
+    try {
+      const headers = { Authorization: `Bearer ${FAKE_JWT_ADMIN}`, 'x-forwarded-for': '10.0.0.35' };
+      const [statsRes, adsRes, auditRes, expRes, reportsRes] = await Promise.all([
+        originalFetch(`${baseUrl}/api/v1/admin/overview-stats`, { headers }),
+        originalFetch(`${baseUrl}/api/v1/admin/ads`, { headers }),
+        originalFetch(`${baseUrl}/api/v1/admin/audit-logs`, { headers }),
+        originalFetch(`${baseUrl}/api/v1/admin/experiences`, { headers }),
+        originalFetch(`${baseUrl}/api/v1/admin/reports`, { headers })
+      ]);
+
+      assert.equal(statsRes.status, 200);
+      const statsJson = await statsRes.json();
+      assert.equal(statsJson.stats.users.total, 0);
+      assert.equal(statsJson.stats.users.dau, 0);
+      assert.equal(statsJson.stats.experiences.liveRooms, 0);
+      assert.equal(statsJson.stats.push.activeDevices, 0);
+
+      assert.equal(adsRes.status, 200);
+      const adsJson = await adsRes.json();
+      assert.deepEqual(adsJson.ads, []);
+      assert.equal(adsJson.supported, false);
+
+      assert.equal(auditRes.status, 200);
+      const auditJson = await auditRes.json();
+      assert.deepEqual(auditJson.logs, []);
+
+      assert.equal(expRes.status, 200);
+      const expJson = await expRes.json();
+      assert.deepEqual(expJson.experiences.unload.activeRooms, []);
+      assert.equal(expJson.experiences.unload.totalActiveRooms, 0);
+      assert.equal(expJson.experiences.unfiltered.snapshotsCount, 0);
+      assert.deepEqual(expJson.experiences.whatNext.polls, []);
+      assert.equal(expJson.experiences.timeCapsule.sealedCount, 0);
+      assert.equal(expJson.experiences.doubleTake.activePromptsCount, 0);
+      assert.equal(expJson.experiences.doubleTake.dailyPrompt, null);
+      assert.equal(expJson.experiences.crossedPaths.signalsCount, 0);
+
+      assert.equal(reportsRes.status, 200);
+      const reportsJson = await reportsRes.json();
+      assert.deepEqual(reportsJson.reports, []);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
 

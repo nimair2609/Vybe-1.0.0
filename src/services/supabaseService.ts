@@ -753,43 +753,29 @@ export async function adminSignInWithPassword(
     const token = data.access_token;
     const user = data.user;
 
-    // Verify role in profiles and admin_users tables — fail CLOSED if check fails or lacks admin role
-    const adminRoles = new Set(['ADMIN', 'SUPER_ADMIN', 'OWNER_ADMIN', 'MODERATOR']);
+    // Verify active record in admin_users table — fail CLOSED if check fails or lacks active admin role
+    const adminRoles = new Set(['ADMIN', 'SUPER_ADMIN', 'OWNER_ADMIN', 'MODERATOR', 'SUPPORT_ADMIN', 'ANALYST']);
     let roleCheckSucceeded = false;
     let isAuthorizedAdmin = false;
 
     try {
-      const [profileRes, adminUserRes] = await Promise.all([
-        fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=id,role`, {
+      const adminUserRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/admin_users?user_id=eq.${encodeURIComponent(user.id)}&select=user_id,role,is_active&limit=1`,
+        {
           headers: {
             'apikey': SUPABASE_ANON_KEY,
             'Authorization': `Bearer ${token}`
           }
-        }),
-        fetch(`${SUPABASE_URL}/rest/v1/admin_users?user_id=eq.${encodeURIComponent(user.id)}&is_active=eq.true&select=role`, {
-          headers: {
-            'apikey': SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${token}`
-          }
-        }).catch(() => null)
-      ]);
-
-      if (profileRes.ok) {
-        roleCheckSucceeded = true;
-        const profiles = await profileRes.json();
-        const profile = Array.isArray(profiles) ? profiles[0] : profiles;
-        const role = String(profile?.role || '').toUpperCase();
-        if (adminRoles.has(role)) {
-          isAuthorizedAdmin = true;
         }
-      }
+      );
 
-      if (adminUserRes && adminUserRes.ok) {
+      if (adminUserRes.ok) {
         roleCheckSucceeded = true;
         const adminRows = await adminUserRes.json();
         const adminRec = Array.isArray(adminRows) ? adminRows[0] : adminRows;
-        const adminRole = String(adminRec?.role || '').toUpperCase();
-        if (adminRoles.has(adminRole)) {
+        const adminRole = String(adminRec?.role || '').toUpperCase().trim();
+        const matchesUser = !adminRec?.user_id || String(adminRec.user_id).toLowerCase() === String(user.id).toLowerCase();
+        if (adminRec && adminRec.is_active === true && matchesUser && adminRoles.has(adminRole)) {
           isAuthorizedAdmin = true;
         }
       }
@@ -807,7 +793,7 @@ export async function adminSignInWithPassword(
     if (!isAuthorizedAdmin) {
       return {
         success: false,
-        error: 'Forbidden: Authenticated account does not hold administrator privileges.'
+        error: 'Forbidden: Active administrator record required.'
       };
     }
 
@@ -941,15 +927,10 @@ export async function sendLiveDirectMessage(params: {
 // -------------------------------------------------------------
 // Column-Scoped Admin Session & Live Moderation Helpers
 // -------------------------------------------------------------
-const ADMIN_ROLE_SET = new Set(['ADMIN', 'SUPER_ADMIN', 'OWNER_ADMIN', 'MODERATOR']);
-
-export function isVerifiedAdminSession(user?: User | null): boolean {
+export function isVerifiedAdminSession(_user?: User | null): boolean {
   try {
     const adminJwt = typeof localStorage !== 'undefined' ? (localStorage.getItem('vybe_admin_jwt') || '') : '';
-    if (adminJwt.startsWith('eyJ')) return true;
-    const accessJwt = typeof localStorage !== 'undefined' ? (localStorage.getItem('vybe_access_token') || '') : '';
-    const role = String(user?.role || '').toUpperCase().trim();
-    return Boolean(accessJwt.startsWith('eyJ') && ADMIN_ROLE_SET.has(role));
+    return adminJwt.startsWith('eyJ');
   } catch {
     return false;
   }

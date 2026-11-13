@@ -1,15 +1,15 @@
 package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -22,10 +22,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.ui.VybeViewModel
+import com.example.ui.components.VybeEmptyState
+import com.example.ui.components.VybePrimaryButton
+import com.example.ui.components.VybeSecondaryButton
+import com.example.ui.components.VybeSubScreenTopBar
+import com.example.ui.components.VybeSurfaceCard
 import com.example.ui.theme.*
 
 /**
@@ -36,13 +40,13 @@ import com.example.ui.theme.*
  * - Collect votes securely and display real-time percentage results.
  * - Enforce poll author permissions.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WhatNextScreen(viewModel: VybeViewModel) {
   BackHandler {
     viewModel.navigateBack()
   }
 
+  val palette = LocalVybePalette.current
   val predictions by viewModel.predictions.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
 
@@ -53,24 +57,24 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
   var pollOptions by remember { mutableStateOf(listOf("Yes, absolutely", "No, unlikely")) }
 
   val categoryChoices = listOf("Culture & Music", "Cinema & OTT", "Technology & AI", "City Life", "Cricket & Sports")
+  val fieldColors = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = palette.elevated,
+    unfocusedContainerColor = palette.elevated,
+    focusedBorderColor = palette.accent,
+    unfocusedBorderColor = palette.border,
+    focusedTextColor = palette.textPrimary,
+    unfocusedTextColor = palette.textPrimary
+  )
 
   Scaffold(
+    containerColor = palette.canvas,
+    contentWindowInsets = WindowInsets(0.dp),
     topBar = {
-      TopAppBar(
-        navigationIcon = {
-          IconButton(
-            onClick = { viewModel.navigateBack() },
-            modifier = Modifier.testTag("what_next_back_button")
-          ) {
-            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
-          }
-        },
-        title = {
-          Column {
-            Text("VYBE WHAT NEXT", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            Text("Community Culture & Discovery Consensus", fontSize = 11.sp, color = VybeBrandCyan)
-          }
-        },
+      VybeSubScreenTopBar(
+        title = "VYBE What Next",
+        subtitle = "Community Culture & Discovery Consensus",
+        onBackClick = { viewModel.navigateBack() },
+        backTestTag = "what_next_back_button",
         actions = {
           Button(
             onClick = {
@@ -80,20 +84,27 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
               pollOptions = listOf("Yes, absolutely", "No, unlikely")
               showCreatePollDialog = true
             },
-            colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+              containerColor = palette.accent,
+              contentColor = Color.White
+            ),
+            shape = RoundedCornerShape(VybeTokens.Radius.md),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
             modifier = Modifier
               .padding(end = 8.dp)
+              .heightIn(min = 40.dp)
               .testTag("create_poll_button")
           ) {
             Icon(Icons.Outlined.AddChart, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(modifier = Modifier.width(4.dp))
-            Text("New Poll", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+              text = "New Poll",
+              fontFamily = PlusJakartaSansFontFamily,
+              fontSize = 12.sp,
+              fontWeight = FontWeight.Bold
+            )
           }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-          containerColor = MaterialTheme.colorScheme.background
-        )
+        }
       )
     }
   ) { paddingValues ->
@@ -101,45 +112,47 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
       modifier = Modifier
         .fillMaxSize()
         .padding(paddingValues)
-        .padding(16.dp),
-      verticalArrangement = Arrangement.spacedBy(16.dp)
+        .navigationBarsPadding()
+        .imePadding()
+        .padding(horizontal = 16.dp),
+      verticalArrangement = Arrangement.spacedBy(14.dp),
+      contentPadding = PaddingValues(top = 14.dp, bottom = 72.dp)
     ) {
       item {
-        Card(
-          colors = CardDefaults.cardColors(containerColor = VybeViolet.copy(alpha = 0.15f)),
-          shape = RoundedCornerShape(16.dp),
-          border = androidx.compose.foundation.BorderStroke(1.dp, VybeViolet.copy(alpha = 0.4f))
+        VybeSurfaceCard(
+          containerColor = palette.accent.copy(alpha = 0.10f),
+          borderColor = palette.accent.copy(alpha = 0.35f),
+          contentPadding = PaddingValues(14.dp)
         ) {
-          Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Surface(
-              shape = RoundedCornerShape(12.dp),
-              color = VybeViolet.copy(alpha = 0.2f),
-              modifier = Modifier.size(44.dp)
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+              modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(VybeTokens.Radius.md))
+                .background(palette.accent.copy(alpha = 0.16f)),
+              contentAlignment = Alignment.Center
             ) {
-              Box(contentAlignment = Alignment.Center) {
-                Icon(
-                  imageVector = Icons.Outlined.Insights,
-                  contentDescription = null,
-                  tint = VybeBrandCyan,
-                  modifier = Modifier.size(24.dp)
-                )
-              }
+              Icon(
+                imageVector = Icons.Outlined.Insights,
+                contentDescription = null,
+                tint = palette.accentSecondary,
+                modifier = Modifier.size(22.dp)
+              )
             }
             Spacer(modifier = Modifier.width(12.dp))
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
               Text(
                 text = "What Next Consensus",
+                fontFamily = PlusJakartaSansFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
-                color = MaterialTheme.colorScheme.onSurface
+                color = palette.textPrimary
               )
+              Spacer(modifier = Modifier.height(2.dp))
               Text(
                 text = "Predict and discover where music, cinema, technology, and city vibes are heading next. Vote with your intuition or launch your own poll.",
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = palette.textSecondary,
                 lineHeight = 16.sp
               )
             }
@@ -148,152 +161,183 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
       }
 
       item {
-        Text("Active Cultural Predictions (${predictions.size})", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+        Text(
+          text = "Active Cultural Predictions (${predictions.size})",
+          fontFamily = PlusJakartaSansFontFamily,
+          fontWeight = FontWeight.Bold,
+          fontSize = 16.sp,
+          color = palette.textPrimary
+        )
+      }
+
+      if (predictions.isEmpty()) {
+        item {
+          VybeEmptyState(
+            icon = Icons.Outlined.Poll,
+            title = "No Active Predictions Yet",
+            subtitle = "Launch a poll on music, cinema, tech, or city trends to gauge community consensus.",
+            actionLabel = "Create First Poll",
+            onAction = { showCreatePollDialog = true }
+          )
+        }
       }
 
       items(predictions, key = { it.id }) { pred ->
         val isAuthor = pred.authorId == currentUser?.id || pred.authorUsername == currentUser?.username
 
-        Card(
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          shape = RoundedCornerShape(16.dp),
-          border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+        VybeSurfaceCard(
+          contentPadding = PaddingValues(16.dp),
           modifier = Modifier
             .fillMaxWidth()
             .testTag("poll_card_${pred.id}")
         ) {
-          Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Surface(
+              color = palette.accent.copy(alpha = 0.15f),
+              shape = RoundedCornerShape(VybeTokens.Radius.xs)
             ) {
-              Surface(
-                color = VybeViolet.copy(alpha = 0.2f),
-                shape = RoundedCornerShape(8.dp)
-              ) {
-                Text(
-                  text = pred.category.uppercase(),
-                  fontSize = 10.sp,
-                  fontWeight = FontWeight.Bold,
-                  color = VybeViolet,
-                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                )
-              }
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                  text = pred.closingTimeText,
-                  fontSize = 11.sp,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (isAuthor) {
-                  Spacer(modifier = Modifier.width(6.dp))
-                  IconButton(
-                    onClick = { viewModel.deletePredictionPoll(pred.id) },
-                    modifier = Modifier.size(24.dp)
-                  ) {
-                    Icon(Icons.Default.DeleteOutline, contentDescription = "Delete Poll", tint = VybeDanger, modifier = Modifier.size(16.dp))
-                  }
+              Text(
+                text = pred.category.uppercase(),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = palette.accent,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+              )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Text(
+                text = pred.closingTimeText,
+                fontSize = 11.sp,
+                color = palette.textSecondary
+              )
+              if (isAuthor) {
+                Spacer(modifier = Modifier.width(6.dp))
+                IconButton(
+                  onClick = { viewModel.deletePredictionPoll(pred.id) },
+                  modifier = Modifier.size(40.dp)
+                ) {
+                  Icon(
+                    imageVector = Icons.Default.DeleteOutline,
+                    contentDescription = "Delete Poll",
+                    tint = palette.danger,
+                    modifier = Modifier.size(18.dp)
+                  )
                 }
               }
             }
+          }
 
-            Spacer(modifier = Modifier.height(10.dp))
+          Spacer(modifier = Modifier.height(10.dp))
 
-            Text(
-              text = pred.title,
-              fontWeight = FontWeight.Bold,
-              fontSize = 15.sp,
-              lineHeight = 20.sp
-            )
+          Text(
+            text = pred.title,
+            fontFamily = PlusJakartaSansFontFamily,
+            fontWeight = FontWeight.Bold,
+            fontSize = 15.sp,
+            lineHeight = 21.sp,
+            color = palette.textPrimary
+          )
 
-            Spacer(modifier = Modifier.height(14.dp))
+          Spacer(modifier = Modifier.height(14.dp))
 
-            // Voting Options
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-              pred.options.forEach { opt ->
-                val isSelected = pred.userSelectedOptionId == opt.id
-                val hasVoted = pred.userSelectedOptionId != null
+          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            pred.options.forEach { opt ->
+              val isSelected = pred.userSelectedOptionId == opt.id
+              val hasVoted = pred.userSelectedOptionId != null
 
-                Surface(
-                  color = if (isSelected) VybeViolet.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant,
-                  shape = RoundedCornerShape(10.dp),
-                  border = if (isSelected) androidx.compose.foundation.BorderStroke(1.5.dp, VybeViolet) else null,
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { viewModel.votePrediction(pred.id, opt.id) }
-                    .testTag("poll_option_${pred.id}_${opt.id}")
-                ) {
-                  Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                      modifier = Modifier.fillMaxWidth(),
-                      horizontalArrangement = Arrangement.SpaceBetween,
-                      verticalAlignment = Alignment.CenterVertically
-                    ) {
-                      Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (isSelected) {
-                          Icon(Icons.Default.CheckCircle, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(16.dp))
-                          Spacer(modifier = Modifier.width(6.dp))
-                        }
-                        Text(
-                          text = opt.text,
-                          fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                          fontSize = 13.sp
+              Surface(
+                color = if (isSelected) palette.accent.copy(alpha = 0.16f) else palette.elevated,
+                shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                border = BorderStroke(
+                  width = if (isSelected) 1.5.dp else 1.dp,
+                  color = if (isSelected) palette.accent else palette.border
+                ),
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .clip(RoundedCornerShape(VybeTokens.Radius.sm))
+                  .clickable { viewModel.votePrediction(pred.id, opt.id) }
+                  .testTag("poll_option_${pred.id}_${opt.id}")
+              ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                      if (isSelected) {
+                        Icon(
+                          imageVector = Icons.Default.CheckCircle,
+                          contentDescription = null,
+                          tint = palette.accent,
+                          modifier = Modifier.size(16.dp)
                         )
+                        Spacer(modifier = Modifier.width(6.dp))
                       }
-                      if (hasVoted) {
-                        Text(
-                          text = "${opt.percentage}%",
-                          fontWeight = FontWeight.ExtraBold,
-                          fontSize = 13.sp,
-                          color = if (isSelected) VybeViolet else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                      }
+                      Text(
+                        text = opt.text,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        fontSize = 13.sp,
+                        color = palette.textPrimary
+                      )
                     }
-
-                    // Progress bar once voted
                     if (hasVoted) {
-                      Spacer(modifier = Modifier.height(6.dp))
-                      LinearProgressIndicator(
-                        progress = { opt.percentage / 100f },
-                        modifier = Modifier
-                          .fillMaxWidth()
-                          .height(6.dp)
-                          .clip(RoundedCornerShape(3.dp)),
-                        color = if (isSelected) VybeViolet else VybeBrandCyan,
-                        trackColor = MaterialTheme.colorScheme.surface
+                      Spacer(modifier = Modifier.width(8.dp))
+                      Text(
+                        text = "${opt.percentage}%",
+                        fontFamily = PlusJakartaSansFontFamily,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 13.sp,
+                        color = if (isSelected) palette.accent else palette.textSecondary
                       )
                     }
                   }
+
+                  if (hasVoted) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                      progress = { opt.percentage / 100f },
+                      modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                      color = if (isSelected) palette.accent else palette.accentSecondary,
+                      trackColor = palette.card
+                    )
+                  }
                 }
               }
             }
+          }
 
-            Spacer(modifier = Modifier.height(12.dp))
+          Spacer(modifier = Modifier.height(12.dp))
 
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Text(
-                text = "${pred.totalVotes} total votes collected",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-              )
-              if (pred.userSelectedOptionId != null) {
-                Surface(
-                  color = VybeOnlineGreen.copy(alpha = 0.15f),
-                  shape = RoundedCornerShape(6.dp)
-                ) {
-                  Text(
-                    text = "Vote Recorded ✓",
-                    fontSize = 10.sp,
-                    color = VybeOnlineGreen,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                  )
-                }
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Text(
+              text = "${pred.totalVotes} total votes collected",
+              fontSize = 11.sp,
+              color = palette.textMuted
+            )
+            if (pred.userSelectedOptionId != null) {
+              Surface(
+                color = palette.success.copy(alpha = 0.14f),
+                shape = RoundedCornerShape(VybeTokens.Radius.xs)
+              ) {
+                Text(
+                  text = "Vote Recorded ✓",
+                  fontSize = 10.sp,
+                  color = palette.success,
+                  fontWeight = FontWeight.Bold,
+                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                )
               }
             }
           }
@@ -313,20 +357,16 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
       )
     ) {
       Scaffold(
-        modifier = Modifier.fillMaxSize().imePadding(),
+        containerColor = palette.canvas,
+        contentWindowInsets = WindowInsets(0.dp),
+        modifier = Modifier
+          .fillMaxSize()
+          .imePadding(),
         topBar = {
-          TopAppBar(
-            navigationIcon = {
-              IconButton(onClick = { showCreatePollDialog = false }) {
-                Icon(Icons.Default.Close, contentDescription = "Close")
-              }
-            },
-            title = {
-              Column {
-                Text("New Audience Poll", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Text("VYBE WHAT NEXT • Community Consensus", fontSize = 11.sp, color = VybeBrandCyan)
-              }
-            },
+          VybeSubScreenTopBar(
+            title = "New Audience Poll",
+            subtitle = "VYBE What Next • Community Consensus",
+            onBackClick = { showCreatePollDialog = false },
             actions = {
               Button(
                 onClick = {
@@ -341,18 +381,24 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
                   }
                 },
                 enabled = pollTitle.isNotBlank() && pollOptions.all { it.isNotBlank() },
-                colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                  containerColor = palette.accent,
+                  contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(VybeTokens.Radius.md),
                 modifier = Modifier
                   .padding(end = 8.dp)
+                  .heightIn(min = 40.dp)
                   .testTag("publish_poll_button")
               ) {
-                Text("Publish Poll", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text(
+                  text = "Publish Poll",
+                  fontFamily = PlusJakartaSansFontFamily,
+                  fontWeight = FontWeight.Bold,
+                  fontSize = 13.sp
+                )
               }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-              containerColor = MaterialTheme.colorScheme.background
-            )
+            }
           )
         }
       ) { innerPadding ->
@@ -360,55 +406,99 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
           modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding)
+            .navigationBarsPadding()
             .padding(horizontal = 16.dp),
-          verticalArrangement = Arrangement.spacedBy(16.dp)
+          verticalArrangement = Arrangement.spacedBy(16.dp),
+          contentPadding = PaddingValues(top = 16.dp, bottom = 32.dp)
         ) {
           item {
-            Spacer(modifier = Modifier.height(4.dp))
             OutlinedTextField(
               value = pollTitle,
               onValueChange = { pollTitle = it },
               label = { Text("Poll Question") },
-              placeholder = { Text("e.g., Will Mumbai underground indie beats dominate 2027?") },
+              placeholder = { Text("e.g., Will Mumbai underground indie beats dominate 2027?", color = palette.textMuted) },
+              colors = fieldColors,
               modifier = Modifier
                 .fillMaxWidth()
                 .testTag("poll_question_input"),
               minLines = 3,
-              shape = RoundedCornerShape(14.dp)
+              shape = RoundedCornerShape(VybeTokens.Radius.md)
             )
           }
 
           item {
-            Text("Category", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text(
+              text = "Category",
+              fontFamily = PlusJakartaSansFontFamily,
+              fontSize = 13.sp,
+              fontWeight = FontWeight.Bold,
+              color = palette.textPrimary
+            )
+            Spacer(modifier = Modifier.height(6.dp))
             LazyRow(
               modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.spacedBy(6.dp)
+              horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
               items(categoryChoices) { cat ->
+                val isSelected = pollCategory == cat
                 FilterChip(
-                  selected = pollCategory == cat,
+                  selected = isSelected,
                   onClick = { pollCategory = cat },
-                  label = { Text(cat, fontSize = 11.sp) }
+                  label = {
+                    Text(
+                      cat,
+                      fontSize = 12.sp,
+                      color = if (isSelected) palette.textPrimary else palette.textSecondary
+                    )
+                  },
+                  colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = palette.accent.copy(alpha = 0.16f),
+                    containerColor = palette.elevated
+                  )
                 )
               }
             }
           }
 
           item {
-            Text("Poll Duration", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text(
+              text = "Poll Duration",
+              fontFamily = PlusJakartaSansFontFamily,
+              fontSize = 13.sp,
+              fontWeight = FontWeight.Bold,
+              color = palette.textPrimary
+            )
+            Spacer(modifier = Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
               listOf(Pair("24 Hours", 24), Pair("3 Days", 72), Pair("7 Days", 168)).forEach { (lbl, hrs) ->
+                val isSelected = pollDurationHours == hrs
                 FilterChip(
-                  selected = pollDurationHours == hrs,
+                  selected = isSelected,
                   onClick = { pollDurationHours = hrs },
-                  label = { Text(lbl, fontSize = 11.sp) }
+                  label = {
+                    Text(
+                      lbl,
+                      fontSize = 12.sp,
+                      color = if (isSelected) palette.textPrimary else palette.textSecondary
+                    )
+                  },
+                  colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = palette.accent.copy(alpha = 0.16f),
+                    containerColor = palette.elevated
+                  )
                 )
               }
             }
           }
 
           item {
-            Text("Poll Options", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text(
+              text = "Poll Options",
+              fontFamily = PlusJakartaSansFontFamily,
+              fontSize = 13.sp,
+              fontWeight = FontWeight.Bold,
+              color = palette.textPrimary
+            )
           }
 
           items(pollOptions.indices.toList()) { index ->
@@ -424,9 +514,10 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
                   pollOptions = updated
                 },
                 label = { Text("Option ${index + 1}") },
+                colors = fieldColors,
                 modifier = Modifier.weight(1f),
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(VybeTokens.Radius.md)
               )
               if (pollOptions.size > 2) {
                 IconButton(
@@ -434,9 +525,10 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
                     val updated = pollOptions.toMutableList()
                     updated.removeAt(index)
                     pollOptions = updated
-                  }
+                  },
+                  modifier = Modifier.size(48.dp)
                 ) {
-                  Icon(Icons.Default.Close, contentDescription = "Remove option", tint = VybeDanger)
+                  Icon(Icons.Default.Close, contentDescription = "Remove option", tint = palette.danger)
                 }
               }
             }
@@ -444,22 +536,20 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
 
           if (pollOptions.size < 4) {
             item {
-              OutlinedButton(
+              VybeSecondaryButton(
+                text = "Add Another Option",
                 onClick = {
                   pollOptions = pollOptions + "New Option ${pollOptions.size + 1}"
                 },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-              ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Add Another Option", fontSize = 12.sp)
-              }
+                icon = Icons.Default.Add,
+                modifier = Modifier.fillMaxWidth()
+              )
             }
           }
 
           item {
-            Button(
+            VybePrimaryButton(
+              text = "Publish Audience Poll",
               onClick = {
                 if (pollTitle.isNotBlank() && pollOptions.all { it.isNotBlank() }) {
                   viewModel.createPredictionPoll(
@@ -472,19 +562,9 @@ fun WhatNextScreen(viewModel: VybeViewModel) {
                 }
               },
               enabled = pollTitle.isNotBlank() && pollOptions.all { it.isNotBlank() },
-              colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-              shape = RoundedCornerShape(14.dp),
-              modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .testTag("publish_poll_large_button")
-            ) {
-              Text("Publish Audience Poll", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            }
-          }
-
-          item {
-            Spacer(modifier = Modifier.height(30.dp))
+              testTag = "publish_poll_large_button",
+              modifier = Modifier.fillMaxWidth()
+            )
           }
         }
       }

@@ -7,7 +7,6 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
-import { handleMusicCatalogRequest } from './musicProvider';
 
 dotenv.config();
 
@@ -42,7 +41,7 @@ const supabaseUrl = process.env.SUPABASE_URL || 'https://cppwadedazpbevkfrchg.su
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || 'sb_publishable_MI-UdOqfccHVZIHjQq9vrw_IjEzeR7H';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ADMIN_ROLES = new Set(['ADMIN', 'SUPER_ADMIN', 'OWNER_ADMIN', 'MODERATOR']);
+const ADMIN_ROLES = new Set(['ADMIN', 'SUPER_ADMIN', 'OWNER_ADMIN', 'MODERATOR', 'SUPPORT_ADMIN', 'ANALYST']);
 const SUPER_ADMIN_ROLES = new Set(['SUPER_ADMIN', 'OWNER_ADMIN']);
 
 async function recordServerAuditLog(params: {
@@ -128,30 +127,45 @@ const requireAdmin = async (req: Request, res: Response, next: NextFunction): Pr
     return;
   }
 
-  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
-  if (error || !user) {
-    res.status(401).json({ error: 'Invalid authentication session.' });
+  let verifiedUser: any = null;
+  try {
+    const { data, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !data?.user) {
+      res.status(401).json({ error: 'Invalid authentication session.' });
+      return;
+    }
+    verifiedUser = data.user;
+  } catch {
+    res.status(503).json({ error: 'Service Unavailable: Unable to verify authentication session.' });
     return;
   }
 
-  const [{ data: profile }, { data: adminRec }] = await Promise.all([
-    supabaseAdmin.from('profiles').select('role').eq('id', user.id).maybeSingle(),
-    supabaseAdmin.from('admin_users').select('role, is_active').eq('user_id', user.id).eq('is_active', true).maybeSingle()
-  ]);
+  try {
+    const { data: adminRec, error: adminErr } = await supabaseAdmin
+      .from('admin_users')
+      .select('user_id, role, is_active')
+      .eq('user_id', verifiedUser.id)
+      .maybeSingle();
 
-  const profileRole = String(profile?.role || '').toUpperCase().trim();
-  const adminRole = String(adminRec?.role || '').toUpperCase().trim();
-  const resolvedRole = ADMIN_ROLES.has(adminRole) ? adminRole : (ADMIN_ROLES.has(profileRole) ? profileRole : '');
+    if (adminErr) {
+      res.status(503).json({ error: 'Service Unavailable: Unable to verify administrator status from Supabase.' });
+      return;
+    }
 
-  if (!ADMIN_ROLES.has(resolvedRole)) {
-    res.status(403).json({ error: 'Forbidden: Requires Administrator privileges.' });
-    return;
+    const adminRole = String(adminRec?.role || '').toUpperCase().trim();
+    const userMatches = !adminRec?.user_id || String(adminRec.user_id).toLowerCase() === String(verifiedUser.id).toLowerCase();
+    if (!adminRec || adminRec.is_active !== true || !userMatches || !ADMIN_ROLES.has(adminRole)) {
+      res.status(403).json({ error: 'Forbidden: Active administrator record required.' });
+      return;
+    }
+
+    (req as any).user = verifiedUser;
+    (req as any).adminRole = adminRole;
+    (req as any).isSuperAdmin = SUPER_ADMIN_ROLES.has(adminRole);
+    next();
+  } catch {
+    res.status(503).json({ error: 'Service Unavailable: Unable to verify administrator status from Supabase.' });
   }
-
-  (req as any).user = user;
-  (req as any).adminRole = resolvedRole;
-  (req as any).isSuperAdmin = SUPER_ADMIN_ROLES.has(resolvedRole);
-  next();
 };
 
 // 3. Privileged Admin Route: Business Verification Decision
@@ -388,7 +402,7 @@ async function dispatchFcmPush(payload: PushDispatchPayload): Promise<{ successC
   recentPushLogs.unshift({
     timestamp: new Date().toISOString(),
     title,
-    recipientCount: Math.max(tokens.length, topic ? 1 : 0),
+    recipientCount: tokens.length,
     status: isConfigured ? 'Dispatched (FCM + Realtime Live)' : 'Delivered via Realtime Push',
     channel: channelId
   });
@@ -501,7 +515,7 @@ async function dispatchFcmPush(payload: PushDispatchPayload): Promise<{ successC
     }
   }
 
-  return { successCount: Math.max(tokens.length, 1), failureCount: 0 };
+  return { successCount: tokens.length, failureCount: 0 };
 }
 
 // Device FCM Token Registration Route (Authenticated & Database Verified)
@@ -765,7 +779,7 @@ const handleAdminBroadcastPush = async (req: Request, res: Response): Promise<vo
 
     res.status(200).json({
       success: true,
-      totalDevices: Math.max(tokens.length, 1),
+      totalDevices: tokens.length,
       delivered: result.successCount,
       failed: result.failureCount
     });
@@ -1113,8 +1127,11 @@ app.post('/api/v1/user/verification/badge-display', requireAuth, async (req: Req
 });
 
 // Licensed Music Catalog Proxy Routes (Provider-Adapter Architecture; Private API keys stay server-side)
-app.get('/api/v1/music/catalog', handleMusicCatalogRequest);
-app.get('/api/v1/music/tracks/:trackId', handleMusicCatalogRequest);
+const handleUnconfiguredMusicCatalog = (_req: Request, res: Response): void => {
+  res.status(501).json({ error: 'Licensed music catalog provider is not configured.' });
+};
+app.get('/api/v1/music/catalog', handleUnconfiguredMusicCatalog);
+app.get('/api/v1/music/tracks/:trackId', handleUnconfiguredMusicCatalog);
 
 // Canonical Public Profile Landing Page for VYBE QR Codes & Share Links
 app.get(['/profile/:identifier', '/u/:identifier'], async (req: Request, res: Response): Promise<void> => {
@@ -1165,6 +1182,10 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   res.status(500).json({ error: 'Internal server error occurred.' });
 });
 
-app.listen(PORT, () => {
-  console.log(`[VYBE 3.0 API & Admin Console] Listening on port ${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`[VYBE 3.0 API & Admin Console] Listening on port ${PORT}`);
+  });
+}
+
+export { app, requireAdmin, requireAuth };

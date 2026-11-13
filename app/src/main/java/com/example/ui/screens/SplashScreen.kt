@@ -27,9 +27,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
-import com.example.ui.theme.ObsidianBackground
-import com.example.ui.theme.VybeBrandMagenta
-import com.example.ui.theme.VybeBrandViolet
+import com.example.ui.theme.PlusJakartaSansFontFamily
+import com.example.ui.theme.SocialDarkBackground
+import com.example.ui.theme.SocialDarkTextSecondary
+import com.example.ui.theme.VybeGrowBlue
+import com.example.ui.theme.VybeGrowBlueBright
+import com.example.ui.theme.VybeSocialViolet
 
 /**
  * VYBE Official Startup Screen
@@ -41,7 +44,7 @@ fun SplashScreen() {
   Box(
     modifier = Modifier
       .fillMaxSize()
-      .background(ObsidianBackground)
+      .background(SocialDarkBackground)
       .testTag("splash_screen"),
     contentAlignment = Alignment.Center
   ) {
@@ -53,8 +56,8 @@ fun SplashScreen() {
         .background(
           Brush.radialGradient(
             colors = listOf(
-              VybeBrandViolet.copy(alpha = 0.28f),
-              VybeBrandMagenta.copy(alpha = 0.14f),
+              VybeSocialViolet.copy(alpha = 0.26f),
+              VybeGrowBlue.copy(alpha = 0.14f),
               Color.Transparent
             )
           )
@@ -90,6 +93,7 @@ fun SplashScreen() {
       ) {
         Text(
           text = "VYBE",
+          fontFamily = PlusJakartaSansFontFamily,
           style = MaterialTheme.typography.displayMedium,
           fontWeight = FontWeight.ExtraBold,
           color = Color.White,
@@ -102,8 +106,9 @@ fun SplashScreen() {
 
       Text(
         text = "CONNECT. EXPRESS. GROW.",
+        fontFamily = PlusJakartaSansFontFamily,
         style = MaterialTheme.typography.labelMedium,
-        color = Color(0xFF38BDF8),
+        color = VybeGrowBlueBright,
         letterSpacing = 2.sp,
         fontWeight = FontWeight.Bold
       )
@@ -125,6 +130,7 @@ fun SplashScreen() {
 
       Text(
         text = "AN NR NEXT PRODUCT",
+        fontFamily = PlusJakartaSansFontFamily,
         style = MaterialTheme.typography.bodySmall,
         color = Color.White.copy(alpha = 0.90f),
         letterSpacing = 2.sp,
@@ -136,7 +142,7 @@ fun SplashScreen() {
       Text(
         text = "🇮🇳 PROUDLY MADE IN INDIA",
         style = MaterialTheme.typography.labelSmall,
-        color = Color.White.copy(alpha = 0.70f),
+        color = SocialDarkTextSecondary,
         letterSpacing = 1.2.sp,
         fontWeight = FontWeight.Medium
       )

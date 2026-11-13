@@ -4,6 +4,7 @@ import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -11,14 +12,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -28,6 +27,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.notifications.VybeNotificationHelper
 import com.example.ui.VybeViewModel
+import com.example.ui.components.VybePrimaryButton
+import com.example.ui.components.VybeSecondaryButton
+import com.example.ui.components.VybeSubScreenTopBar
+import com.example.ui.components.VybeSurfaceCard
 import com.example.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -39,6 +42,7 @@ fun NotificationDiagnosticScreen(viewModel: VybeViewModel) {
     viewModel.navigateBack()
   }
 
+  val palette = LocalVybePalette.current
   val context = LocalContext.current
   val diagnostics by viewModel.deviceNotificationDiagnostics.collectAsState()
   var osNotifEnabled by remember {
@@ -47,7 +51,7 @@ fun NotificationDiagnosticScreen(viewModel: VybeViewModel) {
 
   val permLauncher = rememberLauncherForActivityResult(
     ActivityResultContracts.RequestPermission()
-  ) { granted ->
+  ) { _ ->
     osNotifEnabled = VybeNotificationHelper.arePhoneNotificationsEnabled(context)
     viewModel.refreshDeviceNotificationDiagnostics()
   }
@@ -57,50 +61,37 @@ fun NotificationDiagnosticScreen(viewModel: VybeViewModel) {
   }
 
   Scaffold(
+    containerColor = palette.canvas,
+    contentWindowInsets = WindowInsets(0.dp),
     topBar = {
-      TopAppBar(
-        title = {
-          Text(
-            text = "Push & Device Diagnostics",
-            fontWeight = FontWeight.Bold,
-            fontSize = 18.sp
-          )
-        },
-        navigationIcon = {
-          IconButton(
-            onClick = { viewModel.navigateBack() },
-            modifier = Modifier.testTag("diag_back_button")
-          ) {
-            Icon(
-              imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-              contentDescription = "Back"
-            )
-          }
-        },
+      VybeSubScreenTopBar(
+        title = "Push & Device Diagnostics",
+        onBackClick = { viewModel.navigateBack() },
+        backTestTag = "diag_back_button",
         actions = {
           IconButton(
             onClick = { viewModel.refreshDeviceNotificationDiagnostics() },
-            modifier = Modifier.testTag("diag_refresh_button")
+            modifier = Modifier
+              .size(48.dp)
+              .testTag("diag_refresh_button")
           ) {
             Icon(
               imageVector = Icons.Default.Refresh,
-              contentDescription = "Refresh Diagnostics"
+              contentDescription = "Refresh Diagnostics",
+              tint = palette.textPrimary
             )
           }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-          containerColor = MaterialTheme.colorScheme.background
-        )
+        }
       )
-    },
-    containerColor = MaterialTheme.colorScheme.background
+    }
   ) { padding ->
     LazyColumn(
       modifier = Modifier
         .fillMaxSize()
         .padding(padding)
-        .padding(horizontal = 16.dp, vertical = 8.dp),
-      verticalArrangement = Arrangement.spacedBy(16.dp)
+        .navigationBarsPadding()
+        .padding(horizontal = 16.dp, vertical = 10.dp),
+      verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
       // 1. Primary Status Header Card
       item {
@@ -109,10 +100,10 @@ fun NotificationDiagnosticScreen(viewModel: VybeViewModel) {
         val isFailed = diagnostics.registrationStatus.equals("FAILED", ignoreCase = true)
 
         val bannerColor = when {
-          isRegistered -> VybeOnlineGreen
-          isPending -> Color(0xFFF59E0B)
-          isFailed -> VybeDanger
-          else -> MaterialTheme.colorScheme.onSurfaceVariant
+          isRegistered -> palette.success
+          isPending -> palette.warning
+          isFailed -> palette.danger
+          else -> palette.textSecondary
         }
 
         val statusText = when {
@@ -122,117 +113,104 @@ fun NotificationDiagnosticScreen(viewModel: VybeViewModel) {
           else -> "Ready for Sync"
         }
 
-        Card(
-          shape = RoundedCornerShape(20.dp),
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          modifier = Modifier.fillMaxWidth().testTag("diag_status_card")
+        VybeSurfaceCard(
+          modifier = Modifier
+            .fillMaxWidth()
+            .testTag("diag_status_card"),
+          contentPadding = PaddingValues(18.dp)
         ) {
-          Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
           ) {
-            Row(
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-              Box(
-                modifier = Modifier
-                  .size(44.dp)
-                  .clip(CircleShape)
-                  .background(bannerColor.copy(alpha = 0.15f))
-                  .border(1.dp, bannerColor.copy(alpha = 0.4f), CircleShape),
-                contentAlignment = Alignment.Center
-              ) {
-                if (diagnostics.isSyncing) {
-                  CircularProgressIndicator(
-                    modifier = Modifier.size(22.dp),
-                    color = bannerColor,
-                    strokeWidth = 2.dp
-                  )
-                } else {
-                  Icon(
-                    imageVector = when {
-                      isRegistered -> Icons.Default.CheckCircle
-                      isPending -> Icons.Default.Schedule
-                      isFailed -> Icons.Default.Error
-                      else -> Icons.Default.Notifications
-                    },
-                    contentDescription = null,
-                    tint = bannerColor,
-                    modifier = Modifier.size(24.dp)
-                  )
-                }
-              }
-
-              Column(modifier = Modifier.weight(1f)) {
-                Text(
-                  text = statusText,
-                  fontWeight = FontWeight.Bold,
-                  fontSize = 17.sp,
-                  color = bannerColor
-                )
-                Text(
-                  text = if (diagnostics.lastRegistrationTimeMs > 0) {
-                    val fmt = SimpleDateFormat("MMM d, HH:mm:ss", Locale.getDefault())
-                    "Last attempt: ${fmt.format(Date(diagnostics.lastRegistrationTimeMs))}"
-                  } else "No registration recorded in this session",
-                  fontSize = 12.sp,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-              }
-            }
-
-            if (!diagnostics.lastError.isNullOrBlank()) {
-              Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = VybeDanger.copy(alpha = 0.12f),
-                modifier = Modifier.fillMaxWidth()
-              ) {
-                Row(
-                  modifier = Modifier.padding(10.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                  Icon(
-                    imageVector = Icons.Default.Warning,
-                    contentDescription = null,
-                    tint = VybeDanger,
-                    modifier = Modifier.size(18.dp)
-                  )
-                  Text(
-                    text = diagnostics.lastError.orEmpty(),
-                    fontSize = 12.sp,
-                    color = VybeDanger,
-                    fontFamily = FontFamily.Monospace
-                  )
-                }
-              }
-            }
-
-            Button(
-              onClick = { viewModel.retryDeviceTokenRegistration() },
-              enabled = !diagnostics.isSyncing,
-              shape = RoundedCornerShape(12.dp),
-              colors = ButtonDefaults.buttonColors(
-                containerColor = VybeViolet
-              ),
-              modifier = Modifier.fillMaxWidth().testTag("diag_sync_now_button")
+            Box(
+              modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(bannerColor.copy(alpha = 0.15f))
+                .border(1.dp, bannerColor.copy(alpha = 0.4f), CircleShape),
+              contentAlignment = Alignment.Center
             ) {
               if (diagnostics.isSyncing) {
                 CircularProgressIndicator(
-                  modifier = Modifier.size(18.dp),
-                  color = Color.White,
+                  modifier = Modifier.size(22.dp),
+                  color = bannerColor,
                   strokeWidth = 2.dp
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Registering Token...")
               } else {
-                Icon(imageVector = Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Test & Sync Token Now")
+                Icon(
+                  imageVector = when {
+                    isRegistered -> Icons.Default.CheckCircle
+                    isPending -> Icons.Default.Schedule
+                    isFailed -> Icons.Default.Error
+                    else -> Icons.Default.Notifications
+                  },
+                  contentDescription = null,
+                  tint = bannerColor,
+                  modifier = Modifier.size(24.dp)
+                )
+              }
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+              Text(
+                text = statusText,
+                fontFamily = PlusJakartaSansFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+                color = bannerColor
+              )
+              Text(
+                text = if (diagnostics.lastRegistrationTimeMs > 0) {
+                  val fmt = SimpleDateFormat("MMM d, HH:mm:ss", Locale.getDefault())
+                  "Last attempt: ${fmt.format(Date(diagnostics.lastRegistrationTimeMs))}"
+                } else "No registration recorded in this session",
+                fontSize = 12.sp,
+                color = palette.textSecondary
+              )
+            }
+          }
+
+          if (!diagnostics.lastError.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Surface(
+              shape = RoundedCornerShape(VybeTokens.Radius.sm),
+              color = palette.danger.copy(alpha = 0.12f),
+              border = BorderStroke(1.dp, palette.danger.copy(alpha = 0.3f)),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Row(
+                modifier = Modifier.padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Warning,
+                  contentDescription = null,
+                  tint = palette.danger,
+                  modifier = Modifier.size(18.dp)
+                )
+                Text(
+                  text = diagnostics.lastError.orEmpty(),
+                  fontSize = 12.sp,
+                  color = palette.danger,
+                  fontFamily = FontFamily.Monospace
+                )
               }
             }
           }
+
+          Spacer(modifier = Modifier.height(14.dp))
+
+          VybePrimaryButton(
+            text = if (diagnostics.isSyncing) "Registering Token..." else "Test & Sync Token Now",
+            icon = Icons.Default.Sync,
+            isLoading = diagnostics.isSyncing,
+            enabled = !diagnostics.isSyncing,
+            onClick = { viewModel.retryDeviceTokenRegistration() },
+            modifier = Modifier.fillMaxWidth(),
+            testTag = "diag_sync_now_button"
+          )
         }
       }
 
@@ -359,28 +337,22 @@ fun NotificationDiagnosticScreen(viewModel: VybeViewModel) {
             horizontalArrangement = Arrangement.spacedBy(10.dp)
           ) {
             if (!osNotifEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-              Button(
+              VybePrimaryButton(
+                text = "Grant Permission",
                 onClick = { permLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) },
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
                 modifier = Modifier.weight(1f)
-              ) {
-                Text("Grant Permission", fontSize = 12.sp)
-              }
+              )
             }
 
-            OutlinedButton(
+            VybeSecondaryButton(
+              text = "System Settings",
               onClick = { VybeNotificationHelper.openSystemNotificationSettings(context) },
-              shape = RoundedCornerShape(10.dp),
               modifier = Modifier.weight(1f)
-            ) {
-              Text("System Settings", fontSize = 12.sp)
-            }
+            )
           }
         }
       }
 
-      // Spacer at bottom
       item {
         Spacer(modifier = Modifier.height(24.dp))
       }
@@ -394,36 +366,35 @@ private fun DiagnosticSectionCard(
   icon: ImageVector,
   content: @Composable ColumnScope.() -> Unit
 ) {
-  Card(
-    shape = RoundedCornerShape(16.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    modifier = Modifier.fillMaxWidth()
+  val palette = LocalVybePalette.current
+  VybeSurfaceCard(
+    modifier = Modifier.fillMaxWidth(),
+    contentPadding = PaddingValues(16.dp)
   ) {
-    Column(
-      modifier = Modifier.padding(16.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp)
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-      ) {
-        Icon(
-          imageVector = icon,
-          contentDescription = null,
-          tint = VybeViolet,
-          modifier = Modifier.size(20.dp)
-        )
-        Text(
-          text = title,
-          fontWeight = FontWeight.Bold,
-          fontSize = 15.sp
-        )
-      }
-
-      HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-      content()
+      Icon(
+        imageVector = icon,
+        contentDescription = null,
+        tint = palette.accent,
+        modifier = Modifier.size(20.dp)
+      )
+      Text(
+        text = title,
+        fontFamily = PlusJakartaSansFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 15.sp,
+        color = palette.textPrimary
+      )
     }
+
+    Spacer(modifier = Modifier.height(10.dp))
+    HorizontalDivider(color = palette.border)
+    Spacer(modifier = Modifier.height(10.dp))
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
   }
 }
 
@@ -434,6 +405,7 @@ private fun DiagnosticRow(
   isOk: Boolean,
   isMonospace: Boolean = false
 ) {
+  val palette = LocalVybePalette.current
   Row(
     modifier = Modifier.fillMaxWidth(),
     horizontalArrangement = Arrangement.SpaceBetween,
@@ -442,7 +414,7 @@ private fun DiagnosticRow(
     Text(
       text = label,
       fontSize = 13.sp,
-      color = MaterialTheme.colorScheme.onSurfaceVariant
+      color = palette.textSecondary
     )
 
     Row(
@@ -453,14 +425,14 @@ private fun DiagnosticRow(
         modifier = Modifier
           .size(8.dp)
           .clip(CircleShape)
-          .background(if (isOk) VybeOnlineGreen else VybeDanger)
+          .background(if (isOk) palette.success else palette.danger)
       )
       Text(
         text = value,
         fontSize = 12.sp,
         fontWeight = FontWeight.SemiBold,
-        fontFamily = if (isMonospace) FontFamily.Monospace else FontFamily.Default,
-        color = if (isOk) MaterialTheme.colorScheme.onSurface else VybeDanger
+        fontFamily = if (isMonospace) FontFamily.Monospace else InterFontFamily,
+        color = if (isOk) palette.textPrimary else palette.danger
       )
     }
   }

@@ -28,6 +28,8 @@ import {
 } from '../services/supabaseService';
 
 export type MainTab = 'FEED' | 'VYBES' | 'MOOD_ZONES' | 'EXPLORE' | 'INBOX' | 'CROSSED_PATHS' | 'COMMUNITY' | 'PROFILE';
+export type VybeAppMode = 'SOCIAL' | 'GROW';
+export type GrowTab = 'HOME' | 'CIRCLE' | 'PROJECTS' | 'OPPORTUNITIES' | 'PROFILE';
 
 export type ModalScreen = 
   | 'CREATE_POST'
@@ -68,7 +70,11 @@ interface VybeContextType {
   setCurrentUserMood: (mood: MoodType) => void;
   setCurrentUserPulse: (pulse: any) => void;
 
-  // Navigation
+  // Navigation & Experience Mode
+  appMode: VybeAppMode;
+  setAppMode: (mode: VybeAppMode) => void;
+  growTab: GrowTab;
+  setGrowTab: (tab: GrowTab) => void;
   selectedTab: MainTab;
   setSelectedTab: (tab: MainTab) => void;
   activeModal: ModalScreen | null;
@@ -196,6 +202,8 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [viewedProfileUser, setViewedProfileUser] = useState<User | null>(null);
   const [previousTabBeforeProfile, setPreviousTabBeforeProfile] = useState<MainTab>('FEED');
   const [isDbConnected, setIsDbConnected] = useState<boolean>(false);
+  const [appMode, setAppModeState] = useState<VybeAppMode>('SOCIAL');
+  const [growTab, setGrowTabState] = useState<GrowTab>('HOME');
   const [selectedTab, setSelectedTabState] = useState<MainTab>('FEED');
   const [activeModal, setActiveModal] = useState<ModalScreen | null>(null);
   const [selectedMoodFilter, setSelectedMoodFilter] = useState<MoodType | 'ALL'>('ALL');
@@ -294,19 +302,49 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSelectedTabState(previousTabBeforeProfile || 'FEED');
   };
 
-  // Theme Mode (persisted in localStorage & applied to documentElement)
+  // Theme Mode (persisted in localStorage & applied to documentElement, mode-aware default)
   const [themeMode, setThemeModeState] = useState<'dark' | 'light'>(() => {
     const saved = localStorage.getItem('vybe_theme_mode');
     return saved === 'light' ? 'light' : 'dark';
   });
 
+  const effectiveThemeMode: 'dark' | 'light' = appMode === 'GROW'
+    ? (localStorage.getItem('vybe_grow_theme_override') === 'dark' ? 'dark' : 'light')
+    : themeMode;
+
   useEffect(() => {
-    document.documentElement.dataset.theme = themeMode;
+    document.documentElement.dataset.mode = appMode === 'GROW' ? 'grow' : 'social';
+    document.documentElement.dataset.theme = effectiveThemeMode;
+    document.documentElement.classList.toggle('dark', effectiveThemeMode === 'dark');
+  }, [appMode, effectiveThemeMode]);
+
+  useEffect(() => {
     localStorage.setItem('vybe_theme_mode', themeMode);
   }, [themeMode]);
 
-  const setThemeMode = (mode: 'dark' | 'light') => setThemeModeState(mode);
-  const toggleThemeMode = () => setThemeModeState(prev => (prev === 'dark' ? 'light' : 'dark'));
+  const setAppMode = (mode: VybeAppMode) => {
+    setAppModeState(mode);
+  };
+
+  const setGrowTab = (tab: GrowTab) => {
+    setAppModeState('GROW');
+    if (tab === 'PROFILE') {
+      setViewedProfileUser(null);
+    }
+    setGrowTabState(tab);
+  };
+
+  const setThemeMode = (mode: 'dark' | 'light') => {
+    if (appMode === 'GROW') {
+      localStorage.setItem('vybe_grow_theme_override', mode);
+    }
+    setThemeModeState(mode);
+  };
+
+  const toggleThemeMode = () => {
+    const next = effectiveThemeMode === 'dark' ? 'light' : 'dark';
+    setThemeMode(next);
+  };
 
   // Shared Post Deep Link / Preview state
   const [sharedPostModalId, setSharedPostModalId] = useState<string | null>(() => {
@@ -1302,6 +1340,10 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       closeUserProfile,
       setCurrentUserMood,
       setCurrentUserPulse,
+      appMode,
+      setAppMode,
+      growTab,
+      setGrowTab,
       selectedTab,
       setSelectedTab,
       activeModal,
@@ -1333,7 +1375,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       hasMorePosts,
       loadMorePosts,
       isLoadingMorePosts,
-      themeMode,
+      themeMode: effectiveThemeMode,
       setThemeMode,
       toggleThemeMode,
       stories,

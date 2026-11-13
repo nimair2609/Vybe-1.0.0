@@ -18,10 +18,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ui.theme.VybeBrandCyan
-import com.example.ui.theme.VybeDanger
-import com.example.ui.theme.VybeOnlineGreen
-import com.example.ui.theme.VybeViolet
+import com.example.ui.theme.LocalVybePalette
+import com.example.ui.theme.PlusJakartaSansFontFamily
+import com.example.ui.theme.VybeTokens
 import com.example.util.ApkCompatibilityStatus
 import com.example.util.ApkInspectionReport
 import com.example.util.GitHubReleaseInfo
@@ -31,6 +30,7 @@ import java.io.File
 
 @Composable
 fun GitHubUpdateSectionCard(isOnline: Boolean) {
+  val palette = LocalVybePalette.current
   val context = LocalContext.current
   val coroutineScope = rememberCoroutineScope()
 
@@ -110,136 +110,148 @@ fun GitHubUpdateSectionCard(isOnline: Boolean) {
     }
   }
 
-  Card(
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    shape = RoundedCornerShape(18.dp),
-    border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.4f)),
+  VybeSurfaceCard(
+    borderColor = palette.accent.copy(alpha = 0.35f),
     modifier = Modifier
       .fillMaxWidth()
       .testTag("github_updater_card")
   ) {
-    Column(modifier = Modifier.padding(16.dp)) {
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-          imageVector = Icons.Default.SystemUpdate,
-          contentDescription = null,
-          tint = VybeViolet,
-          modifier = Modifier.size(26.dp)
-        )
-        Spacer(modifier = Modifier.width(10.dp))
-        Column {
-          Text("VYBE Software Update", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-          Text(
-            text = "Installed: v${GitHubUpdater.INSTALLED_VERSION} (build ${GitHubUpdater.INSTALLED_VERSION_CODE}) • Key $installedSig",
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-          )
-        }
-      }
-
-      Spacer(modifier = Modifier.height(14.dp))
-
-      OutlinedTextField(
-        value = githubRepoInput,
-        onValueChange = { githubRepoInput = it },
-        label = { Text("GitHub Release Repository (owner/repo)") },
-        placeholder = { Text(GitHubUpdater.DEFAULT_GITHUB_REPO) },
-        singleLine = true,
-        trailingIcon = {
-          if (!githubRepoInput.trim().equals(GitHubUpdater.DEFAULT_GITHUB_REPO, ignoreCase = true)) {
-            IconButton(
-              onClick = {
-                githubRepoInput = GitHubUpdater.resetSavedRepo(context)
-                updateResult = null
-                inspectionReport = null
-                downloadError = null
-              },
-              modifier = Modifier
-                .minimumInteractiveComponentSize()
-                .testTag("reset_github_repo_button")
-            ) {
-              Icon(
-                imageVector = Icons.Default.Restore,
-                contentDescription = "Reset to official repository"
-              )
-            }
-          }
-        },
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier
-          .fillMaxWidth()
-          .testTag("github_repo_input")
+    Row(verticalAlignment = Alignment.CenterVertically) {
+      Icon(
+        imageVector = Icons.Default.SystemUpdate,
+        contentDescription = null,
+        tint = palette.accent,
+        modifier = Modifier.size(26.dp)
       )
-
-      Spacer(modifier = Modifier.height(12.dp))
-
-      if (!isOnline) {
-        Surface(
-          color = VybeDanger.copy(alpha = 0.14f),
-          shape = RoundedCornerShape(10.dp),
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 10.dp)
-        ) {
-          Text(
-            text = "You are currently offline. Reconnect to the internet to check GitHub Releases.",
-            color = VybeDanger,
-            fontSize = 12.sp,
-            modifier = Modifier.padding(10.dp)
-          )
-        }
+      Spacer(modifier = Modifier.width(10.dp))
+      Column {
+        Text(
+          "VYBE Software Update",
+          fontFamily = PlusJakartaSansFontFamily,
+          fontWeight = FontWeight.Bold,
+          fontSize = 16.sp,
+          color = palette.textPrimary
+        )
+        Text(
+          text = "Installed: v${GitHubUpdater.INSTALLED_VERSION} (build ${GitHubUpdater.INSTALLED_VERSION_CODE}) • Key $installedSig",
+          fontSize = 11.sp,
+          color = palette.textSecondary
+        )
       }
+    }
 
-      Button(
-        onClick = {
-          isCheckingUpdate = true
-          updateResult = null
-          downloadError = null
-          inspectionReport = null
-          needsInstallPermissionPrompt = false
-          val normalized = GitHubUpdater.cleanRepoSlug(githubRepoInput)
-          if (normalized.contains("/")) {
-            githubRepoInput = normalized
-            GitHubUpdater.saveRepo(context, normalized)
+    Spacer(modifier = Modifier.height(14.dp))
+
+    OutlinedTextField(
+      value = githubRepoInput,
+      onValueChange = { githubRepoInput = it },
+      label = { Text("GitHub Release Repository (owner/repo)") },
+      placeholder = { Text(GitHubUpdater.DEFAULT_GITHUB_REPO) },
+      singleLine = true,
+      trailingIcon = {
+        if (!githubRepoInput.trim().equals(GitHubUpdater.DEFAULT_GITHUB_REPO, ignoreCase = true)) {
+          IconButton(
+            onClick = {
+              githubRepoInput = GitHubUpdater.resetSavedRepo(context)
+              updateResult = null
+              inspectionReport = null
+              downloadError = null
+            },
+            modifier = Modifier
+              .minimumInteractiveComponentSize()
+              .testTag("reset_github_repo_button")
+          ) {
+            Icon(
+              imageVector = Icons.Default.Restore,
+              contentDescription = "Reset to official repository",
+              tint = palette.textSecondary
+            )
           }
-          coroutineScope.launch {
-            val res = GitHubUpdater.checkForUpdates(githubRepoInput)
-            updateResult = res
-            isCheckingUpdate = false
-          }
-        },
-        enabled = !isCheckingUpdate && !isDownloadingApk && githubRepoInput.isNotBlank(),
-        colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-        shape = RoundedCornerShape(12.dp),
+        }
+      },
+      shape = RoundedCornerShape(VybeTokens.Radius.md),
+      colors = OutlinedTextFieldDefaults.colors(
+        focusedContainerColor = palette.elevated,
+        unfocusedContainerColor = palette.elevated,
+        focusedBorderColor = palette.accent,
+        unfocusedBorderColor = palette.border,
+        focusedTextColor = palette.textPrimary,
+        unfocusedTextColor = palette.textPrimary
+      ),
+      modifier = Modifier
+        .fillMaxWidth()
+        .testTag("github_repo_input")
+    )
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    if (!isOnline) {
+      Surface(
+        color = palette.danger.copy(alpha = 0.14f),
+        shape = RoundedCornerShape(VybeTokens.Radius.sm),
         modifier = Modifier
           .fillMaxWidth()
-          .heightIn(min = 48.dp)
-          .testTag("check_github_updates_button")
+          .padding(bottom = 10.dp)
       ) {
-        if (isCheckingUpdate) {
-          CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-          Spacer(modifier = Modifier.width(8.dp))
-          Text("Checking GitHub Releases...", fontSize = 13.sp, color = Color.White)
-        } else {
-          Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.White)
-          Spacer(modifier = Modifier.width(8.dp))
-          Text("Check for Updates", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
-        }
+        Text(
+          text = "You are currently offline. Reconnect to the internet to check GitHub Releases.",
+          color = palette.danger,
+          fontSize = 12.sp,
+          modifier = Modifier.padding(10.dp)
+        )
       }
+    }
 
-      updateResult?.let { res ->
-        Spacer(modifier = Modifier.height(14.dp))
-        res.onSuccess { release ->
-          val highlightColor = when {
-            release.isNewerThanInstalled -> VybeOnlineGreen
-            release.isOlderThanInstalled -> VybeViolet
-            else -> VybeBrandCyan
-          }
-          val statusTitle = when {
-            release.isNewerThanInstalled -> "Update Available: ${release.tagName}"
-            release.isOlderThanInstalled -> "Installed App is Newer (v${GitHubUpdater.INSTALLED_VERSION} > ${release.tagName})"
-            else -> "Up to Date (${release.tagName})"
-          }
+    Button(
+      onClick = {
+        isCheckingUpdate = true
+        updateResult = null
+        downloadError = null
+        inspectionReport = null
+        needsInstallPermissionPrompt = false
+        val normalized = GitHubUpdater.cleanRepoSlug(githubRepoInput)
+        if (normalized.contains("/")) {
+          githubRepoInput = normalized
+          GitHubUpdater.saveRepo(context, normalized)
+        }
+        coroutineScope.launch {
+          val res = GitHubUpdater.checkForUpdates(githubRepoInput)
+          updateResult = res
+          isCheckingUpdate = false
+        }
+      },
+      enabled = !isCheckingUpdate && !isDownloadingApk && githubRepoInput.isNotBlank(),
+      colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
+      shape = RoundedCornerShape(VybeTokens.Radius.md),
+      modifier = Modifier
+        .fillMaxWidth()
+        .heightIn(min = 48.dp)
+        .testTag("check_github_updates_button")
+    ) {
+      if (isCheckingUpdate) {
+        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+        Spacer(modifier = Modifier.width(8.dp))
+        Text("Checking GitHub Releases...", fontSize = 13.sp, color = Color.White)
+      } else {
+        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.White)
+        Spacer(modifier = Modifier.width(8.dp))
+        Text("Check for Updates", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+      }
+    }
+
+    updateResult?.let { res ->
+      Spacer(modifier = Modifier.height(14.dp))
+      res.onSuccess { release ->
+        val highlightColor = when {
+          release.isNewerThanInstalled -> palette.success
+          release.isOlderThanInstalled -> palette.accent
+          else -> palette.accentSecondary
+        }
+        val statusTitle = when {
+          release.isNewerThanInstalled -> "Update Available: ${release.tagName}"
+          release.isOlderThanInstalled -> "Installed App is Newer (v${GitHubUpdater.INSTALLED_VERSION} > ${release.tagName})"
+          else -> "Up to Date (${release.tagName})"
+        }
 
           Surface(
             color = highlightColor.copy(alpha = 0.12f),
@@ -287,15 +299,15 @@ fun GitHubUpdateSectionCard(isOnline: Boolean) {
 
               if (release.assetStatusMessage != null) {
                 Surface(
-                  color = if (release.isOlderThanInstalled) VybeBrandCyan.copy(alpha = 0.12f) else VybeDanger.copy(alpha = 0.12f),
-                  shape = RoundedCornerShape(8.dp),
+                  color = if (release.isOlderThanInstalled) palette.accentSecondary.copy(alpha = 0.12f) else palette.danger.copy(alpha = 0.12f),
+                  shape = RoundedCornerShape(VybeTokens.Radius.xs),
                   modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 8.dp)
                 ) {
                   Text(
                     text = release.assetStatusMessage,
-                    color = if (release.isOlderThanInstalled) MaterialTheme.colorScheme.onSurface else VybeDanger,
+                    color = if (release.isOlderThanInstalled) palette.textPrimary else palette.danger,
                     fontSize = 11.sp,
                     lineHeight = 16.sp,
                     modifier = Modifier.padding(10.dp)
@@ -307,7 +319,7 @@ fun GitHubUpdateSectionCard(isOnline: Boolean) {
                 Text(
                   text = release.body.take(240) + if (release.body.length > 240) "..." else "",
                   fontSize = 11.sp,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  color = palette.textSecondary,
                   modifier = Modifier.padding(top = 6.dp)
                 )
               }
@@ -328,7 +340,7 @@ fun GitHubUpdateSectionCard(isOnline: Boolean) {
                   Text(
                     text = "Downloading fresh APK... $pct% (${GitHubUpdater.formatFileSize(downloadedBytes)} / ${GitHubUpdater.formatFileSize(totalBytes)})",
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = palette.textSecondary
                   )
                 } else {
                   LinearProgressIndicator(color = highlightColor, modifier = Modifier.fillMaxWidth())
@@ -336,22 +348,22 @@ fun GitHubUpdateSectionCard(isOnline: Boolean) {
                   Text(
                     text = "Downloading fresh APK... ${GitHubUpdater.formatFileSize(downloadedBytes)}",
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = palette.textSecondary
                   )
                 }
               }
 
               downloadError?.let { dlErr ->
                 Surface(
-                  color = VybeDanger.copy(alpha = 0.14f),
-                  shape = RoundedCornerShape(8.dp),
+                  color = palette.danger.copy(alpha = 0.14f),
+                  shape = RoundedCornerShape(VybeTokens.Radius.xs),
                   modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 8.dp)
                 ) {
                   Text(
                     text = dlErr,
-                    color = VybeDanger,
+                    color = palette.danger,
                     fontSize = 11.sp,
                     modifier = Modifier.padding(10.dp)
                   )
@@ -360,8 +372,8 @@ fun GitHubUpdateSectionCard(isOnline: Boolean) {
 
               if (needsInstallPermissionPrompt && pendingInstallerFile != null) {
                 Surface(
-                  color = VybeBrandCyan.copy(alpha = 0.14f),
-                  shape = RoundedCornerShape(8.dp),
+                  color = palette.accentSecondary.copy(alpha = 0.14f),
+                  shape = RoundedCornerShape(VybeTokens.Radius.xs),
                   modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 8.dp)
@@ -370,7 +382,8 @@ fun GitHubUpdateSectionCard(isOnline: Boolean) {
                     Text(
                       text = "Enable 'Allow from this source' in Android Settings so VYBE can launch the downloaded update.",
                       fontSize = 11.sp,
-                      fontWeight = FontWeight.Medium
+                      fontWeight = FontWeight.Medium,
+                      color = palette.textPrimary
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     OutlinedButton(
@@ -388,10 +401,10 @@ fun GitHubUpdateSectionCard(isOnline: Boolean) {
               inspectionReport?.let { report ->
                 Spacer(modifier = Modifier.height(10.dp))
                 val isCleanMatch = report.status == ApkCompatibilityStatus.COMPATIBLE_UPDATE
-                val bannerColor = if (isCleanMatch) VybeOnlineGreen else VybeDanger
+                val bannerColor = if (isCleanMatch) palette.success else palette.danger
                 Surface(
                   color = bannerColor.copy(alpha = 0.13f),
-                  shape = RoundedCornerShape(10.dp),
+                  shape = RoundedCornerShape(VybeTokens.Radius.sm),
                   border = BorderStroke(1.dp, bannerColor.copy(alpha = 0.45f)),
                   modifier = Modifier.fillMaxWidth()
                 ) {
@@ -413,15 +426,15 @@ fun GitHubUpdateSectionCard(isOnline: Boolean) {
                       text = report.userSummary,
                       fontSize = 11.sp,
                       lineHeight = 16.sp,
-                      color = MaterialTheme.colorScheme.onSurface
+                      color = palette.textPrimary
                     )
 
                     if (report.status == ApkCompatibilityStatus.SIGNATURE_MISMATCH) {
                       Spacer(modifier = Modifier.height(10.dp))
                       Button(
                         onClick = { GitHubUpdater.openAppInfoForCleanInstall(context) },
-                        colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
+                        shape = RoundedCornerShape(VybeTokens.Radius.sm),
                         modifier = Modifier
                           .fillMaxWidth()
                           .heightIn(min = 48.dp)
@@ -543,21 +556,21 @@ fun GitHubUpdateSectionCard(isOnline: Boolean) {
           }
         }.onFailure { err ->
           Surface(
-            color = VybeDanger.copy(alpha = 0.14f),
-            shape = RoundedCornerShape(12.dp),
-            border = BorderStroke(1.dp, VybeDanger.copy(alpha = 0.4f)),
+            color = palette.danger.copy(alpha = 0.14f),
+            shape = RoundedCornerShape(VybeTokens.Radius.md),
+            border = BorderStroke(1.dp, palette.danger.copy(alpha = 0.4f)),
             modifier = Modifier.fillMaxWidth()
           ) {
             Column(modifier = Modifier.padding(12.dp)) {
               Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = VybeDanger, modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = palette.danger, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Update Check Status", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = VybeDanger)
+                Text("Update Check Status", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = palette.danger)
               }
               Text(
                 text = err.message ?: "Could not verify release status.",
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = palette.textPrimary,
                 modifier = Modifier.padding(top = 6.dp)
               )
             }
@@ -566,4 +579,3 @@ fun GitHubUpdateSectionCard(isOnline: Boolean) {
       }
     }
   }
-}

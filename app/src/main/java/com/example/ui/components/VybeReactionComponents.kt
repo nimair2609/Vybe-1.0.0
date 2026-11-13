@@ -150,9 +150,9 @@ fun VybeReactionSelector(
   modifier: Modifier = Modifier
 ) {
   Surface(
-    color = Color(0xFF0C1020).copy(alpha = 0.97f),
-    shape = RoundedCornerShape(32.dp),
-    border = BorderStroke(1.dp, Color(0xFF232D48)),
+    color = SocialDarkSurface.copy(alpha = 0.97f),
+    shape = RoundedCornerShape(VybeTokens.Radius.pill),
+    border = BorderStroke(1.dp, SocialDarkBorder),
     shadowElevation = 16.dp,
     modifier = modifier
       .padding(horizontal = 4.dp, vertical = 2.dp)
@@ -323,9 +323,9 @@ private fun VybeReactionGestureButtonInternal(
         )
       ) {
         Surface(
-          color = Color(0xFF0C1020).copy(alpha = 0.97f),
-          shape = RoundedCornerShape(28.dp),
-          border = BorderStroke(1.dp, Color(0xFF334155)),
+          color = SocialDarkSurface.copy(alpha = 0.97f),
+          shape = RoundedCornerShape(VybeTokens.Radius.pill),
+          border = BorderStroke(1.dp, SocialDarkBorder),
           shadowElevation = 18.dp,
           modifier = Modifier.testTag("${testTagPrefix}_reaction_gesture_bar")
         ) {
@@ -539,8 +539,8 @@ fun ReelReactionBreakdownSheet(
 ) {
   ModalBottomSheet(
     onDismissRequest = onDismiss,
-    containerColor = Color(0xFF0F121E),
-    contentColor = Color.White,
+    containerColor = SocialDarkSurface,
+    contentColor = SocialDarkTextPrimary,
     shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
   ) {
     Column(
@@ -558,18 +558,19 @@ fun ReelReactionBreakdownSheet(
         Column {
           Text(
             text = "Reel Reactions",
+            fontFamily = PlusJakartaSansFontFamily,
             fontSize = 18.sp,
             fontWeight = FontWeight.ExtraBold,
-            color = Color.White
+            color = SocialDarkTextPrimary
           )
           Text(
             text = "$totalCount total reactions",
             fontSize = 12.sp,
-            color = Color.White.copy(alpha = 0.7f)
+            color = SocialDarkTextSecondary
           )
         }
         IconButton(onClick = onDismiss) {
-          Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+          Icon(Icons.Default.Close, contentDescription = "Close", tint = SocialDarkTextPrimary)
         }
       }
 
@@ -579,8 +580,9 @@ fun ReelReactionBreakdownSheet(
       Row(
         modifier = Modifier
           .fillMaxWidth()
-          .clip(RoundedCornerShape(16.dp))
-          .background(Color.White.copy(alpha = 0.06f))
+          .clip(RoundedCornerShape(VybeTokens.Radius.lg))
+          .background(SocialDarkElevated)
+          .border(1.dp, SocialDarkBorder, RoundedCornerShape(VybeTokens.Radius.lg))
           .padding(8.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically

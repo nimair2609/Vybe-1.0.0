@@ -20,14 +20,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ui.theme.VybeBrandCyan
-import com.example.ui.theme.VybeDanger
-import com.example.ui.theme.VybeOnlineGreen
-import com.example.ui.theme.VybeViolet
+import com.example.ui.theme.LocalVybePalette
+import com.example.ui.theme.PlusJakartaSansFontFamily
+import com.example.ui.theme.VybeTokens
 import com.example.util.GitHubReleaseInfo
-import com.example.util.GitHubUpdater
-import kotlinx.coroutines.launch
-import java.util.Locale
 
 @Composable
 fun InAppUpdateBanner(
@@ -36,6 +32,7 @@ fun InAppUpdateBanner(
   onDismiss: () -> Unit,
   modifier: Modifier = Modifier
 ) {
+  val palette = LocalVybePalette.current
   AnimatedVisibility(
     visible = true,
     enter = fadeIn(),
@@ -43,9 +40,9 @@ fun InAppUpdateBanner(
     modifier = modifier
   ) {
     Surface(
-      color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f),
-      shape = RoundedCornerShape(14.dp),
-      border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.5f)),
+      color = palette.card.copy(alpha = 0.96f),
+      shape = RoundedCornerShape(VybeTokens.Radius.md),
+      border = BorderStroke(1.dp, palette.accent.copy(alpha = 0.45f)),
       tonalElevation = 6.dp,
       modifier = Modifier
         .fillMaxWidth()
@@ -59,14 +56,14 @@ fun InAppUpdateBanner(
         Box(
           modifier = Modifier
             .size(38.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(VybeViolet.copy(alpha = 0.2f)),
+            .clip(RoundedCornerShape(VybeTokens.Radius.sm))
+            .background(palette.accent.copy(alpha = 0.16f)),
           contentAlignment = Alignment.Center
         ) {
           Icon(
             imageVector = Icons.Default.SystemUpdate,
             contentDescription = null,
-            tint = VybeViolet,
+            tint = palette.accent,
             modifier = Modifier.size(22.dp)
           )
         }
@@ -77,20 +74,21 @@ fun InAppUpdateBanner(
           Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
               text = "Update Available",
+              fontFamily = PlusJakartaSansFontFamily,
               fontWeight = FontWeight.Bold,
               fontSize = 13.sp,
-              color = MaterialTheme.colorScheme.onSurface
+              color = palette.textPrimary
             )
             Spacer(modifier = Modifier.width(6.dp))
             Surface(
-              color = VybeOnlineGreen.copy(alpha = 0.2f),
-              shape = RoundedCornerShape(6.dp)
+              color = palette.success.copy(alpha = 0.18f),
+              shape = RoundedCornerShape(VybeTokens.Radius.xs)
             ) {
               Text(
                 text = release.tagName,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
-                color = VybeOnlineGreen,
+                color = palette.success,
                 modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
               )
             }
@@ -98,7 +96,7 @@ fun InAppUpdateBanner(
           Text(
             text = if (release.name.isNotBlank() && release.name != release.tagName) release.name else "In-place upgrade with zero data loss",
             fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = palette.textSecondary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
           )
@@ -108,12 +106,12 @@ fun InAppUpdateBanner(
 
         Button(
           onClick = onUpdateClick,
-          colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-          shape = RoundedCornerShape(8.dp),
+          colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
+          shape = RoundedCornerShape(VybeTokens.Radius.sm),
           contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
           modifier = Modifier.testTag("banner_update_button")
         ) {
-          Text("Update", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+          Text("Update", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
         }
 
         IconButton(
@@ -123,7 +121,7 @@ fun InAppUpdateBanner(
           Icon(
             Icons.Default.Close,
             contentDescription = "Dismiss",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = palette.textSecondary,
             modifier = Modifier.size(16.dp)
           )
         }
@@ -137,35 +135,45 @@ fun UpdateInstallPermissionDialog(
   onGrantPermission: () -> Unit,
   onDismiss: () -> Unit
 ) {
+  val palette = LocalVybePalette.current
   AlertDialog(
     onDismissRequest = onDismiss,
+    containerColor = palette.card,
+    titleContentColor = palette.textPrimary,
+    textContentColor = palette.textSecondary,
+    shape = RoundedCornerShape(VybeTokens.Radius.xl),
     icon = {
-      Icon(Icons.Default.Security, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(32.dp))
+      Icon(Icons.Default.Security, contentDescription = null, tint = palette.accent, modifier = Modifier.size(32.dp))
     },
     title = {
-      Text("Allow Seamless Updates", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+      Text(
+        "Allow Seamless Updates",
+        fontFamily = PlusJakartaSansFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 18.sp
+      )
     },
     text = {
       Text(
         text = "To install updates without reinstalling and without losing your login session or stored data, Android requires you to allow VYBE to install unknown apps.\n\nTap 'Allow Permission' to open Settings, switch on 'Allow from this source', and return to complete the update.",
         fontSize = 13.sp,
         lineHeight = 18.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
+        color = palette.textSecondary
       )
     },
     confirmButton = {
       Button(
         onClick = onGrantPermission,
-        colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-        shape = RoundedCornerShape(8.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
+        shape = RoundedCornerShape(VybeTokens.Radius.sm),
         modifier = Modifier.testTag("grant_install_permission_button")
       ) {
-        Text("Allow Permission", fontWeight = FontWeight.Bold)
+        Text("Allow Permission", fontWeight = FontWeight.Bold, color = Color.White)
       }
     },
     dismissButton = {
       TextButton(onClick = onDismiss) {
-        Text("Cancel")
+        Text("Cancel", color = palette.textSecondary)
       }
     }
   )
@@ -175,20 +183,30 @@ fun UpdateInstallPermissionDialog(
 fun DeveloperGitReleaseGuideDialog(
   onDismiss: () -> Unit
 ) {
+  val palette = LocalVybePalette.current
   AlertDialog(
     onDismissRequest = onDismiss,
+    containerColor = palette.card,
+    titleContentColor = palette.textPrimary,
+    textContentColor = palette.textSecondary,
+    shape = RoundedCornerShape(VybeTokens.Radius.xl),
     icon = {
-      Icon(Icons.Default.CloudUpload, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(32.dp))
+      Icon(Icons.Default.CloudUpload, contentDescription = null, tint = palette.accentSecondary, modifier = Modifier.size(32.dp))
     },
     title = {
-      Text("How Git Releases Update Users", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+      Text(
+        "How Git Releases Update Users",
+        fontFamily = PlusJakartaSansFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 16.sp
+      )
     },
     text = {
       Column(modifier = Modifier.padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
           text = "When you publish a new version on GitHub, all installed users receive an in-app update prompt without ever needing to uninstall:\n",
           fontSize = 12.sp,
-          color = MaterialTheme.colorScheme.onSurface
+          color = palette.textPrimary
         )
 
         StepRow(step = "1", title = "Bump Version & Build APK", desc = "Increment versionCode / versionName in build.gradle.kts and run 'gradle assembleDebug' (or Export APK in AI Studio).")
@@ -200,10 +218,10 @@ fun DeveloperGitReleaseGuideDialog(
     confirmButton = {
       Button(
         onClick = onDismiss,
-        colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-        shape = RoundedCornerShape(8.dp)
+        colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
+        shape = RoundedCornerShape(VybeTokens.Radius.sm)
       ) {
-        Text("Got It")
+        Text("Got It", color = Color.White)
       }
     }
   )
@@ -211,20 +229,21 @@ fun DeveloperGitReleaseGuideDialog(
 
 @Composable
 private fun StepRow(step: String, title: String, desc: String) {
+  val palette = LocalVybePalette.current
   Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
     Surface(
-      color = VybeViolet.copy(alpha = 0.2f),
-      shape = RoundedCornerShape(6.dp),
+      color = palette.accent.copy(alpha = 0.16f),
+      shape = RoundedCornerShape(VybeTokens.Radius.xs),
       modifier = Modifier.size(22.dp)
     ) {
       Box(contentAlignment = Alignment.Center) {
-        Text(step, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = VybeViolet)
+        Text(step, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = palette.accent)
       }
     }
     Spacer(modifier = Modifier.width(10.dp))
     Column {
-      Text(title, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
-      Text(desc, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      Text(title, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = palette.textPrimary)
+      Text(desc, fontSize = 11.sp, color = palette.textSecondary)
     }
   }
 }

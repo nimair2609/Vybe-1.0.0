@@ -1,16 +1,24 @@
 import React from 'react';
-import { Sparkles, Filter, Plus, Flame, Clock, RefreshCw } from 'lucide-react';
+import { Sparkles, PlaySquare, RefreshCw } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
 import { StoryCarousel } from '../components/StoryCarousel';
 import { PostCard } from '../components/PostCard';
 import { FindYourVybeSection } from '../components/FindYourVybeSection';
+import { VybeEmptyState } from '../components/VybeDesignSystem';
 import { MOOD_DEFINITIONS, MoodType } from '../types';
 
 export const FeedView: React.FC = () => {
-  const { 
-    posts, selectedMoodFilter, setSelectedMoodFilter, 
-    openModal, hasAvailableUpdate, inAppNotificationBanner, 
-    dismissBanner, hasMorePosts, loadMorePosts, isLoadingMorePosts 
+  const {
+    posts,
+    selectedMoodFilter,
+    setSelectedMoodFilter,
+    setSelectedTab,
+    openModal,
+    inAppNotificationBanner,
+    dismissBanner,
+    hasMorePosts,
+    loadMorePosts,
+    isLoadingMorePosts
   } = useVybe();
 
   const filteredPosts = posts.filter(post => {
@@ -22,11 +30,10 @@ export const FeedView: React.FC = () => {
   });
 
   return (
-    <div className="w-full pb-24">
-      
-      {/* Update Announcement Banner if present */}
+    <div className="w-full pb-28">
+      {/* Update Banner */}
       {inAppNotificationBanner && (
-        <div className="bg-gradient-to-r from-[#8B5CF6]/90 to-[#00C6FF]/90 text-white px-4 py-2.5 flex items-center justify-between text-xs shadow-lg animate-fade-in">
+        <div className="bg-[var(--vybe-accent)] text-white keep-white px-4 py-2.5 flex items-center justify-between text-xs shadow-sm">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 shrink-0" />
             <span className="font-semibold">{inAppNotificationBanner}</span>
@@ -34,13 +41,13 @@ export const FeedView: React.FC = () => {
           <div className="flex items-center gap-2">
             <button
               onClick={() => openModal('GITHUB_UPDATES')}
-              className="px-2.5 py-1 bg-black/40 hover:bg-black/60 rounded-lg text-white font-bold text-[11px] transition-colors"
+              className="px-2.5 py-1 bg-black/25 hover:bg-black/40 rounded-lg text-white keep-white font-bold text-[11px] transition-colors"
             >
-              View Update
+              View
             </button>
             <button
               onClick={dismissBanner}
-              className="p-1 hover:bg-black/20 rounded-md text-white/80"
+              className="p-1 hover:bg-black/20 rounded-md text-white/85 keep-white"
             >
               ✕
             </button>
@@ -51,18 +58,26 @@ export const FeedView: React.FC = () => {
       {/* Stories Carousel */}
       <StoryCarousel />
 
-      {/* Mood Filter Pill Bar */}
-      <div className="py-2.5 px-4 bg-[#060714]/80 backdrop-blur sticky top-[57px] z-30 border-b border-[#262E4A]/40 overflow-x-auto no-scrollbar">
-        <div className="flex items-center gap-2 min-w-max">
+      {/* Mood + Reels Filter Pill Bar */}
+      <div className="py-2.5 px-4 bg-[var(--vybe-nav-bg)] backdrop-blur-md sticky top-[57px] z-30 border-b border-[var(--vybe-border)] overflow-x-auto no-scrollbar transition-colors">
+        <div className="max-w-xl mx-auto flex items-center gap-2 min-w-max">
           <button
             onClick={() => setSelectedMoodFilter('ALL')}
-            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+            className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors ${
               selectedMoodFilter === 'ALL'
-                ? 'bg-gradient-to-r from-[#00C6FF] to-[#8B5CF6] text-white shadow-md shadow-[#00C6FF]/20'
-                : 'bg-[#101322] border border-[#262E4A] text-gray-400 hover:text-white'
+                ? 'bg-[var(--vybe-accent)] text-white keep-white'
+                : 'bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)]'
             }`}
           >
-            All Vibes
+            For You
+          </button>
+
+          <button
+            onClick={() => setSelectedTab('VYBES')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] text-[var(--vybe-text)] hover:border-[var(--vybe-accent)] transition-colors"
+          >
+            <PlaySquare className="w-3.5 h-3.5 text-[var(--vybe-accent)]" />
+            <span>Reels</span>
           </button>
 
           {(Object.keys(MOOD_DEFINITIONS) as MoodType[]).map(m => {
@@ -72,10 +87,10 @@ export const FeedView: React.FC = () => {
               <button
                 key={m}
                 onClick={() => setSelectedMoodFilter(m)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
                   isSelected
-                    ? `bg-gradient-to-r ${config.gradient} text-white shadow-md`
-                    : 'bg-[#101322] border border-[#262E4A] text-gray-400 hover:text-white'
+                    ? 'bg-[var(--vybe-accent)] text-white keep-white'
+                    : 'bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)]'
                 }`}
               >
                 <span>{config.emoji}</span>
@@ -86,41 +101,35 @@ export const FeedView: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Stream Container */}
-      <main className="max-w-xl mx-auto px-4 py-4 space-y-5">
+      {/* Main Feed Column */}
+      <main className="max-w-xl mx-auto px-4 py-4 space-y-4">
         <FindYourVybeSection />
+
         {filteredPosts.length === 0 ? (
-          <div className="p-8 text-center bg-[#101322] border border-[#262E4A] rounded-2xl">
-            <Sparkles className="w-8 h-8 text-[#00C6FF] mx-auto mb-2 opacity-80" />
-            <h3 className="font-bold text-white text-base">No posts in this mood yet</h3>
-            <p className="text-xs text-gray-400 mt-1 max-w-xs mx-auto">
-              Be the first to share your thoughts, photos or acoustic music in the {selectedMoodFilter} zone!
-            </p>
-            <button
-              onClick={() => openModal('CREATE_POST')}
-              className="mt-4 px-4 py-2 bg-gradient-to-r from-[#00C6FF] to-[#8B5CF6] text-white font-bold text-xs rounded-xl shadow-lg"
-            >
-              Post a Vibe
-            </button>
-          </div>
+          <VybeEmptyState
+            icon={Sparkles}
+            title="No posts in this vibe yet"
+            subtitle={`Share a photo, thought, or track in the ${selectedMoodFilter} feed.`}
+            actionLabel="Create Post"
+            onAction={() => openModal('CREATE_POST')}
+          />
         ) : (
           <>
             {filteredPosts.map(post => (
               <PostCard key={post.id} post={post} />
             ))}
 
-            {/* Pagination Controls */}
             {hasMorePosts ? (
-              <div className="pt-4 pb-2 text-center">
+              <div className="pt-3 pb-2 text-center">
                 <button
                   onClick={() => loadMorePosts()}
                   disabled={isLoadingMorePosts}
-                  className="px-6 py-2.5 rounded-full bg-[#101322] border border-[#262E4A] hover:border-[#8B5CF6] text-xs font-semibold text-gray-300 hover:text-white transition-all shadow-md disabled:opacity-50 flex items-center gap-2 mx-auto"
+                  className="px-6 py-2.5 rounded-full bg-[var(--vybe-surface)] border border-[var(--vybe-border)] hover:border-[var(--vybe-accent)] text-xs font-semibold text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)] transition-colors disabled:opacity-50 inline-flex items-center gap-2"
                 >
                   {isLoadingMorePosts ? (
                     <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#00C6FF]" />
-                      <span>Loading more vibes...</span>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-[var(--vybe-accent)]" />
+                      <span>Loading...</span>
                     </>
                   ) : (
                     <span>Load More Posts</span>
@@ -128,14 +137,13 @@ export const FeedView: React.FC = () => {
                 </button>
               </div>
             ) : (
-              <div className="pt-6 pb-2 text-center text-xs text-gray-500 font-mono">
-                ✦ You're all caught up with the live frequency ✦
+              <div className="pt-4 pb-2 text-center text-xs text-[var(--vybe-text-muted)]">
+                You're all caught up
               </div>
             )}
           </>
         )}
       </main>
-
     </div>
   );
 };

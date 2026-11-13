@@ -709,20 +709,26 @@ export const AdminApp: React.FC = () => {
                     <h4 className="text-xs font-bold uppercase text-gray-300">Pending Verification Applications</h4>
                     <span className="text-xs text-[#00F0FF]">{verificationQueue.length} pending</span>
                   </div>
-                  {verificationQueue.slice(0, 3).map(app => (
-                    <div key={app.id} className="p-3 rounded-xl bg-[#070A14] border border-[#1F2D4A] flex items-center justify-between text-xs">
-                      <div>
-                        <div className="font-bold text-white">@{app.username}</div>
-                        <div className="text-[11px] text-gray-400">{app.category}</div>
-                      </div>
-                      <button
-                        onClick={() => setActiveTab('verifications')}
-                        className="px-2.5 py-1 rounded bg-[#1F2D4A] hover:bg-[#00F0FF] hover:text-black font-semibold text-[11px] transition-all"
-                      >
-                        Review
-                      </button>
+                  {verificationQueue.length === 0 ? (
+                    <div className="p-4 rounded-xl bg-[#070A14] border border-[#1F2D4A] text-xs text-gray-500 text-center">
+                      No pending verification applications in database.
                     </div>
-                  ))}
+                  ) : (
+                    verificationQueue.slice(0, 3).map(app => (
+                      <div key={app.id} className="p-3 rounded-xl bg-[#070A14] border border-[#1F2D4A] flex items-center justify-between text-xs">
+                        <div>
+                          <div className="font-bold text-white">@{app.username}</div>
+                          <div className="text-[11px] text-gray-400">{app.category}</div>
+                        </div>
+                        <button
+                          onClick={() => setActiveTab('verifications')}
+                          className="px-2.5 py-1 rounded bg-[#1F2D4A] hover:bg-[#00F0FF] hover:text-black font-semibold text-[11px] transition-all"
+                        >
+                          Review
+                        </button>
+                      </div>
+                    ))
+                  )}
                 </div>
 
                 {/* Recent Audit Logs */}
@@ -731,15 +737,21 @@ export const AdminApp: React.FC = () => {
                     <h4 className="text-xs font-bold uppercase text-gray-300">Recent Admin Activity</h4>
                     <span className="text-xs text-gray-500 font-mono">Real-time log</span>
                   </div>
-                  {auditLogs.slice(0, 3).map(log => (
-                    <div key={log.id} className="p-3 rounded-xl bg-[#070A14] border border-[#1F2D4A] text-xs">
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="font-bold text-[#00F0FF] font-mono">{log.action}</span>
-                        <span className="text-[10px] text-gray-500">{log.time}</span>
-                      </div>
-                      <p className="text-gray-300 text-[11px]">{log.details}</p>
+                  {auditLogs.length === 0 ? (
+                    <div className="p-4 rounded-xl bg-[#070A14] border border-[#1F2D4A] text-xs text-gray-500 text-center">
+                      No admin audit logs recorded yet.
                     </div>
-                  ))}
+                  ) : (
+                    auditLogs.slice(0, 3).map(log => (
+                      <div key={log.id} className="p-3 rounded-xl bg-[#070A14] border border-[#1F2D4A] text-xs">
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="font-bold text-[#00F0FF] font-mono">{log.action}</span>
+                          <span className="text-[10px] text-gray-500">{log.time}</span>
+                        </div>
+                        <p className="text-gray-300 text-[11px]">{log.details}</p>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </div>
@@ -777,7 +789,14 @@ export const AdminApp: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#1F2D4A]">
-                      {filteredUsers.map(u => (
+                      {filteredUsers.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="py-8 px-4 text-center text-gray-500">
+                            No user profiles found matching current filters.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredUsers.map(u => (
                         <tr key={u.id} className="hover:bg-[#151F38] transition-colors">
                           <td className="py-3.5 px-4 flex items-center gap-3">
                             <img
@@ -829,7 +848,8 @@ export const AdminApp: React.FC = () => {
                             </button>
                           </td>
                         </tr>
-                      ))}
+                      ))
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -893,6 +913,13 @@ export const AdminApp: React.FC = () => {
           {activeTab === 'content' && (
             <div className="space-y-4 animate-fade-in">
               <h3 className="text-sm font-bold text-white">Live Published Content Feed ({posts.length} posts)</h3>
+              {posts.length === 0 ? (
+                <div className="p-12 text-center rounded-2xl bg-[#0F1629] border border-[#1F2D4A]">
+                  <FileText className="w-10 h-10 text-gray-500 mx-auto mb-2 opacity-80" />
+                  <h4 className="text-sm font-bold text-white">No Published Posts</h4>
+                  <p className="text-xs text-gray-400 mt-1">There are currently no posts stored in Supabase.</p>
+                </div>
+              ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {posts.map(post => (
                   <div key={post.id} className="p-4 rounded-2xl bg-[#0F1629] border border-[#1F2D4A] space-y-3">
@@ -936,6 +963,7 @@ export const AdminApp: React.FC = () => {
                   </div>
                 ))}
               </div>
+              )}
             </div>
           )}
 
@@ -1210,7 +1238,12 @@ export const AdminApp: React.FC = () => {
             <div className="space-y-4 animate-fade-in">
               <h3 className="text-sm font-bold text-white">Administrator Audit Trail & Security Events</h3>
               <div className="rounded-2xl bg-[#0F1629] border border-[#1F2D4A] divide-y divide-[#1F2D4A]">
-                {auditLogs.map(log => (
+                {auditLogs.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-gray-500">
+                    No administrator audit events recorded in database.
+                  </div>
+                ) : (
+                  auditLogs.map(log => (
                   <div key={log.id} className="p-4 flex items-start justify-between text-xs">
                     <div>
                       <div className="flex items-center gap-2 mb-1">
@@ -1222,7 +1255,8 @@ export const AdminApp: React.FC = () => {
                     </div>
                     <span className="text-[10px] text-gray-500 font-mono shrink-0">{log.time}</span>
                   </div>
-                ))}
+                ))
+                )}
               </div>
             </div>
           )}

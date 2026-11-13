@@ -5,16 +5,13 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,9 +26,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.data.model.BusinessVerificationStatus
-import com.example.data.model.VybeShop
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VybeAvatar
+import com.example.ui.components.VybeEmptyState
+import com.example.ui.components.VybeSecondaryButton
+import com.example.ui.components.VybeSubScreenTopBar
+import com.example.ui.components.VybeSurfaceCard
 import com.example.ui.theme.*
 
 /**
@@ -42,13 +42,13 @@ import com.example.ui.theme.*
  * - Customer reviews with rating stars, photos, and moderation.
  * - Help-Center route for merchant inquiries.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShopDetailScreen(viewModel: VybeViewModel) {
   BackHandler {
     viewModel.navigateBack()
   }
 
+  val palette = LocalVybePalette.current
   val shop by viewModel.selectedShop.collectAsState()
   val businessApplications by viewModel.businessApplications.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
@@ -62,7 +62,7 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
   var showHelpCenterDialog by remember { mutableStateOf(false) }
 
   var appBusinessName by remember { mutableStateOf("") }
-  var appCategory by remember { mutableStateOf("Artisan Coffee & Bakery") }
+  val appCategory by remember { mutableStateOf("Artisan Coffee & Bakery") }
   var appGst by remember { mutableStateOf("") }
   var appEmail by remember { mutableStateOf("") }
   var appPhone by remember { mutableStateOf("") }
@@ -75,9 +75,42 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
     reviewPhotoUri = uri
   }
 
+  val fieldColors = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = palette.elevated,
+    unfocusedContainerColor = palette.elevated,
+    focusedBorderColor = palette.accent,
+    unfocusedBorderColor = palette.border,
+    focusedTextColor = palette.textPrimary,
+    unfocusedTextColor = palette.textPrimary
+  )
+
   if (shop == null) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-      Text("Shop not found")
+    Scaffold(
+      containerColor = palette.canvas,
+      contentWindowInsets = WindowInsets(0.dp),
+      topBar = {
+        VybeSubScreenTopBar(
+          title = "Verified Shop",
+          onBackClick = { viewModel.navigateBack() },
+          backTestTag = "shop_back_button"
+        )
+      }
+    ) { paddingValues ->
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .padding(paddingValues)
+          .padding(16.dp),
+        contentAlignment = Alignment.Center
+      ) {
+        VybeEmptyState(
+          icon = Icons.Default.Store,
+          title = "Shop Not Found",
+          subtitle = "This verified storefront is currently unavailable.",
+          actionLabel = "Go Back",
+          onAction = { viewModel.navigateBack() }
+        )
+      }
     }
     return
   }
@@ -86,46 +119,36 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
   val myApp = businessApplications.firstOrNull { it.ownerId == currentUser?.id }
 
   Scaffold(
+    containerColor = palette.canvas,
+    contentWindowInsets = WindowInsets(0.dp),
     topBar = {
-      TopAppBar(
-        navigationIcon = {
-          IconButton(
-            onClick = { viewModel.navigateBack() },
-            modifier = Modifier.testTag("shop_back_button")
-          ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-          }
-        },
-        title = {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(s.businessName, fontWeight = FontWeight.Bold, maxLines = 1, fontSize = 16.sp)
-            Spacer(modifier = Modifier.width(4.dp))
-            Icon(Icons.Default.Store, contentDescription = "Verified Shop", tint = VybeVerifiedGold, modifier = Modifier.size(16.dp))
-          }
-        },
+      VybeSubScreenTopBar(
+        title = s.businessName,
+        subtitle = "Verified Storefront • ${s.category}",
+        onBackClick = { viewModel.navigateBack() },
+        backTestTag = "shop_back_button",
         actions = {
           IconButton(
             onClick = { showHelpCenterDialog = true },
-            modifier = Modifier.testTag("shop_help_center_button")
+            modifier = Modifier.size(48.dp).testTag("shop_help_center_button")
           ) {
-            Icon(Icons.Default.HelpOutline, contentDescription = "Merchant Help Center")
+            Icon(Icons.Default.HelpOutline, contentDescription = "Merchant Help Center", tint = palette.textPrimary)
           }
           Button(
             onClick = { showReviewDialog = true },
-            colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = Color.White),
+            shape = RoundedCornerShape(VybeTokens.Radius.md),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             modifier = Modifier
               .padding(end = 8.dp)
+              .heightIn(min = 40.dp)
               .testTag("write_review_button")
           ) {
             Icon(Icons.Default.RateReview, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(4.dp))
-            Text("Review", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("Review", fontFamily = PlusJakartaSansFontFamily, fontSize = 12.sp, fontWeight = FontWeight.Bold)
           }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-          containerColor = MaterialTheme.colorScheme.background
-        )
+        }
       )
     }
   ) { paddingValues ->
@@ -133,14 +156,16 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
       modifier = Modifier
         .fillMaxSize()
         .padding(paddingValues)
+        .navigationBarsPadding(),
+      contentPadding = PaddingValues(bottom = 32.dp)
     ) {
       // Cover & Header
       item {
         Box(
           modifier = Modifier
             .fillMaxWidth()
-            .height(180.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .height(190.dp)
+            .background(palette.elevated)
         ) {
           AsyncImage(
             model = s.coverUrl,
@@ -158,16 +183,23 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
           ) {
             Column(modifier = Modifier.weight(1f)) {
               Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(s.businessName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(
+                  text = s.businessName,
+                  fontFamily = PlusJakartaSansFontFamily,
+                  style = MaterialTheme.typography.titleLarge,
+                  fontWeight = FontWeight.Bold,
+                  color = palette.textPrimary
+                )
                 Spacer(modifier = Modifier.width(6.dp))
                 Icon(Icons.Default.CheckCircle, contentDescription = "Verified Business", tint = VybeVerifiedGold, modifier = Modifier.size(18.dp))
               }
-              Text(s.category, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              Text(s.category, fontSize = 13.sp, color = palette.textSecondary)
             }
 
             Surface(
-              color = VybeVerifiedGold.copy(alpha = 0.15f),
-              shape = RoundedCornerShape(10.dp)
+              color = VybeVerifiedGold.copy(alpha = 0.16f),
+              shape = RoundedCornerShape(VybeTokens.Radius.sm),
+              border = BorderStroke(1.dp, VybeVerifiedGold.copy(alpha = 0.35f))
             ) {
               Row(
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -175,111 +207,109 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
               ) {
                 Icon(Icons.Default.Star, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("${s.rating}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("${s.rating}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = palette.textPrimary)
               }
             }
           }
 
           Spacer(modifier = Modifier.height(10.dp))
-          Text(s.description, fontSize = 13.sp, lineHeight = 18.sp)
-          Spacer(modifier = Modifier.height(10.dp))
+          Text(s.description, fontSize = 13.sp, lineHeight = 19.sp, color = palette.textPrimary)
+          Spacer(modifier = Modifier.height(12.dp))
 
-          // Contact details
           Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Place, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+            Icon(Icons.Default.Place, contentDescription = null, tint = palette.textMuted, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(6.dp))
-            Text(s.locationAddress, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(s.locationAddress, fontSize = 12.sp, color = palette.textSecondary)
           }
           Spacer(modifier = Modifier.height(4.dp))
           Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.AccessTime, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+            Icon(Icons.Default.AccessTime, contentDescription = null, tint = palette.textMuted, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(6.dp))
-            Text(s.openingHours, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(s.openingHours, fontSize = 12.sp, color = palette.textSecondary)
           }
 
           // Verification Application Banner & Status
           Spacer(modifier = Modifier.height(16.dp))
-          Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            shape = RoundedCornerShape(14.dp),
+          VybeSurfaceCard(
+            containerColor = palette.elevated,
+            borderColor = VybeVerifiedGold.copy(alpha = 0.35f),
+            contentPadding = PaddingValues(14.dp),
             modifier = Modifier.fillMaxWidth()
           ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                  Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(20.dp))
-                  Spacer(modifier = Modifier.width(8.dp))
-                  Text("Business Verification Program", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                }
-
-                if (myApp != null) {
-                  Surface(
-                    color = when (myApp.status) {
-                      BusinessVerificationStatus.APPROVED -> VybeOnlineGreen.copy(alpha = 0.2f)
-                      BusinessVerificationStatus.PENDING -> VybeVerifiedGold.copy(alpha = 0.2f)
-                      else -> VybeDanger.copy(alpha = 0.2f)
-                    },
-                    shape = RoundedCornerShape(6.dp)
-                  ) {
-                    Text(
-                      text = myApp.status.name,
-                      fontSize = 10.sp,
-                      fontWeight = FontWeight.Bold,
-                      color = when (myApp.status) {
-                        BusinessVerificationStatus.APPROVED -> VybeOnlineGreen
-                        BusinessVerificationStatus.PENDING -> VybeVerifiedGold
-                        else -> VybeDanger
-                      },
-                      modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                    )
-                  }
-                }
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Business Verification Program", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = palette.textPrimary)
               }
 
-              Spacer(modifier = Modifier.height(6.dp))
-              Text(
-                text = if (myApp != null) {
-                  "Your application for \"${myApp.businessName}\" is currently ${myApp.status.name.lowercase().replace("_", " ")}. ${myApp.reviewerNotes ?: ""}"
-                } else {
-                  "Are you an independent merchant or brand? Submit your registration credentials for verification, gold checkmark, and direct client catalog display."
-                },
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                lineHeight = 15.sp
-              )
-
-              Spacer(modifier = Modifier.height(10.dp))
-              if (myApp == null) {
-                Button(
-                  onClick = {
-                    appBusinessName = ""
-                    appGst = ""
-                    appEmail = currentUser?.email ?: ""
-                    appPhone = currentUser?.phone ?: ""
-                    appAddress = ""
-                    showApplicationDialog = true
+              if (myApp != null) {
+                Surface(
+                  color = when (myApp.status) {
+                    BusinessVerificationStatus.APPROVED -> palette.success.copy(alpha = 0.2f)
+                    BusinessVerificationStatus.PENDING -> VybeVerifiedGold.copy(alpha = 0.2f)
+                    else -> palette.danger.copy(alpha = 0.2f)
                   },
-                  colors = ButtonDefaults.buttonColors(containerColor = VybeVerifiedGold),
-                  shape = RoundedCornerShape(10.dp),
-                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                  modifier = Modifier.testTag("apply_verification_button")
+                  shape = RoundedCornerShape(VybeTokens.Radius.xs)
                 ) {
-                  Text("Apply for Shop Verification", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                  Text(
+                    text = myApp.status.name,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = when (myApp.status) {
+                      BusinessVerificationStatus.APPROVED -> palette.success
+                      BusinessVerificationStatus.PENDING -> VybeVerifiedGold
+                      else -> palette.danger
+                    },
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                  )
                 }
-              } else if (myApp.status == BusinessVerificationStatus.APPROVED && !myApp.isActivated) {
-                Button(
-                  onClick = { viewModel.activateBusinessShop(s.id) },
-                  colors = ButtonDefaults.buttonColors(containerColor = VybeOnlineGreen),
-                  shape = RoundedCornerShape(10.dp),
-                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                  modifier = Modifier.testTag("activate_shop_button")
-                ) {
-                  Text("Activate Approved Shop Profile ✓", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
+              }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+              text = if (myApp != null) {
+                "Your application for \"${myApp.businessName}\" is currently ${myApp.status.name.lowercase().replace("_", " ")}. ${myApp.reviewerNotes ?: ""}"
+              } else {
+                "Are you an independent merchant or brand? Submit your registration credentials for verification, gold checkmark, and direct client catalog display."
+              },
+              fontSize = 11.sp,
+              color = palette.textSecondary,
+              lineHeight = 16.sp
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+            if (myApp == null) {
+              Button(
+                onClick = {
+                  appBusinessName = ""
+                  appGst = ""
+                  appEmail = currentUser?.email ?: ""
+                  appPhone = currentUser?.phone ?: ""
+                  appAddress = ""
+                  showApplicationDialog = true
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = VybeVerifiedGold),
+                shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                modifier = Modifier.heightIn(min = 44.dp).testTag("apply_verification_button")
+              ) {
+                Text("Apply for Shop Verification", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+              }
+            } else if (myApp.status == BusinessVerificationStatus.APPROVED && !myApp.isActivated) {
+              Button(
+                onClick = { viewModel.activateBusinessShop(s.id) },
+                colors = ButtonDefaults.buttonColors(containerColor = palette.success),
+                shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                modifier = Modifier.heightIn(min = 44.dp).testTag("activate_shop_button")
+              ) {
+                Text("Activate Approved Shop Profile ✓", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
               }
             }
           }
@@ -288,24 +318,29 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
 
       // Catalog Items
       item {
-        PaddingValues(horizontal = 16.dp)
-        Text("Catalog & Offerings (${s.catalog.size})", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+        Text(
+          text = "Catalog & Offerings (${s.catalog.size})",
+          fontFamily = PlusJakartaSansFontFamily,
+          fontWeight = FontWeight.Bold,
+          fontSize = 16.sp,
+          color = palette.textPrimary,
+          modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        )
       }
 
       items(s.catalog, key = { it.id }) { item ->
-        Card(
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          shape = RoundedCornerShape(14.dp),
+        VybeSurfaceCard(
+          contentPadding = PaddingValues(12.dp),
           modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-          border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+            .padding(horizontal = 16.dp, vertical = 6.dp)
         ) {
-          Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
               modifier = Modifier
-                .size(70.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .size(72.dp)
+                .clip(RoundedCornerShape(VybeTokens.Radius.sm))
+                .background(palette.elevated)
             ) {
               AsyncImage(
                 model = item.imageUrl,
@@ -316,10 +351,10 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
             }
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-              Text(item.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-              Text(item.description, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+              Text(item.name, fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = palette.textPrimary)
+              Text(item.description, fontSize = 12.sp, color = palette.textSecondary, maxLines = 2)
               Spacer(modifier = Modifier.height(4.dp))
-              Text(item.priceFormatted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = VybeBrandCyan)
+              Text(item.priceFormatted, fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = palette.accentSecondary)
             }
           }
         }
@@ -328,53 +363,58 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
       // Customer Reviews
       item {
         Spacer(modifier = Modifier.height(10.dp))
-        Text("Customer Reviews & Photos (${s.reviews.size})", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp))
+        Text(
+          text = "Customer Reviews & Photos (${s.reviews.size})",
+          fontFamily = PlusJakartaSansFontFamily,
+          fontWeight = FontWeight.Bold,
+          fontSize = 16.sp,
+          color = palette.textPrimary,
+          modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+        )
       }
 
       items(s.reviews, key = { it.id }) { r ->
-        Card(
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          shape = RoundedCornerShape(14.dp),
+        VybeSurfaceCard(
+          contentPadding = PaddingValues(14.dp),
           modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-          border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+            .padding(horizontal = 16.dp, vertical = 6.dp)
         ) {
-          Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                VybeAvatar(user = r.author, size = 28.dp)
-                Spacer(modifier = Modifier.width(8.dp))
-                Column {
-                  Text(r.author.displayName, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                  Text(r.timestamp, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-              }
-              Row {
-                repeat(r.ratingStars) {
-                  Icon(Icons.Default.Star, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(14.dp))
-                }
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              VybeAvatar(user = r.author, size = 30.dp)
+              Spacer(modifier = Modifier.width(8.dp))
+              Column {
+                Text(r.author.displayName, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = palette.textPrimary)
+                Text(r.timestamp, fontSize = 10.sp, color = palette.textMuted)
               }
             }
+            Row {
+              repeat(r.ratingStars) {
+                Icon(Icons.Default.Star, contentDescription = null, tint = VybeVerifiedGold, modifier = Modifier.size(14.dp))
+              }
+            }
+          }
 
+          Spacer(modifier = Modifier.height(8.dp))
+          Text(r.reviewText, fontSize = 12.sp, lineHeight = 17.sp, color = palette.textPrimary)
+
+          if (r.ownerReply != null) {
             Spacer(modifier = Modifier.height(8.dp))
-            Text(r.reviewText, fontSize = 12.sp, lineHeight = 16.sp)
-
-            if (r.ownerReply != null) {
-              Spacer(modifier = Modifier.height(8.dp))
-              Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth()
-              ) {
-                Column(modifier = Modifier.padding(8.dp)) {
-                  Text("Owner Reply:", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = VybeViolet)
-                  Text(r.ownerReply, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-                }
+            Surface(
+              color = palette.elevated,
+              shape = RoundedCornerShape(VybeTokens.Radius.xs),
+              border = BorderStroke(1.dp, palette.border),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Column(modifier = Modifier.padding(10.dp)) {
+                Text("Owner Reply:", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = palette.accent)
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(r.ownerReply, fontSize = 11.sp, color = palette.textPrimary)
               }
             }
           }
@@ -387,13 +427,16 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
   if (showReviewDialog) {
     AlertDialog(
       onDismissRequest = { showReviewDialog = false },
-      title = { Text("Write Customer Review", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+      containerColor = palette.card,
+      titleContentColor = palette.textPrimary,
+      textContentColor = palette.textSecondary,
+      title = { Text("Write Customer Review", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          Text("Rate your experience:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+          Text("Rate your experience:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = palette.textPrimary)
           Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             (1..5).forEach { star ->
-              IconButton(onClick = { reviewRating = star }, modifier = Modifier.size(32.dp)) {
+              IconButton(onClick = { reviewRating = star }, modifier = Modifier.size(36.dp)) {
                 Icon(
                   imageVector = if (star <= reviewRating) Icons.Default.Star else Icons.Default.StarBorder,
                   contentDescription = "$star stars",
@@ -407,26 +450,26 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
             value = reviewText,
             onValueChange = { reviewText = it },
             label = { Text("Your Honest Feedback") },
-            placeholder = { Text("Quality, ambiance, service...") },
+            placeholder = { Text("Quality, ambiance, service...", color = palette.textMuted) },
+            colors = fieldColors,
+            shape = RoundedCornerShape(VybeTokens.Radius.md),
             minLines = 3,
             modifier = Modifier.fillMaxWidth().testTag("review_input_text")
           )
 
-          OutlinedButton(
+          VybeSecondaryButton(
+            text = if (reviewPhotoUri != null) "Photo Attached ✓" else "Attach Store/Product Photo",
             onClick = {
               photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
             },
+            icon = Icons.Default.AddPhotoAlternate,
             modifier = Modifier.fillMaxWidth()
-          ) {
-            Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(if (reviewPhotoUri != null) "Photo Attached ✓" else "Attach Store/Product Photo", fontSize = 11.sp)
-          }
+          )
 
           Text(
             text = "Notice: Reviews undergo automatic anti-spam moderation. Vulgarity or fraudulent reviews are purged.",
             fontSize = 10.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = palette.textMuted
           )
         }
       },
@@ -441,14 +484,15 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
             }
           },
           enabled = reviewText.isNotBlank(),
-          colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+          colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = Color.White),
+          shape = RoundedCornerShape(VybeTokens.Radius.sm),
           modifier = Modifier.testTag("submit_review_button")
         ) {
           Text("Submit Review", fontWeight = FontWeight.Bold)
         }
       },
       dismissButton = {
-        TextButton(onClick = { showReviewDialog = false }) { Text("Cancel") }
+        TextButton(onClick = { showReviewDialog = false }) { Text("Cancel", color = palette.textSecondary) }
       }
     )
   }
@@ -457,7 +501,10 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
   if (showApplicationDialog) {
     AlertDialog(
       onDismissRequest = { showApplicationDialog = false },
-      title = { Text("Shop Verification Application", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+      containerColor = palette.card,
+      titleContentColor = palette.textPrimary,
+      textContentColor = palette.textSecondary,
+      title = { Text("Shop Verification Application", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
       text = {
         LazyColumn(
           modifier = Modifier
@@ -466,13 +513,15 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
           verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
           item {
-            Text("Provide your registered business details for verification by NR Next Trust & Safety:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Provide your registered business details for verification by NR Next Trust & Safety:", fontSize = 12.sp, color = palette.textSecondary)
           }
           item {
             OutlinedTextField(
               value = appBusinessName,
               onValueChange = { appBusinessName = it },
               label = { Text("Business / Brand Name") },
+              colors = fieldColors,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
               modifier = Modifier.fillMaxWidth().testTag("app_business_name_input"),
               singleLine = true
             )
@@ -482,7 +531,9 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
               value = appGst,
               onValueChange = { appGst = it },
               label = { Text("GSTIN or Incorporation Registration") },
-              placeholder = { Text("e.g., GSTIN27AABCU9603R1ZM") },
+              placeholder = { Text("e.g., GSTIN27AABCU9603R1ZM", color = palette.textMuted) },
+              colors = fieldColors,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
               modifier = Modifier.fillMaxWidth(),
               singleLine = true
             )
@@ -492,6 +543,8 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
               value = appEmail,
               onValueChange = { appEmail = it },
               label = { Text("Official Business Email") },
+              colors = fieldColors,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
               modifier = Modifier.fillMaxWidth(),
               singleLine = true
             )
@@ -501,6 +554,8 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
               value = appPhone,
               onValueChange = { appPhone = it },
               label = { Text("Support Phone Number") },
+              colors = fieldColors,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
               modifier = Modifier.fillMaxWidth(),
               singleLine = true
             )
@@ -510,6 +565,8 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
               value = appAddress,
               onValueChange = { appAddress = it },
               label = { Text("Physical Commercial Address") },
+              colors = fieldColors,
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
               modifier = Modifier.fillMaxWidth(),
               maxLines = 2
             )
@@ -534,13 +591,14 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
           },
           enabled = appBusinessName.isNotBlank() && appEmail.isNotBlank(),
           colors = ButtonDefaults.buttonColors(containerColor = VybeVerifiedGold),
+          shape = RoundedCornerShape(VybeTokens.Radius.sm),
           modifier = Modifier.testTag("submit_app_button")
         ) {
           Text("Submit Application", color = Color.Black, fontWeight = FontWeight.Bold)
         }
       },
       dismissButton = {
-        TextButton(onClick = { showApplicationDialog = false }) { Text("Cancel") }
+        TextButton(onClick = { showApplicationDialog = false }) { Text("Cancel", color = palette.textSecondary) }
       }
     )
   }
@@ -549,33 +607,40 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
   if (showHelpCenterDialog) {
     AlertDialog(
       onDismissRequest = { showHelpCenterDialog = false },
+      containerColor = palette.card,
+      titleContentColor = palette.textPrimary,
+      textContentColor = palette.textSecondary,
       title = {
         Row(verticalAlignment = Alignment.CenterVertically) {
-          Icon(Icons.Default.HelpOutline, contentDescription = null, tint = VybeBrandCyan)
+          Icon(Icons.Default.HelpOutline, contentDescription = null, tint = palette.accentSecondary)
           Spacer(modifier = Modifier.width(8.dp))
-          Text("Merchant Help Center", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+          Text("Merchant Help Center", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold, fontSize = 16.sp)
         }
       },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          Text("Dedicated guidance for verified businesses & sellers on VYBE:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-          Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = RoundedCornerShape(10.dp),
+          Text("Dedicated guidance for verified businesses & sellers on VYBE:", fontSize = 12.sp, color = palette.textSecondary)
+          VybeSurfaceCard(
+            containerColor = palette.elevated,
+            cornerRadius = VybeTokens.Radius.sm,
+            contentPadding = PaddingValues(12.dp),
             modifier = Modifier.fillMaxWidth()
           ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-              Text("1. Verification Processing: Applications take 24–48 hours for GST and location validation.", fontSize = 11.sp)
-              Spacer(modifier = Modifier.height(4.dp))
-              Text("2. Payment Settlement: In-app buyer settlements are routed directly to your connected bank account.", fontSize = 11.sp)
-              Spacer(modifier = Modifier.height(4.dp))
-              Text("3. Dispute Support: Contact merchant-help@vybe.in for mediation or review appeals.", fontSize = 11.sp)
-            }
+            Text("1. Verification Processing: Applications take 24–48 hours for GST and location validation.", fontSize = 11.sp, color = palette.textPrimary)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("2. Payment Settlement: In-app buyer settlements are routed directly to your connected bank account.", fontSize = 11.sp, color = palette.textPrimary)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("3. Dispute Support: Contact merchant-help@vybe.in for mediation or review appeals.", fontSize = 11.sp, color = palette.textPrimary)
           }
         }
       },
       confirmButton = {
-        Button(onClick = { showHelpCenterDialog = false }) { Text("Got it") }
+        Button(
+          onClick = { showHelpCenterDialog = false },
+          colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = Color.White)
+        ) {
+          Text("Got it")
+        }
       }
     )
   }
@@ -583,12 +648,20 @@ fun ShopDetailScreen(viewModel: VybeViewModel) {
   if (appSubmittedSuccess) {
     AlertDialog(
       onDismissRequest = { appSubmittedSuccess = false },
-      title = { Text("Application Submitted", fontWeight = FontWeight.Bold) },
+      containerColor = palette.card,
+      titleContentColor = palette.textPrimary,
+      textContentColor = palette.textSecondary,
+      title = { Text("Application Submitted", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold) },
       text = {
         Text("Your business verification request has been submitted to the NR Next Trust & Safety queue. An email confirmation has been queued for dispatch when email infrastructure is connected.", fontSize = 13.sp)
       },
       confirmButton = {
-        Button(onClick = { appSubmittedSuccess = false }) { Text("Done") }
+        Button(
+          onClick = { appSubmittedSuccess = false },
+          colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = Color.White)
+        ) {
+          Text("Done")
+        }
       }
     )
   }

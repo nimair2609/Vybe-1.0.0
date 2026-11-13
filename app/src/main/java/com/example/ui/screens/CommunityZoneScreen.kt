@@ -16,9 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,12 +32,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.example.data.model.Community
 import com.example.data.model.CommunityMember
 import com.example.data.model.CommunityPost
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VybeAvatar
-import com.example.ui.components.VybeLikeIcon
+import com.example.ui.components.VybeEmptyState
+import com.example.ui.components.VybeSearchBar
+import com.example.ui.components.VybeSubScreenTopBar
+import com.example.ui.components.VybeSurfaceCard
 import com.example.ui.theme.*
 import com.example.util.MediaUtils
 import com.example.util.rememberRelativeTimestamp
@@ -48,6 +48,7 @@ import com.example.util.rememberRelativeTimestamp
 @Composable
 fun CommunityZoneScreen(viewModel: VybeViewModel) {
   val context = LocalContext.current
+  val palette = LocalVybePalette.current
   val currentUser by viewModel.currentUser.collectAsState()
   val communities by viewModel.communities.collectAsState()
   val activeCommunity by viewModel.activeCommunity.collectAsState()
@@ -90,43 +91,30 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
     }
   }
 
+  val fieldColors = OutlinedTextFieldDefaults.colors(
+    focusedBorderColor = palette.accent,
+    unfocusedBorderColor = palette.border,
+    focusedContainerColor = palette.elevated,
+    unfocusedContainerColor = palette.elevated,
+    focusedTextColor = palette.textPrimary,
+    unfocusedTextColor = palette.textPrimary
+  )
+
   Scaffold(
+    containerColor = palette.canvas,
     contentWindowInsets = WindowInsets(0.dp),
     topBar = {
-      TopAppBar(
-        navigationIcon = {
-          IconButton(
-            onClick = {
-              if (activeCommunity != null) {
-                viewModel.closeActiveCommunity()
-              } else {
-                viewModel.navigateBack()
-              }
-            },
-            modifier = Modifier
-              .size(48.dp)
-              .testTag("community_back_button")
-          ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+      VybeSubScreenTopBar(
+        title = activeCommunity?.name ?: "Community Zone",
+        subtitle = if (activeCommunity != null) "${activeCommunity!!.membersCount} members • ${activeCommunity!!.category}" else "Interest circles & discussions",
+        onBackClick = {
+          if (activeCommunity != null) {
+            viewModel.closeActiveCommunity()
+          } else {
+            viewModel.navigateBack()
           }
         },
-        title = {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-              imageVector = Icons.Outlined.Groups,
-              contentDescription = null,
-              tint = VybeViolet,
-              modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-              text = activeCommunity?.name ?: "Community Zone",
-              fontWeight = FontWeight.Bold,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis
-            )
-          }
-        },
+        backTestTag = "community_back_button",
         actions = {
           IconButton(
             onClick = {
@@ -139,7 +127,7 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
             },
             modifier = Modifier.size(48.dp)
           ) {
-            Icon(Icons.Outlined.Refresh, contentDescription = "Sync Community")
+            Icon(Icons.Outlined.Refresh, contentDescription = "Sync Community", tint = palette.textPrimary)
           }
           if (activeCommunity == null) {
             IconButton(
@@ -148,7 +136,7 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                 .size(48.dp)
                 .testTag("create_community_button")
             ) {
-              Icon(Icons.Outlined.Add, contentDescription = "Create Community", tint = VybeViolet)
+              Icon(Icons.Outlined.Add, contentDescription = "Create Community", tint = palette.accent)
             }
           } else {
             val comm = activeCommunity!!
@@ -160,12 +148,11 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                   .size(48.dp)
                   .testTag("create_community_post_button")
               ) {
-                Icon(Icons.Outlined.PostAdd, contentDescription = "New Post", tint = VybeViolet)
+                Icon(Icons.Outlined.PostAdd, contentDescription = "New Post", tint = palette.accent)
               }
             }
           }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+        }
       )
     }
   ) { paddingValues ->
@@ -189,34 +176,39 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
       ) {
         // Community Banner Header + Membership Controls
         item(key = "comm_header_${comm.id}") {
-          Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-            shape = RoundedCornerShape(18.dp),
+          VybeSurfaceCard(
+            elevated = true,
             modifier = Modifier
               .fillMaxWidth()
-              .padding(top = 8.dp)
+              .padding(top = 10.dp)
           ) {
             Column(modifier = Modifier.padding(16.dp)) {
               Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                   modifier = Modifier
                     .size(54.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(VybeViolet.copy(alpha = 0.18f)),
+                    .clip(RoundedCornerShape(VybeTokens.Radius.md))
+                    .background(palette.accent.copy(alpha = 0.16f)),
                   contentAlignment = Alignment.Center
                 ) {
-                  Icon(Icons.Outlined.Groups, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(28.dp))
+                  Icon(Icons.Outlined.Groups, contentDescription = null, tint = palette.accent, modifier = Modifier.size(28.dp))
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                   Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(comm.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(
+                      comm.name,
+                      fontWeight = FontWeight.Bold,
+                      fontFamily = PlusJakartaSansFontFamily,
+                      fontSize = 16.sp,
+                      color = palette.textPrimary
+                    )
                     if (comm.isPrivate) {
                       Spacer(modifier = Modifier.width(6.dp))
                       Icon(
                         Icons.Outlined.Lock,
                         contentDescription = "Private community",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = palette.textSecondary,
                         modifier = Modifier.size(14.dp)
                       )
                     }
@@ -224,7 +216,7 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                   Text(
                     "${comm.membersCount} members • ${comm.category}",
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = palette.textSecondary
                   )
                 }
 
@@ -239,9 +231,11 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                   Button(
                     onClick = { viewModel.toggleJoinCommunity(comm.id) },
                     colors = ButtonDefaults.buttonColors(
-                      containerColor = if (isActiveMemberOrPending) MaterialTheme.colorScheme.outlineVariant else VybeViolet
+                      containerColor = if (isActiveMemberOrPending) palette.card else palette.accent,
+                      contentColor = if (isActiveMemberOrPending) palette.textPrimary else Color.White
                     ),
-                    shape = RoundedCornerShape(10.dp),
+                    border = if (isActiveMemberOrPending) BorderStroke(1.dp, palette.border) else null,
+                    shape = RoundedCornerShape(VybeTokens.Radius.pill),
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                     modifier = Modifier
                       .heightIn(min = 40.dp)
@@ -251,19 +245,21 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                       text = membershipLabel,
                       fontSize = 12.sp,
                       fontWeight = FontWeight.Bold,
-                      color = if (isActiveMemberOrPending) MaterialTheme.colorScheme.onSurface else Color.White
+                      fontFamily = PlusJakartaSansFontFamily
                     )
                   }
                 } else {
                   Surface(
-                    color = VybeBrandCyan.copy(alpha = 0.16f),
-                    shape = RoundedCornerShape(10.dp)
+                    color = palette.accentSecondary.copy(alpha = 0.16f),
+                    border = BorderStroke(1.dp, palette.accentSecondary.copy(alpha = 0.4f)),
+                    shape = RoundedCornerShape(VybeTokens.Radius.pill)
                   ) {
                     Text(
                       text = "Founder",
-                      color = VybeBrandCyan,
+                      color = palette.accentSecondary,
                       fontSize = 11.sp,
                       fontWeight = FontWeight.Bold,
+                      fontFamily = PlusJakartaSansFontFamily,
                       modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                     )
                   }
@@ -275,7 +271,7 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                 Text(
                   text = comm.description,
                   fontSize = 13.sp,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  color = palette.textSecondary,
                   lineHeight = 18.sp
                 )
               }
@@ -290,10 +286,15 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                     viewModel.fetchCommunityMembers(comm.id)
                     showMembersSheet = true
                   },
-                  shape = RoundedCornerShape(12.dp),
+                  shape = RoundedCornerShape(VybeTokens.Radius.pill),
+                  border = BorderStroke(1.dp, palette.border),
+                  colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = palette.card,
+                    contentColor = palette.textPrimary
+                  ),
                   modifier = Modifier
                     .weight(1f)
-                    .heightIn(min = 44.dp)
+                    .heightIn(min = 48.dp)
                     .testTag("community_members_button")
                 ) {
                   Icon(
@@ -312,6 +313,7 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                     },
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
+                    fontFamily = PlusJakartaSansFontFamily,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                   )
@@ -320,16 +322,16 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                 if (canPost) {
                   Button(
                     onClick = { showCreatePostDialog = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = Color.White),
+                    shape = RoundedCornerShape(VybeTokens.Radius.pill),
                     modifier = Modifier
                       .weight(1f)
-                      .heightIn(min = 44.dp)
+                      .heightIn(min = 48.dp)
                       .testTag("community_publish_post_cta")
                   ) {
-                    Icon(Icons.Outlined.EditNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Outlined.EditNote, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Publish Post", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("Publish Post", fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily)
                   }
                 }
               }
@@ -341,16 +343,22 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
           Row(
             modifier = Modifier
               .fillMaxWidth()
-              .padding(top = 6.dp, bottom = 2.dp),
+              .padding(top = 4.dp, bottom = 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
           ) {
-            Text("Community Discussions", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text(
+              "Community Discussions",
+              fontWeight = FontWeight.Bold,
+              fontFamily = PlusJakartaSansFontFamily,
+              fontSize = 14.sp,
+              color = palette.textPrimary
+            )
             if (!canPost) {
               Text(
                 text = if (comm.isPrivate) "Approval required to post" else "Join community to post",
                 fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = palette.textSecondary
               )
             }
           }
@@ -358,55 +366,30 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
 
         if (comm.isPrivate && !canPost) {
           item(key = "comm_private_locked") {
-            Surface(
-              shape = RoundedCornerShape(16.dp),
-              color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-              modifier = Modifier.fillMaxWidth()
-            ) {
-              Column(
-                modifier = Modifier.padding(28.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-              ) {
-                Icon(Icons.Outlined.Lock, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(36.dp))
-                Spacer(modifier = Modifier.height(10.dp))
-                Text("Private Community", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                  text = if (comm.membershipStatus == "PENDING") {
-                    "Your membership request is pending approval from a community admin."
-                  } else {
-                    "Request to join this community to view member discussions and publish posts."
-                  },
-                  fontSize = 12.sp,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            VybeEmptyState(
+              icon = Icons.Outlined.Lock,
+              title = "Private Community",
+              subtitle = if (comm.membershipStatus == "PENDING") {
+                "Your membership request is pending approval from a community admin."
+              } else {
+                "Request to join this community to view member discussions and publish posts."
               }
-            }
+            )
           }
         } else if (filteredPosts.isEmpty()) {
           item(key = "comm_no_posts") {
-            Box(
-              modifier = Modifier
-                .fillMaxWidth()
-                .padding(32.dp),
-              contentAlignment = Alignment.Center
-            ) {
-              Text(
-                "No posts in this community yet. Be the first to start a conversation!",
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-              )
-            }
+            VybeEmptyState(
+              icon = Icons.Outlined.Forum,
+              title = "No posts yet",
+              subtitle = "Be the first to start a conversation in ${comm.name}!"
+            )
           }
         } else {
           items(filteredPosts, key = { it.id }) { post ->
             val isAuthor = currentUser?.id == post.author.id
             val canDelete = isAuthor || isAdmin
 
-            Card(
-              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-              shape = RoundedCornerShape(14.dp),
-              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+            VybeSurfaceCard(
               modifier = Modifier
                 .fillMaxWidth()
                 .testTag("community_post_${post.id}")
@@ -423,26 +406,32 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                   )
                   Spacer(modifier = Modifier.width(10.dp))
                   Column(modifier = Modifier.weight(1f)) {
-                    Text(post.author.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text(
+                      post.author.displayName,
+                      fontWeight = FontWeight.Bold,
+                      fontFamily = PlusJakartaSansFontFamily,
+                      fontSize = 13.sp,
+                      color = palette.textPrimary
+                    )
                     val relTime = rememberRelativeTimestamp(post.createdAtIso, "Recently")
                     val editedSuffix = if (post.isEdited) " • Edited" else ""
                     Text(
                       text = "@${post.author.username} • $relTime$editedSuffix",
                       fontSize = 11.sp,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                      color = palette.textSecondary
                     )
                   }
                   if (isAuthor) {
                     IconButton(
                       onClick = { editingPost = post },
                       modifier = Modifier
-                        .size(44.dp)
+                        .size(48.dp)
                         .testTag("edit_comm_post_${post.id}")
                     ) {
                       Icon(
                         Icons.Outlined.Edit,
                         contentDescription = "Edit Post",
-                        tint = VybeBrandCyan,
+                        tint = palette.accentSecondary,
                         modifier = Modifier.size(18.dp)
                       )
                     }
@@ -451,13 +440,13 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                     IconButton(
                       onClick = { postToDelete = post },
                       modifier = Modifier
-                        .size(44.dp)
+                        .size(48.dp)
                         .testTag("delete_comm_post_${post.id}")
                     ) {
                       Icon(
                         Icons.Outlined.Delete,
                         contentDescription = "Delete Post",
-                        tint = VybeDanger,
+                        tint = palette.danger,
                         modifier = Modifier.size(18.dp)
                       )
                     }
@@ -465,13 +454,19 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
-                Text(post.title, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(
+                  post.title,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = PlusJakartaSansFontFamily,
+                  fontSize = 15.sp,
+                  color = palette.textPrimary
+                )
                 if (post.content.isNotBlank()) {
                   Spacer(modifier = Modifier.height(6.dp))
                   Text(
                     post.content,
                     fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = palette.textSecondary,
                     lineHeight = 19.sp
                   )
                 }
@@ -485,7 +480,7 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                     modifier = Modifier
                       .fillMaxWidth()
                       .height(210.dp)
-                      .clip(RoundedCornerShape(10.dp))
+                      .clip(RoundedCornerShape(VybeTokens.Radius.md))
                   )
                 }
 
@@ -517,11 +512,11 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                     Icon(
                       imageVector = Icons.Outlined.ChatBubbleOutline,
                       contentDescription = "Comments",
-                      tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                      tint = palette.textSecondary,
                       modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(5.dp))
-                    Text("${post.commentsCount}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${post.commentsCount}", fontSize = 12.sp, color = palette.textSecondary)
                   }
                 }
               }
@@ -541,17 +536,12 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
       ) {
         item(key = "search_and_categories") {
-          Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-            OutlinedTextField(
+          Column(modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+            VybeSearchBar(
               value = searchQuery,
               onValueChange = { searchQuery = it },
-              placeholder = { Text("Search communities...", fontSize = 13.sp) },
-              leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-              singleLine = true,
-              shape = RoundedCornerShape(14.dp),
-              modifier = Modifier
-                .fillMaxWidth()
-                .testTag("community_search_input")
+              placeholder = "Search communities...",
+              testTag = "community_search_input"
             )
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -563,18 +553,20 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
               items(categories) { cat ->
                 val isSel = selectedCategory == cat
                 Surface(
-                  color = if (isSel) VybeViolet else MaterialTheme.colorScheme.surfaceVariant,
-                  shape = RoundedCornerShape(12.dp),
+                  color = if (isSel) palette.accent else palette.elevated,
+                  border = BorderStroke(1.dp, if (isSel) palette.accent else palette.border),
+                  shape = RoundedCornerShape(VybeTokens.Radius.pill),
                   modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(VybeTokens.Radius.pill))
                     .clickable { selectedCategory = cat }
                 ) {
                   Text(
                     text = cat,
                     fontSize = 12.sp,
+                    fontFamily = PlusJakartaSansFontFamily,
                     fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
-                    color = if (isSel) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                    color = if (isSel) Color.White else palette.textSecondary,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
                   )
                 }
               }
@@ -584,30 +576,13 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
 
         if (filteredCommunities.isEmpty()) {
           item(key = "no_communities_found") {
-            Box(
-              modifier = Modifier
-                .fillMaxWidth()
-                .padding(40.dp),
-              contentAlignment = Alignment.Center
-            ) {
-              Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Outlined.Groups, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(48.dp))
-                Spacer(modifier = Modifier.height(12.dp))
-                Text("No communities found", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text("Create a new community to gather people around your vibe.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(
-                  onClick = { showCreateCommunityDialog = true },
-                  colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-                  shape = RoundedCornerShape(12.dp)
-                ) {
-                  Icon(Icons.Outlined.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text("Create Community", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-              }
-            }
+            VybeEmptyState(
+              icon = Icons.Outlined.Groups,
+              title = "No communities found",
+              subtitle = "Create a new community to gather people around your vibe.",
+              actionLabel = "Create Community",
+              onAction = { showCreateCommunityDialog = true }
+            )
           }
         } else {
           items(filteredCommunities, key = { it.id }) { comm ->
@@ -621,13 +596,10 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
             }
             val isJoinedOrPending = isCreator || comm.isJoined || comm.membershipStatus == "APPROVED" || comm.membershipStatus == "PENDING"
 
-            Card(
-              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-              shape = RoundedCornerShape(16.dp),
-              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+            VybeSurfaceCard(
+              onClick = { viewModel.openCommunity(comm) },
               modifier = Modifier
                 .fillMaxWidth()
-                .clickable { viewModel.openCommunity(comm) }
                 .testTag("community_card_${comm.id}")
             ) {
               Row(
@@ -637,32 +609,40 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                 Box(
                   modifier = Modifier
                     .size(50.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(VybeViolet.copy(alpha = 0.15f)),
+                    .clip(RoundedCornerShape(VybeTokens.Radius.md))
+                    .background(palette.accent.copy(alpha = 0.14f)),
                   contentAlignment = Alignment.Center
                 ) {
-                  Icon(Icons.Outlined.Groups, contentDescription = null, tint = VybeViolet, modifier = Modifier.size(26.dp))
+                  Icon(Icons.Outlined.Groups, contentDescription = null, tint = palette.accent, modifier = Modifier.size(26.dp))
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                   Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(comm.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                      comm.name,
+                      fontWeight = FontWeight.Bold,
+                      fontFamily = PlusJakartaSansFontFamily,
+                      fontSize = 14.sp,
+                      color = palette.textPrimary,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
+                    )
                     if (comm.isPrivate) {
                       Spacer(modifier = Modifier.width(6.dp))
-                      Icon(Icons.Outlined.Lock, contentDescription = "Private", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(13.dp))
+                      Icon(Icons.Outlined.Lock, contentDescription = "Private", tint = palette.textSecondary, modifier = Modifier.size(13.dp))
                     }
                   }
                   Text(
                     text = "${comm.membersCount} members • ${comm.category}",
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = palette.textSecondary
                   )
                   if (comm.description.isNotBlank()) {
                     Spacer(modifier = Modifier.height(3.dp))
                     Text(
                       text = comm.description,
                       fontSize = 12.sp,
-                      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                      color = palette.textSecondary,
                       maxLines = 2,
                       overflow = TextOverflow.Ellipsis
                     )
@@ -678,9 +658,11 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                     }
                   },
                   colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isJoinedOrPending) MaterialTheme.colorScheme.outlineVariant else VybeViolet
+                    containerColor = if (isJoinedOrPending) palette.elevated else palette.accent,
+                    contentColor = if (isJoinedOrPending) palette.textPrimary else Color.White
                   ),
-                  shape = RoundedCornerShape(10.dp),
+                  border = if (isJoinedOrPending) BorderStroke(1.dp, palette.border) else null,
+                  shape = RoundedCornerShape(VybeTokens.Radius.pill),
                   contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                   modifier = Modifier.heightIn(min = 38.dp)
                 ) {
@@ -688,7 +670,7 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                     text = label,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (isJoinedOrPending) MaterialTheme.colorScheme.onSurface else Color.White
+                    fontFamily = PlusJakartaSansFontFamily
                   )
                 }
               }
@@ -708,7 +690,16 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
 
     AlertDialog(
       onDismissRequest = { showCreateCommunityDialog = false },
-      title = { Text("Create Community", fontWeight = FontWeight.Bold) },
+      containerColor = palette.card,
+      shape = RoundedCornerShape(VybeTokens.Radius.lg),
+      title = {
+        Text(
+          "Create Community",
+          fontWeight = FontWeight.Bold,
+          fontFamily = PlusJakartaSansFontFamily,
+          color = palette.textPrimary
+        )
+      },
       text = {
         Column(
           modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -719,6 +710,8 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
             onValueChange = { name = it },
             label = { Text("Community Name") },
             singleLine = true,
+            shape = RoundedCornerShape(VybeTokens.Radius.sm),
+            colors = fieldColors,
             modifier = Modifier
               .fillMaxWidth()
               .testTag("create_comm_name_input")
@@ -729,16 +722,25 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
             label = { Text("Description") },
             minLines = 2,
             maxLines = 4,
+            shape = RoundedCornerShape(VybeTokens.Radius.sm),
+            colors = fieldColors,
             modifier = Modifier
               .fillMaxWidth()
               .testTag("create_comm_description_input")
           )
-          Text("Category", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+          Text("Category", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = palette.textPrimary)
           LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             items(selectableCategories) { option ->
               FilterChip(
                 selected = cat == option,
                 onClick = { cat = option },
+                shape = RoundedCornerShape(VybeTokens.Radius.pill),
+                colors = FilterChipDefaults.filterChipColors(
+                  selectedContainerColor = palette.accent,
+                  selectedLabelColor = Color.White,
+                  containerColor = palette.elevated,
+                  labelColor = palette.textSecondary
+                ),
                 label = { Text(option, fontSize = 11.sp) }
               )
             }
@@ -749,7 +751,7 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
           ) {
             Checkbox(checked = isPrivate, onCheckedChange = { isPrivate = it })
             Spacer(modifier = Modifier.width(6.dp))
-            Text("Private community (admin approval required)", fontSize = 12.sp)
+            Text("Private community (admin approval required)", fontSize = 12.sp, color = palette.textSecondary)
           }
         }
       },
@@ -762,14 +764,15 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
             }
           },
           enabled = name.isNotBlank(),
-          colors = ButtonDefaults.buttonColors(containerColor = VybeViolet)
+          shape = RoundedCornerShape(VybeTokens.Radius.pill),
+          colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = Color.White)
         ) {
-          Text("Create", color = Color.White)
+          Text("Create", fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily)
         }
       },
       dismissButton = {
         TextButton(onClick = { showCreateCommunityDialog = false }) {
-          Text("Cancel")
+          Text("Cancel", color = palette.textSecondary, fontFamily = PlusJakartaSansFontFamily)
         }
       }
     )
@@ -791,7 +794,16 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
 
     AlertDialog(
       onDismissRequest = { showCreatePostDialog = false },
-      title = { Text("Publish in ${activeCommunity?.name}", fontWeight = FontWeight.Bold) },
+      containerColor = palette.card,
+      shape = RoundedCornerShape(VybeTokens.Radius.lg),
+      title = {
+        Text(
+          "Publish in ${activeCommunity?.name}",
+          fontWeight = FontWeight.Bold,
+          fontFamily = PlusJakartaSansFontFamily,
+          color = palette.textPrimary
+        )
+      },
       text = {
         Column(
           modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -802,6 +814,8 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
             onValueChange = { title = it },
             label = { Text("Post Title") },
             singleLine = true,
+            shape = RoundedCornerShape(VybeTokens.Radius.sm),
+            colors = fieldColors,
             modifier = Modifier
               .fillMaxWidth()
               .testTag("create_comm_post_title_input")
@@ -812,6 +826,8 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
             label = { Text("Share thoughts with members...") },
             minLines = 3,
             maxLines = 6,
+            shape = RoundedCornerShape(VybeTokens.Radius.sm),
+            colors = fieldColors,
             modifier = Modifier
               .fillMaxWidth()
               .testTag("create_comm_post_body_input")
@@ -827,7 +843,9 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                   PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                 )
               },
-              shape = RoundedCornerShape(10.dp)
+              shape = RoundedCornerShape(VybeTokens.Radius.pill),
+              border = BorderStroke(1.dp, palette.border),
+              colors = ButtonDefaults.outlinedButtonColors(contentColor = palette.textPrimary)
             ) {
               Icon(Icons.Outlined.Image, contentDescription = null, modifier = Modifier.size(16.dp))
               Spacer(modifier = Modifier.width(6.dp))
@@ -835,7 +853,7 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
             }
             if (attachedImageUri != null) {
               TextButton(onClick = { attachedImageUri = null }) {
-                Text("Remove", color = VybeDanger, fontSize = 12.sp)
+                Text("Remove", color = palette.danger, fontSize = 12.sp)
               }
             }
           }
@@ -847,7 +865,7 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
               modifier = Modifier
                 .fillMaxWidth()
                 .height(140.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .clip(RoundedCornerShape(VybeTokens.Radius.sm))
             )
           }
         }
@@ -867,14 +885,15 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
             }
           },
           enabled = title.isNotBlank() || body.isNotBlank(),
-          colors = ButtonDefaults.buttonColors(containerColor = VybeViolet)
+          shape = RoundedCornerShape(VybeTokens.Radius.pill),
+          colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = Color.White)
         ) {
-          Text("Publish", color = Color.White)
+          Text("Publish", fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily)
         }
       },
       dismissButton = {
         TextButton(onClick = { showCreatePostDialog = false }) {
-          Text("Cancel")
+          Text("Cancel", color = palette.textSecondary, fontFamily = PlusJakartaSansFontFamily)
         }
       }
     )
@@ -888,7 +907,16 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
 
     AlertDialog(
       onDismissRequest = { editingPost = null },
-      title = { Text("Edit Community Post", fontWeight = FontWeight.Bold) },
+      containerColor = palette.card,
+      shape = RoundedCornerShape(VybeTokens.Radius.lg),
+      title = {
+        Text(
+          "Edit Community Post",
+          fontWeight = FontWeight.Bold,
+          fontFamily = PlusJakartaSansFontFamily,
+          color = palette.textPrimary
+        )
+      },
       text = {
         Column(
           modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -899,6 +927,8 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
             onValueChange = { editedTitle = it },
             label = { Text("Post Title") },
             singleLine = true,
+            shape = RoundedCornerShape(VybeTokens.Radius.sm),
+            colors = fieldColors,
             modifier = Modifier
               .fillMaxWidth()
               .testTag("edit_comm_post_title_input")
@@ -909,6 +939,8 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
             label = { Text("Content") },
             minLines = 3,
             maxLines = 6,
+            shape = RoundedCornerShape(VybeTokens.Radius.sm),
+            colors = fieldColors,
             modifier = Modifier
               .fillMaxWidth()
               .testTag("edit_comm_post_body_input")
@@ -928,14 +960,15 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
             }
           },
           enabled = editedTitle.isNotBlank() || editedBody.isNotBlank(),
-          colors = ButtonDefaults.buttonColors(containerColor = VybeViolet)
+          shape = RoundedCornerShape(VybeTokens.Radius.pill),
+          colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = Color.White)
         ) {
-          Text("Save Changes", color = Color.White)
+          Text("Save Changes", fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily)
         }
       },
       dismissButton = {
         TextButton(onClick = { editingPost = null }) {
-          Text("Cancel")
+          Text("Cancel", color = palette.textSecondary, fontFamily = PlusJakartaSansFontFamily)
         }
       }
     )
@@ -946,22 +979,37 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
     val target = postToDelete!!
     AlertDialog(
       onDismissRequest = { postToDelete = null },
-      title = { Text("Delete Community Post?", fontWeight = FontWeight.Bold) },
-      text = { Text("This post and its comments will be permanently removed from ${activeCommunity?.name ?: "the community"}.") },
+      containerColor = palette.card,
+      shape = RoundedCornerShape(VybeTokens.Radius.lg),
+      title = {
+        Text(
+          "Delete Community Post?",
+          fontWeight = FontWeight.Bold,
+          fontFamily = PlusJakartaSansFontFamily,
+          color = palette.textPrimary
+        )
+      },
+      text = {
+        Text(
+          "This post and its comments will be permanently removed from ${activeCommunity?.name ?: "the community"}.",
+          color = palette.textSecondary
+        )
+      },
       confirmButton = {
         Button(
           onClick = {
             viewModel.deleteCommunityPost(target.id)
             postToDelete = null
           },
-          colors = ButtonDefaults.buttonColors(containerColor = VybeDanger)
+          shape = RoundedCornerShape(VybeTokens.Radius.pill),
+          colors = ButtonDefaults.buttonColors(containerColor = palette.danger, contentColor = Color.White)
         ) {
-          Text("Delete", color = Color.White)
+          Text("Delete", fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily)
         }
       },
       dismissButton = {
         TextButton(onClick = { postToDelete = null }) {
-          Text("Cancel")
+          Text("Cancel", color = palette.textSecondary, fontFamily = PlusJakartaSansFontFamily)
         }
       }
     )
@@ -978,7 +1026,9 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
       onDismissRequest = { showMembersSheet = false },
       sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
       contentWindowInsets = { WindowInsets(0.dp) },
-      containerColor = MaterialTheme.colorScheme.surface
+      dragHandle = { BottomSheetDefaults.DragHandle(color = palette.border) },
+      containerColor = palette.card,
+      contentColor = palette.textPrimary
     ) {
       Column(
         modifier = Modifier
@@ -990,7 +1040,9 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
         Text(
           text = "Community Members (${members.size})",
           fontWeight = FontWeight.Bold,
-          fontSize = 16.sp
+          fontFamily = PlusJakartaSansFontFamily,
+          fontSize = 16.sp,
+          color = palette.textPrimary
         )
         Spacer(modifier = Modifier.height(10.dp))
 
@@ -1001,7 +1053,7 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
               .padding(24.dp),
             contentAlignment = Alignment.Center
           ) {
-            Text("Loading community members...", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Loading community members...", fontSize = 12.sp, color = palette.textSecondary)
           }
         } else {
           LazyColumn(
@@ -1043,7 +1095,9 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
       onDismissRequest = { activeCommentPostId = null },
       sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
       contentWindowInsets = { WindowInsets(0.dp) },
-      dragHandle = { BottomSheetDefaults.DragHandle() }
+      dragHandle = { BottomSheetDefaults.DragHandle(color = palette.border) },
+      containerColor = palette.card,
+      contentColor = palette.textPrimary
     ) {
       Column(
         modifier = Modifier
@@ -1052,7 +1106,13 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
           .navigationBarsPadding()
           .imePadding()
       ) {
-        Text("Comments (${postComments.size})", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        Text(
+          "Comments (${postComments.size})",
+          fontWeight = FontWeight.Bold,
+          fontFamily = PlusJakartaSansFontFamily,
+          fontSize = 15.sp,
+          color = palette.textPrimary
+        )
         Spacer(modifier = Modifier.height(10.dp))
 
         Box(
@@ -1065,7 +1125,7 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
               Text(
                 "No comments yet. Start the conversation!",
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = palette.textSecondary
               )
             }
           } else {
@@ -1077,11 +1137,17 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
                   Spacer(modifier = Modifier.width(8.dp))
                   Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                      Text(c.author.displayName, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                      Text(
+                        c.author.displayName,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = PlusJakartaSansFontFamily,
+                        fontSize = 12.sp,
+                        color = palette.textPrimary
+                      )
                       Spacer(modifier = Modifier.width(6.dp))
-                      Text(rel, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      Text(rel, fontSize = 10.sp, color = palette.textMuted)
                     }
-                    Text(c.content, fontSize = 13.sp)
+                    Text(c.content, fontSize = 13.sp, color = palette.textSecondary)
                   }
                 }
               }
@@ -1099,8 +1165,9 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
           OutlinedTextField(
             value = commentText,
             onValueChange = { commentText = it },
-            placeholder = { Text("Write a comment...", fontSize = 12.sp) },
-            shape = RoundedCornerShape(20.dp),
+            placeholder = { Text("Write a comment...", fontSize = 12.sp, color = palette.textMuted) },
+            shape = RoundedCornerShape(VybeTokens.Radius.pill),
+            colors = fieldColors,
             maxLines = 3,
             modifier = Modifier
               .weight(1f)
@@ -1118,7 +1185,7 @@ fun CommunityZoneScreen(viewModel: VybeViewModel) {
             modifier = Modifier
               .size(48.dp)
               .clip(CircleShape)
-              .background(VybeViolet)
+              .background(palette.accent)
           ) {
             Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(18.dp))
           }
@@ -1138,12 +1205,14 @@ private fun CommunityMemberRow(
   onToggleAdminRole: () -> Unit,
   onRemove: () -> Unit
 ) {
+  val palette = LocalVybePalette.current
   val isTargetCreator = member.role == "CREATOR"
   val isSelf = member.user.id == viewerUserId
 
   Surface(
-    shape = RoundedCornerShape(12.dp),
-    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+    shape = RoundedCornerShape(VybeTokens.Radius.md),
+    color = palette.elevated,
+    border = BorderStroke(1.dp, palette.border),
     modifier = Modifier.fillMaxWidth()
   ) {
     Row(
@@ -1153,11 +1222,17 @@ private fun CommunityMemberRow(
       VybeAvatar(user = member.user, size = 38.dp)
       Spacer(modifier = Modifier.width(10.dp))
       Column(modifier = Modifier.weight(1f)) {
-        Text(member.user.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        Text(
+          member.user.displayName,
+          fontWeight = FontWeight.Bold,
+          fontFamily = PlusJakartaSansFontFamily,
+          fontSize = 13.sp,
+          color = palette.textPrimary
+        )
         Text(
           text = "@${member.user.username} • ${if (member.status == "PENDING") "Pending Approval" else member.role}",
           fontSize = 11.sp,
-          color = if (member.status == "PENDING") VybeBrandCyan else MaterialTheme.colorScheme.onSurfaceVariant
+          color = if (member.status == "PENDING") palette.accentSecondary else palette.textSecondary
         )
       }
 
@@ -1165,12 +1240,12 @@ private fun CommunityMemberRow(
         if (member.status == "PENDING") {
           Button(
             onClick = onApprove,
-            colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
+            colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = Color.White),
             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-            shape = RoundedCornerShape(8.dp),
-            modifier = Modifier.heightIn(min = 34.dp)
+            shape = RoundedCornerShape(VybeTokens.Radius.pill),
+            modifier = Modifier.heightIn(min = 36.dp)
           ) {
-            Text("Approve", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+            Text("Approve", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily)
           }
           Spacer(modifier = Modifier.width(6.dp))
         } else if (isViewerCreator) {
@@ -1178,18 +1253,19 @@ private fun CommunityMemberRow(
             Text(
               text = if (member.role == "ADMIN") "Demote" else "Make Admin",
               fontSize = 11.sp,
-              color = VybeBrandCyan
+              fontWeight = FontWeight.SemiBold,
+              color = palette.accentSecondary
             )
           }
         }
         IconButton(
           onClick = onRemove,
-          modifier = Modifier.size(38.dp)
+          modifier = Modifier.size(40.dp)
         ) {
           Icon(
             Icons.Outlined.PersonRemove,
             contentDescription = "Remove member",
-            tint = VybeDanger,
+            tint = palette.danger,
             modifier = Modifier.size(18.dp)
           )
         }

@@ -36,7 +36,7 @@ import com.example.data.model.CallSession
 import com.example.data.model.CallState
 import com.example.data.model.User
 import com.example.data.repository.UploadStatus
-import com.example.ui.theme.VybeOnlineGreen
+import com.example.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
@@ -123,15 +123,21 @@ fun UploadStatusBanner(
     exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
     modifier = modifier
   ) {
+    val palette = LocalVybePalette.current
     val bgColor = when (uploadStatus) {
       is UploadStatus.Failed -> Color(0xFF3B1219)
       is UploadStatus.Published -> Color(0xFF0E3324)
-      else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.96f)
+      else -> palette.card.copy(alpha = 0.97f)
     }
 
     Surface(
       color = bgColor,
-      shape = RoundedCornerShape(16.dp),
+      shape = RoundedCornerShape(VybeTokens.Radius.lg),
+      border = androidx.compose.foundation.BorderStroke(
+        1.dp,
+        if (uploadStatus is UploadStatus.Failed || uploadStatus is UploadStatus.Published) Color.White.copy(alpha = 0.12f)
+        else palette.border
+      ),
       tonalElevation = 6.dp,
       shadowElevation = 8.dp,
       modifier = Modifier
@@ -347,9 +353,10 @@ fun IncomingCallBanner(
   ) {
     if (callSession != null) {
       Surface(
-        color = Color(0xFF141224),
+        color = SocialDarkSurface,
         contentColor = Color.White,
-        shape = RoundedCornerShape(20.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, SocialDarkBorder),
+        shape = RoundedCornerShape(VybeTokens.Radius.xl),
         shadowElevation = 12.dp,
         tonalElevation = 8.dp,
         modifier = Modifier
@@ -441,6 +448,7 @@ fun VybeMatchesManagerDialog(
     }
   }
 
+  val palette = LocalVybePalette.current
   Dialog(
     onDismissRequest = onDismiss,
     properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -450,8 +458,9 @@ fun VybeMatchesManagerDialog(
         .widthIn(max = 560.dp)
         .fillMaxWidth(0.94f)
         .heightIn(max = 600.dp),
-      shape = RoundedCornerShape(22.dp),
-      color = MaterialTheme.colorScheme.surface,
+      shape = RoundedCornerShape(VybeTokens.Radius.xl),
+      border = androidx.compose.foundation.BorderStroke(1.dp, palette.border),
+      color = palette.card,
       tonalElevation = 6.dp
     ) {
       Column(modifier = Modifier.padding(18.dp)) {
@@ -463,17 +472,19 @@ fun VybeMatchesManagerDialog(
           Column(modifier = Modifier.weight(1f)) {
             Text(
               text = "VYBE Matches",
+              fontFamily = PlusJakartaSansFontFamily,
               style = MaterialTheme.typography.titleLarge,
-              fontWeight = FontWeight.Bold
+              fontWeight = FontWeight.Bold,
+              color = palette.textPrimary
             )
             Text(
               text = "${selectedMatches.size} selected • Only these people can view VYBE Matches stories",
               style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
+              color = palette.textSecondary
             )
           }
           IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
-            Icon(Icons.Default.Close, contentDescription = "Close VYBE Matches")
+            Icon(Icons.Default.Close, contentDescription = "Close VYBE Matches", tint = palette.textPrimary)
           }
         }
 
@@ -482,10 +493,18 @@ fun VybeMatchesManagerDialog(
         OutlinedTextField(
           value = filterQuery,
           onValueChange = { filterQuery = it },
-          placeholder = { Text("Search people by name or @username...") },
-          leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+          placeholder = { Text("Search people by name or @username...", color = palette.textMuted) },
+          leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = palette.textMuted) },
           singleLine = true,
-          shape = RoundedCornerShape(14.dp),
+          shape = RoundedCornerShape(VybeTokens.Radius.md),
+          colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = palette.elevated,
+            unfocusedContainerColor = palette.elevated,
+            focusedBorderColor = palette.accent,
+            unfocusedBorderColor = palette.border,
+            focusedTextColor = palette.textPrimary,
+            unfocusedTextColor = palette.textPrimary
+          ),
           modifier = Modifier
             .fillMaxWidth()
             .testTag("vybe_matches_search_input")
@@ -504,7 +523,7 @@ fun VybeMatchesManagerDialog(
               text = if (filterQuery.isBlank()) "LINK UP or search people on VYBE to add them to your VYBE Matches."
               else "No matching accounts found.",
               style = MaterialTheme.typography.bodyMedium,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
+              color = palette.textSecondary
             )
           }
         } else {
@@ -517,8 +536,9 @@ fun VybeMatchesManagerDialog(
             items(candidatePool, key = { it.id }) { person ->
               val isAdded = selectedIds.contains(person.id)
               Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                shape = RoundedCornerShape(VybeTokens.Radius.md),
+                color = palette.elevated,
+                border = androidx.compose.foundation.BorderStroke(1.dp, palette.border),
                 modifier = Modifier.fillMaxWidth()
               ) {
                 Row(
@@ -541,13 +561,14 @@ fun VybeMatchesManagerDialog(
                       modifier = Modifier
                         .size(42.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                        .background(palette.accent.copy(alpha = 0.16f)),
                       contentAlignment = Alignment.Center
                     ) {
                       Text(
                         text = person.displayName.take(1).uppercase(),
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        fontFamily = PlusJakartaSansFontFamily,
+                        color = palette.accent
                       )
                     }
                   }
@@ -557,41 +578,45 @@ fun VybeMatchesManagerDialog(
                   Column(modifier = Modifier.weight(1f)) {
                     Text(
                       text = person.displayName,
+                      fontFamily = PlusJakartaSansFontFamily,
                       style = MaterialTheme.typography.bodyMedium,
                       fontWeight = FontWeight.SemiBold,
+                      color = palette.textPrimary,
                       maxLines = 1,
                       overflow = TextOverflow.Ellipsis
                     )
                     Text(
                       text = "@${person.username}",
                       style = MaterialTheme.typography.bodySmall,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                      color = palette.textSecondary
                     )
                   }
 
                   if (isAdded) {
                     OutlinedButton(
                       onClick = { onRemoveMatch(person.id) },
-                      shape = RoundedCornerShape(10.dp),
+                      shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                      border = androidx.compose.foundation.BorderStroke(1.dp, palette.border),
                       modifier = Modifier
                         .heightIn(min = 48.dp)
                         .testTag("remove_vybe_match_${person.id}")
                     ) {
-                      Icon(Icons.Default.PersonRemove, contentDescription = null, modifier = Modifier.size(16.dp))
+                      Icon(Icons.Default.PersonRemove, contentDescription = null, tint = palette.textSecondary, modifier = Modifier.size(16.dp))
                       Spacer(Modifier.width(6.dp))
-                      Text("Remove")
+                      Text("Remove", color = palette.textPrimary)
                     }
                   } else {
                     Button(
                       onClick = { onAddMatch(person) },
-                      shape = RoundedCornerShape(10.dp),
+                      shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                      colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = Color.White),
                       modifier = Modifier
                         .heightIn(min = 48.dp)
                         .testTag("add_vybe_match_${person.id}")
                     ) {
                       Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
                       Spacer(Modifier.width(6.dp))
-                      Text("Add")
+                      Text("Add", fontWeight = FontWeight.SemiBold)
                     }
                   }
                 }
@@ -604,13 +629,14 @@ fun VybeMatchesManagerDialog(
 
         Button(
           onClick = onDismiss,
-          shape = RoundedCornerShape(12.dp),
+          colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
+          shape = RoundedCornerShape(VybeTokens.Radius.md),
           modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
             .testTag("done_vybe_matches_button")
         ) {
-          Text("Done (${selectedMatches.size} Selected)", fontWeight = FontWeight.SemiBold)
+          Text("Done (${selectedMatches.size} Selected)", fontWeight = FontWeight.SemiBold, color = Color.White)
         }
       }
     }
@@ -628,6 +654,7 @@ fun RealtimeNotificationBanner(
   onDismiss: () -> Unit,
   modifier: Modifier = Modifier
 ) {
+  val palette = LocalVybePalette.current
   AnimatedVisibility(
     visible = event != null,
     enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
@@ -636,9 +663,10 @@ fun RealtimeNotificationBanner(
   ) {
     val active = event ?: return@AnimatedVisibility
     Surface(
-      color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
-      contentColor = MaterialTheme.colorScheme.onSurface,
-      shape = RoundedCornerShape(20.dp),
+      color = palette.card.copy(alpha = 0.97f),
+      contentColor = palette.textPrimary,
+      border = androidx.compose.foundation.BorderStroke(1.dp, palette.border),
+      shape = RoundedCornerShape(VybeTokens.Radius.xl),
       tonalElevation = 8.dp,
       shadowElevation = 10.dp,
       modifier = Modifier

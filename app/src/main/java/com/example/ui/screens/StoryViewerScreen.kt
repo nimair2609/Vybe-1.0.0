@@ -386,13 +386,14 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
             Box(
               modifier = Modifier
                 .fillMaxSize()
-                .background(VybeViolet),
+                .background(VybeSocialVioletBright),
               contentAlignment = Alignment.Center
             ) {
               Text(
                 currentStory.author.displayName.take(1).uppercase(),
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
+                fontFamily = PlusJakartaSansFontFamily,
                 fontSize = 13.sp
               )
             }
@@ -650,27 +651,28 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
           Button(
             onClick = { showViewersSheet = true },
             colors = ButtonDefaults.buttonColors(
-              containerColor = Color.Black.copy(alpha = 0.65f),
+              containerColor = ObsidianCard.copy(alpha = 0.85f),
               contentColor = Color.White
             ),
-            shape = RoundedCornerShape(20.dp),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+            shape = RoundedCornerShape(VybeTokens.Radius.pill),
+            border = BorderStroke(1.dp, ObsidianBorder),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             modifier = Modifier
               .weight(1f)
-              .height(44.dp)
+              .height(48.dp)
               .testTag("story_viewers_button")
           ) {
             Icon(
               imageVector = Icons.Default.Visibility,
               contentDescription = "Who saw",
-              tint = VybeElectricCyan,
+              tint = VybeGrowBlueBright,
               modifier = Modifier.size(16.dp)
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
               text = "$totalViewersCount saw",
               fontSize = 12.sp,
+              fontFamily = PlusJakartaSansFontFamily,
               fontWeight = FontWeight.SemiBold,
               maxLines = 1
             )
@@ -678,10 +680,10 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
 
           // Reactions count pill
           Surface(
-            color = Color.Black.copy(alpha = 0.65f),
-            shape = RoundedCornerShape(20.dp),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
-            modifier = Modifier.height(44.dp)
+            color = ObsidianCard.copy(alpha = 0.85f),
+            shape = RoundedCornerShape(VybeTokens.Radius.pill),
+            border = BorderStroke(1.dp, ObsidianBorder),
+            modifier = Modifier.height(48.dp)
           ) {
             Row(
               verticalAlignment = Alignment.CenterVertically,
@@ -697,6 +699,7 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
                 text = "${currentStory.reactionsCount.coerceAtLeast(1)} reactions",
                 color = Color.White,
                 fontSize = 12.sp,
+                fontFamily = PlusJakartaSansFontFamily,
                 fontWeight = FontWeight.SemiBold
               )
             }
@@ -706,27 +709,28 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
           Button(
             onClick = { showCommentsSheet = true },
             colors = ButtonDefaults.buttonColors(
-              containerColor = Color.Black.copy(alpha = 0.65f),
+              containerColor = ObsidianCard.copy(alpha = 0.85f),
               contentColor = Color.White
             ),
-            shape = RoundedCornerShape(20.dp),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+            shape = RoundedCornerShape(VybeTokens.Radius.pill),
+            border = BorderStroke(1.dp, ObsidianBorder),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             modifier = Modifier
               .weight(1f)
-              .height(44.dp)
+              .height(48.dp)
               .testTag("story_comments_button")
           ) {
             Icon(
               imageVector = Icons.Default.ChatBubbleOutline,
               contentDescription = "Comment Center",
-              tint = VybeMagenta,
+              tint = VybeSocialVioletBright,
               modifier = Modifier.size(16.dp)
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
               text = "Comments",
               fontSize = 12.sp,
+              fontFamily = PlusJakartaSansFontFamily,
               fontWeight = FontWeight.SemiBold,
               maxLines = 1
             )
@@ -745,9 +749,9 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
       ModalBottomSheet(
         onDismissRequest = { showViewersSheet = false },
         sheetState = viewersSheetState,
-        dragHandle = { BottomSheetDefaults.DragHandle() },
-        containerColor = Color(0xFF0F172A),
-        contentColor = Color.White
+        dragHandle = { BottomSheetDefaults.DragHandle(color = ObsidianBorder) },
+        containerColor = ObsidianCard,
+        contentColor = SocialDarkTextPrimary
       ) {
         Column(
           modifier = Modifier
@@ -763,22 +767,23 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
             Column {
               Text(
                 text = "Story Activity & Viewers",
+                fontFamily = PlusJakartaSansFontFamily,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = SocialDarkTextPrimary
               )
               Text(
                 text = "Seen by ${viewerCandidates.size} people • ${currentStory.reactionsCount.coerceAtLeast(1)} reactions",
                 fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.7f)
+                color = SocialDarkTextSecondary
               )
             }
             IconButton(onClick = { showViewersSheet = false }) {
-              Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+              Icon(Icons.Default.Close, contentDescription = "Close", tint = SocialDarkTextPrimary)
             }
           }
 
-          HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+          HorizontalDivider(color = ObsidianBorder)
 
           LazyColumn(
             modifier = Modifier
@@ -801,7 +806,8 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
                     Text(
                       text = viewer.displayName.ifBlank { viewer.username },
                       fontWeight = FontWeight.Bold,
-                      color = Color.White,
+                      fontFamily = PlusJakartaSansFontFamily,
+                      color = SocialDarkTextPrimary,
                       fontSize = 13.sp,
                       maxLines = 1,
                       overflow = TextOverflow.Ellipsis
@@ -814,7 +820,7 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
                   Text(
                     text = "@${viewer.username} • Viewed recently",
                     fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.6f)
+                    color = SocialDarkTextSecondary
                   )
                 }
 
@@ -836,7 +842,7 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
       var storyCommentsList by remember {
         mutableStateOf(
           listOf(
-            "Loving the vibe! 🫰",
+            "Loving the vibe!",
             "This view is unreal!",
             "Need to catch up soon!"
           )
@@ -846,9 +852,9 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
       ModalBottomSheet(
         onDismissRequest = { showCommentsSheet = false },
         sheetState = commentsSheetState,
-        dragHandle = { BottomSheetDefaults.DragHandle() },
-        containerColor = Color(0xFF0F172A),
-        contentColor = Color.White
+        dragHandle = { BottomSheetDefaults.DragHandle(color = ObsidianBorder) },
+        containerColor = ObsidianCard,
+        contentColor = SocialDarkTextPrimary
       ) {
         Column(
           modifier = Modifier
@@ -865,22 +871,23 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
             Column {
               Text(
                 text = "Story Comment Center",
+                fontFamily = PlusJakartaSansFontFamily,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = SocialDarkTextPrimary
               )
               Text(
                 text = "Replies and reactions to your story",
                 fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.7f)
+                color = SocialDarkTextSecondary
               )
             }
             IconButton(onClick = { showCommentsSheet = false }) {
-              Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+              Icon(Icons.Default.Close, contentDescription = "Close", tint = SocialDarkTextPrimary)
             }
           }
 
-          HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+          HorizontalDivider(color = ObsidianBorder)
 
           LazyColumn(
             modifier = Modifier
@@ -902,12 +909,13 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
                   Text(
                     text = "Story Reply",
                     fontWeight = FontWeight.SemiBold,
-                    color = VybeElectricCyan,
+                    fontFamily = PlusJakartaSansFontFamily,
+                    color = VybeSocialVioletBright,
                     fontSize = 12.sp
                   )
                   Text(
                     text = commentText,
-                    color = Color.White,
+                    color = SocialDarkTextPrimary,
                     fontSize = 13.sp
                   )
                 }
@@ -925,16 +933,16 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
             OutlinedTextField(
               value = newStoryComment,
               onValueChange = { newStoryComment = it },
-              placeholder = { Text("Add comment or note...", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp) },
+              placeholder = { Text("Add comment or note...", color = SocialDarkTextMuted, fontSize = 13.sp) },
               colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                focusedBorderColor = VybeElectricCyan,
-                unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
-                focusedContainerColor = Color.Black.copy(alpha = 0.5f),
-                unfocusedContainerColor = Color.Black.copy(alpha = 0.35f)
+                focusedTextColor = SocialDarkTextPrimary,
+                unfocusedTextColor = SocialDarkTextPrimary,
+                focusedBorderColor = VybeSocialVioletBright,
+                unfocusedBorderColor = ObsidianBorder,
+                focusedContainerColor = ObsidianElevated,
+                unfocusedContainerColor = ObsidianElevated
               ),
-              shape = RoundedCornerShape(24.dp),
+              shape = RoundedCornerShape(VybeTokens.Radius.pill),
               modifier = Modifier.weight(1f).heightIn(min = 48.dp),
               singleLine = true
             )
@@ -946,7 +954,7 @@ fun StoryViewerScreen(viewModel: VybeViewModel) {
                 }
               },
               modifier = Modifier
-                .size(44.dp)
+                .size(48.dp)
                 .clip(CircleShape)
                 .background(VybeGradient)
             ) {
@@ -1053,7 +1061,7 @@ private fun StoryCanvas(
               modifier = Modifier
                 .size(104.dp)
                 .clip(CircleShape)
-                .background(Brush.linearGradient(listOf(VybeMagenta, VybeBrandCyan))),
+                .background(Brush.linearGradient(listOf(VybeSocialVioletBright, VybeGrowBlueBright))),
               contentAlignment = Alignment.Center
             ) {
               Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(50.dp))
@@ -1062,20 +1070,21 @@ private fun StoryCanvas(
             Spacer(modifier = Modifier.height(20.dp))
 
             Surface(
-              color = Color.Black.copy(alpha = 0.6f),
-              shape = RoundedCornerShape(16.dp),
-              border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+              color = ObsidianCard.copy(alpha = 0.8f),
+              shape = RoundedCornerShape(VybeTokens.Radius.lg),
+              border = BorderStroke(1.dp, ObsidianBorder)
             ) {
               Row(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Icon(Icons.Default.GraphicEq, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(20.dp))
+                Icon(Icons.Default.GraphicEq, contentDescription = null, tint = VybeGrowBlueBright, modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                   text = story.musicTrackTitle ?: "Audio Track",
                   color = Color.White,
                   fontWeight = FontWeight.Bold,
+                  fontFamily = PlusJakartaSansFontFamily,
                   fontSize = 14.sp
                 )
               }
@@ -1120,9 +1129,9 @@ private fun StoryCanvas(
 
     if (mediaLoadError != null) {
       Surface(
-        color = Color(0xFF0F172A).copy(alpha = 0.92f),
-        shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+        color = ObsidianCard.copy(alpha = 0.94f),
+        shape = RoundedCornerShape(VybeTokens.Radius.lg),
+        border = BorderStroke(1.dp, ObsidianBorder),
         modifier = Modifier
           .padding(24.dp)
           .testTag("story_error_retry_card")
@@ -1131,24 +1140,25 @@ private fun StoryCanvas(
           modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
           horizontalAlignment = Alignment.CenterHorizontally
         ) {
-          Icon(Icons.Default.CloudOff, contentDescription = "Story load error", tint = Color(0xFFFF6B6B), modifier = Modifier.size(28.dp))
+          Icon(Icons.Default.CloudOff, contentDescription = "Story load error", tint = VybeDanger, modifier = Modifier.size(28.dp))
           Spacer(modifier = Modifier.height(8.dp))
           Text(
             text = mediaLoadError,
-            color = Color.White,
+            color = SocialDarkTextPrimary,
             fontSize = 13.sp,
+            fontFamily = PlusJakartaSansFontFamily,
             textAlign = TextAlign.Center
           )
           Spacer(modifier = Modifier.height(12.dp))
           Button(
             onClick = onRetryMedia,
-            colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.heightIn(min = 44.dp)
+            colors = ButtonDefaults.buttonColors(containerColor = VybeSocialVioletBright, contentColor = Color.White),
+            shape = RoundedCornerShape(VybeTokens.Radius.pill),
+            modifier = Modifier.heightIn(min = 48.dp)
           ) {
             Icon(Icons.Default.Refresh, contentDescription = "Retry story", tint = Color.White, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(6.dp))
-            Text("Retry Story", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Text("Retry Story", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSansFontFamily, fontSize = 12.sp)
           }
         }
       }
@@ -1165,20 +1175,22 @@ private fun StoryCanvas(
     ) {
       if (!story.location.isNullOrBlank()) {
         Surface(
-          color = Color.Black.copy(alpha = 0.65f),
-          shape = RoundedCornerShape(12.dp),
+          color = ObsidianCard.copy(alpha = 0.8f),
+          border = BorderStroke(1.dp, ObsidianBorder),
+          shape = RoundedCornerShape(VybeTokens.Radius.md),
           modifier = Modifier.padding(bottom = 8.dp)
         ) {
           Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically
           ) {
-            Icon(Icons.Default.LocationOn, contentDescription = null, tint = VybeBrandCyan, modifier = Modifier.size(13.dp))
+            Icon(Icons.Default.LocationOn, contentDescription = null, tint = VybeGrowBlueBright, modifier = Modifier.size(13.dp))
             Spacer(modifier = Modifier.width(4.dp))
             Text(
               text = story.location ?: "",
               color = Color.White,
               fontWeight = FontWeight.Bold,
+              fontFamily = PlusJakartaSansFontFamily,
               fontSize = 11.sp
             )
           }

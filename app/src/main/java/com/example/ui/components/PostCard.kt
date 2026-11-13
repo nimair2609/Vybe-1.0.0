@@ -1,6 +1,5 @@
 package com.example.ui.components
 
-import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -15,7 +14,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.automirrored.outlined.VolumeOff
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -23,7 +23,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -39,20 +38,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
 import coil.compose.AsyncImage
 import com.example.data.model.MediaType
+import com.example.data.model.MusicAttachment
 import com.example.data.model.Post
 import com.example.data.model.User
 import com.example.data.model.VybeReaction
-import androidx.compose.material.icons.automirrored.outlined.VolumeOff
-import androidx.compose.material.icons.automirrored.outlined.VolumeUp
-import androidx.compose.ui.zIndex
 import com.example.ui.theme.*
 import com.example.util.FeedAudioController
+import com.example.util.music.MusicPreviewController
 import com.example.util.rememberRelativeTimestamp
-
-import com.example.data.model.MusicAttachment
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,12 +83,12 @@ fun PostCard(
   onMuteCreator: (() -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
+  val palette = LocalVybePalette.current
   var showCommentDialog by remember { mutableStateOf(false) }
   var showOptionsMenu by remember { mutableStateOf(false) }
   var showAnalyticsSheet by remember { mutableStateOf(false) }
   var showDeleteConfirm by remember { mutableStateOf(false) }
   var showReportDialog by remember { mutableStateOf(false) }
-  var showReactionSelector by remember { mutableStateOf(false) }
   var selectedReportReason by remember { mutableStateOf("Spam or Misleading") }
   var commentText by remember { mutableStateOf("") }
   var detectedMediaRatio by remember(post.id, post.mediaAspectRatio) { mutableStateOf(post.mediaAspectRatio) }
@@ -142,15 +138,14 @@ fun PostCard(
     )
   val anySheetOpen = showCommentDialog || showAnalyticsSheet || showDeleteConfirm || showReportDialog
 
-  // Coordinate non-overlapping music playback for photo/text posts that carry an audio track
   LaunchedEffect(post.id, post.musicAttachment, post.audioTrackTitle, isVideoPost, shouldPlayAudio, anySheetOpen) {
     val activePlay = shouldPlayAudio && !anySheetOpen
     val attached = post.musicAttachment
     if (!isVideoPost && attached != null && !attached.streamUrl.isNullOrBlank()) {
       if (activePlay) {
-        com.example.util.music.MusicPreviewController.playAttachment(attached, muted = false)
-      } else if (com.example.util.music.MusicPreviewController.isPlayingTrack(attached.trackId)) {
-        com.example.util.music.MusicPreviewController.stop()
+        MusicPreviewController.playAttachment(attached, muted = false)
+      } else if (MusicPreviewController.isPlayingTrack(attached.trackId)) {
+        MusicPreviewController.stop()
       }
     } else if (!isVideoPost && !post.audioTrackTitle.isNullOrBlank()) {
       FeedAudioController.syncPostMusicTrack(
@@ -164,8 +159,8 @@ fun PostCard(
   DisposableEffect(post.id) {
     onDispose {
       val attached = post.musicAttachment
-      if (!isVideoPost && attached != null && com.example.util.music.MusicPreviewController.isPlayingTrack(attached.trackId)) {
-        com.example.util.music.MusicPreviewController.stop()
+      if (!isVideoPost && attached != null && MusicPreviewController.isPlayingTrack(attached.trackId)) {
+        MusicPreviewController.stop()
       }
       if (!isVideoPost && !post.audioTrackTitle.isNullOrBlank()) {
         FeedAudioController.syncPostMusicTrack(post.id, post.audioTrackTitle, shouldPlayAudio = false)
@@ -173,35 +168,20 @@ fun PostCard(
     }
   }
 
-  val isDark = LocalIsDarkTheme.current
-  val cardBg = if (isDark) Color(0xFF0A0E1A) else Color.White
-  val cardBorder = if (isDark) Color(0xFF1B2338) else Color(0xFFE2E8F0)
-  val primaryText = if (isDark) Color.White else Color(0xFF0F172A)
-  val secondaryText = if (isDark) Color.White.copy(alpha = 0.86f) else Color(0xFF334155)
-  val mutedText = if (isDark) Color.White.copy(alpha = 0.58f) else Color(0xFF64748B)
-  val followPillActiveBg = if (isDark) Color(0xFF161F33) else Color(0xFFF1F5F9)
-  val followPillActiveBorder = if (isDark) Color(0xFF26334D) else Color(0xFFCBD5E1)
-  val followPillInactiveBorder = if (isDark) Color(0xFF475569) else Color(0xFF94A3B8)
-  val musicPillBg = if (isDark) Color(0xFF141A2E) else Color(0xFFF8FAFC)
-  val musicPillBorder = if (isDark) Color(0xFF222C46) else Color(0xFFE2E8F0)
-  val mediaPlaceholderBg = if (isDark) Color(0xFF101524) else Color(0xFFF1F5F9)
-  val accentCyan = if (isDark) VybeBrandCyan else Color(0xFF0284C7)
-  val linkAccent = if (isDark) Color(0xFF818CF8) else VybeVioletDark
-
   Card(
     modifier = modifier
       .fillMaxWidth()
-      .padding(horizontal = 14.dp, vertical = 7.dp)
+      .padding(horizontal = 2.dp, vertical = 4.dp)
       .testTag("post_card_${post.id}"),
-    colors = CardDefaults.cardColors(containerColor = cardBg),
-    shape = RoundedCornerShape(18.dp),
+    colors = CardDefaults.cardColors(containerColor = palette.card),
+    shape = RoundedCornerShape(VybeTokens.Radius.lg),
     border = BorderStroke(
-      width = if (isHighlighted) 1.8.dp else 1.dp,
-      color = if (isHighlighted) VybeViolet else cardBorder
+      width = if (isHighlighted) 1.6.dp else 1.dp,
+      color = if (isHighlighted) palette.accent else palette.border
     )
   ) {
     Column(modifier = Modifier.padding(14.dp)) {
-      // Header: Single-border Author Avatar + Verified + Relative Timestamp • Privacy + Follow + 3-dot Menu
+      // Header: Author Avatar + Verified + Timestamp • Privacy + Link Up + Overflow Menu
       Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -234,9 +214,10 @@ fun PostCard(
           Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
               text = safeDisplayName,
+              fontFamily = PlusJakartaSansFontFamily,
               fontSize = 15.sp,
               fontWeight = FontWeight.Bold,
-              color = primaryText,
+              color = palette.textPrimary,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis
             )
@@ -248,21 +229,21 @@ fun PostCard(
             Text(
               text = if (relativeTimestamp.isNotBlank()) "$relativeTimestamp • " else "",
               fontSize = 12.sp,
-              color = mutedText,
+              color = palette.textMuted,
               maxLines = 1,
               modifier = Modifier.testTag("post_timestamp_${post.id}")
             )
             Text(
               text = if (post.author.isPrivate) "Private" else "Public",
               fontSize = 12.sp,
-              color = if (post.author.isPrivate) VybeViolet else mutedText,
+              color = if (post.author.isPrivate) palette.accent else palette.textMuted,
               maxLines = 1
             )
             Spacer(modifier = Modifier.width(4.dp))
             Icon(
               imageVector = if (post.author.isPrivate) Icons.Outlined.Lock else Icons.Outlined.Public,
               contentDescription = if (post.author.isPrivate) "Private" else "Public",
-              tint = mutedText,
+              tint = palette.textMuted,
               modifier = Modifier.size(12.dp)
             )
             if (!post.locationName.isNullOrBlank()) {
@@ -270,7 +251,7 @@ fun PostCard(
               Text(
                 text = "• ${post.locationName}",
                 fontSize = 11.sp,
-                color = accentCyan,
+                color = palette.accentSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
               )
@@ -281,19 +262,20 @@ fun PostCard(
         // Sleek Pill Follow Button
         if (!isAuthor && onFollowClick != null) {
           Surface(
-            color = if (isFollowing) followPillActiveBg else Color.Transparent,
-            shape = RoundedCornerShape(20.dp),
-            border = BorderStroke(1.dp, if (isFollowing) followPillActiveBorder else followPillInactiveBorder),
+            color = if (isFollowing) palette.elevated else Color.Transparent,
+            shape = RoundedCornerShape(VybeTokens.Radius.pill),
+            border = BorderStroke(1.dp, if (isFollowing) palette.border else palette.accent.copy(alpha = 0.65f)),
             modifier = Modifier
-              .clip(RoundedCornerShape(20.dp))
+              .clip(RoundedCornerShape(VybeTokens.Radius.pill))
               .clickable { onFollowClick.invoke() }
               .testTag("follow_button_${post.id}")
           ) {
             Text(
-              text = if (isFollowing) "LINKED" else if (isFollowRequested) "LINKUP Requested" else "LINK UP",
-              fontSize = 12.sp,
-              fontWeight = FontWeight.SemiBold,
-              color = primaryText,
+              text = if (isFollowing) "LINKED" else if (isFollowRequested) "Requested" else "LINK UP",
+              fontFamily = PlusJakartaSansFontFamily,
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold,
+              color = if (isFollowing) palette.textSecondary else palette.accent,
               modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
             )
           }
@@ -311,69 +293,70 @@ fun PostCard(
             Icon(
               imageVector = Icons.Default.MoreVert,
               contentDescription = "Post options",
-              tint = mutedText,
+              tint = palette.textMuted,
               modifier = Modifier.size(20.dp)
             )
           }
 
           DropdownMenu(
             expanded = showOptionsMenu,
-            onDismissRequest = { showOptionsMenu = false }
+            onDismissRequest = { showOptionsMenu = false },
+            containerColor = palette.card
           ) {
             DropdownMenuItem(
-              text = { Text("Share Post") },
+              text = { Text("Share Post", color = palette.textPrimary) },
               onClick = {
                 showOptionsMenu = false
                 onShareClick()
               },
-              leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
+              leadingIcon = { Icon(Icons.Default.Share, contentDescription = null, tint = palette.textSecondary) }
             )
             if (isAuthor) {
               DropdownMenuItem(
-                text = { Text("Post Insights") },
+                text = { Text("Post Insights", color = palette.textPrimary) },
                 onClick = {
                   showOptionsMenu = false
                   showAnalyticsSheet = true
                 },
-                leadingIcon = { Icon(Icons.Default.Insights, contentDescription = null, tint = VybeViolet) }
+                leadingIcon = { Icon(Icons.Default.Insights, contentDescription = null, tint = palette.accent) }
               )
               DropdownMenuItem(
-                text = { Text("Delete Post", color = VybeDanger) },
+                text = { Text("Delete Post", color = palette.danger) },
                 onClick = {
                   showOptionsMenu = false
                   showDeleteConfirm = true
                 },
-                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = VybeDanger) }
+                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = palette.danger) }
               )
             } else {
               if (onHidePost != null) {
                 DropdownMenuItem(
-                  text = { Text("Hide Post") },
+                  text = { Text("Hide Post", color = palette.textPrimary) },
                   onClick = {
                     showOptionsMenu = false
                     onHidePost()
                   },
-                  leadingIcon = { Icon(Icons.Default.VisibilityOff, contentDescription = null) }
+                  leadingIcon = { Icon(Icons.Default.VisibilityOff, contentDescription = null, tint = palette.textSecondary) }
                 )
               }
               if (onMuteCreator != null) {
                 DropdownMenuItem(
-                  text = { Text("Mute @${post.author.username}") },
+                  text = { Text("Mute @${post.author.username}", color = palette.textPrimary) },
                   onClick = {
                     showOptionsMenu = false
                     onMuteCreator()
                   },
-                  leadingIcon = { Icon(Icons.Default.VolumeOff, contentDescription = null) }
+                  leadingIcon = { Icon(Icons.Default.VolumeOff, contentDescription = null, tint = palette.textSecondary) }
                 )
               }
               if (onReportPost != null) {
                 DropdownMenuItem(
-                  text = { Text("Report Post", color = VybeDanger) },
+                  text = { Text("Report Post", color = palette.danger) },
                   onClick = {
                     showOptionsMenu = false
                     showReportDialog = true
                   },
-                  leadingIcon = { Icon(Icons.Default.Flag, contentDescription = null, tint = VybeDanger) }
+                  leadingIcon = { Icon(Icons.Default.Flag, contentDescription = null, tint = palette.danger) }
                 )
               }
             }
@@ -381,18 +364,19 @@ fun PostCard(
         }
       }
 
-      // Caption positioned above media
+      // Caption
       if (post.caption.isNotBlank()) {
         Spacer(modifier = Modifier.height(10.dp))
         Text(
           text = post.caption,
+          fontFamily = InterFontFamily,
           fontSize = 14.sp,
-          color = primaryText,
+          color = palette.textPrimary,
           lineHeight = 20.sp
         )
       }
 
-      // Interactive Feed Music Pill if present
+      // Interactive Feed Music Pill
       val effectiveTrackLabel = post.musicAttachment?.displayLabel ?: post.audioTrackTitle
       if (!effectiveTrackLabel.isNullOrBlank()) {
         Spacer(modifier = Modifier.height(8.dp))
@@ -401,12 +385,12 @@ fun PostCard(
           horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
           Surface(
-            color = if (shouldPlayAudio) VybeViolet.copy(alpha = 0.16f) else musicPillBg,
-            shape = RoundedCornerShape(10.dp),
-            border = if (shouldPlayAudio) BorderStroke(1.dp, VybeViolet.copy(alpha = 0.5f)) else BorderStroke(1.dp, musicPillBorder),
+            color = if (shouldPlayAudio) palette.accent.copy(alpha = 0.14f) else palette.elevated,
+            shape = RoundedCornerShape(VybeTokens.Radius.sm),
+            border = BorderStroke(1.dp, if (shouldPlayAudio) palette.accent.copy(alpha = 0.5f) else palette.border),
             modifier = Modifier
               .weight(1f, fill = false)
-              .clip(RoundedCornerShape(10.dp))
+              .clip(RoundedCornerShape(VybeTokens.Radius.sm))
               .clickable { onToggleAudio?.invoke(!isAudioEnabled) }
               .testTag("post_music_toggle_${post.id}")
           ) {
@@ -417,7 +401,7 @@ fun PostCard(
               Icon(
                 imageVector = Icons.Outlined.MusicNote,
                 contentDescription = "Audio track",
-                tint = if (shouldPlayAudio) VybeViolet else VybeMagenta,
+                tint = palette.accent,
                 modifier = Modifier.size(14.dp)
               )
               Spacer(modifier = Modifier.width(5.dp))
@@ -425,7 +409,7 @@ fun PostCard(
                 text = effectiveTrackLabel,
                 fontSize = 11.sp,
                 fontWeight = if (shouldPlayAudio) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (shouldPlayAudio) primaryText else secondaryText,
+                color = if (shouldPlayAudio) palette.textPrimary else palette.textSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false)
@@ -434,7 +418,7 @@ fun PostCard(
               Icon(
                 imageVector = if (isAudioEnabled) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
                 contentDescription = if (isAudioEnabled) "Mute feed music" else "Enable feed music",
-                tint = if (isAudioEnabled) VybeViolet else mutedText,
+                tint = if (isAudioEnabled) palette.accent else palette.textMuted,
                 modifier = Modifier.size(15.dp)
               )
             }
@@ -452,12 +436,12 @@ fun PostCard(
                 text = "Track",
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
-                color = accentCyan
+                color = palette.accentSecondary
               )
               Icon(
                 imageVector = Icons.Default.ChevronRight,
                 contentDescription = "Open music track page",
-                tint = accentCyan,
+                tint = palette.accentSecondary,
                 modifier = Modifier.size(14.dp)
               )
             }
@@ -465,7 +449,7 @@ fun PostCard(
         }
       }
 
-      // Media Container with multi-photo HorizontalPager & dynamic counter
+      // Media Container
       if (post.mediaUrls.isNotEmpty()) {
         val containerRatio = resolveFeedContainerAspectRatio(
           rawRatio = detectedMediaRatio ?: post.mediaAspectRatio,
@@ -477,7 +461,7 @@ fun PostCard(
           modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(containerRatio)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(VybeTokens.Radius.md))
             .pointerInput(post.id, isCurrentlyLiked) {
               detectTapGestures(
                 onDoubleTap = { handleDoubleTapLike() }
@@ -505,9 +489,7 @@ fun PostCard(
                   respectReducedMotion = true,
                   fitMode = VideoFitMode.COVER_PROPORTIONAL,
                   feedAudioOwnerId = post.id,
-                  onAspectRatioDetected = { ratio ->
-                    detectedMediaRatio = ratio
-                  },
+                  onAspectRatioDetected = { ratio -> detectedMediaRatio = ratio },
                   onDoubleTapOverlay = { handleDoubleTapLike() },
                   onMuteToggled = { muted -> onToggleAudio?.invoke(!muted) },
                   modifier = Modifier.fillMaxSize()
@@ -516,7 +498,7 @@ fun PostCard(
                 Box(
                   modifier = Modifier
                     .fillMaxSize()
-                    .background(mediaPlaceholderBg)
+                    .background(palette.elevated)
                 ) {
                   AsyncImage(
                     model = mediaUrl,
@@ -536,14 +518,13 @@ fun PostCard(
               }
             }
 
-            // Dynamic Photo Counter Pill (e.g. 1/5, 2/5)
             Box(
               modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(12.dp)
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(VybeTokens.Radius.sm))
                 .background(Color.Black.copy(alpha = 0.65f))
-                .padding(horizontal = 9.dp, vertical = 3.5.dp)
+                .padding(horizontal = 9.dp, vertical = 4.dp)
             ) {
               Text(
                 text = "${pagerState.currentPage + 1}/${post.mediaUrls.size}",
@@ -571,20 +552,16 @@ fun PostCard(
                 respectReducedMotion = true,
                 fitMode = VideoFitMode.COVER_PROPORTIONAL,
                 feedAudioOwnerId = post.id,
-                onAspectRatioDetected = { ratio ->
-                  detectedMediaRatio = ratio
-                },
+                onAspectRatioDetected = { ratio -> detectedMediaRatio = ratio },
                 onDoubleTapOverlay = { handleDoubleTapLike() },
-                onMuteToggled = { muted ->
-                  onToggleAudio?.invoke(!muted)
-                },
+                onMuteToggled = { muted -> onToggleAudio?.invoke(!muted) },
                 modifier = Modifier.fillMaxSize()
               )
             } else {
               Box(
                 modifier = Modifier
                   .fillMaxSize()
-                  .background(mediaPlaceholderBg)
+                  .background(palette.elevated)
               ) {
                 AsyncImage(
                   model = mediaUrl,
@@ -629,7 +606,6 @@ fun PostCard(
             }
           }
 
-          // Double-Tap Central Finger Heart Burst Feedback
           FingerHeartDoubleTapOverlay(
             visible = showDoubleTapResonance,
             burstKey = doubleTapBurstNonce,
@@ -638,7 +614,7 @@ fun PostCard(
         }
       }
 
-      // Action Bar: Optically aligned Finger Heart, Comment, Share, and Bookmark buttons
+      // Action Bar
       Spacer(modifier = Modifier.height(10.dp))
       val displayedCommentsCount = if (post.comments.isNotEmpty()) post.comments.size else post.commentsCount.coerceAtLeast(0)
       val isLiked = post.isLiked || post.userReaction != null
@@ -650,18 +626,16 @@ fun PostCard(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
-        // Left Action Group: Finger Heart, Comment, Share
         Row(
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-          // 1. Global VYBE Universal Reaction (Single-tap + Press-Hold-Drag-Release; count visible to author only)
           FingerHeartReaction(
             isLiked = isLiked,
             userReaction = post.userReaction,
             count = if (isAuthor && post.likesCount > 0) post.likesCount else null,
             iconSize = 23.dp,
-            countColorOverride = primaryText,
+            countColorOverride = palette.textPrimary,
             testTag = "like_button_${post.id}",
             onReact = { rx ->
               if (onReact != null) onReact(rx) else onLikeClick()
@@ -679,12 +653,11 @@ fun PostCard(
             }
           )
 
-          // 2. Comment
           Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
               .defaultMinSize(minHeight = 44.dp)
-              .clip(RoundedCornerShape(10.dp))
+              .clip(RoundedCornerShape(VybeTokens.Radius.sm))
               .clickable { showCommentDialog = true }
               .padding(horizontal = 2.dp, vertical = 6.dp)
               .testTag("comment_button_${post.id}")
@@ -696,7 +669,7 @@ fun PostCard(
               Icon(
                 imageVector = Icons.Outlined.ChatBubbleOutline,
                 contentDescription = "Comments",
-                tint = primaryText,
+                tint = palette.textPrimary,
                 modifier = Modifier.size(22.dp)
               )
             }
@@ -706,17 +679,16 @@ fun PostCard(
                 text = "$displayedCommentsCount",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = primaryText
+                color = palette.textPrimary
               )
             }
           }
 
-          // 3. Share — optically centered 24dp frame matching Like, Comment & Bookmark
           Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
               .defaultMinSize(minHeight = 44.dp)
-              .clip(RoundedCornerShape(10.dp))
+              .clip(RoundedCornerShape(VybeTokens.Radius.sm))
               .clickable { onShareClick() }
               .padding(horizontal = 2.dp, vertical = 6.dp)
               .testTag("share_button_${post.id}")
@@ -726,7 +698,7 @@ fun PostCard(
               contentAlignment = Alignment.Center
             ) {
               VybeCenteredShareIcon(
-                tint = primaryText,
+                tint = palette.textPrimary,
                 size = 22.dp,
                 contentDescriptionText = "Share"
               )
@@ -737,13 +709,12 @@ fun PostCard(
                 text = "${post.sharesCount}",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = primaryText
+                color = palette.textPrimary
               )
             }
           }
         }
 
-        // Right Action: Bookmark / Save — aligned on identical 44dp vertical center
         Box(
           modifier = Modifier
             .size(44.dp)
@@ -755,14 +726,14 @@ fun PostCard(
           Icon(
             imageVector = if (post.isSaved) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
             contentDescription = if (post.isSaved) "Remove from saved" else "Save post",
-            tint = if (post.isSaved) accentCyan else primaryText,
+            tint = if (post.isSaved) palette.accent else palette.textPrimary,
             modifier = Modifier.size(23.dp)
           )
         }
       }
 
       // Comments Preview Section
-      Spacer(modifier = Modifier.height(8.dp))
+      Spacer(modifier = Modifier.height(6.dp))
       val topComment = post.comments.firstOrNull()
 
       if (topComment != null) {
@@ -780,7 +751,7 @@ fun PostCard(
               modifier = Modifier
                 .size(22.dp)
                 .clip(CircleShape)
-                .background(followPillActiveBg),
+                .background(palette.elevated),
               contentAlignment = Alignment.Center
             ) {
               if (previewAvatar.isNotBlank()) {
@@ -795,7 +766,7 @@ fun PostCard(
                   text = previewAuthor.take(1).uppercase(),
                   fontSize = 10.sp,
                   fontWeight = FontWeight.Bold,
-                  color = primaryText
+                  color = palette.textPrimary
                 )
               }
             }
@@ -809,14 +780,14 @@ fun PostCard(
                   text = previewAuthor,
                   fontSize = 12.sp,
                   fontWeight = FontWeight.Bold,
-                  color = primaryText
+                  color = palette.textPrimary
                 )
                 VerificationBadge(user = topComment.author, iconSize = 14.dp)
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                   text = previewContent,
                   fontSize = 12.sp,
-                  color = secondaryText,
+                  color = palette.textSecondary,
                   maxLines = 1,
                   overflow = TextOverflow.Ellipsis,
                   modifier = Modifier.weight(1f, fill = false)
@@ -856,7 +827,7 @@ fun PostCard(
                   Text(
                     text = previewTime,
                     fontSize = 10.sp,
-                    color = mutedText
+                    color = palette.textMuted
                   )
                   Spacer(modifier = Modifier.width(10.dp))
                 }
@@ -864,7 +835,7 @@ fun PostCard(
                   text = "Reply",
                   fontSize = 10.sp,
                   fontWeight = FontWeight.Medium,
-                  color = secondaryText,
+                  color = palette.textSecondary,
                   modifier = Modifier.clickable { showCommentDialog = true }
                 )
               }
@@ -877,7 +848,7 @@ fun PostCard(
               text = "View all $displayedCommentsCount comments >",
               fontSize = 12.sp,
               fontWeight = FontWeight.Medium,
-              color = linkAccent,
+              color = palette.accent,
               modifier = Modifier
                 .clickable { showCommentDialog = true }
                 .testTag("view_all_comments_${post.id}")
@@ -896,7 +867,7 @@ fun PostCard(
           Text(
             text = if (displayedCommentsCount > 0) "View all $displayedCommentsCount comments >" else "Add a comment...",
             fontSize = 12.sp,
-            color = if (displayedCommentsCount > 0) linkAccent else mutedText,
+            color = if (displayedCommentsCount > 0) palette.accent else palette.textMuted,
             fontWeight = if (displayedCommentsCount > 0) FontWeight.Medium else FontWeight.Normal
           )
         }
@@ -904,7 +875,7 @@ fun PostCard(
     }
   }
 
-  // VYBE Comments Bottom Sheet (Keyboard-safe)
+  // VYBE Comments Bottom Sheet
   if (showCommentDialog) {
     val displayedCount = if (post.comments.isNotEmpty()) post.comments.size else post.commentsCount.coerceAtLeast(0)
     val commentSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -912,8 +883,9 @@ fun PostCard(
       onDismissRequest = { showCommentDialog = false },
       sheetState = commentSheetState,
       contentWindowInsets = { WindowInsets(0.dp) },
-      dragHandle = { BottomSheetDefaults.DragHandle() },
-      containerColor = MaterialTheme.colorScheme.surface
+      dragHandle = { BottomSheetDefaults.DragHandle(color = palette.border) },
+      containerColor = palette.card,
+      contentColor = palette.textPrimary
     ) {
       Column(
         modifier = Modifier
@@ -931,12 +903,14 @@ fun PostCard(
         ) {
           Text(
             text = "Comments ($displayedCount)",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold
+            fontFamily = PlusJakartaSansFontFamily,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = palette.textPrimary
           )
         }
 
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+        HorizontalDivider(color = palette.border)
 
         Box(
           modifier = Modifier
@@ -955,15 +929,15 @@ fun PostCard(
                 Icon(
                   Icons.Outlined.ChatBubbleOutline,
                   contentDescription = null,
-                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                  tint = palette.textMuted,
                   modifier = Modifier.size(34.dp)
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("No comments yet", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("No comments yet", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = palette.textPrimary)
                 Text(
                   "Start a thoughtful conversation below.",
                   fontSize = 12.sp,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                  color = palette.textSecondary
                 )
               }
             }
@@ -983,18 +957,18 @@ fun PostCard(
                   Spacer(modifier = Modifier.width(10.dp))
                   Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                      Text(comment.author.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                      Text(comment.author.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = palette.textPrimary)
                       VerificationBadge(user = comment.author, iconSize = 15.dp)
                       if (commentRelativeTime.isNotBlank()) {
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(commentRelativeTime, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(commentRelativeTime, fontSize = 11.sp, color = palette.textMuted)
                       }
                     }
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                       text = comment.content,
                       fontSize = 13.sp,
-                      color = MaterialTheme.colorScheme.onSurface,
+                      color = palette.textPrimary,
                       lineHeight = 18.sp
                     )
                     Spacer(modifier = Modifier.height(4.dp))
@@ -1002,10 +976,8 @@ fun PostCard(
                       text = "Reply",
                       fontSize = 11.sp,
                       fontWeight = FontWeight.SemiBold,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
-                      modifier = Modifier.clickable {
-                        commentText = "@${comment.author.username} "
-                      }
+                      color = palette.textSecondary,
+                      modifier = Modifier.clickable { commentText = "@${comment.author.username} " }
                     )
                   }
                   val commentRx = comment.userReaction ?: localCommentReactions[comment.id]
@@ -1041,7 +1013,6 @@ fun PostCard(
           }
         }
 
-        // Comment Input Row
         Row(
           modifier = Modifier
             .fillMaxWidth()
@@ -1053,7 +1024,7 @@ fun PostCard(
             onValueChange = { commentText = it },
             placeholder = { Text("Add a comment for ${post.author.displayName}...") },
             maxLines = 4,
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(VybeTokens.Radius.pill),
             modifier = Modifier
               .weight(1f)
               .testTag("comment_input_${post.id}")
@@ -1063,18 +1034,14 @@ fun PostCard(
             onClick = {
               val clean = commentText.trim()
               if (clean.isNotEmpty()) {
-                if (onAddComment != null) {
-                  onAddComment(clean)
-                } else {
-                  onCommentClick()
-                }
+                if (onAddComment != null) onAddComment(clean) else onCommentClick()
                 commentText = ""
               }
             },
             modifier = Modifier
               .size(48.dp)
               .clip(CircleShape)
-              .background(VybeViolet)
+              .background(palette.accent)
           ) {
             Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send Comment", tint = Color.White, modifier = Modifier.size(18.dp))
           }
@@ -1088,8 +1055,9 @@ fun PostCard(
   if (showAnalyticsSheet) {
     ModalBottomSheet(
       onDismissRequest = { showAnalyticsSheet = false },
-      dragHandle = { BottomSheetDefaults.DragHandle() },
-      containerColor = MaterialTheme.colorScheme.surface
+      dragHandle = { BottomSheetDefaults.DragHandle(color = palette.border) },
+      containerColor = palette.card,
+      contentColor = palette.textPrimary
     ) {
       Column(
         modifier = Modifier
@@ -1105,25 +1073,26 @@ fun PostCard(
           Column {
             Text(
               text = "Post Insights",
-              style = MaterialTheme.typography.titleLarge,
+              fontFamily = PlusJakartaSansFontFamily,
+              fontSize = 18.sp,
               fontWeight = FontWeight.Bold,
-              color = MaterialTheme.colorScheme.onSurface
+              color = palette.textPrimary
             )
             Text(
               text = "Live backend metrics for your post",
               fontSize = 12.sp,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
+              color = palette.textSecondary
             )
           }
           Surface(
-            color = VybeViolet.copy(alpha = 0.18f),
-            shape = RoundedCornerShape(8.dp)
+            color = palette.accent.copy(alpha = 0.16f),
+            shape = RoundedCornerShape(VybeTokens.Radius.sm)
           ) {
             Text(
               text = "Author View",
               fontSize = 11.sp,
               fontWeight = FontWeight.Bold,
-              color = VybeViolet,
+              color = palette.accent,
               modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
             )
           }
@@ -1137,17 +1106,11 @@ fun PostCard(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-          AnalyticsMetricCard(
-            title = "Views",
-            value = "${post.viewsCount}",
-            icon = Icons.Default.Visibility,
-            iconTint = VybeCyan,
-            modifier = Modifier.weight(1f)
-          )
+          AnalyticsMetricCard("Views", "${post.viewsCount}", Icons.Default.Visibility, palette.accentSecondary, palette, Modifier.weight(1f))
           Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-            shape = RoundedCornerShape(12.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+            color = palette.elevated,
+            shape = RoundedCornerShape(VybeTokens.Radius.md),
+            border = BorderStroke(1.dp, palette.border),
             modifier = Modifier.weight(1f)
           ) {
             Column(
@@ -1158,24 +1121,15 @@ fun PostCard(
               Spacer(modifier = Modifier.height(4.dp))
               Text(
                 text = "${post.likesCount}",
-                style = MaterialTheme.typography.titleMedium,
+                fontFamily = PlusJakartaSansFontFamily,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = palette.textPrimary
               )
-              Text(
-                text = "Likes",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-              )
+              Text("Likes", fontSize = 11.sp, color = palette.textSecondary)
             }
           }
-          AnalyticsMetricCard(
-            title = "Comments",
-            value = "$effectiveCommentTotal",
-            icon = Icons.Default.ChatBubble,
-            iconTint = VybeViolet,
-            modifier = Modifier.weight(1f)
-          )
+          AnalyticsMetricCard("Comments", "$effectiveCommentTotal", Icons.Default.ChatBubble, palette.accent, palette, Modifier.weight(1f))
         }
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -1184,42 +1138,19 @@ fun PostCard(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-          AnalyticsMetricCard(
-            title = "Saves",
-            value = "${post.savesCount}",
-            icon = Icons.Default.Bookmark,
-            iconTint = VybeViolet,
-            modifier = Modifier.weight(1f)
-          )
-          AnalyticsMetricCard(
-            title = "Shares",
-            value = "${post.sharesCount}",
-            icon = Icons.Default.Share,
-            iconTint = VybeBrandCyan,
-            modifier = Modifier.weight(1f)
-          )
+          AnalyticsMetricCard("Saves", "${post.savesCount}", Icons.Default.Bookmark, palette.accent, palette, Modifier.weight(1f))
+          AnalyticsMetricCard("Shares", "${post.sharesCount}", Icons.Default.Share, palette.accentSecondary, palette, Modifier.weight(1f))
           val totalInteractions = post.likesCount + effectiveCommentTotal + post.savesCount
           val rate = ((totalInteractions.toFloat() / post.viewsCount.coerceAtLeast(1).toFloat()) * 100).let { "%.1f".format(it) }
-          AnalyticsMetricCard(
-            title = "Engagement",
-            value = "$rate%",
-            icon = Icons.Default.TrendingUp,
-            iconTint = VybeOnlineGreen,
-            modifier = Modifier.weight(1f)
-          )
+          AnalyticsMetricCard("Engagement", "$rate%", Icons.Default.TrendingUp, palette.success, palette, Modifier.weight(1f))
         }
 
         Spacer(modifier = Modifier.height(20.dp))
-        Button(
+        VybeSecondaryButton(
+          text = "Done",
           onClick = { showAnalyticsSheet = false },
-          modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 48.dp),
-          shape = RoundedCornerShape(12.dp),
-          colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-          Text("Done", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
-        }
+          modifier = Modifier.fillMaxWidth()
+        )
         Spacer(modifier = Modifier.height(12.dp))
       }
     }
@@ -1229,9 +1160,12 @@ fun PostCard(
   if (showDeleteConfirm) {
     AlertDialog(
       onDismissRequest = { showDeleteConfirm = false },
-      title = { Text("Delete Post?") },
+      containerColor = palette.card,
+      titleContentColor = palette.textPrimary,
+      textContentColor = palette.textSecondary,
+      title = { Text("Delete Post?", fontWeight = FontWeight.Bold, color = palette.textPrimary) },
       text = {
-        Text("This permanently deletes the post record and removes the associated media object from Supabase Storage.")
+        Text("This permanently deletes the post record and removes the associated media object from Supabase Storage.", color = palette.textSecondary)
       },
       confirmButton = {
         Button(
@@ -1239,14 +1173,14 @@ fun PostCard(
             showDeleteConfirm = false
             onDeleteClick?.invoke()
           },
-          colors = ButtonDefaults.buttonColors(containerColor = VybeDanger)
+          colors = ButtonDefaults.buttonColors(containerColor = palette.danger)
         ) {
           Text("Delete", color = Color.White, fontWeight = FontWeight.Bold)
         }
       },
       dismissButton = {
-        OutlinedButton(onClick = { showDeleteConfirm = false }) {
-          Text("Cancel")
+        TextButton(onClick = { showDeleteConfirm = false }) {
+          Text("Cancel", color = palette.textSecondary)
         }
       }
     )
@@ -1263,27 +1197,28 @@ fun PostCard(
     )
     AlertDialog(
       onDismissRequest = { showReportDialog = false },
-      title = { Text("Report Post", fontWeight = FontWeight.Bold) },
+      containerColor = palette.card,
+      titleContentColor = palette.textPrimary,
+      textContentColor = palette.textSecondary,
+      title = { Text("Report Post", fontWeight = FontWeight.Bold, color = palette.textPrimary) },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-          Text(
-            text = "Select a reason for reporting this post:",
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-          )
+          Text("Select a reason for reporting this post:", fontSize = 12.sp, color = palette.textSecondary)
           reasons.forEach { reason ->
             Surface(
-              shape = RoundedCornerShape(10.dp),
-              color = if (selectedReportReason == reason) VybeDanger.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
+              shape = RoundedCornerShape(VybeTokens.Radius.sm),
+              color = if (selectedReportReason == reason) palette.danger.copy(alpha = 0.14f) else palette.elevated,
+              border = BorderStroke(1.dp, if (selectedReportReason == reason) palette.danger.copy(alpha = 0.4f) else palette.border),
               modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
+                .clip(RoundedCornerShape(VybeTokens.Radius.sm))
                 .clickable { selectedReportReason = reason }
             ) {
               Text(
                 text = reason,
                 fontSize = 13.sp,
                 fontWeight = if (selectedReportReason == reason) FontWeight.Bold else FontWeight.Normal,
+                color = palette.textPrimary,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
               )
             }
@@ -1296,14 +1231,14 @@ fun PostCard(
             showReportDialog = false
             onReportPost(selectedReportReason)
           },
-          colors = ButtonDefaults.buttonColors(containerColor = VybeDanger)
+          colors = ButtonDefaults.buttonColors(containerColor = palette.danger)
         ) {
           Text("Submit Report", color = Color.White, fontWeight = FontWeight.Bold)
         }
       },
       dismissButton = {
         TextButton(onClick = { showReportDialog = false }) {
-          Text("Cancel")
+          Text("Cancel", color = palette.textSecondary)
         }
       }
     )
@@ -1316,12 +1251,13 @@ private fun AnalyticsMetricCard(
   value: String,
   icon: androidx.compose.ui.graphics.vector.ImageVector,
   iconTint: Color,
+  palette: VybePalette,
   modifier: Modifier = Modifier
 ) {
   Surface(
-    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-    shape = RoundedCornerShape(12.dp),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+    color = palette.elevated,
+    shape = RoundedCornerShape(VybeTokens.Radius.md),
+    border = BorderStroke(1.dp, palette.border),
     modifier = modifier
   ) {
     Column(
@@ -1332,14 +1268,15 @@ private fun AnalyticsMetricCard(
       Spacer(modifier = Modifier.height(4.dp))
       Text(
         text = value,
-        style = MaterialTheme.typography.titleMedium,
+        fontFamily = PlusJakartaSansFontFamily,
+        fontSize = 16.sp,
         fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onSurface
+        color = palette.textPrimary
       )
       Text(
         text = title,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
+        fontSize = 11.sp,
+        color = palette.textSecondary
       )
     }
   }
@@ -1366,7 +1303,6 @@ fun VybeCenteredShareIcon(
     val h = this.size.height
     val strokePx = (w * 0.085f).coerceAtLeast(1.8f)
 
-    // Optically centered paper-plane outline in a 24x24 normalized grid (visual centroid at 12,12)
     val outer = Path().apply {
       moveTo(w * 0.875f, h * 0.145f)
       lineTo(w * 0.125f, h * 0.455f)
@@ -1388,4 +1324,3 @@ fun VybeCenteredShareIcon(
     )
   }
 }
-

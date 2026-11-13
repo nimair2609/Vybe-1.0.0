@@ -3,14 +3,12 @@ package com.example.ui.screens
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -27,6 +25,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.GrowJourney
 import com.example.ui.VybeViewModel
+import com.example.ui.components.VybeEmptyState
+import com.example.ui.components.VybePrimaryButton
+import com.example.ui.components.VybeSubScreenTopBar
+import com.example.ui.components.VybeSurfaceCard
 import com.example.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -36,6 +38,7 @@ fun GrowScreen(viewModel: VybeViewModel) {
     viewModel.navigateBack()
   }
 
+  val palette = LocalVybePalette.current
   val growJourneys by viewModel.growJourneys.collectAsState()
   val growBadges by viewModel.growBadges.collectAsState()
 
@@ -48,145 +51,102 @@ fun GrowScreen(viewModel: VybeViewModel) {
   }
 
   Scaffold(
+    contentWindowInsets = WindowInsets(0.dp),
+    containerColor = palette.canvas,
     topBar = {
-      TopAppBar(
-        windowInsets = WindowInsets.statusBars,
-        navigationIcon = {
-          IconButton(
-            onClick = { viewModel.navigateBack() },
-            modifier = Modifier.size(48.dp).testTag("grow_back_button")
-          ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-          }
-        },
-        title = {
-          Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              Text(
-                text = "VYBE Grow",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Black
-              )
-              Spacer(modifier = Modifier.width(6.dp))
-              Surface(
-                color = VybeBrandCyan.copy(alpha = 0.2f),
-                shape = RoundedCornerShape(6.dp)
-              ) {
-                Text(
-                  text = "SELF-EXPANSION",
-                  color = VybeBrandCyan,
-                  fontSize = 9.sp,
-                  fontWeight = FontWeight.Bold,
-                  modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                )
-              }
-            }
-            Text(
-              text = "CONNECT. EXPRESS. GROW. • AN NR NEXT PRODUCT",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-          }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+      VybeSubScreenTopBar(
+        title = "VYBE Grow",
+        subtitle = "Self-Expansion • Learn & Collaborate",
+        onBackClick = { viewModel.navigateBack() },
+        backTestTag = "grow_back_button"
       )
     }
   ) { paddingValues ->
     LazyColumn(
       modifier = Modifier
         .fillMaxSize()
-        .padding(paddingValues),
+        .padding(paddingValues)
+        .navigationBarsPadding(),
       contentPadding = PaddingValues(16.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
       // 1. Grow Momentum Dashboard Card
       item {
-        Card(
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          shape = RoundedCornerShape(22.dp),
-          border = BorderStroke(1.dp, VybeViolet.copy(alpha = 0.35f)),
+        VybeSurfaceCard(
+          borderColor = palette.accent.copy(alpha = 0.35f),
+          contentPadding = PaddingValues(18.dp),
           modifier = Modifier.fillMaxWidth().testTag("grow_momentum_card")
         ) {
-          Column(
-            modifier = Modifier
-              .fillMaxWidth()
-              .background(
-                Brush.verticalGradient(
-                  listOf(
-                    VybeVioletDark.copy(alpha = 0.35f),
-                    MaterialTheme.colorScheme.surface
-                  )
-                )
-              )
-              .padding(18.dp)
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
           ) {
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.SpaceBetween
+            Column(modifier = Modifier.weight(1f)) {
+              Text(
+                text = "Daily Habit Momentum",
+                fontFamily = PlusJakartaSansFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = palette.textPrimary
+              )
+              Text(
+                text = "Consistency unlocks personal & professional mastery",
+                fontSize = 12.sp,
+                color = palette.textSecondary
+              )
+            }
+            Surface(
+              color = palette.warning.copy(alpha = 0.16f),
+              shape = RoundedCornerShape(VybeTokens.Radius.md),
+              border = BorderStroke(1.dp, palette.warning.copy(alpha = 0.45f))
             ) {
-              Column {
-                Text(
-                  text = "Daily Habit Momentum",
-                  fontWeight = FontWeight.Bold,
-                  fontSize = 16.sp,
-                  color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                  text = "Consistency unlocks personal & professional mastery",
-                  fontSize = 12.sp,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-              }
-              Surface(
-                color = Color(0xFFF59E0B).copy(alpha = 0.18f),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.5f))
+              Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically
               ) {
-                Row(
-                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                  verticalAlignment = Alignment.CenterVertically
-                ) {
-                  Icon(Icons.Default.LocalFireDepartment, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
-                  Spacer(modifier = Modifier.width(4.dp))
-                  Text("$activeStreak Day Streak", color = Color(0xFFF59E0B), fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                }
+                Icon(Icons.Default.LocalFireDepartment, contentDescription = null, tint = palette.warning, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("$activeStreak Day Streak", color = palette.warning, fontWeight = FontWeight.Bold, fontSize = 12.sp)
               }
             }
+          }
 
-            Spacer(modifier = Modifier.height(14.dp))
+          Spacer(modifier = Modifier.height(14.dp))
 
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceAround
-            ) {
-              Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                  text = "${growJourneys.count { it.isJoined }}",
-                  fontWeight = FontWeight.Black,
-                  fontSize = 20.sp,
-                  color = VybeBrandCyan
-                )
-                Text("In Progress", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              }
-              Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                  text = "${growBadges.size}",
-                  fontWeight = FontWeight.Black,
-                  fontSize = 20.sp,
-                  color = VybeBrandMagenta
-                )
-                Text("Badges Earned", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              }
-              Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                  text = "100%",
-                  fontWeight = FontWeight.Black,
-                  fontSize = 20.sp,
-                  color = Color(0xFF10B981)
-                )
-                Text("Commitment", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              }
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceAround
+          ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+              Text(
+                text = "${growJourneys.count { it.isJoined }}",
+                fontFamily = PlusJakartaSansFontFamily,
+                fontWeight = FontWeight.Black,
+                fontSize = 20.sp,
+                color = palette.accent
+              )
+              Text("In Progress", fontSize = 11.sp, color = palette.textSecondary)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+              Text(
+                text = "${growBadges.size}",
+                fontFamily = PlusJakartaSansFontFamily,
+                fontWeight = FontWeight.Black,
+                fontSize = 20.sp,
+                color = palette.accentSecondary
+              )
+              Text("Badges Earned", fontSize = 11.sp, color = palette.textSecondary)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+              Text(
+                text = "100%",
+                fontFamily = PlusJakartaSansFontFamily,
+                fontWeight = FontWeight.Black,
+                fontSize = 20.sp,
+                color = palette.success
+              )
+              Text("Commitment", fontSize = 11.sp, color = palette.textSecondary)
             }
           }
         }
@@ -201,34 +161,43 @@ fun GrowScreen(viewModel: VybeViewModel) {
         ) {
           Text(
             text = "Guided Growth Journeys",
+            fontFamily = PlusJakartaSansFontFamily,
             fontWeight = FontWeight.Bold,
             fontSize = 17.sp,
-            color = MaterialTheme.colorScheme.onSurface
+            color = palette.textPrimary
           )
           Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = RoundedCornerShape(8.dp)
+            color = palette.elevated,
+            shape = RoundedCornerShape(VybeTokens.Radius.sm),
+            border = BorderStroke(1.dp, palette.border)
           ) {
             Text(
               text = "7 / 21 / 30 Days",
               fontSize = 11.sp,
               fontWeight = FontWeight.SemiBold,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              color = palette.textSecondary,
               modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
             )
           }
         }
       }
 
-      // 3. Journeys Cards
-      items(growJourneys, key = { it.id }) { journey ->
-        Card(
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          shape = RoundedCornerShape(18.dp),
-          border = BorderStroke(1.dp, if (journey.isJoined) VybeBrandCyan.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
-          modifier = Modifier.fillMaxWidth().testTag("grow_journey_${journey.id}")
-        ) {
-          Column(modifier = Modifier.padding(18.dp)) {
+      if (growJourneys.isEmpty()) {
+        item {
+          VybeEmptyState(
+            icon = Icons.Outlined.MenuBook,
+            title = "No growth tracks active",
+            subtitle = "Growth journeys will appear here as soon as cohorts sync."
+          )
+        }
+      } else {
+        // 3. Journeys Cards
+        items(growJourneys, key = { it.id }) { journey ->
+          VybeSurfaceCard(
+            borderColor = if (journey.isJoined) palette.accent.copy(alpha = 0.5f) else palette.border,
+            contentPadding = PaddingValues(18.dp),
+            modifier = Modifier.fillMaxWidth().testTag("grow_journey_${journey.id}")
+          ) {
             Row(
               modifier = Modifier.fillMaxWidth(),
               verticalAlignment = Alignment.CenterVertically,
@@ -242,11 +211,7 @@ fun GrowScreen(viewModel: VybeViewModel) {
                   modifier = Modifier
                     .size(42.dp)
                     .clip(CircleShape)
-                    .background(
-                      Brush.linearGradient(
-                        listOf(VybeBrandViolet, VybeBrandMagenta)
-                      )
-                    ),
+                    .background(Brush.linearGradient(listOf(VybeSocialViolet, VybeGrowBlue))),
                   contentAlignment = Alignment.Center
                 ) {
                   Icon(
@@ -264,15 +229,17 @@ fun GrowScreen(viewModel: VybeViewModel) {
                 Column {
                   Text(
                     text = journey.title,
+                    fontFamily = PlusJakartaSansFontFamily,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
+                    color = palette.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                   )
                   Text(
                     text = "${journey.durationDays}-Day Track • ${journey.participantsCount} peers",
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = palette.textSecondary
                   )
                 }
               }
@@ -280,17 +247,17 @@ fun GrowScreen(viewModel: VybeViewModel) {
               if (journey.isJoined) {
                 Button(
                   onClick = { showReflectionDialogForJourney = journey },
-                  colors = ButtonDefaults.buttonColors(containerColor = VybeBrandCyan),
-                  shape = RoundedCornerShape(12.dp),
+                  colors = ButtonDefaults.buttonColors(containerColor = palette.accentSecondary),
+                  shape = RoundedCornerShape(VybeTokens.Radius.md),
                   contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
-                  Text("Reflect", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                  Text("Reflect", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
               } else {
                 Button(
                   onClick = { viewModel.joinGrowJourney(journey.id) },
-                  colors = ButtonDefaults.buttonColors(containerColor = VybeViolet),
-                  shape = RoundedCornerShape(12.dp),
+                  colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
+                  shape = RoundedCornerShape(VybeTokens.Radius.md),
                   contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                   Text("Start", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
@@ -302,15 +269,15 @@ fun GrowScreen(viewModel: VybeViewModel) {
             Text(
               text = journey.description,
               fontSize = 13.sp,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              color = palette.textSecondary,
               lineHeight = 18.sp
             )
 
             if (journey.isJoined) {
               Spacer(modifier = Modifier.height(12.dp))
               Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(12.dp),
+                color = palette.elevated,
+                shape = RoundedCornerShape(VybeTokens.Radius.md),
                 modifier = Modifier.fillMaxWidth()
               ) {
                 Column(modifier = Modifier.padding(12.dp)) {
@@ -323,27 +290,27 @@ fun GrowScreen(viewModel: VybeViewModel) {
                       text = "Day ${journey.currentDay} of ${journey.durationDays}",
                       fontWeight = FontWeight.Bold,
                       fontSize = 12.sp,
-                      color = VybeBrandCyan
+                      color = palette.accent
                     )
                     Text(
-                      text = "${((journey.currentDay.toFloat() / journey.durationDays) * 100).toInt()}% Complete",
+                      text = "${((journey.currentDay.toFloat() / journey.durationDays.coerceAtLeast(1)) * 100).toInt()}% Complete",
                       fontSize = 11.sp,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                      color = palette.textSecondary
                     )
                   }
                   Spacer(modifier = Modifier.height(6.dp))
                   LinearProgressIndicator(
-                    progress = { (journey.currentDay.toFloat() / journey.durationDays).coerceIn(0f, 1f) },
+                    progress = { (journey.currentDay.toFloat() / journey.durationDays.coerceAtLeast(1)).coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                    color = VybeBrandCyan,
-                    trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                    color = palette.accent,
+                    trackColor = palette.border
                   )
                   Spacer(modifier = Modifier.height(8.dp))
                   Text(
                     text = "Today's Prompt: \"${journey.dailyPrompt}\"",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = palette.textPrimary
                   )
                 }
               }
@@ -357,45 +324,42 @@ fun GrowScreen(viewModel: VybeViewModel) {
         Spacer(modifier = Modifier.height(8.dp))
         Text(
           text = "Achievement Badges",
+          fontFamily = PlusJakartaSansFontFamily,
           fontWeight = FontWeight.Bold,
           fontSize = 17.sp,
-          color = MaterialTheme.colorScheme.onSurface
+          color = palette.textPrimary
         )
       }
 
       items(growBadges, key = { it.id }) { badge ->
-        Surface(
-          color = MaterialTheme.colorScheme.surface,
-          shape = RoundedCornerShape(16.dp),
-          border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.4f)),
+        VybeSurfaceCard(
+          borderColor = palette.warning.copy(alpha = 0.4f),
+          contentPadding = PaddingValues(14.dp),
           modifier = Modifier.fillMaxWidth()
         ) {
-          Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
               modifier = Modifier
                 .size(44.dp)
                 .clip(CircleShape)
-                .background(Color(0xFFF59E0B).copy(alpha = 0.16f)),
+                .background(palette.warning.copy(alpha = 0.16f)),
               contentAlignment = Alignment.Center
             ) {
-              Icon(Icons.Default.WorkspacePremium, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(24.dp))
+              Icon(Icons.Default.WorkspacePremium, contentDescription = null, tint = palette.warning, modifier = Modifier.size(24.dp))
             }
             Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
-              Text(badge.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+              Text(badge.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = palette.textPrimary)
               Spacer(modifier = Modifier.height(2.dp))
-              Text(badge.description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              Text(badge.description, fontSize = 12.sp, color = palette.textSecondary)
             }
             Surface(
-              color = Color(0xFFF59E0B).copy(alpha = 0.15f),
-              shape = RoundedCornerShape(8.dp)
+              color = palette.warning.copy(alpha = 0.15f),
+              shape = RoundedCornerShape(VybeTokens.Radius.sm)
             ) {
               Text(
                 text = badge.badgeTier,
-                color = Color(0xFFF59E0B),
+                color = palette.warning,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -412,13 +376,19 @@ fun GrowScreen(viewModel: VybeViewModel) {
     val journey = showReflectionDialogForJourney!!
     AlertDialog(
       onDismissRequest = { showReflectionDialogForJourney = null },
-      title = { Text("Day ${journey.currentDay} Reflection", fontWeight = FontWeight.Bold) },
+      containerColor = palette.card,
+      titleContentColor = palette.textPrimary,
+      textContentColor = palette.textSecondary,
+      shape = RoundedCornerShape(VybeTokens.Radius.xl),
+      title = {
+        Text("Day ${journey.currentDay} Reflection", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold)
+      },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
           Text(
             text = journey.dailyPrompt,
             fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = palette.textSecondary
           )
           OutlinedTextField(
             value = reflectionNote,
@@ -432,7 +402,7 @@ fun GrowScreen(viewModel: VybeViewModel) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
           ) {
-            Text("Share milestone to public feed", fontSize = 12.sp)
+            Text("Share milestone to public feed", fontSize = 12.sp, color = palette.textPrimary)
             Switch(
               checked = isSharedPublicly,
               onCheckedChange = { isSharedPublicly = it }
@@ -441,7 +411,8 @@ fun GrowScreen(viewModel: VybeViewModel) {
         }
       },
       confirmButton = {
-        Button(
+        VybePrimaryButton(
+          text = "Complete Day",
           onClick = {
             viewModel.submitGrowReflection(
               journeyId = journey.id,
@@ -451,15 +422,12 @@ fun GrowScreen(viewModel: VybeViewModel) {
             )
             reflectionNote = ""
             showReflectionDialogForJourney = null
-          },
-          colors = ButtonDefaults.buttonColors(containerColor = VybeBrandCyan)
-        ) {
-          Text("Complete Day", color = Color.Black, fontWeight = FontWeight.Bold)
-        }
+          }
+        )
       },
       dismissButton = {
         TextButton(onClick = { showReflectionDialogForJourney = null }) {
-          Text("Cancel")
+          Text("Cancel", color = palette.textSecondary)
         }
       }
     )

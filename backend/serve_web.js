@@ -37,10 +37,10 @@ const MIME_TYPES = {
 
 const deviceRegistry = new Map();
 const recentPushLogs = [];
-const OVERRIDE_FILE = path.resolve(__dirname, 'admin_state_override.json');
+const PLATFORM_CONFIG_FILE = path.resolve(__dirname, 'platform_config.json');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ADMIN_ROLES = new Set(['ADMIN', 'SUPER_ADMIN', 'OWNER_ADMIN', 'MODERATOR']);
+const ADMIN_ROLES = new Set(['ADMIN', 'SUPER_ADMIN', 'OWNER_ADMIN', 'MODERATOR', 'SUPPORT_ADMIN', 'ANALYST']);
 const SUPER_ADMIN_ROLES = new Set(['SUPER_ADMIN', 'OWNER_ADMIN']);
 const rateLimitBuckets = new Map();
 
@@ -96,42 +96,33 @@ async function verifyAdminAuth(req) {
   const email = String(userAuth.user.email || '').trim().toLowerCase();
   const hdrs = buildSupabaseHeaders({}, true, userAuth.token);
 
-  let resolvedRole = '';
-  let roleQuerySucceeded = false;
-
+  let aResp;
   try {
-    const [pResp, aResp] = await Promise.all([
-      fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=id,role&limit=1`, { headers: hdrs }),
-      fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/admin_users?user_id=eq.${encodeURIComponent(userId)}&is_active=eq.true&select=role&limit=1`, { headers: hdrs }).catch(() => null)
-    ]);
-
-    if (pResp && pResp.ok) {
-      roleQuerySucceeded = true;
-      const rows = await pResp.json();
-      const row = Array.isArray(rows) ? rows[0] : rows;
-      const r = String(row?.role || '').toUpperCase().trim();
-      if (ADMIN_ROLES.has(r)) resolvedRole = r;
-    }
-
-    if (aResp && aResp.ok) {
-      roleQuerySucceeded = true;
-      const aRows = await aResp.json();
-      const aRow = Array.isArray(aRows) ? aRows[0] : aRows;
-      const ar = String(aRow?.role || '').toUpperCase().trim();
-      if (ADMIN_ROLES.has(ar)) {
-        if (!resolvedRole || SUPER_ADMIN_ROLES.has(ar)) resolvedRole = ar;
-      }
-    }
+    aResp = await fetch(
+      `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/admin_users?user_id=eq.${encodeURIComponent(userId)}&select=user_id,role,is_active&limit=1`,
+      { headers: hdrs }
+    );
   } catch {
-    roleQuerySucceeded = false;
-  }
-
-  if (!roleQuerySucceeded) {
     return { ok: false, status: 503, error: 'Unable to verify administrator role from Supabase.' };
   }
 
-  if (!ADMIN_ROLES.has(resolvedRole)) {
-    return { ok: false, status: 403, error: 'Forbidden: Administrator role required.' };
+  if (!aResp || !aResp.ok) {
+    return { ok: false, status: 503, error: 'Unable to verify administrator role from Supabase.' };
+  }
+
+  let aRows;
+  try {
+    aRows = await aResp.json();
+  } catch {
+    return { ok: false, status: 503, error: 'Unable to verify administrator role from Supabase.' };
+  }
+
+  const aRow = Array.isArray(aRows) ? aRows[0] : aRows;
+  const resolvedRole = String(aRow?.role || '').toUpperCase().trim();
+  const userMatches = !aRow?.user_id || String(aRow.user_id).toLowerCase() === String(userId).toLowerCase();
+
+  if (!aRow || aRow.is_active !== true || !userMatches || !ADMIN_ROLES.has(resolvedRole)) {
+    return { ok: false, status: 403, error: 'Forbidden: Active administrator record required.' };
   }
 
   return {
@@ -144,15 +135,8 @@ async function verifyAdminAuth(req) {
   };
 }
 
-function loadAdminState() {
-  let state = {
-    badges: {},
-    roles: {},
-    statuses: {},
-    warnings: {},
-    restrictions: {},
-    contentModeration: {},
-    reports: {},
+function getDefaultPlatformConfigState() {
+  return {
     featureFlags: {
       unload: true,
       unfiltered: true,
@@ -170,82 +154,35 @@ function loadAdminState() {
       announcementActive: false,
       announcementLink: "",
       communityGuidelinesUrl: "https://vybe.app/community-guidelines"
-    },
-    ads: [],
-    customDilemmas: [],
-    activeUnloadRooms: [
-      {
-        id: "room_genesis_01",
-        title: "Late Night Creative Vent & Lo-Fi Lounge",
-        topicTag: "CreativeBurnout",
-        hostName: "Rohan",
-        hostId: "u_rohan",
-        listenersCount: 14,
-        isActive: true,
-        startedAt: new Date(Date.now() - 35 * 60000).toISOString(),
-        zeroRecordingGuaranteed: true
-      },
-      {
-        id: "room_genesis_02",
-        title: "Silent Co-Working & Deep Focus Sanctuary",
-        topicTag: "FocusZone",
-        hostName: "Priya",
-        hostId: "u_priya",
-        listenersCount: 22,
-        isActive: true,
-        startedAt: new Date(Date.now() - 75 * 60000).toISOString(),
-        zeroRecordingGuaranteed: true
-      }
-    ],
-    activePolls: [
-      {
-        id: "poll_01",
-        title: "Will AI-generated music ever produce a genuine Billboard #1 global hit?",
-        category: "Tech & Sound",
-        closingTime: "In 18 hours",
-        totalVotes: 3420,
-        options: [
-          { id: 1, text: "Yes, definitely", votes: 2180, percentage: 64 },
-          { id: 2, text: "No, human soul only", votes: 1240, percentage: 36 }
-        ],
-        status: "ACTIVE"
-      },
-      {
-        id: "poll_02",
-        title: "Is ephemeral social media better for mental health than permanent feeds?",
-        category: "Culture Pulse",
-        closingTime: "In 6 hours",
-        totalVotes: 5190,
-        options: [
-          { id: 1, text: "100% ephemeral", votes: 4200, percentage: 81 },
-          { id: 2, text: "Prefer permanent memories", votes: 990, percentage: 19 }
-        ],
-        status: "ACTIVE"
-      }
-    ],
-    auditLogs: []
-  };
-
-  try {
-    if (fs.existsSync(OVERRIDE_FILE)) {
-      const saved = JSON.parse(fs.readFileSync(OVERRIDE_FILE, 'utf8'));
-      state = { ...state, ...saved };
-      state.featureFlags = { ...state.featureFlags, ...(saved.featureFlags || {}) };
-      state.platformConfig = { ...state.platformConfig, ...(saved.platformConfig || {}) };
-      state.warnings = { ...state.warnings, ...(saved.warnings || {}) };
-      state.restrictions = { ...state.restrictions, ...(saved.restrictions || {}) };
     }
-  } catch (err) {
-    console.warn('[AdminState] Read warning:', err.message);
-  }
-  return state;
+  };
 }
 
-function saveAdminState(state) {
+function loadPlatformConfigState() {
+  const defaults = getDefaultPlatformConfigState();
   try {
-    fs.writeFileSync(OVERRIDE_FILE, JSON.stringify(state, null, 2), 'utf8');
+    if (fs.existsSync(PLATFORM_CONFIG_FILE)) {
+      const saved = JSON.parse(fs.readFileSync(PLATFORM_CONFIG_FILE, 'utf8'));
+      return {
+        featureFlags: { ...defaults.featureFlags, ...(saved.featureFlags || {}) },
+        platformConfig: { ...defaults.platformConfig, ...(saved.platformConfig || {}) }
+      };
+    }
   } catch (err) {
-    console.error('[AdminState] Write error:', err.message);
+    console.warn('[PlatformConfig] Read warning:', err.message);
+  }
+  return defaults;
+}
+
+function savePlatformConfigState(configState) {
+  try {
+    const clean = {
+      featureFlags: configState.featureFlags || {},
+      platformConfig: configState.platformConfig || {}
+    };
+    fs.writeFileSync(PLATFORM_CONFIG_FILE, JSON.stringify(clean, null, 2), 'utf8');
+  } catch (err) {
+    console.error('[PlatformConfig] Write error:', err.message);
   }
 }
 
@@ -431,10 +368,10 @@ async function deactivateInvalidToken(badToken) {
 
 async function dispatchFcmIfConfigured({ tokens = [], topic, title, body, data = {}, channelId = 'vybe_activity_high_v2' }) {
   const sa = getFirebaseServiceAccount();
-  if (!sa) return { dispatchedFcm: false, count: Math.max(tokens.length, 1) };
+  if (!sa) return { dispatchedFcm: false, count: tokens.length };
 
   const accessToken = await getGoogleAccessToken(sa);
-  if (!accessToken) return { dispatchedFcm: false, count: Math.max(tokens.length, 1) };
+  if (!accessToken) return { dispatchedFcm: false, count: tokens.length };
 
   const projectId = sa.project_id || 'vybe-social-app';
   const targets = tokens.length > 0 ? tokens.map(t => ({ token: t })) : (topic ? [{ topic }] : []);
@@ -755,7 +692,7 @@ const server = http.createServer(async (req, res) => {
     recentPushLogs.unshift({
       timestamp: new Date().toISOString(),
       title,
-      recipientCount: Math.max(tokens.length, 1),
+      recipientCount: tokens.length,
       status: fcmRes.dispatchedFcm ? 'Dispatched (FCM + Realtime Live)' : 'Dispatched (Realtime Live)',
       channel: channelId
     });
@@ -805,7 +742,7 @@ const server = http.createServer(async (req, res) => {
     recentPushLogs.unshift({
       timestamp: new Date().toISOString(),
       title,
-      recipientCount: Math.max(tokens.length, 1),
+      recipientCount: tokens.length,
       status: fcmRes.dispatchedFcm ? 'Dispatched (FCM + Realtime Live)' : (rtOk ? 'Dispatched (Realtime Live)' : 'Dispatched'),
       channel: 'vybe_broadcast_high_v2'
     });
@@ -823,19 +760,34 @@ const server = http.createServer(async (req, res) => {
 
     sendJson(res, 200, {
       success: true,
-      totalDevices: Math.max(tokens.length, 1),
+      totalDevices: tokens.length,
       delivered: fcmRes.count
     });
     return;
   }
 
   if (cleanUrl === '/api/v1/admin/push-stats' && req.method === 'GET') {
-    const activeDevices = Array.from(deviceRegistry.values()).filter(d => d.is_active);
+    let dbDevices = [];
+    try {
+      const resp = await fetch(
+        `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/user_device_tokens?is_active=eq.true&select=user_id,device_model,platform,last_seen_at,is_active&order=last_seen_at.desc&limit=100`,
+        { headers: buildSupabaseHeaders({}, true, adminAuth.token) }
+      );
+      if (resp.ok) {
+        const rows = await resp.json();
+        if (Array.isArray(rows)) dbDevices = rows;
+      }
+    } catch {}
+
+    const memActive = Array.from(deviceRegistry.values()).filter(d => d.is_active);
+    const activeTokensCount = dbDevices.length > 0 ? dbDevices.length : memActive.length;
+    const recentDevices = dbDevices.length > 0 ? dbDevices.slice(0, 10) : memActive.slice(0, 10);
+
     sendJson(res, 200, {
-      activeTokensCount: activeDevices.length,
+      activeTokensCount,
       fcmConfigured: Boolean(getFirebaseServiceAccount() || process.env.FCM_SERVER_KEY),
       realtimeConfigured: true,
-      recentDevices: activeDevices.slice(0, 10),
+      recentDevices,
       recentLogs: recentPushLogs
     });
     return;
@@ -899,31 +851,30 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 1. GET ALL USERS (MERGED WITH ADMIN OVERRIDES — PII stripped)
+  // 1. GET ALL USERS (LIVE SUPABASE PROFILES ONLY — PII stripped)
   if (cleanUrl === '/api/v1/admin/users' && req.method === 'GET') {
-    const state = loadAdminState();
-    let users = [];
+    let resp;
     try {
-      const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?select=id,username,display_name,avatar_url,role,is_verified,is_vip,is_worker,is_verified_business,is_banned,is_suspended,suspended_until,created_at&order=created_at.desc&limit=100`, {
-        headers: buildSupabaseHeaders({}, true, adminAuth.token)
-      });
-      if (resp.ok) {
-        users = await resp.json();
-      }
+      resp = await fetch(
+        `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?select=id,username,display_name,avatar_url,role,is_verified,is_vip,is_worker,is_verified_business,is_banned,is_suspended,suspended_until,created_at&order=created_at.desc&limit=100`,
+        { headers: buildSupabaseHeaders({}, true, adminAuth.token) }
+      );
     } catch (err) {
-      console.warn('[AdminUsers] Supabase fetch error:', err.message);
+      sendJson(res, 502, { error: 'Failed communicating with Supabase profiles: ' + err.message });
+      return;
     }
 
-    const merged = users.map(u => {
-      const bOverride = state.badges && state.badges[u.id];
-      const rOverride = state.roles && state.roles[u.id];
-      const sOverride = state.statuses && state.statuses[u.id];
+    if (!resp.ok) {
+      sendJson(res, resp.status >= 400 ? resp.status : 502, { error: 'Failed fetching users from Supabase.' });
+      return;
+    }
 
-      const defaultRole = u.role || 'USER';
-      const isWorker = bOverride?.is_worker !== undefined ? bOverride.is_worker : Boolean(u.is_worker);
-      const isVip = bOverride?.is_vip !== undefined ? bOverride.is_vip : Boolean(u.is_vip);
-      const isVerified = bOverride?.is_verified !== undefined ? bOverride.is_verified : Boolean(u.is_verified);
-      const isVerifiedBusiness = bOverride?.is_verified_business !== undefined ? bOverride.is_verified_business : Boolean(u.is_verified_business);
+    const rawUsers = await resp.json();
+    const users = (Array.isArray(rawUsers) ? rawUsers : []).map(u => {
+      const isWorker = Boolean(u.is_worker);
+      const isVip = Boolean(u.is_vip);
+      const isVerified = Boolean(u.is_verified);
+      const isVerifiedBusiness = Boolean(u.is_verified_business);
       const computedBadge = isWorker ? 'OFFICIAL' : (isVip ? 'VIP' : (isVerified ? 'VERIFIED' : (isVerifiedBusiness ? 'SHOP' : null)));
 
       return {
@@ -933,14 +884,14 @@ const server = http.createServer(async (req, res) => {
         is_worker: isWorker,
         is_verified_business: isVerifiedBusiness,
         badge_type: computedBadge,
-        role: rOverride || defaultRole,
-        is_banned: sOverride?.is_banned !== undefined ? sOverride.is_banned : Boolean(u.is_banned),
-        is_suspended: sOverride?.is_suspended !== undefined ? sOverride.is_suspended : Boolean(u.is_suspended),
-        suspended_until: sOverride?.suspended_until || u.suspended_until || null
+        role: u.role || 'USER',
+        is_banned: Boolean(u.is_banned),
+        is_suspended: Boolean(u.is_suspended),
+        suspended_until: u.suspended_until || null
       };
     });
 
-    sendJson(res, 200, { success: true, users: merged, total: merged.length });
+    sendJson(res, 200, { success: true, users, total: users.length });
     return;
   }
 
@@ -1016,24 +967,6 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 502, { error: 'Failed communicating with Supabase badge RPC: ' + rpcErr.message });
       return;
     }
-
-    const state = loadAdminState();
-    state.badges = state.badges || {};
-    state.badges[userId] = state.badges[userId] || {};
-    state.badges[userId][dbKey] = Boolean(value);
-
-    state.auditLogs = state.auditLogs || [];
-    state.auditLogs.unshift({
-      timestamp: new Date().toISOString(),
-      action: value ? `GRANT_${normalizedType.toUpperCase()}` : `REVOKE_${normalizedType.toUpperCase()}`,
-      userId,
-      username: username || 'User',
-      adminEmail: adminAuth.email || 'Admin',
-      details: { badgeType: normalizedType, label: badgeDisplayLabel, value: Boolean(value) }
-    });
-    if (state.auditLogs.length > 200) state.auditLogs.pop();
-
-    saveAdminState(state);
 
     // DISPATCH PROFESSIONAL IN-APP & PUSH NOTIFICATION TO USER
     try {
@@ -1127,8 +1060,8 @@ const server = http.createServer(async (req, res) => {
       message: `Badge ${badgeType} ${value ? 'granted to' : 'revoked from'} ${username || userId}`,
       userId,
       badgeType,
-      value: Boolean(value),
-      userState: state.badges[userId]
+      badgeCategory: rpcCategory,
+      value: Boolean(value)
     });
     return;
   }
@@ -1216,23 +1149,6 @@ const server = http.createServer(async (req, res) => {
       console.warn('[SetRole] admin_users sync notice:', syncErr.message);
     }
 
-    const state = loadAdminState();
-    state.roles = state.roles || {};
-    state.roles[userId] = targetAdminSubRole || targetProfileRole;
-
-    state.auditLogs = state.auditLogs || [];
-    state.auditLogs.unshift({
-      timestamp: new Date().toISOString(),
-      action: 'UPDATE_ROLE',
-      userId,
-      username: username || 'User',
-      adminEmail: adminAuth.email || 'Admin',
-      details: { requestedRole, profileRole: targetProfileRole, adminSubRole: targetAdminSubRole }
-    });
-    if (state.auditLogs.length > 200) state.auditLogs.pop();
-
-    saveAdminState(state);
-
     await recordSupabaseAuditLog({
       adminId: adminAuth.userId,
       adminEmail: adminAuth.email,
@@ -1292,32 +1208,15 @@ const server = http.createServer(async (req, res) => {
 
     const safeHours = Math.max(1, Math.min(8760, Number(durationHours) || 24));
     const safeReason = String(reason || '').trim();
-    const state = loadAdminState();
-    state.statuses = state.statuses || {};
-    state.statuses[userId] = state.statuses[userId] || {};
 
     let patch = {};
     let expiresAtIso = null;
     if (normalizedAction === 'SUSPEND') {
       expiresAtIso = new Date(Date.now() + safeHours * 3600 * 1000).toISOString();
-      state.statuses[userId].is_suspended = true;
-      state.statuses[userId].is_banned = false;
-      state.statuses[userId].suspension_reason = safeReason || `${safeHours}h enforcement`;
-      state.statuses[userId].suspended_until = expiresAtIso;
       patch = { is_suspended: true, suspension_reason: safeReason || `${safeHours}h enforcement`, suspended_until: expiresAtIso };
     } else if (normalizedAction === 'BAN') {
-      state.statuses[userId].is_banned = true;
-      state.statuses[userId].is_suspended = false;
-      state.statuses[userId].ban_reason = safeReason || 'Admin account termination';
       patch = { is_banned: true, ban_reason: safeReason || 'Admin account termination' };
     } else if (normalizedAction === 'WARN') {
-      state.warnings = state.warnings || {};
-      state.warnings[userId] = state.warnings[userId] || [];
-      state.warnings[userId].unshift({
-        reason: safeReason || 'Community guidelines violation notice',
-        timestamp: new Date().toISOString(),
-        adminEmail: adminAuth.email || 'Admin'
-      });
       relayRealtimeBroadcast(`vybe_user_push:${userId}`, {
         type: 'ACCOUNT_WARNING',
         title: '⚠️ Community Guidelines Warning',
@@ -1335,28 +1234,13 @@ const server = http.createServer(async (req, res) => {
       }).catch(() => {});
     } else if (normalizedAction === 'RESTRICT') {
       expiresAtIso = new Date(Date.now() + safeHours * 3600 * 1000).toISOString();
-      state.restrictions = state.restrictions || {};
-      state.restrictions[userId] = {
-        isRestricted: true,
-        reason: safeReason || `Temporary feature restriction for ${safeHours}h`,
-        restrictedUntil: expiresAtIso,
-        adminEmail: adminAuth.email || 'Admin'
-      };
       relayRealtimeBroadcast(`vybe_user_push:${userId}`, {
         type: 'ACCOUNT_RESTRICTED',
         title: '🔒 Account Interaction Restricted',
         body: `Your account has been temporarily restricted for ${safeHours}h: ${safeReason || 'Violation of platform rules'}.`
       });
     } else if (normalizedAction === 'RESTORE') {
-      state.statuses[userId].is_banned = false;
-      state.statuses[userId].is_suspended = false;
-      state.statuses[userId].ban_reason = null;
-      state.statuses[userId].suspension_reason = null;
-      state.statuses[userId].suspended_until = null;
       patch = { is_banned: false, is_suspended: false, ban_reason: null, suspension_reason: null, suspended_until: null };
-      if (state.restrictions && state.restrictions[userId]) {
-        delete state.restrictions[userId];
-      }
     }
 
     if (normalizedAction === 'BAN' || normalizedAction === 'SUSPEND' || normalizedAction === 'RESTORE') {
@@ -1419,19 +1303,6 @@ const server = http.createServer(async (req, res) => {
       callerJwt: adminAuth.token
     });
 
-    state.auditLogs = state.auditLogs || [];
-    state.auditLogs.unshift({
-      timestamp: new Date().toISOString(),
-      action: `USER_${normalizedAction}`,
-      userId,
-      username: username || 'User',
-      adminEmail: adminAuth.email || 'Admin',
-      details: { action: normalizedAction, reason: safeReason, patch }
-    });
-    if (state.auditLogs.length > 200) state.auditLogs.pop();
-
-    saveAdminState(state);
-
     sendJson(res, 200, {
       success: true,
       message: `Account status set to ${normalizedAction} for ${username || userId}`,
@@ -1441,7 +1312,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 5. CONTENT MODERATION ACTION (DELETE / ARCHIVE ON SUPABASE)
+  // 5. CONTENT MODERATION ACTION (DELETE / ARCHIVE / RESTORE ON SUPABASE)
   if (cleanUrl === '/api/v1/admin/content-action' && req.method === 'POST') {
     const body = await readJsonBody(req);
     const { contentId, action } = body;
@@ -1463,6 +1334,12 @@ const server = http.createServer(async (req, res) => {
         headers: buildSupabaseHeaders({ 'Content-Type': 'application/json' }, true, adminAuth.token),
         body: JSON.stringify({ is_archived: true })
       });
+    } else if (actionUpper === 'RESTORE' || actionUpper === 'SHOW') {
+      dbResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/posts?id=eq.${encodeURIComponent(contentId)}`, {
+        method: 'PATCH',
+        headers: buildSupabaseHeaders({ 'Content-Type': 'application/json' }, true, adminAuth.token),
+        body: JSON.stringify({ is_archived: false })
+      });
     } else {
       sendJson(res, 400, { error: 'Unsupported content moderation action.' });
       return;
@@ -1483,13 +1360,32 @@ const server = http.createServer(async (req, res) => {
       callerJwt: adminAuth.token
     });
 
-    const state = loadAdminState();
-    state.contentModeration = state.contentModeration || {};
-    state.contentModeration[contentId] = { action: actionUpper, timestamp: new Date().toISOString(), adminEmail: adminAuth.email };
-    saveAdminState(state);
-    relayRealtimeBroadcast('vybe_feed_updates', { event: 'POST_REMOVED', postId: contentId });
+    relayRealtimeBroadcast('vybe_feed_updates', { event: actionUpper === 'RESTORE' || actionUpper === 'SHOW' ? 'POST_RESTORED' : 'POST_REMOVED', postId: contentId });
 
     sendJson(res, 200, { success: true, contentId, action: actionUpper });
+    return;
+  }
+
+  // 6a. TRUST & SAFETY REPORTS QUEUE (Live Supabase public.reports)
+  if (cleanUrl === '/api/v1/admin/reports' && req.method === 'GET') {
+    let resp;
+    try {
+      resp = await fetch(
+        `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/reports?select=id,reporter_id,target_type,target_id,reason,status,admin_notes,created_at,reporter:reporter_id(id,username,display_name)&order=created_at.desc&limit=100`,
+        { headers: buildSupabaseHeaders({}, true, adminAuth.token) }
+      );
+    } catch (err) {
+      sendJson(res, 502, { error: 'Failed communicating with Supabase reports table: ' + err.message });
+      return;
+    }
+
+    if (!resp.ok) {
+      sendJson(res, resp.status >= 400 ? resp.status : 502, { error: 'Failed fetching reports from Supabase.' });
+      return;
+    }
+
+    const rows = await resp.json();
+    sendJson(res, 200, { success: true, reports: Array.isArray(rows) ? rows : [] });
     return;
   }
 
@@ -1553,15 +1449,6 @@ const server = http.createServer(async (req, res) => {
       callerJwt: adminAuth.token
     });
 
-    const state = loadAdminState();
-    state.reports = state.reports || {};
-    state.reports[reportId] = {
-      action: mappedStatus,
-      notes: notes || null,
-      timestamp: new Date().toISOString(),
-      adminEmail: adminAuth.email || 'Admin'
-    };
-    saveAdminState(state);
     sendJson(res, 200, { success: true, reportId, status: mappedStatus, action: mappedStatus });
     return;
   }
@@ -1632,45 +1519,41 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 7. ADS MANAGEMENT
+  // 7. ADS MANAGEMENT (Live Supabase backed when table exists; zero seeded mock campaigns)
   if (cleanUrl === '/api/v1/admin/ads' && req.method === 'GET') {
-    const state = loadAdminState();
-    if (!state.ads || state.ads.length === 0) {
-      state.ads = [
-        {
-          id: 'ad_launch_01',
-          name: 'VYBE 2027 Genesis Showcase',
-          brand: 'NR Next Originals',
-          placement: 'FEED_SPONSORED_POST',
-          headline: 'Experience the next-generation creator soundscape & live resonance.',
-          mediaUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80',
-          ctaText: 'Explore Sounds',
-          ctaUrl: 'https://vybe.nrnext.com',
-          impressions: 48200,
-          targetImpressions: 100000,
-          budget: '₹25,000',
-          status: 'ACTIVE',
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: 'ad_launch_02',
-          name: 'Creator VIP Pass Enrollment',
-          brand: 'VYBE Studio Pro',
-          placement: 'REEL_SPONSORED_VIDEO',
-          headline: 'Get official verification, 4K reel uploads, and priority audio tools.',
-          mediaUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&q=80',
-          ctaText: 'Claim Creator Pass',
-          ctaUrl: 'https://vybe.nrnext.com/vip',
-          impressions: 19400,
-          targetImpressions: 50000,
-          budget: '₹15,000',
-          status: 'ACTIVE',
-          createdAt: new Date().toISOString()
-        }
-      ];
-      saveAdminState(state);
+    try {
+      const resp = await fetch(
+        `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/sponsored_campaigns?select=id,name,brand,placement,headline,media_url,cta_text,cta_url,impressions,target_impressions,budget,status,created_at&order=created_at.desc&limit=100`,
+        { headers: buildSupabaseHeaders({}, true, adminAuth.token) }
+      );
+      if (resp.status === 404) {
+        sendJson(res, 200, { success: true, ads: [], supported: false });
+        return;
+      }
+      if (!resp.ok) {
+        sendJson(res, resp.status >= 400 ? resp.status : 502, { error: 'Failed fetching sponsorship campaigns from Supabase.' });
+        return;
+      }
+      const rows = await resp.json();
+      const ads = (Array.isArray(rows) ? rows : []).map(a => ({
+        id: a.id,
+        name: a.name,
+        brand: a.brand,
+        placement: a.placement || 'FEED_SPONSORED_POST',
+        headline: a.headline || '',
+        mediaUrl: a.media_url || '',
+        ctaText: a.cta_text || '',
+        ctaUrl: a.cta_url || '',
+        impressions: Number(a.impressions || 0),
+        targetImpressions: Number(a.target_impressions || 0),
+        budget: a.budget || '',
+        status: String(a.status || 'ACTIVE').toUpperCase(),
+        createdAt: a.created_at
+      }));
+      sendJson(res, 200, { success: true, ads, supported: true });
+    } catch (err) {
+      sendJson(res, 502, { error: 'Failed communicating with Supabase campaigns table: ' + err.message });
     }
-    sendJson(res, 200, { success: true, ads: state.ads });
     return;
   }
 
@@ -1682,66 +1565,155 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const state = loadAdminState();
-    state.ads = state.ads || [];
-    const newAd = {
-      id: `ad_${Date.now()}`,
-      name,
-      brand,
-      placement: placement || 'FEED_SPONSORED_POST',
-      headline: headline || '',
-      mediaUrl: mediaUrl || 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=800&q=80',
-      ctaText: ctaText || 'Learn More',
-      ctaUrl: ctaUrl || 'https://vybe.nrnext.com',
-      impressions: 0,
-      targetImpressions: Number(targetImpressions) || 50000,
-      budget: budget || '₹10,000',
-      status: 'ACTIVE',
-      createdAt: new Date().toISOString()
-    };
-    state.ads.unshift(newAd);
-    saveAdminState(state);
-
-    sendJson(res, 200, { success: true, ad: newAd });
+    try {
+      const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/sponsored_campaigns`, {
+        method: 'POST',
+        headers: buildSupabaseHeaders({ 'Content-Type': 'application/json', 'Prefer': 'return=representation' }, true, adminAuth.token),
+        body: JSON.stringify({
+          name: String(name),
+          brand: String(brand),
+          placement: placement || 'FEED_SPONSORED_POST',
+          headline: headline || '',
+          media_url: mediaUrl || null,
+          cta_text: ctaText || 'Learn More',
+          cta_url: ctaUrl || null,
+          impressions: 0,
+          target_impressions: Number(targetImpressions) || 0,
+          budget: budget || '',
+          status: 'ACTIVE'
+        })
+      });
+      if (resp.status === 404) {
+        sendJson(res, 501, { error: 'Sponsored campaigns table is not provisioned in Supabase.' });
+        return;
+      }
+      if (!resp.ok) {
+        sendJson(res, resp.status >= 400 ? resp.status : 502, { error: 'Failed creating sponsored campaign in Supabase.' });
+        return;
+      }
+      const created = await resp.json();
+      const ad = Array.isArray(created) ? created[0] : created;
+      await recordSupabaseAuditLog({
+        adminId: adminAuth.userId,
+        adminEmail: adminAuth.email,
+        action: 'AD_CAMPAIGN_CREATE',
+        targetType: 'sponsored_campaigns',
+        targetId: String(ad?.id || name),
+        details: { name, brand },
+        callerJwt: adminAuth.token
+      });
+      sendJson(res, 200, { success: true, ad });
+    } catch (err) {
+      sendJson(res, 502, { error: 'Failed creating sponsored campaign: ' + err.message });
+    }
     return;
   }
 
   if (cleanUrl === '/api/v1/admin/ads/toggle' && req.method === 'POST') {
     const body = await readJsonBody(req);
     const { adId } = body;
-    const state = loadAdminState();
-    state.ads = state.ads || [];
-    const ad = state.ads.find(a => a.id === adId);
-    if (!ad) {
-      sendJson(res, 404, { error: 'Ad campaign not found' });
+    if (!adId) {
+      sendJson(res, 400, { error: 'adId is required.' });
       return;
     }
-    ad.status = ad.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
-    saveAdminState(state);
-    sendJson(res, 200, { success: true, status: ad.status });
+    try {
+      const curResp = await fetch(
+        `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/sponsored_campaigns?id=eq.${encodeURIComponent(adId)}&select=id,status&limit=1`,
+        { headers: buildSupabaseHeaders({}, true, adminAuth.token) }
+      );
+      if (curResp.status === 404) {
+        sendJson(res, 501, { error: 'Sponsored campaigns table is not provisioned in Supabase.' });
+        return;
+      }
+      if (!curResp.ok) {
+        sendJson(res, curResp.status, { error: 'Failed looking up sponsored campaign.' });
+        return;
+      }
+      const rows = await curResp.json();
+      const cur = Array.isArray(rows) ? rows[0] : rows;
+      if (!cur) {
+        sendJson(res, 404, { error: 'Ad campaign not found' });
+        return;
+      }
+      const nextStatus = String(cur.status || '').toUpperCase() === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
+      const updResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/sponsored_campaigns?id=eq.${encodeURIComponent(adId)}`, {
+        method: 'PATCH',
+        headers: buildSupabaseHeaders({ 'Content-Type': 'application/json' }, true, adminAuth.token),
+        body: JSON.stringify({ status: nextStatus })
+      });
+      if (!updResp.ok) {
+        sendJson(res, updResp.status, { error: 'Failed updating sponsored campaign status.' });
+        return;
+      }
+      sendJson(res, 200, { success: true, status: nextStatus });
+    } catch (err) {
+      sendJson(res, 502, { error: 'Failed updating sponsored campaign: ' + err.message });
+    }
     return;
   }
 
   if (cleanUrl === '/api/v1/admin/ads/delete' && req.method === 'POST') {
     const body = await readJsonBody(req);
     const { adId } = body;
-    const state = loadAdminState();
-    state.ads = (state.ads || []).filter(a => a.id !== adId);
-    saveAdminState(state);
-    sendJson(res, 200, { success: true });
+    if (!adId) {
+      sendJson(res, 400, { error: 'adId is required.' });
+      return;
+    }
+    try {
+      const delResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/sponsored_campaigns?id=eq.${encodeURIComponent(adId)}`, {
+        method: 'DELETE',
+        headers: buildSupabaseHeaders({}, true, adminAuth.token)
+      });
+      if (delResp.status === 404) {
+        sendJson(res, 501, { error: 'Sponsored campaigns table is not provisioned in Supabase.' });
+        return;
+      }
+      if (!delResp.ok) {
+        sendJson(res, delResp.status, { error: 'Failed deleting sponsored campaign.' });
+        return;
+      }
+      sendJson(res, 200, { success: true });
+    } catch (err) {
+      sendJson(res, 502, { error: 'Failed deleting sponsored campaign: ' + err.message });
+    }
     return;
   }
 
-  // 8. AUDIT LOGS
+  // 8. AUDIT LOGS (LIVE SUPABASE admin_audit_logs ONLY)
   if (cleanUrl === '/api/v1/admin/audit-logs' && req.method === 'GET') {
-    const state = loadAdminState();
-    sendJson(res, 200, { success: true, logs: state.auditLogs || [] });
+    let resp;
+    try {
+      resp = await fetch(
+        `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/admin_audit_logs?select=id,admin_id,admin_email,action,target_type,target_id,details,created_at&order=created_at.desc&limit=100`,
+        { headers: buildSupabaseHeaders({}, true, adminAuth.token) }
+      );
+    } catch (err) {
+      sendJson(res, 502, { error: 'Failed fetching audit logs from Supabase: ' + err.message });
+      return;
+    }
+
+    if (!resp.ok) {
+      sendJson(res, resp.status >= 400 ? resp.status : 502, { error: 'Failed fetching audit logs from Supabase.' });
+      return;
+    }
+
+    const rows = await resp.json();
+    const logs = (Array.isArray(rows) ? rows : []).map(r => ({
+      id: r.id,
+      timestamp: r.created_at,
+      adminId: r.admin_id || '',
+      adminEmail: r.admin_email || 'admin',
+      action: r.action || 'ACTION',
+      targetType: r.target_type || 'SYSTEM',
+      targetId: r.target_id || '',
+      details: r.details || {}
+    }));
+    sendJson(res, 200, { success: true, logs });
     return;
   }
 
-  // 9. OVERVIEW STATS (REAL AGGREGATION FROM SUPABASE & SYSTEM)
+  // 9. OVERVIEW STATS (REAL AGGREGATION FROM SUPABASE ONLY — ZERO SYNTHETIC ESTIMATES)
   if (cleanUrl === '/api/v1/admin/overview-stats' && req.method === 'GET') {
-    const state = loadAdminState();
     let totalUsers = 0;
     let newUsersToday = 0;
     let newUsersWeek = 0;
@@ -1750,9 +1722,9 @@ const server = http.createServer(async (req, res) => {
     let verifiedCount = 0;
     let vipCount = 0;
     let officialCount = 0;
-    let dauEstimate = 0;
-    let wauEstimate = 0;
-    let mauEstimate = 0;
+    let dauCount = 0;
+    let wauCount = 0;
+    let mauCount = 0;
     let totalPosts = 0;
     let reelsCount = 0;
     let unfilteredCount = 0;
@@ -1762,91 +1734,113 @@ const server = http.createServer(async (req, res) => {
     let totalStories = 0;
     let totalReports = 0;
     let pendingReports = 0;
+    let liveRoomsCount = 0;
+    let pollsCount = 0;
+    let activeDeviceTokens = 0;
 
     const now = Date.now();
     const oneDayAgo = new Date(now - 24 * 3600 * 1000).toISOString();
     const sevenDaysAgo = new Date(now - 7 * 24 * 3600 * 1000).toISOString();
     const thirtyDaysAgo = new Date(now - 30 * 24 * 3600 * 1000).toISOString();
+    const hdrs = buildSupabaseHeaders({}, true, adminAuth.token);
+    const base = SUPABASE_URL.replace(/\/$/, '');
 
     try {
-      const pResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?select=id,is_verified,is_vip,is_worker,is_banned,is_suspended,created_at&limit=1000`, {
-        headers: buildSupabaseHeaders({}, true, adminAuth.token)
-      });
+      const pResp = await fetch(`${base}/rest/v1/profiles?select=id,is_verified,is_vip,is_worker,is_banned,is_suspended,created_at,last_seen_at&limit=1000`, { headers: hdrs });
       if (pResp.ok) {
         const users = await pResp.json();
-        totalUsers = users.length;
-        users.forEach(u => {
-          const sOverride = state.statuses && state.statuses[u.id];
-          const bOverride = state.badges && state.badges[u.id];
-          const isBanned = sOverride?.is_banned !== undefined ? sOverride.is_banned : Boolean(u.is_banned);
-          const isSuspended = sOverride?.is_suspended !== undefined ? sOverride.is_suspended : Boolean(u.is_suspended);
-          const isVerified = bOverride?.is_verified !== undefined ? bOverride.is_verified : Boolean(u.is_verified);
-          const isVip = bOverride?.is_vip !== undefined ? bOverride.is_vip : Boolean(u.is_vip);
-          const isWorker = bOverride?.is_worker !== undefined ? bOverride.is_worker : Boolean(u.is_worker);
+        if (Array.isArray(users)) {
+          totalUsers = users.length;
+          users.forEach(u => {
+            if (u.is_banned) bannedCount++;
+            if (u.is_suspended) suspendedCount++;
+            if (u.is_verified) verifiedCount++;
+            if (u.is_vip) vipCount++;
+            if (u.is_worker) officialCount++;
 
-          if (isBanned) bannedCount++;
-          if (isSuspended) suspendedCount++;
-          if (isVerified) verifiedCount++;
-          if (isVip) vipCount++;
-          if (isWorker) officialCount++;
-
-          if (u.created_at) {
-            if (u.created_at >= oneDayAgo) newUsersToday++;
-            if (u.created_at >= sevenDaysAgo) newUsersWeek++;
-          }
-        });
-        dauEstimate = Math.max(Math.round(totalUsers * 0.42), 1);
-        wauEstimate = Math.max(Math.round(totalUsers * 0.76), 1);
-        mauEstimate = Math.max(totalUsers, 1);
+            if (u.created_at) {
+              if (u.created_at >= oneDayAgo) newUsersToday++;
+              if (u.created_at >= sevenDaysAgo) newUsersWeek++;
+            }
+            if (u.last_seen_at) {
+              if (u.last_seen_at >= oneDayAgo) dauCount++;
+              if (u.last_seen_at >= sevenDaysAgo) wauCount++;
+              if (u.last_seen_at >= thirtyDaysAgo) mauCount++;
+            }
+          });
+        }
       }
     } catch {}
 
     try {
-      const postResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/posts?select=id,is_vybes_reel,is_unfiltered,likes_count,comments_count,shares_count&limit=1000`, {
-        headers: buildSupabaseHeaders({}, true, adminAuth.token)
-      });
+      const postResp = await fetch(`${base}/rest/v1/posts?select=id,is_vybes_reel,is_unfiltered,likes_count,comments_count,shares_count&limit=1000`, { headers: hdrs });
       if (postResp.ok) {
         const posts = await postResp.json();
-        totalPosts = posts.length;
-        posts.forEach(p => {
-          if (p.is_vybes_reel) reelsCount++;
-          if (p.is_unfiltered) unfilteredCount++;
-          totalLikes += Number(p.likes_count || 0);
-          totalComments += Number(p.comments_count || 0);
-          totalShares += Number(p.shares_count || 0);
-        });
+        if (Array.isArray(posts)) {
+          totalPosts = posts.length;
+          posts.forEach(p => {
+            if (p.is_vybes_reel) reelsCount++;
+            if (p.is_unfiltered) unfilteredCount++;
+            totalLikes += Number(p.likes_count || 0);
+            totalComments += Number(p.comments_count || 0);
+            totalShares += Number(p.shares_count || 0);
+          });
+        }
       }
     } catch {}
 
     try {
-      const sResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/stories?select=id&limit=200`, {
-        headers: buildSupabaseHeaders({}, true, adminAuth.token)
-      });
+      const sResp = await fetch(`${base}/rest/v1/stories?select=id&limit=200`, { headers: hdrs });
       if (sResp.ok) {
         const stories = await sResp.json();
-        totalStories = stories.length;
+        if (Array.isArray(stories)) totalStories = stories.length;
       }
     } catch {}
 
     try {
-      const repResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/reports?select=id,status&limit=500`, {
-        headers: buildSupabaseHeaders({}, true, adminAuth.token)
-      });
+      const repResp = await fetch(`${base}/rest/v1/reports?select=id,status&limit=500`, { headers: hdrs });
       if (repResp.ok) {
         const reps = await repResp.json();
-        totalReports = reps.length;
-        pendingReports = reps.filter(r => (r.status || 'OPEN').toUpperCase() === 'OPEN').length;
+        if (Array.isArray(reps)) {
+          totalReports = reps.length;
+          pendingReports = reps.filter(r => (r.status || 'OPEN').toUpperCase() === 'OPEN').length;
+        }
       }
     } catch {}
+
+    try {
+      const [roomsResp, pollsResp, tokResp] = await Promise.all([
+        fetch(`${base}/rest/v1/rooms?is_active=eq.true&select=id&limit=200`, { headers: hdrs }).catch(() => null),
+        fetch(`${base}/rest/v1/audience_pools?select=id&limit=200`, { headers: hdrs }).catch(() => null),
+        fetch(`${base}/rest/v1/user_device_tokens?is_active=eq.true&select=id&limit=1000`, { headers: hdrs }).catch(() => null)
+      ]);
+      if (roomsResp && roomsResp.ok) {
+        const r = await roomsResp.json();
+        if (Array.isArray(r)) liveRoomsCount = r.length;
+      }
+      if (pollsResp && pollsResp.ok) {
+        const pl = await pollsResp.json();
+        if (Array.isArray(pl)) pollsCount = pl.length;
+      }
+      if (tokResp && tokResp.ok) {
+        const t = await tokResp.json();
+        if (Array.isArray(t)) activeDeviceTokens = t.length;
+      }
+    } catch {}
+
+    const memDeviceCount = Array.from(deviceRegistry.values()).filter(d => d.is_active).length;
+    const effectiveDeviceCount = activeDeviceTokens > 0 ? activeDeviceTokens : memDeviceCount;
 
     sendJson(res, 200, {
       success: true,
+      adminRole: adminAuth.role,
+      isSuperAdmin: adminAuth.isSuperAdmin,
       stats: {
         users: {
           total: totalUsers,
-          dau: dauEstimate,
-          wau: wauEstimate,
-          mau: mauEstimate,
+          dau: dauCount,
+          wau: wauCount,
+          mau: mauCount,
           newToday: newUsersToday,
           newWeek: newUsersWeek,
           banned: bannedCount,
@@ -1859,22 +1853,27 @@ const server = http.createServer(async (req, res) => {
           totalPosts,
           reels: reelsCount,
           unfiltered: unfilteredCount,
+          standardPosts: Math.max(0, totalPosts - reelsCount - unfilteredCount),
           stories: totalStories,
           totalLikes,
           totalComments,
           totalShares
+        },
+        experiences: {
+          liveRooms: liveRoomsCount,
+          polls: pollsCount
         },
         moderation: {
           totalReports,
           pendingReports
         },
         push: {
-          activeDevices: Array.from(deviceRegistry.values()).filter(d => d.is_active).length,
+          activeDevices: effectiveDeviceCount,
           recentPushes: recentPushLogs.length
         },
         systemHealth: {
           supabase: { status: 'HEALTHY', url: SUPABASE_URL },
-          fcm: { status: getFirebaseServiceAccount() ? 'CONFIGURED' : 'STANDBY', registeredDevices: deviceRegistry.size },
+          fcm: { status: getFirebaseServiceAccount() ? 'CONFIGURED' : 'STANDBY', registeredDevices: effectiveDeviceCount },
           realtime: { status: 'LIVE', channel: 'vybe_broadcast_high_v2' },
           gateway: { status: 'ONLINE', uptime: Math.floor(process.uptime()), port: PORT }
         }
@@ -1883,22 +1882,28 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 10. CONTENT MANAGEMENT & MODERATION
+  // 10. CONTENT MANAGEMENT & MODERATION (LIVE SUPABASE POSTS ONLY)
   if (cleanUrl === '/api/v1/admin/content' && req.method === 'GET') {
-    const state = loadAdminState();
-    let posts = [];
+    let resp;
     try {
-      const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/posts?select=id,author_id,caption,media_type,media_urls,is_vybes_reel,is_unfiltered,likes_count,comments_count,shares_count,created_at,profiles:author_id(username,display_name,avatar_url)&order=created_at.desc&limit=60`, {
-        headers: buildSupabaseHeaders({}, true, adminAuth.token)
-      });
-      if (resp.ok) {
-        posts = await resp.json();
-      }
-    } catch {}
+      resp = await fetch(
+        `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/posts?select=id,author_id,caption,media_type,media_urls,is_vybes_reel,is_unfiltered,is_archived,likes_count,comments_count,shares_count,created_at,profiles:author_id(username,display_name,avatar_url)&order=created_at.desc&limit=60`,
+        { headers: buildSupabaseHeaders({}, true, adminAuth.token) }
+      );
+    } catch (err) {
+      sendJson(res, 502, { error: 'Failed communicating with Supabase posts table: ' + err.message });
+      return;
+    }
 
-    const merged = posts.map(p => {
-      const mod = state.contentModeration && state.contentModeration[p.id];
+    if (!resp.ok) {
+      sendJson(res, resp.status >= 400 ? resp.status : 502, { error: 'Failed fetching posts from Supabase.' });
+      return;
+    }
+
+    const rawPosts = await resp.json();
+    const posts = (Array.isArray(rawPosts) ? rawPosts : []).map(p => {
       const authorObj = p.profiles || {};
+      const isHidden = Boolean(p.is_archived);
       return {
         id: p.id,
         author_id: p.author_id,
@@ -1914,87 +1919,113 @@ const server = http.createServer(async (req, res) => {
         comments_count: Number(p.comments_count || 0),
         shares_count: Number(p.shares_count || 0),
         created_at: p.created_at,
-        is_hidden: mod ? mod.action === 'HIDE' : false,
-        moderation_status: mod ? mod.action : 'APPROVED'
+        is_hidden: isHidden,
+        moderation_status: isHidden ? 'HIDDEN' : 'APPROVED'
       };
     });
 
-    sendJson(res, 200, { success: true, posts: merged, total: merged.length });
+    sendJson(res, 200, { success: true, posts, total: posts.length });
     return;
   }
 
-  // 11. 6 VYBE EXPERIENCES MANAGEMENT
+  // 11. 6 VYBE EXPERIENCES MANAGEMENT (REAL SUPABASE RECORDS ONLY — ZERO SAMPLE ROOMS/POLLS/NUMBERS)
   if (cleanUrl === '/api/v1/admin/experiences' && req.method === 'GET') {
-    const state = loadAdminState();
-    let capsulesCount = 0;
-    let crossedCount = 0;
+    const configState = loadPlatformConfigState();
+    const hdrs = buildSupabaseHeaders({}, true, adminAuth.token);
+    const base = SUPABASE_URL.replace(/\/$/, '');
+
+    let activeRooms = [];
     let unfilteredCount = 0;
+    let activePolls = [];
+    let capsulesCount = 0;
+    let doubleTakesCount = 0;
+    let dailyPrompt = null;
+    let crossedCount = 0;
 
     try {
-      const cResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/time_capsules?select=id,title,category_theme,unlock_date_formatted,is_unlocked&limit=100`, {
-        headers: buildSupabaseHeaders({}, true, adminAuth.token)
-      });
-      if (cResp.ok) {
-        const cList = await cResp.json();
-        capsulesCount = cList.length;
+      const [rResp, uResp, pollResp, cResp, dtResp, cpResp] = await Promise.all([
+        fetch(`${base}/rest/v1/rooms?is_active=eq.true&select=id,title,topic_tag,host_id,created_at,profiles:host_id(username,display_name)&order=created_at.desc&limit=50`, { headers: hdrs }).catch(() => null),
+        fetch(`${base}/rest/v1/posts?is_unfiltered=eq.true&select=id&limit=1000`, { headers: hdrs }).catch(() => null),
+        fetch(`${base}/rest/v1/audience_pools?select=id,title,category,closes_at,total_votes,status&order=created_at.desc&limit=50`, { headers: hdrs }).catch(() => null),
+        fetch(`${base}/rest/v1/time_capsules?select=id&limit=1000`, { headers: hdrs }).catch(() => null),
+        fetch(`${base}/rest/v1/double_takes?select=id,prompt_question,created_at&order=created_at.desc&limit=100`, { headers: hdrs }).catch(() => null),
+        fetch(`${base}/rest/v1/crossed_paths?select=id&limit=1000`, { headers: hdrs }).catch(() => null)
+      ]);
+
+      if (rResp && rResp.ok) {
+        const rList = await rResp.json();
+        if (Array.isArray(rList)) activeRooms = rList;
       }
-    } catch {}
-
-    try {
-      const cpResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/crossed_paths?select=id,title,broad_location,venue_or_event_name,encounter_date&limit=100`, {
-        headers: buildSupabaseHeaders({}, true, adminAuth.token)
-      });
-      if (cpResp.ok) {
+      if (uResp && uResp.ok) {
+        const uList = await uResp.json();
+        if (Array.isArray(uList)) unfilteredCount = uList.length;
+      }
+      if (pollResp && pollResp.ok) {
+        const pList = await pollResp.json();
+        if (Array.isArray(pList)) activePolls = pList;
+      }
+      if (cResp && cResp.ok) {
+        const cList = await cResp.json();
+        if (Array.isArray(cList)) capsulesCount = cList.length;
+      }
+      if (dtResp && dtResp.ok) {
+        const dtList = await dtResp.json();
+        if (Array.isArray(dtList)) {
+          doubleTakesCount = dtList.length;
+          dailyPrompt = dtList[0]?.prompt_question || null;
+        }
+      }
+      if (cpResp && cpResp.ok) {
         const cpList = await cpResp.json();
-        crossedCount = cpList.length;
+        if (Array.isArray(cpList)) crossedCount = cpList.length;
       }
     } catch {}
 
     sendJson(res, 200, {
       success: true,
-      featureFlags: state.featureFlags,
+      featureFlags: configState.featureFlags,
       experiences: {
         unload: {
           name: "UNLOAD",
           title: "24/7 Live Listening & Voice Lounges",
           accent: "#8B5CF6",
-          activeRooms: state.activeUnloadRooms || [],
-          totalActiveRooms: (state.activeUnloadRooms || []).filter(r => r.isActive).length,
+          activeRooms,
+          totalActiveRooms: activeRooms.length,
           privacyGuarantee: "Zero audio recording. 100% ephemeral."
         },
         unfiltered: {
           name: "UNFILTERED",
           title: "Raw & Real Moments, Zero Filters",
           accent: "#22C55E",
-          snapshotsCount: 142,
+          snapshotsCount: unfilteredCount,
           unfilteredPrivacy: "No beauty algorithms. Front & back cam authentic reality."
         },
         whatNext: {
           name: "WHAT NEXT",
           title: "Culture Pulse & Decision Polls",
           accent: "#00F0FF",
-          polls: state.activePolls || [],
-          totalActivePolls: (state.activePolls || []).filter(p => p.status === 'ACTIVE').length
+          polls: activePolls,
+          totalActivePolls: activePolls.filter(p => String(p.status || 'ACTIVE').toUpperCase() === 'ACTIVE').length
         },
         timeCapsule: {
           name: "TIME CAPSULE",
           title: "Cryptographically Sealed Memory Vaults",
           accent: "#FFB703",
-          sealedCount: Math.max(capsulesCount, 38),
+          sealedCount: capsulesCount,
           privacyGuarantee: "Encrypted memory vaults. Zero staff message inspection."
         },
         doubleTake: {
           name: "DOUBLE TAKE",
           title: "Two Sides, Opposing Perspectives",
           accent: "#EF4444",
-          activePromptsCount: 18,
-          dailyPrompt: "Should social platforms mandate unedited photo sharing?"
+          activePromptsCount: doubleTakesCount,
+          dailyPrompt
         },
         crossedPaths: {
           name: "CROSSED PATHS",
           title: "Hyperlocal Proximity Radar & Encounters",
           accent: "#3B82F6",
-          signalsCount: Math.max(crossedCount, 26),
+          signalsCount: crossedCount,
           privacyGuarantee: "Broad venue proximity only. Exact GPS coordinates strictly hidden."
         }
       }
@@ -2011,21 +2042,10 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const cleanKey = String(experienceKey).trim();
-    const state = loadAdminState();
-    state.featureFlags = state.featureFlags || {};
-    state.featureFlags[cleanKey] = Boolean(enabled);
-
-    state.auditLogs = state.auditLogs || [];
-    state.auditLogs.unshift({
-      timestamp: new Date().toISOString(),
-      action: `EXPERIENCE_TOGGLE_${cleanKey.toUpperCase()}`,
-      userId: 'PLATFORM',
-      username: 'System',
-      adminEmail: adminAuth.email || 'Admin',
-      details: { experience: cleanKey, enabled: Boolean(enabled) }
-    });
-
-    saveAdminState(state);
+    const configState = loadPlatformConfigState();
+    configState.featureFlags = configState.featureFlags || {};
+    configState.featureFlags[cleanKey] = Boolean(enabled);
+    savePlatformConfigState(configState);
 
     await recordSupabaseAuditLog({
       adminId: adminAuth.userId,
@@ -2043,11 +2063,11 @@ const server = http.createServer(async (req, res) => {
 
   // 13. PLATFORM CONFIGURATION (MAINTENANCE MODE, ANNOUNCEMENT)
   if (cleanUrl === '/api/v1/admin/platform-config' && req.method === 'GET') {
-    const state = loadAdminState();
+    const configState = loadPlatformConfigState();
     sendJson(res, 200, {
       success: true,
-      config: state.platformConfig,
-      featureFlags: state.featureFlags
+      config: configState.platformConfig,
+      featureFlags: configState.featureFlags
     });
     return;
   }
@@ -2055,25 +2075,15 @@ const server = http.createServer(async (req, res) => {
   if (cleanUrl === '/api/v1/admin/platform-config' && req.method === 'POST') {
     const body = await readJsonBody(req);
     const { maintenanceMode, maintenanceMessage, announcementBanner, announcementActive, announcementLink } = body;
-    const state = loadAdminState();
-    state.platformConfig = state.platformConfig || {};
-    if (maintenanceMode !== undefined) state.platformConfig.maintenanceMode = Boolean(maintenanceMode);
-    if (maintenanceMessage !== undefined) state.platformConfig.maintenanceMessage = String(maintenanceMessage);
-    if (announcementBanner !== undefined) state.platformConfig.announcementBanner = String(announcementBanner);
-    if (announcementActive !== undefined) state.platformConfig.announcementActive = Boolean(announcementActive);
-    if (announcementLink !== undefined) state.platformConfig.announcementLink = String(announcementLink);
+    const configState = loadPlatformConfigState();
+    configState.platformConfig = configState.platformConfig || {};
+    if (maintenanceMode !== undefined) configState.platformConfig.maintenanceMode = Boolean(maintenanceMode);
+    if (maintenanceMessage !== undefined) configState.platformConfig.maintenanceMessage = String(maintenanceMessage);
+    if (announcementBanner !== undefined) configState.platformConfig.announcementBanner = String(announcementBanner);
+    if (announcementActive !== undefined) configState.platformConfig.announcementActive = Boolean(announcementActive);
+    if (announcementLink !== undefined) configState.platformConfig.announcementLink = String(announcementLink);
 
-    state.auditLogs = state.auditLogs || [];
-    state.auditLogs.unshift({
-      timestamp: new Date().toISOString(),
-      action: 'UPDATE_PLATFORM_CONFIG',
-      userId: 'PLATFORM',
-      username: 'System',
-      adminEmail: adminAuth.email || 'Admin',
-      details: { config: state.platformConfig }
-    });
-
-    saveAdminState(state);
+    savePlatformConfigState(configState);
 
     await recordSupabaseAuditLog({
       adminId: adminAuth.userId,
@@ -2081,57 +2091,87 @@ const server = http.createServer(async (req, res) => {
       action: 'UPDATE_PLATFORM_CONFIG',
       targetType: 'PLATFORM_CONFIG',
       targetId: 'GLOBAL',
-      details: { config: state.platformConfig },
+      details: { config: configState.platformConfig },
       callerJwt: adminAuth.token
     });
 
-    sendJson(res, 200, { success: true, config: state.platformConfig });
+    sendJson(res, 200, { success: true, config: configState.platformConfig });
     return;
   }
 
-  // 14. ADMIN STAFF & ROLES DIRECTORY (Zero hardcoded owner emails; reads DB roles only)
+  // 14. ADMIN STAFF & ROLES DIRECTORY (Active public.admin_users records only)
   if (cleanUrl === '/api/v1/admin/staff' && req.method === 'GET') {
-    const state = loadAdminState();
-    let users = [];
+    let resp;
     try {
-      const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?select=id,username,display_name,avatar_url,role,created_at&limit=200`, {
-        headers: buildSupabaseHeaders({}, true, adminAuth.token)
-      });
-      if (resp.ok) {
-        users = await resp.json();
-      }
-    } catch {}
+      resp = await fetch(
+        `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/admin_users?is_active=eq.true&select=user_id,email,role,is_active,created_at,profiles:user_id(id,username,display_name,avatar_url)&order=created_at.desc&limit=200`,
+        { headers: buildSupabaseHeaders({}, true, adminAuth.token) }
+      );
+    } catch (err) {
+      sendJson(res, 502, { error: 'Failed communicating with Supabase admin_users table: ' + err.message });
+      return;
+    }
 
-    const staff = users.filter(u => {
-      const r = String((state.roles && state.roles[u.id] ? state.roles[u.id] : u.role) || 'USER').toUpperCase();
-      return r !== 'USER';
-    }).map(u => {
-      const assignedRole = String((state.roles && state.roles[u.id] ? state.roles[u.id] : (u.role || 'ADMIN'))).toUpperCase();
-      return {
-        id: u.id,
-        username: u.username,
-        display_name: u.display_name,
-        role: assignedRole,
-        is_owner: SUPER_ADMIN_ROLES.has(assignedRole),
-        avatar_url: u.avatar_url,
-        created_at: u.created_at
-      };
-    });
+    if (!resp.ok) {
+      sendJson(res, resp.status >= 400 ? resp.status : 502, { error: 'Failed fetching admin staff from Supabase.' });
+      return;
+    }
+
+    const rows = await resp.json();
+    const staff = (Array.isArray(rows) ? rows : [])
+      .filter(r => r.is_active === true)
+      .map(r => {
+        const p = r.profiles || {};
+        const assignedRole = String(r.role || 'MODERATOR').toUpperCase();
+        return {
+          id: r.user_id || p.id,
+          username: p.username || r.email || 'admin',
+          display_name: p.display_name || p.username || r.email || 'Administrator',
+          email: r.email || '',
+          role: assignedRole,
+          is_owner: SUPER_ADMIN_ROLES.has(assignedRole),
+          avatar_url: p.avatar_url || null,
+          created_at: r.created_at
+        };
+      });
 
     sendJson(res, 200, { success: true, staff, total: staff.length });
     return;
   }
 
-  // 15. CSV DATA EXPORT FOR AUDIT & COMPLIANCE (PII stripped)
+  // 15. CSV DATA EXPORT FOR AUDIT & COMPLIANCE (Live Supabase data only; PII stripped)
   if (cleanUrl.startsWith('/api/v1/admin/export/')) {
     const type = cleanUrl.replace('/api/v1/admin/export/', '').toLowerCase().trim();
-    const state = loadAdminState();
+    const csvCell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 
     if (type === 'audit-logs' || type === 'audit') {
-      const logs = state.auditLogs || [];
-      let csv = 'Timestamp,Action,Admin,User_ID,Username,Details\n';
+      let logs = [];
+      try {
+        const resp = await fetch(
+          `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/admin_audit_logs?select=created_at,action,admin_email,target_type,target_id,details&order=created_at.desc&limit=500`,
+          { headers: buildSupabaseHeaders({}, true, adminAuth.token) }
+        );
+        if (!resp.ok) {
+          sendJson(res, resp.status >= 400 ? resp.status : 502, { error: 'Failed exporting audit logs from Supabase.' });
+          return;
+        }
+        const rows = await resp.json();
+        if (Array.isArray(rows)) logs = rows;
+      } catch (err) {
+        sendJson(res, 502, { error: 'Failed communicating with Supabase audit logs: ' + err.message });
+        return;
+      }
+
+      let csv = 'Timestamp,Action,Admin,Target_Type,Target_ID,Details\n';
       logs.forEach(l => {
-        csv += `"${l.timestamp}","${l.action}","${l.adminEmail || ''}","${l.userId || ''}","${(l.username || '').replace(/"/g, '""')}","${JSON.stringify(l.details || {}).replace(/"/g, '""')}"\n`;
+        csv += [
+          csvCell(l.created_at),
+          csvCell(l.action),
+          csvCell(l.admin_email),
+          csvCell(l.target_type),
+          csvCell(l.target_id),
+          csvCell(JSON.stringify(l.details || {}))
+        ].join(',') + '\n';
       });
       res.writeHead(200, {
         'Content-Type': 'text/csv; charset=utf-8',
@@ -2144,16 +2184,33 @@ const server = http.createServer(async (req, res) => {
     if (type === 'users') {
       let users = [];
       try {
-        const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?select=id,username,display_name,role,is_verified,is_vip,is_worker,is_banned,created_at&limit=500`, {
-          headers: buildSupabaseHeaders({}, true, adminAuth.token)
-        });
-        if (resp.ok) users = await resp.json();
-      } catch {}
+        const resp = await fetch(
+          `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?select=id,username,display_name,role,is_verified,is_vip,is_worker,is_banned,created_at&limit=500`,
+          { headers: buildSupabaseHeaders({}, true, adminAuth.token) }
+        );
+        if (!resp.ok) {
+          sendJson(res, resp.status >= 400 ? resp.status : 502, { error: 'Failed exporting users from Supabase.' });
+          return;
+        }
+        const rows = await resp.json();
+        if (Array.isArray(rows)) users = rows;
+      } catch (err) {
+        sendJson(res, 502, { error: 'Failed communicating with Supabase profiles: ' + err.message });
+        return;
+      }
       let csv = 'ID,Username,Display_Name,Role,Verified,VIP,Official,Banned,Joined\n';
       users.forEach(u => {
-        const b = state.badges && state.badges[u.id];
-        const s = state.statuses && state.statuses[u.id];
-        csv += `"${u.id}","${u.username}","${(u.display_name || '').replace(/"/g, '""')}","${state.roles && state.roles[u.id] ? state.roles[u.id] : u.role}","${b?.is_verified ?? u.is_verified}","${b?.is_vip ?? u.is_vip}","${b?.is_worker ?? u.is_worker}","${s?.is_banned ?? u.is_banned}","${u.created_at}"\n`;
+        csv += [
+          csvCell(u.id),
+          csvCell(u.username),
+          csvCell(u.display_name),
+          csvCell(u.role),
+          csvCell(Boolean(u.is_verified)),
+          csvCell(Boolean(u.is_vip)),
+          csvCell(Boolean(u.is_worker)),
+          csvCell(Boolean(u.is_banned)),
+          csvCell(u.created_at)
+        ].join(',') + '\n';
       });
       res.writeHead(200, {
         'Content-Type': 'text/csv; charset=utf-8',
@@ -2311,7 +2368,7 @@ const server = http.createServer(async (req, res) => {
 
   const rawSegments = String(req.url || '/').split('?')[0].replace(/\\/g, '/').split('/').filter(Boolean);
   const decodedSegments = safeDecodedPath.split('/').filter(Boolean);
-  const BLOCKED_MANIFEST_RE = /^(package(-lock)?\.json|tsconfig.*\.json|vite\.config\.[tj]s|netlify.*\.toml|capacitor\.config\.[tj]s|firebase-service-account\.json|admin_state_override\.json)$/i;
+  const BLOCKED_MANIFEST_RE = /^(package(-lock)?\.json|tsconfig.*\.json|vite\.config\.[tj]s|netlify.*\.toml|capacitor\.config\.[tj]s|firebase-service-account\.json|admin_state_override\.json|platform_config\.json)$/i;
   if (
     rawSegments.some(seg => seg === '..' || seg.startsWith('.') || BLOCKED_MANIFEST_RE.test(seg)) ||
     decodedSegments.some(seg => seg === '..' || seg.startsWith('.') || BLOCKED_MANIFEST_RE.test(seg))
