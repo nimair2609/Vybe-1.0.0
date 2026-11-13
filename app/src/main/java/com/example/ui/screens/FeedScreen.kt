@@ -43,7 +43,7 @@ import com.example.ui.components.PostCard
 import com.example.ui.components.StoryCarousel
 import com.example.ui.components.StoryCreateDialog
 import com.example.ui.components.VybeAvatar
-import com.example.ui.components.VybeBrandWordmark
+import com.example.ui.components.VybeBrandHeaderLogo
 import com.example.ui.components.VybeEmptyState
 import com.example.ui.components.VybeMatchesManagerDialog
 import com.example.ui.components.VybeMoodOutlineIcon
@@ -228,21 +228,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
       TopAppBar(
         windowInsets = WindowInsets.statusBars,
         title = {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-              modifier = Modifier
-                .size(30.dp)
-                .clip(RoundedCornerShape(8.dp))
-            ) {
-              Image(
-                painter = painterResource(id = R.drawable.vybe_app_icon_clean),
-                contentDescription = "VYBE",
-                modifier = Modifier.fillMaxSize()
-              )
-            }
-            Spacer(modifier = Modifier.width(10.dp))
-            VybeBrandWordmark(isGrowMode = false)
-          }
+          VybeBrandHeaderLogo()
         },
         actions = {
           IconButton(

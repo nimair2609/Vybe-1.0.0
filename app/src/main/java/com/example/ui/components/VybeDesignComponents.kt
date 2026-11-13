@@ -55,7 +55,7 @@ fun VybeBrandWordmark(
         fontFamily = PlusJakartaSansFontFamily,
         fontWeight = FontWeight.Black,
         fontSize = 21.sp,
-        color = if (isGrowMode) VybeGrowBlue else VybeSocialVioletBright,
+        color = if (palette.isDark) VybeSocialVioletBright else VybeSocialViolet,
         letterSpacing = (-0.5).sp
       )
       Text(
@@ -66,27 +66,10 @@ fun VybeBrandWordmark(
         color = palette.textPrimary,
         letterSpacing = 0.8.sp
       )
-      if (isGrowMode && !compact) {
-        Spacer(modifier = Modifier.width(6.dp))
-        Surface(
-          color = VybeGrowBlue.copy(alpha = 0.14f),
-          shape = RoundedCornerShape(VybeTokens.Radius.xs),
-          border = BorderStroke(1.dp, VybeGrowBlue.copy(alpha = 0.3f))
-        ) {
-          Text(
-            text = "Grow",
-            fontFamily = PlusJakartaSansFontFamily,
-            fontWeight = FontWeight.Bold,
-            fontSize = 11.sp,
-            color = palette.accent,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-          )
-        }
-      }
     }
     if (showSubLabel) {
       Text(
-        text = if (isGrowMode) "LEARN • COLLABORATE • GROW" else "CONNECT • EXPRESS • GROW",
+        text = "CONNECT. EXPRESS. GROW.",
         fontFamily = InterFontFamily,
         fontSize = 9.sp,
         fontWeight = FontWeight.SemiBold,
@@ -94,6 +77,41 @@ fun VybeBrandWordmark(
         letterSpacing = 1.1.sp
       )
     }
+  }
+}
+
+/**
+ * Single authoritative VYBE brand header logo shared identically across Social and Grow modes.
+ * Uses the unmodified official VYBE asset at a fixed 1:1 26.dp size with consistent spacing
+ * and mode-invariant rendering across Light and Dark themes.
+ */
+@Composable
+fun VybeBrandHeaderLogo(
+  onClick: (() -> Unit)? = null,
+  modifier: Modifier = Modifier,
+  testTag: String = "vybe_header_brand_logo"
+) {
+  Row(
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(6.dp),
+    modifier = modifier
+      .defaultMinSize(minHeight = 48.dp)
+      .clip(RoundedCornerShape(VybeTokens.Radius.sm))
+      .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+      .padding(end = 4.dp)
+      .testTag(testTag)
+  ) {
+    androidx.compose.foundation.Image(
+      painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.vybe_app_icon_clean),
+      contentDescription = "VYBE",
+      contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+      modifier = Modifier
+        .size(26.dp)
+        .aspectRatio(1f)
+        .clip(RoundedCornerShape(7.dp))
+        .testTag("vybe_header_logo_icon")
+    )
+    VybeBrandWordmark(compact = true)
   }
 }
 
@@ -215,33 +233,15 @@ fun VybeWorkspaceTopBar(
       Box(
         modifier = Modifier
           .fillMaxWidth()
-          .height(54.dp)
-          .padding(horizontal = 12.dp)
+          .height(VybeTokens.Size.topBarHeight)
+          .padding(horizontal = 16.dp)
       ) {
-        // Fixed Left Slot: Logo + Brand Wordmark
-        Row(
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
-          modifier = Modifier
-            .align(Alignment.CenterStart)
-            .defaultMinSize(minHeight = 48.dp)
-            .clip(RoundedCornerShape(VybeTokens.Radius.sm))
-            .clickable(onClick = onBrandClick)
-            .padding(end = 4.dp)
-        ) {
-          androidx.compose.foundation.Image(
-            painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.vybe_app_icon_clean),
-            contentDescription = "VYBE",
-            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-            modifier = Modifier
-              .size(24.dp)
-              .clip(RoundedCornerShape(7.dp))
-          )
-          VybeBrandWordmark(
-            isGrowMode = experienceMode == VybeExperienceMode.GROW,
-            compact = true
-          )
-        }
+        // Fixed Left Slot: Shared Authoritative VYBE Logo & Wordmark
+        VybeBrandHeaderLogo(
+          onClick = onBrandClick,
+          modifier = Modifier.align(Alignment.CenterStart),
+          testTag = "vybe_header_brand_logo"
+        )
 
         // Fixed Center Slot: Social / Grow Mode Switch
         VybeModeSwitch(

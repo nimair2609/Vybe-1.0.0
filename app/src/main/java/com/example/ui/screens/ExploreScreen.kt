@@ -38,7 +38,7 @@ import com.example.ui.Screen
 import com.example.ui.VybeViewModel
 import com.example.ui.components.VerificationBadge
 import com.example.ui.components.VybeAvatar
-import com.example.ui.components.VybeBrandWordmark
+import com.example.ui.components.VybeBrandHeaderLogo
 import com.example.ui.components.VybeEmptyState
 import com.example.ui.components.VybeNotificationBellButton
 import com.example.ui.components.VybeSearchBar
@@ -175,6 +175,10 @@ fun ExploreScreen(
     }
   }
 
+  Scaffold(
+    containerColor = palette.canvas,
+    contentWindowInsets = WindowInsets(0.dp),
+    topBar = {
       Surface(
         color = palette.canvas,
         modifier = Modifier
@@ -193,7 +197,7 @@ fun ExploreScreen(
           ) {
             Column {
               if (showTopBrandRow) {
-                VybeBrandWordmark(isGrowMode = false)
+                VybeBrandHeaderLogo()
                 Spacer(modifier = Modifier.height(2.dp))
               }
               Text(

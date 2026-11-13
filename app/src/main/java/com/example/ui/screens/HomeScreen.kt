@@ -44,7 +44,7 @@ import com.example.ui.components.PostCard
 import com.example.ui.components.StoryCarousel
 import com.example.ui.components.StoryCreateDialog
 import com.example.ui.components.VybeAvatar
-import com.example.ui.components.VybeBrandWordmark
+import com.example.ui.components.VybeBrandHeaderLogo
 import com.example.ui.components.VybeEmptyState
 import com.example.ui.components.VybeMatchesManagerDialog
 import com.example.ui.components.VybeModeSwitch
@@ -138,21 +138,9 @@ fun HomeScreen(
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.SpaceBetween
             ) {
-              Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.clickable { viewModel.selectTab(MainTab.FEED) }
-              ) {
-                Image(
-                  painter = painterResource(id = R.drawable.vybe_app_icon_clean),
-                  contentDescription = "VYBE Logo",
-                  modifier = Modifier
-                    .size(28.dp)
-                    .clip(RoundedCornerShape(8.dp)),
-                  contentScale = ContentScale.Fit
-                )
-                VybeBrandWordmark(isGrowMode = false)
-              }
+              VybeBrandHeaderLogo(
+                onClick = { viewModel.selectTab(MainTab.FEED) }
+              )
 
               Row(
                 verticalAlignment = Alignment.CenterVertically,

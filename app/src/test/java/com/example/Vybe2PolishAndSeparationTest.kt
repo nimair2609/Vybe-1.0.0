@@ -3,6 +3,8 @@ package com.example
 import android.content.Context
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
@@ -185,6 +187,67 @@ class Vybe2PolishAndSeparationTest {
   }
 
   @Test
+  fun `VYBE header logo keeps identical position dimensions and aspect ratio across Social Grow 20 switches and Light Dark themes`() {
+    seedUser()
+    val vm = VybeViewModel()
+    var themeMode by mutableStateOf(AppThemeMode.DARK)
+
+    composeTestRule.setContent {
+      val mode by vm.experienceMode.collectAsState()
+      VybeTheme(themeMode = themeMode, experienceMode = mode) {
+        MainScreen(viewModel = vm)
+      }
+    }
+    composeTestRule.waitForIdle()
+
+    val socialLogoBounds = composeTestRule.onNodeWithTag("vybe_header_brand_logo", useUnmergedTree = true)
+      .assertIsDisplayed()
+      .getUnclippedBoundsInRoot()
+    val socialIconBounds = composeTestRule.onNodeWithTag("vybe_header_logo_icon", useUnmergedTree = true)
+      .assertIsDisplayed()
+      .getUnclippedBoundsInRoot()
+
+    val iconWidth = (socialIconBounds.right - socialIconBounds.left).value
+    val iconHeight = (socialIconBounds.bottom - socialIconBounds.top).value
+    assertTrue("VYBE logo icon must maintain 1:1 aspect ratio ($iconWidth x $iconHeight)", abs(iconWidth - iconHeight) <= 0.5f)
+
+    fun assertLogoIdentical(stepLabel: String) {
+      composeTestRule.waitForIdle()
+      val logoBounds = composeTestRule.onNodeWithTag("vybe_header_brand_logo", useUnmergedTree = true)
+        .assertIsDisplayed()
+        .getUnclippedBoundsInRoot()
+      val iconBounds = composeTestRule.onNodeWithTag("vybe_header_logo_icon", useUnmergedTree = true)
+        .assertIsDisplayed()
+        .getUnclippedBoundsInRoot()
+
+      assertTrue("$stepLabel: logo left shifted", abs((socialLogoBounds.left - logoBounds.left).value) <= 1f)
+      assertTrue("$stepLabel: logo top shifted", abs((socialLogoBounds.top - logoBounds.top).value) <= 1f)
+      assertTrue("$stepLabel: icon width changed", abs(((socialIconBounds.right - socialIconBounds.left) - (iconBounds.right - iconBounds.left)).value) <= 0.5f)
+      assertTrue("$stepLabel: icon height changed", abs(((socialIconBounds.bottom - socialIconBounds.top) - (iconBounds.bottom - iconBounds.top)).value) <= 0.5f)
+      assertTrue("$stepLabel: icon left shifted", abs((socialIconBounds.left - iconBounds.left).value) <= 1f)
+      assertTrue("$stepLabel: icon top shifted", abs((socialIconBounds.top - iconBounds.top).value) <= 1f)
+    }
+
+    // 20 consecutive Social/Grow UI switches + theme toggle
+    repeat(20) { i ->
+      if (i % 2 == 0) {
+        composeTestRule.onNodeWithTag("mode_switch_grow").performClick()
+        assertLogoIdentical("Switch #$i Grow")
+      } else {
+        composeTestRule.onNodeWithTag("mode_switch_social").performClick()
+        assertLogoIdentical("Switch #$i Social")
+      }
+    }
+
+    // Light mode parity across Social and Grow
+    themeMode = AppThemeMode.LIGHT
+    composeTestRule.waitForIdle()
+    assertLogoIdentical("Light Social")
+    composeTestRule.onNodeWithTag("mode_switch_grow").performClick()
+    assertLogoIdentical("Light Grow")
+  }
+
+  @Test
   fun `Social Home and Explore exclude Grow and Circle gateways while preserving Social features`() {
     seedUser()
     val vm = VybeViewModel()
@@ -203,7 +266,7 @@ class Vybe2PolishAndSeparationTest {
   }
 
   @Test
-  fun `ExploreScreen excludes Circles filter and tab while rendering 6 signature features`() {
+  fun `ExploreScreen excludes Circles filter and tab while search filters and 6 signature features work`() {
     seedUser()
     val vm = VybeViewModel()
 
@@ -216,6 +279,11 @@ class Vybe2PolishAndSeparationTest {
 
     composeTestRule.onNodeWithText("Circles").assertDoesNotExist()
     composeTestRule.onNodeWithTag("explore_six_features_header_grid").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("explore_pill_Trending").performClick()
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("explore_smart_search_input").performTextInput("vybe")
+    composeTestRule.waitForIdle()
+    assertEquals("vybe", vm.searchQuery.value)
   }
 
   @Test
