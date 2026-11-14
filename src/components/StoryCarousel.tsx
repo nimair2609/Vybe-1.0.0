@@ -1,7 +1,7 @@
 import React from 'react';
 import { Plus } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
-import { OptimizedImage } from './OptimizedImage';
+import { VybeAvatar } from './OptimizedImage';
 
 export const StoryCarousel: React.FC = () => {
   const { currentUser, stories, openStoryViewer, openModal } = useVybe();
@@ -16,13 +16,12 @@ export const StoryCarousel: React.FC = () => {
           className="flex flex-col items-center gap-1.5 cursor-pointer group"
         >
           <div className="relative">
-            <div className="w-[60px] h-[60px] rounded-full p-[2px] border border-[var(--vybe-border)] group-hover:border-[var(--vybe-accent)] transition-colors">
-              <OptimizedImage
-                src={currentUser.avatarUrl}
-                alt={currentUser.displayName}
-                width={56}
-                height={56}
-                className="w-full h-full object-cover rounded-full"
+            <div className="w-[60px] h-[60px] rounded-full p-[2px] border border-[var(--vybe-border)] group-hover:border-[var(--vybe-accent)] transition-colors flex items-center justify-center">
+              <VybeAvatar
+                src={currentUser?.avatarUrl}
+                name={currentUser?.displayName || 'Your Story'}
+                size={54}
+                className="w-[54px] h-[54px]"
               />
             </div>
             <div className="absolute bottom-0 right-0 p-1 rounded-full bg-[var(--vybe-accent)] text-white keep-white shadow-sm border-2 border-[var(--vybe-bg)]">
@@ -49,13 +48,12 @@ export const StoryCarousel: React.FC = () => {
                   : 'bg-gradient-to-tr from-[#7C3AED] via-[#8B5CF6] to-[#2563EB]'
               }`}
             >
-              <div className="w-full h-full p-[1.5px] bg-[var(--vybe-bg)] rounded-full">
-                <OptimizedImage
+              <div className="w-full h-full p-[1.5px] bg-[var(--vybe-bg)] rounded-full flex items-center justify-center">
+                <VybeAvatar
                   src={story.author.avatarUrl}
-                  alt={story.author.displayName}
-                  width={54}
-                  height={54}
-                  className="w-full h-full object-cover rounded-full"
+                  name={story.author.displayName || story.author.username}
+                  size={52}
+                  className="w-[52px] h-[52px]"
                 />
               </div>
             </div>

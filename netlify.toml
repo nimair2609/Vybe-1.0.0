@@ -29,6 +29,14 @@
   [headers.values]
     Cache-Control = "public, max-age=86400"
 
+# Android App Links Digital Asset Links JSON
+[[headers]]
+  for = "/.well-known/assetlinks.json"
+  [headers.values]
+    Content-Type = "application/json; charset=utf-8"
+    Access-Control-Allow-Origin = "*"
+    Cache-Control = "public, max-age=3600"
+
 # Netlify Serverless API & Privileged Admin Routes
 [[redirects]]
   from = "/api/*"
@@ -46,13 +54,7 @@
   to = "/admin.html"
   status = 200
 
-# APK Direct Download route
-[[redirects]]
-  from = "/download"
-  to = "/vybe-debug.apk"
-  status = 200
-
-# Single Page Application (SPA) Fallback for VYBE Social Web App
+# Single Page Application (SPA) Fallback for VYBE Social Web App (/u/*, /profile/*, /post/*, /download)
 [[redirects]]
   from = "/*"
   to = "/index.html"

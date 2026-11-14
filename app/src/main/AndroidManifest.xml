@@ -78,7 +78,20 @@
                 <data android:scheme="vybe" android:host="post" />
                 <data android:scheme="vybe" android:host="p" />
             </intent-filter>
-            <!-- Web / HTTPS Production Deep Link Callback & Canonical Profile / Post Links -->
+            <!-- Production Netlify App Links (vybeonline.netlify.app) -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="vybeonline.netlify.app" android:pathPrefix="/auth/callback" />
+                <data android:scheme="https" android:host="vybeonline.netlify.app" android:pathPrefix="/reset-password" />
+                <data android:scheme="https" android:host="vybeonline.netlify.app" android:pathPrefix="/profile" />
+                <data android:scheme="https" android:host="vybeonline.netlify.app" android:pathPrefix="/u" />
+                <data android:scheme="https" android:host="vybeonline.netlify.app" android:pathPrefix="/post" />
+                <data android:scheme="https" android:host="vybeonline.netlify.app" android:pathPrefix="/p" />
+            </intent-filter>
+
+            <!-- Legacy Web / HTTPS Deep Link Hosts -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

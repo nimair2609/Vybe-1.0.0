@@ -1,37 +1,81 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { vybeCache } from '../utils/indexedDbCache';
-import { 
-  User, Post, Story, CrossedPathEncounter, TimeCapsule, 
-  UnloadRoom, VybeShop, Community, SpiritualReflection, 
-  SpiritualIntention, Conversation, MoodType, VybeReaction, 
-  GitHubReleaseInfo 
+import {
+  User,
+  Post,
+  Story,
+  CrossedPathEncounter,
+  TimeCapsule,
+  UnloadRoom,
+  VybeShop,
+  Community,
+  SpiritualReflection,
+  SpiritualIntention,
+  Conversation,
+  DirectMessage,
+  NotificationItem,
+  AuthSessionUser,
+  MoodType,
+  VybeReaction,
+  GitHubReleaseInfo,
+  LivePulseStatus
 } from '../types';
-import { 
-  CURRENT_USER, SEED_USERS, INITIAL_POSTS, INITIAL_STORIES, 
-  INITIAL_REELS, INITIAL_CROSSED_PATHS, INITIAL_TIME_CAPSULES, 
-  INITIAL_UNLOAD_ROOMS, SPIRITUAL_REFLECTIONS, INITIAL_SHOPS, 
-  INITIAL_COMMUNITIES, INITIAL_CONVERSATIONS 
-} from '../data/mockData';
-import { 
-  DEFAULT_GITHUB_REPO, INSTALLED_VERSION, fetchGitHubUpdates, 
-  cleanRepoSlug 
+import {
+  DEFAULT_GITHUB_REPO,
+  fetchGitHubUpdates,
+  cleanRepoSlug
 } from '../services/githubUpdater';
 import {
+  getStoredWebSession,
+  refreshWebAccessToken,
+  signInWithIdentifier,
+  signUpWithEmail,
+  sendPasswordResetEmail,
+  signOutWebSession,
+  fetchMyAuthenticatedProfile,
   fetchLiveProfiles,
+  fetchProfileByUsernameOrId,
+  fetchPostsByAuthor,
+  fetchSinglePostById,
   fetchLivePosts,
   fetchLiveStories,
   createLivePost,
   createLiveStory,
   submitLiveComment,
+  fetchCommentsForPost,
   syncPostLikeCountToSupabase,
-  sendLiveDirectMessage
+  togglePostReactionInSupabase,
+  toggleSavePostInSupabase,
+  toggleFollowInSupabase,
+  updateProfileInSupabase,
+  fetchUserSocialGraph,
+  resolveOrCreateWebDirectConversation,
+  fetchConversationsForUser,
+  fetchMessagesForConversation,
+  markConversationReadInSupabase,
+  sendLiveDirectMessage,
+  uploadMediaBlobToStorage,
+  fetchLiveNotifications,
+  markNotificationReadInSupabase,
+  fetchLiveCommunities,
+  toggleJoinCommunityInSupabase,
+  fetchLiveUnloadRooms,
+  fetchLiveCrossedPaths,
+  fetchLiveTimeCapsules,
+  fetchLiveShops,
+  fetchLiveSpiritualIntentions,
+  addSpiritualIntentionInSupabase,
+  toggleSpiritualIntentionInSupabase,
+  formatChatClock,
+  formatRelativeTime
 } from '../services/supabaseService';
+import { vybeRealtime, RealtimePushPayload, RealtimeDbChangePayload } from '../services/realtimeService';
 
 export type MainTab = 'FEED' | 'VYBES' | 'MOOD_ZONES' | 'EXPLORE' | 'INBOX' | 'CROSSED_PATHS' | 'COMMUNITY' | 'PROFILE';
 export type VybeAppMode = 'SOCIAL' | 'GROW';
 export type GrowTab = 'HOME' | 'CIRCLE' | 'PROJECTS' | 'OPPORTUNITIES' | 'PROFILE';
 
-export type ModalScreen = 
+export type ModalScreen =
   | 'CREATE_POST'
   | 'CREATE_STORY'
   | 'CREATE_CAPSULE'
@@ -49,6 +93,32 @@ export type ModalScreen =
   | 'SPIRITUAL_MODE'
   | 'UNLOAD_ROOM';
 
+const SPIRITUAL_REFLECTIONS_CATALOG: SpiritualReflection[] = [
+  {
+    id: 'sp_01',
+    quote:
+      'You have a right to perform your prescribed duty, but you are not entitled to the fruits of action. Never consider yourself the cause of results, nor be attached to inaction.',
+    traditionOrAuthor: 'Bhagavad Gita 2.47',
+    theme: 'Equanimity & Purpose',
+    audioCue: 'Serene Temple Bells'
+  },
+  {
+    id: 'sp_02',
+    quote:
+      'Silence is not the absence of sound, but the presence of an awakening stillness inside your own chest.',
+    traditionOrAuthor: 'Rumi',
+    theme: 'Inner Peace',
+    audioCue: 'Gentle Himalayan Flute'
+  },
+  {
+    id: 'sp_03',
+    quote: 'Peace comes from within. Do not seek it without.',
+    traditionOrAuthor: 'Gautama Buddha',
+    theme: 'Mindfulness',
+    audioCue: 'Singing Bowls'
+  }
+];
+
 interface CallState {
   isActive: boolean;
   isIncoming: boolean;
@@ -60,15 +130,51 @@ interface CallState {
   durationSeconds: number;
 }
 
+export interface ProfileRouteTarget {
+  username?: string;
+  userId?: string;
+}
+
+export type LookupState = 'IDLE' | 'LOADING' | 'FOUND' | 'NOT_FOUND' | 'PRIVATE' | 'ERROR';
+
 interface VybeContextType {
-  // Current user & Users
-  currentUser: User;
+  // Authentication & Current User
+  authUser: AuthSessionUser | null;
+  isAuthChecking: boolean;
+  currentUser: User | null;
+  showAuthModal: boolean;
+  authModalPrompt: string | null;
+  authModalInitialMode: 'LOGIN' | 'SIGNUP' | 'RESET';
+  openAuthModal: (prompt?: string, mode?: 'LOGIN' | 'SIGNUP' | 'RESET') => void;
+  closeAuthModal: () => void;
+  requireAuth: (prompt?: string) => boolean;
+  signIn: (identifier: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  signUp: (params: {
+    email: string;
+    password: string;
+    username: string;
+    displayName: string;
+  }) => Promise<{ ok: boolean; needsEmailConfirmation?: boolean; error?: string }>;
+  requestPasswordReset: (email: string) => Promise<{ ok: boolean; error?: string }>;
+  signOut: () => Promise<void>;
+  updateMyProfile: (patch: { display_name?: string; bio?: string; is_private_account?: boolean }) => Promise<{ ok: boolean; error?: string }>;
+
+  // Users & Public Profile Routing
   allUsers: User[];
   viewedProfileUser: User | null;
+  viewedProfilePosts: Post[];
+  profileRouteTarget: ProfileRouteTarget | null;
+  profileLookupState: LookupState;
+  profileLookupError: string | null;
   openUserProfile: (user: User) => void;
+  navigateToPublicProfile: (target: ProfileRouteTarget) => void;
   closeUserProfile: () => void;
   setCurrentUserMood: (mood: MoodType) => void;
-  setCurrentUserPulse: (pulse: any) => void;
+  setCurrentUserPulse: (pulse: LivePulseStatus) => void;
+
+  // Download route
+  isDownloadPage: boolean;
+  closeDownloadPage: () => void;
 
   // Navigation & Experience Mode
   appMode: VybeAppMode;
@@ -83,7 +189,7 @@ interface VybeContextType {
   selectedMoodFilter: MoodType | 'ALL';
   setSelectedMoodFilter: (mood: MoodType | 'ALL') => void;
 
-  // Social Discovery (Find Your Vybe)
+  // Social Discovery & Graph
   followingIds: string[];
   requestedFollowIds: string[];
   dismissedSuggestionIds: string[];
@@ -91,7 +197,7 @@ interface VybeContextType {
   dismissSuggestedUser: (targetUserId: string) => void;
   restoreDismissedSuggestions: () => void;
 
-  // Posts & Reels
+  // Posts & Reels & Shared Post Deep Links
   posts: Post[];
   reels: Post[];
   toggleLikePost: (postId: string) => void;
@@ -101,10 +207,14 @@ interface VybeContextType {
   reactToComment: (postId: string, commentId: string, reaction: VybeReaction) => void;
   toggleSavePost: (postId: string) => void;
   addCommentToPost: (postId: string, text: string) => void;
+  loadCommentsForPost: (postId: string) => Promise<void>;
   createPost: (postData: Partial<Post>) => void;
   sharePostToConversation: (post: Post, convId: string, note?: string) => void;
   incrementPostShareCount: (postId: string) => void;
   sharedPostModalId: string | null;
+  resolvedSharedPost: Post | null;
+  sharedPostState: LookupState;
+  sharedPostError: string | null;
   openSharedPostModal: (postId: string) => void;
   closeSharedPostModal: () => void;
   hasMorePosts: boolean;
@@ -158,12 +268,24 @@ interface VybeContextType {
   selectedShop: VybeShop | null;
   openShopDetail: (shop: VybeShop) => void;
 
-  // Conversations & Calls
+  // Conversations & Messaging & Realtime
   conversations: Conversation[];
+  isLoadingConversations: boolean;
+  dmError: string | null;
+  dismissDmError: () => void;
+  isRealtimeConnected: boolean;
   selectedConversation: Conversation | null;
   selectConversation: (conv: Conversation | null) => void;
-  startConversationWithUser: (peerUser: User) => Conversation;
-  sendMessage: (convId: string, text: string) => void;
+  startConversationWithUser: (peerUser: User) => Promise<{ ok: boolean; conversation?: Conversation; error?: string }>;
+  sendMessage: (convId: string, text: string, attachmentFile?: Blob) => Promise<void>;
+  retryMessage: (convId: string, messageId: string) => Promise<void>;
+  refreshConversations: () => Promise<void>;
+
+  // Notifications
+  notifications: NotificationItem[];
+  markNotificationRead: (id: string) => void;
+
+  // Calls
   callState: CallState;
   startCall: (peerUser: User, isVideo: boolean) => void;
   acceptCall: () => void;
@@ -190,39 +312,120 @@ interface VybeContextType {
   dismissBanner: () => void;
 
   // Real Database Status & Live Sync
+  isInitialLoading: boolean;
+  isSyncing: boolean;
   isDbConnected: boolean;
-  refreshFromDatabase: () => Promise<void>;
+  isOffline: boolean;
+  dbError: string | null;
+  refreshFromDatabase: (forceRefresh?: boolean) => Promise<void>;
 }
 
 const VybeContext = createContext<VybeContextType | undefined>(undefined);
 
+function parseInitialPath(): {
+  profileTarget: ProfileRouteTarget | null;
+  postId: string | null;
+  isDownload: boolean;
+} {
+  if (typeof window === 'undefined') {
+    return { profileTarget: null, postId: null, isDownload: false };
+  }
+  const path = window.location.pathname || '/';
+  const hash = window.location.hash || '';
+
+  if (/^\/download\/?$/i.test(path)) {
+    return { profileTarget: null, postId: null, isDownload: true };
+  }
+
+  const postMatch = path.match(/^\/(?:post|p)\/([^/?#]+)/i);
+  if (postMatch?.[1]) {
+    return { profileTarget: null, postId: decodeURIComponent(postMatch[1]), isDownload: false };
+  }
+
+  const hashPost = hash.match(/^#post_(.+)$/i);
+  if (hashPost?.[1]) {
+    return { profileTarget: null, postId: decodeURIComponent(hashPost[1]), isDownload: false };
+  }
+
+  const userRoute = path.match(/^\/u\/([^/?#]+)/i);
+  if (userRoute?.[1]) {
+    return {
+      profileTarget: { username: decodeURIComponent(userRoute[1]).replace(/^@/, '') },
+      postId: null,
+      isDownload: false
+    };
+  }
+
+  const profileRoute = path.match(/^\/profile\/([^/?#]+)/i);
+  if (profileRoute?.[1]) {
+    const seg = decodeURIComponent(profileRoute[1]).trim();
+    const searchU = new URLSearchParams(window.location.search).get('u') || undefined;
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(seg);
+    return {
+      profileTarget: isUuid ? { userId: seg, username: searchU } : { username: seg.replace(/^@/, '') },
+      postId: null,
+      isDownload: false
+    };
+  }
+
+  const hashProfile = hash.match(/^#vybe_(.+)$/i);
+  if (hashProfile?.[1]) {
+    return {
+      profileTarget: { username: decodeURIComponent(hashProfile[1]).replace(/^@/, '') },
+      postId: null,
+      isDownload: false
+    };
+  }
+
+  return { profileTarget: null, postId: null, isDownload: false };
+}
+
 export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState<User>(CURRENT_USER);
-  const [allUsers, setAllUsers] = useState<User[]>(SEED_USERS);
+  const initialRoute = React.useMemo(() => parseInitialPath(), []);
+
+  // Auth State
+  const [authUser, setAuthUser] = useState<AuthSessionUser | null>(() => getStoredWebSession());
+  const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
+  const [authModalPrompt, setAuthModalPrompt] = useState<string | null>(null);
+  const [authModalInitialMode, setAuthModalInitialMode] = useState<'LOGIN' | 'SIGNUP' | 'RESET'>('LOGIN');
+
+  // Users & Public Profiles
+  const [allUsers, setAllUsers] = useState<User[]>([]);
   const [viewedProfileUser, setViewedProfileUser] = useState<User | null>(null);
+  const [viewedProfilePosts, setViewedProfilePosts] = useState<Post[]>([]);
+  const [profileRouteTarget, setProfileRouteTarget] = useState<ProfileRouteTarget | null>(initialRoute.profileTarget);
+  const [profileLookupState, setProfileLookupState] = useState<LookupState>(
+    initialRoute.profileTarget ? 'LOADING' : 'IDLE'
+  );
+  const [profileLookupError, setProfileLookupError] = useState<string | null>(null);
   const [previousTabBeforeProfile, setPreviousTabBeforeProfile] = useState<MainTab>('FEED');
+
+  // Download route
+  const [isDownloadPage, setIsDownloadPage] = useState<boolean>(initialRoute.isDownload);
+
+  // Database / Network status
+  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(true);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isDbConnected, setIsDbConnected] = useState<boolean>(false);
+  const [isOffline, setIsOffline] = useState<boolean>(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  );
+  const [dbError, setDbError] = useState<string | null>(null);
+
+  // Navigation
   const [appMode, setAppModeState] = useState<VybeAppMode>('SOCIAL');
   const [growTab, setGrowTabState] = useState<GrowTab>('HOME');
-  const [selectedTab, setSelectedTabState] = useState<MainTab>('FEED');
+  const [selectedTab, setSelectedTabState] = useState<MainTab>(
+    initialRoute.profileTarget ? 'PROFILE' : 'FEED'
+  );
   const [activeModal, setActiveModal] = useState<ModalScreen | null>(null);
   const [selectedMoodFilter, setSelectedMoodFilter] = useState<MoodType | 'ALL'>('ALL');
 
-  // Persistent Social Graph & Find Your Vybe Dismissal State
-  const [followingIds, setFollowingIds] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('vybe_following_ids_v1');
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return SEED_USERS.filter(u => u.isFollowedByMe).map(u => u.id);
-  });
-  const [requestedFollowIds, setRequestedFollowIds] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('vybe_requested_follow_ids_v1');
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return [];
-  });
+  // Social Graph (populated from Supabase for authenticated user)
+  const [followingIds, setFollowingIds] = useState<string[]>([]);
+  const [requestedFollowIds, setRequestedFollowIds] = useState<string[]>([]);
   const [dismissedSuggestionIds, setDismissedSuggestionIds] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('vybe_dismissed_suggestions_v1');
@@ -233,84 +436,61 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     try {
-      localStorage.setItem('vybe_following_ids_v1', JSON.stringify(followingIds));
-      localStorage.setItem('vybe_requested_follow_ids_v1', JSON.stringify(requestedFollowIds));
       localStorage.setItem('vybe_dismissed_suggestions_v1', JSON.stringify(dismissedSuggestionIds));
     } catch {}
-  }, [followingIds, requestedFollowIds, dismissedSuggestionIds]);
+  }, [dismissedSuggestionIds]);
 
-  const toggleFollowUser = (targetUserId: string) => {
-    if (!targetUserId || targetUserId === currentUser.id) return;
-    const targetUser = allUsers.find(u => u.id === targetUserId);
-    const isFollowing = followingIds.includes(targetUserId);
-    const isRequested = requestedFollowIds.includes(targetUserId);
+  // Posts & Reels & Shared Post Modal
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [reels, setReels] = useState<Post[]>([]);
+  const [hasMorePosts, setHasMorePosts] = useState<boolean>(true);
+  const [isLoadingMorePosts, setIsLoadingMorePosts] = useState<boolean>(false);
+  const lastSyncTimeRef = useRef<number>(Date.now());
 
-    if (isFollowing || isRequested) {
-      setFollowingIds(prev => prev.filter(id => id !== targetUserId));
-      setRequestedFollowIds(prev => prev.filter(id => id !== targetUserId));
-      setAllUsers(prev => prev.map(u => u.id === targetUserId ? {
-        ...u,
-        isFollowedByMe: false,
-        isFollowRequestedByMe: false,
-        followersCount: isFollowing ? Math.max(0, u.followersCount - 1) : u.followersCount
-      } : u));
-    } else if (targetUser?.isPrivate) {
-      setRequestedFollowIds(prev => [...prev, targetUserId]);
-      setAllUsers(prev => prev.map(u => u.id === targetUserId ? { ...u, isFollowRequestedByMe: true } : u));
-    } else {
-      setFollowingIds(prev => [...prev, targetUserId]);
-      setAllUsers(prev => prev.map(u => u.id === targetUserId ? {
-        ...u,
-        isFollowedByMe: true,
-        followersCount: u.followersCount + 1
-      } : u));
-    }
-  };
+  const [sharedPostModalId, setSharedPostModalId] = useState<string | null>(initialRoute.postId);
+  const [resolvedSharedPost, setResolvedSharedPost] = useState<Post | null>(null);
+  const [sharedPostState, setSharedPostState] = useState<LookupState>(
+    initialRoute.postId ? 'LOADING' : 'IDLE'
+  );
+  const [sharedPostError, setSharedPostError] = useState<string | null>(null);
 
-  const dismissSuggestedUser = (targetUserId: string) => {
-    if (!targetUserId) return;
-    setDismissedSuggestionIds(prev => prev.includes(targetUserId) ? prev : [...prev, targetUserId]);
-  };
+  // Stories
+  const [stories, setStories] = useState<Story[]>([]);
+  const [activeStoryAuthorId, setActiveStoryAuthorId] = useState<string | null>(null);
+  const [activeStoryIndex, setActiveStoryIndex] = useState<number>(0);
 
-  const restoreDismissedSuggestions = () => {
-    setDismissedSuggestionIds([]);
-  };
+  // Live Domain Features (zero mock arrays)
+  const [crossedPaths, setCrossedPaths] = useState<CrossedPathEncounter[]>([]);
+  const [timeCapsules, setTimeCapsules] = useState<TimeCapsule[]>([]);
+  const [unloadRooms, setUnloadRooms] = useState<UnloadRoom[]>([]);
+  const [selectedUnloadRoom, setSelectedUnloadRoom] = useState<UnloadRoom | null>(null);
+  const [intentions, setIntentions] = useState<SpiritualIntention[]>([]);
+  const reflections = SPIRITUAL_REFLECTIONS_CATALOG;
+  const [communities, setCommunities] = useState<Community[]>([]);
+  const [shops, setShops] = useState<VybeShop[]>([]);
+  const [selectedShop, setSelectedShop] = useState<VybeShop | null>(null);
 
-  const setSelectedTab = (tab: MainTab) => {
-    // Selecting PROFILE from bottom navigation strictly opens the logged-in user's own profile
-    if (tab === 'PROFILE') {
-      setViewedProfileUser(null);
-    }
-    setSelectedTabState(tab);
-  };
+  // Messaging & Notifications & Realtime
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [isLoadingConversations, setIsLoadingConversations] = useState<boolean>(false);
+  const [dmError, setDmError] = useState<string | null>(null);
+  const [isRealtimeConnected, setIsRealtimeConnected] = useState<boolean>(false);
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [selectedConversationPeerId, setSelectedConversationPeerId] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
 
-  const openUserProfile = (user: User) => {
-    if (!user || user.id.toLowerCase() === currentUser.id.toLowerCase()) {
-      setViewedProfileUser(null);
-      setSelectedTabState('PROFILE');
-      return;
-    }
-    if (selectedTab !== 'PROFILE') {
-      setPreviousTabBeforeProfile(selectedTab);
-    }
-    setViewedProfileUser(user);
-    setSelectedTabState('PROFILE');
-  };
-
-  const closeUserProfile = () => {
-    setViewedProfileUser(null);
-    setSelectedTabState(previousTabBeforeProfile || 'FEED');
-  };
-
-  // Theme Mode (persisted in localStorage & applied to documentElement, mode-aware default)
+  // Theme Mode
   const [themeMode, setThemeModeState] = useState<'dark' | 'light'>(() => {
     const saved = localStorage.getItem('vybe_theme_mode');
     return saved === 'light' ? 'light' : 'dark';
   });
 
-  const effectiveThemeMode: 'dark' | 'light' = appMode === 'GROW'
-    ? (localStorage.getItem('vybe_grow_theme_override') === 'dark' ? 'dark' : 'light')
-    : themeMode;
+  const effectiveThemeMode: 'dark' | 'light' =
+    appMode === 'GROW'
+      ? localStorage.getItem('vybe_grow_theme_override') === 'dark'
+        ? 'dark'
+        : 'light'
+      : themeMode;
 
   useEffect(() => {
     document.documentElement.dataset.mode = appMode === 'GROW' ? 'grow' : 'social';
@@ -322,172 +502,22 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('vybe_theme_mode', themeMode);
   }, [themeMode]);
 
-  const setAppMode = (mode: VybeAppMode) => {
-    setAppModeState(mode);
-  };
-
+  const setAppMode = (mode: VybeAppMode) => setAppModeState(mode);
   const setGrowTab = (tab: GrowTab) => {
     setAppModeState('GROW');
     if (tab === 'PROFILE') {
       setViewedProfileUser(null);
+      setProfileRouteTarget(null);
     }
     setGrowTabState(tab);
   };
-
   const setThemeMode = (mode: 'dark' | 'light') => {
-    if (appMode === 'GROW') {
-      localStorage.setItem('vybe_grow_theme_override', mode);
-    }
+    if (appMode === 'GROW') localStorage.setItem('vybe_grow_theme_override', mode);
     setThemeModeState(mode);
   };
+  const toggleThemeMode = () => setThemeMode(effectiveThemeMode === 'dark' ? 'light' : 'dark');
 
-  const toggleThemeMode = () => {
-    const next = effectiveThemeMode === 'dark' ? 'light' : 'dark';
-    setThemeMode(next);
-  };
-
-  // Shared Post Deep Link / Preview state
-  const [sharedPostModalId, setSharedPostModalId] = useState<string | null>(() => {
-    const pathMatch = window.location.pathname.match(/^\/(?:post|p)\/([^/?#]+)/i);
-    if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1]);
-    const hashMatch = window.location.hash.match(/^#post_(.+)$/i);
-    if (hashMatch?.[1]) return decodeURIComponent(hashMatch[1]);
-    return null;
-  });
-
-  useEffect(() => {
-    const handleHashOrPop = () => {
-      const pathMatch = window.location.pathname.match(/^\/(?:post|p)\/([^/?#]+)/i);
-      if (pathMatch?.[1]) {
-        setSharedPostModalId(decodeURIComponent(pathMatch[1]));
-        return;
-      }
-      const hashMatch = window.location.hash.match(/^#post_(.+)$/i);
-      if (hashMatch?.[1]) {
-        setSharedPostModalId(decodeURIComponent(hashMatch[1]));
-      }
-    };
-    window.addEventListener('hashchange', handleHashOrPop);
-    window.addEventListener('popstate', handleHashOrPop);
-    return () => {
-      window.removeEventListener('hashchange', handleHashOrPop);
-      window.removeEventListener('popstate', handleHashOrPop);
-    };
-  }, []);
-
-  const openSharedPostModal = (postId: string) => setSharedPostModalId(postId);
-  const closeSharedPostModal = () => {
-    setSharedPostModalId(null);
-    if (window.location.hash.startsWith('#post_')) {
-      window.history.replaceState(null, '', window.location.pathname + window.location.search);
-    } else if (/^\/(?:post|p)\//i.test(window.location.pathname)) {
-      window.history.replaceState(null, '', '/');
-    }
-  };
-
-  // Posts & Reels
-  const [posts, setPosts] = useState<Post[]>(INITIAL_POSTS);
-  const [reels, setReels] = useState<Post[]>(INITIAL_REELS);
-  const [hasMorePosts, setHasMorePosts] = useState<boolean>(true);
-  const [isLoadingMorePosts, setIsLoadingMorePosts] = useState<boolean>(false);
-  const lastSyncTimeRef = useRef<number>(Date.now());
-
-  // Stories (persisted across refresh with automatic 24-hour expiry pruning)
-  const [stories, setStories] = useState<Story[]>(() => {
-    try {
-      const raw = localStorage.getItem('vybe_persisted_stories_v2');
-      if (raw) {
-        const parsed = JSON.parse(raw) as Story[];
-        const now = Date.now();
-        const validUserStories = parsed.filter(s => {
-          if (s.expiresAtIso) {
-            const exp = Date.parse(s.expiresAtIso);
-            if (!Number.isNaN(exp)) return exp > now;
-          }
-          return (s.expiresHoursRemaining ?? 24) > 0;
-        });
-        if (validUserStories.length > 0) {
-          const existingIds = new Set(validUserStories.map(s => s.id));
-          return [...validUserStories, ...INITIAL_STORIES.filter(s => !existingIds.has(s.id))];
-        }
-      }
-    } catch {
-      // ignore corrupted storage
-    }
-    return INITIAL_STORIES;
-  });
-
-  useEffect(() => {
-    try {
-      const now = Date.now();
-      const userCreated = stories.filter(s => {
-        if (!s.id.startsWith('st_')) return false;
-        if (s.expiresAtIso) {
-          const exp = Date.parse(s.expiresAtIso);
-          if (!Number.isNaN(exp) && exp <= now) return false;
-        }
-        return true;
-      });
-      localStorage.setItem('vybe_persisted_stories_v2', JSON.stringify(userCreated));
-    } catch {
-      // ignore quota exceeded for large data URLs
-    }
-  }, [stories]);
-
-  const [activeStoryAuthorId, setActiveStoryAuthorId] = useState<string | null>(null);
-  const [activeStoryIndex, setActiveStoryIndex] = useState<number>(0);
-
-  // Crossed Paths & Capsules
-  const [crossedPaths, setCrossedPaths] = useState<CrossedPathEncounter[]>(INITIAL_CROSSED_PATHS);
-  const [timeCapsules, setTimeCapsules] = useState<TimeCapsule[]>(INITIAL_TIME_CAPSULES);
-
-  // Unload Rooms
-  const [unloadRooms, setUnloadRooms] = useState<UnloadRoom[]>(INITIAL_UNLOAD_ROOMS);
-  const [selectedUnloadRoom, setSelectedUnloadRoom] = useState<UnloadRoom | null>(null);
-
-  // Spiritual Mode
-  const [intentions, setIntentions] = useState<SpiritualIntention[]>([
-    { id: 'int_01', text: 'Practice calm stillness before reacting today', timestamp: 'Today, 8:00 AM', isFulfilled: true },
-    { id: 'int_02', text: 'Drink 2L water & take a 15-minute sunset walk', timestamp: 'Today, 9:30 AM', isFulfilled: false }
-  ]);
-  const reflections = SPIRITUAL_REFLECTIONS;
-
-  // Communities & Shops
-  const [communities, setCommunities] = useState<Community[]>(INITIAL_COMMUNITIES);
-  const [shops] = useState<VybeShop[]>(INITIAL_SHOPS);
-  const [selectedShop, setSelectedShop] = useState<VybeShop | null>(null);
-
-  // Conversations (persisted across reloads and kept live-bound)
-  const [conversations, setConversations] = useState<Conversation[]>(() => {
-    try {
-      const cached = localStorage.getItem('vybe_web_conversations_v2');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return INITIAL_CONVERSATIONS;
-  });
-  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
-  const [selectedConversationPeerId, setSelectedConversationPeerId] = useState<string | null>(null);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('vybe_web_conversations_v2', JSON.stringify(conversations));
-    } catch {}
-  }, [conversations]);
-
-  const selectedConversation = React.useMemo(() => {
-    if (!selectedConversationId && !selectedConversationPeerId) return null;
-    return (
-      conversations.find(c =>
-        (selectedConversationId && c.id === selectedConversationId) ||
-        (selectedConversationPeerId && c.peerUser.id === selectedConversationPeerId)
-      ) || null
-    );
-  }, [conversations, selectedConversationId, selectedConversationPeerId]);
-
-  // Calls
+  // Calls & Audio
   const [callState, setCallState] = useState<CallState>({
     isActive: false,
     isIncoming: false,
@@ -498,22 +528,491 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     isCameraOff: false,
     durationSeconds: 0
   });
-
-  // Global Audio Controller
   const [currentAudioTrack, setCurrentAudioTrack] = useState<string | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
 
-  // GitHub Auto-Updater State
-  const [githubRepo, setGithubRepoState] = useState<string>(() => {
-    return localStorage.getItem('vybe_github_repo') || DEFAULT_GITHUB_REPO;
-  });
+  // GitHub Updater
+  const [githubRepo, setGithubRepoState] = useState<string>(() => localStorage.getItem('vybe_github_repo') || DEFAULT_GITHUB_REPO);
   const [updateInfo, setUpdateInfo] = useState<GitHubReleaseInfo | null>(null);
   const [isCheckingUpdates, setIsCheckingUpdates] = useState<boolean>(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [hasAvailableUpdate, setHasAvailableUpdate] = useState<boolean>(false);
   const [inAppNotificationBanner, setInAppNotificationBanner] = useState<string | null>(null);
 
+  const dismissBanner = () => setInAppNotificationBanner(null);
+  const dismissDmError = () => setDmError(null);
+
+  // Auth helpers
+  const openAuthModal = (prompt?: string, mode: 'LOGIN' | 'SIGNUP' | 'RESET' = 'LOGIN') => {
+    setAuthModalPrompt(prompt || null);
+    setAuthModalInitialMode(mode);
+    setShowAuthModal(true);
+  };
+
+  const closeAuthModal = () => {
+    setShowAuthModal(false);
+    setAuthModalPrompt(null);
+  };
+
+  const requireAuth = (prompt?: string): boolean => {
+    if (currentUser && authUser) return true;
+    openAuthModal(prompt || 'Sign in with your VYBE account to continue.', 'LOGIN');
+    return false;
+  };
+
+  // Hydration helper for authenticated user
+  const hydrateAuthenticatedUserData = async (session: AuthSessionUser) => {
+    vybeCache.setUserId(session.id);
+
+    const [ownProfile, graph, convRes, notifs, capsules, userIntentions] = await Promise.all([
+      fetchMyAuthenticatedProfile(session.id, session.accessToken),
+      fetchUserSocialGraph(session.id),
+      fetchConversationsForUser(session.id),
+      fetchLiveNotifications(session.id),
+      fetchLiveTimeCapsules(session.id),
+      fetchLiveSpiritualIntentions(session.id)
+    ]);
+
+    if (ownProfile) {
+      setCurrentUser(ownProfile);
+      setAllUsers(prev => {
+        const exists = prev.some(u => u.id === ownProfile.id);
+        return exists ? prev.map(u => (u.id === ownProfile.id ? ownProfile : u)) : [ownProfile, ...prev];
+      });
+    }
+
+    setFollowingIds(graph.followingIds);
+    setRequestedFollowIds(graph.requestedFollowIds);
+    setConversations(convRes.conversations);
+    if (convRes.error) setDmError(convRes.error);
+    setNotifications(notifs);
+    setTimeCapsules(capsules);
+    setIntentions(userIntentions);
+
+    setPosts(prev =>
+      prev.map(p => ({
+        ...p,
+        isLiked: Boolean(graph.reactionsByPostId[p.id]),
+        userReaction: graph.reactionsByPostId[p.id],
+        isSaved: graph.savedPostIds.includes(p.id)
+      }))
+    );
+    setReels(prev =>
+      prev.map(p => ({
+        ...p,
+        isLiked: Boolean(graph.reactionsByPostId[p.id]),
+        userReaction: graph.reactionsByPostId[p.id],
+        isSaved: graph.savedPostIds.includes(p.id)
+      }))
+    );
+  };
+
+  const signIn = async (identifier: string, password: string): Promise<{ ok: boolean; error?: string }> => {
+    const res = await signInWithIdentifier(identifier, password);
+    if (!res.success || !res.session) {
+      return { ok: false, error: res.error || 'Sign in failed.' };
+    }
+    setAuthUser(res.session);
+    if (res.profile) {
+      setCurrentUser(res.profile);
+    }
+    closeAuthModal();
+    await hydrateAuthenticatedUserData(res.session);
+    setInAppNotificationBanner(`Signed in as @${res.profile?.username || res.session.email}`);
+    return { ok: true };
+  };
+
+  const signUp = async (params: {
+    email: string;
+    password: string;
+    username: string;
+    displayName: string;
+  }): Promise<{ ok: boolean; needsEmailConfirmation?: boolean; error?: string }> => {
+    const res = await signUpWithEmail(params);
+    if (!res.success) {
+      return { ok: false, error: res.error };
+    }
+    if (res.needsEmailConfirmation) {
+      return { ok: true, needsEmailConfirmation: true };
+    }
+    if (res.session) {
+      setAuthUser(res.session);
+      if (res.profile) setCurrentUser(res.profile);
+      closeAuthModal();
+      await hydrateAuthenticatedUserData(res.session);
+      setInAppNotificationBanner('Welcome to VYBE! Your account is ready.');
+    }
+    return { ok: true };
+  };
+
+  const requestPasswordReset = async (email: string) => {
+    const res = await sendPasswordResetEmail(email);
+    return { ok: res.success, error: res.error };
+  };
+
+  const signOut = async () => {
+    vybeRealtime.disconnect(true);
+    await signOutWebSession();
+    setAuthUser(null);
+    setCurrentUser(null);
+    setFollowingIds([]);
+    setRequestedFollowIds([]);
+    setConversations([]);
+    setSelectedConversationId(null);
+    setSelectedConversationPeerId(null);
+    setNotifications([]);
+    setTimeCapsules([]);
+    setIntentions([]);
+    setDmError(null);
+    setActiveModal(null);
+    setIsRealtimeConnected(false);
+    setPosts(prev => prev.map(p => ({ ...p, isLiked: false, isSaved: false, userReaction: undefined })));
+    setReels(prev => prev.map(p => ({ ...p, isLiked: false, isSaved: false, userReaction: undefined })));
+    setInAppNotificationBanner('Signed out cleanly.');
+  };
+
+  const updateMyProfile = async (patch: {
+    display_name?: string;
+    bio?: string;
+    is_private_account?: boolean;
+  }): Promise<{ ok: boolean; error?: string }> => {
+    if (!currentUser) return { ok: false, error: 'Sign in required.' };
+    const res = await updateProfileInSupabase(currentUser.id, patch);
+    if (res.ok && res.user) {
+      setCurrentUser(res.user);
+      setAllUsers(prev => prev.map(u => (u.id === res.user!.id ? res.user! : u)));
+      setInAppNotificationBanner('Profile updated.');
+    }
+    return { ok: res.ok, error: res.error };
+  };
+
+  // Initial Auth Session Restore + Database Sync
+  const syncDatabase = async (forceRefresh: boolean = false) => {
+    lastSyncTimeRef.current = Date.now();
+    if (forceRefresh) setIsSyncing(true);
+    setDbError(null);
+
+    try {
+      let activeSession = getStoredWebSession();
+      if (activeSession) {
+        const refreshed = await refreshWebAccessToken();
+        if (refreshed) activeSession = refreshed;
+      }
+      setAuthUser(activeSession);
+      setIsAuthChecking(false);
+
+      const [liveProfiles, livePosts, liveStories, liveComms, liveRooms, livePaths, liveShops] = await Promise.all([
+        fetchLiveProfiles({ forceRefresh }),
+        fetchLivePosts(undefined, { limit: 20, forceRefresh }),
+        fetchLiveStories(undefined, { forceRefresh }),
+        fetchLiveCommunities(activeSession?.id),
+        fetchLiveUnloadRooms(),
+        fetchLiveCrossedPaths(),
+        fetchLiveShops()
+      ]);
+
+      setAllUsers(liveProfiles);
+      setPosts(livePosts);
+      setReels(livePosts.filter(p => p.isVybesReel || p.mediaType === 'REEL'));
+      setHasMorePosts(livePosts.length >= 20);
+      setStories(liveStories);
+      setCommunities(liveComms);
+      setUnloadRooms(liveRooms);
+      setCrossedPaths(livePaths);
+      setShops(liveShops);
+      setIsDbConnected(true);
+
+      if (activeSession) {
+        await hydrateAuthenticatedUserData(activeSession);
+      } else {
+        setCurrentUser(null);
+      }
+    } catch (err: any) {
+      setIsDbConnected(false);
+      setDbError(err?.message || 'Unable to sync with VYBE backend right now.');
+    } finally {
+      setIsAuthChecking(false);
+      setIsInitialLoading(false);
+      setIsSyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    syncDatabase(false);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        if (Date.now() - lastSyncTimeRef.current > 90_000) {
+          syncDatabase(true);
+        }
+      }
+    };
+    const handleOnline = () => {
+      setIsOffline(false);
+      syncDatabase(true);
+    };
+    const handleOffline = () => setIsOffline(true);
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Browser URL / History Sync for /u/{username}, /profile/{id}, /post/{id}, /download
+  useEffect(() => {
+    const handlePopOrHash = () => {
+      const parsed = parseInitialPath();
+      setIsDownloadPage(parsed.isDownload);
+      if (parsed.postId) {
+        setSharedPostModalId(parsed.postId);
+      } else {
+        setSharedPostModalId(null);
+      }
+      if (parsed.profileTarget) {
+        setProfileRouteTarget(parsed.profileTarget);
+        setSelectedTabState('PROFILE');
+      } else {
+        setProfileRouteTarget(null);
+      }
+    };
+    window.addEventListener('popstate', handlePopOrHash);
+    window.addEventListener('hashchange', handlePopOrHash);
+    return () => {
+      window.removeEventListener('popstate', handlePopOrHash);
+      window.removeEventListener('hashchange', handlePopOrHash);
+    };
+  }, []);
+
+  // Resolve Direct Public Profile Route (/u/{username} or /profile/{id}) from Supabase
+  useEffect(() => {
+    if (!profileRouteTarget) {
+      setProfileLookupState('IDLE');
+      setProfileLookupError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setProfileLookupState('LOADING');
+    setProfileLookupError(null);
+    setViewedProfileUser(null);
+    setViewedProfilePosts([]);
+
+    fetchProfileByUsernameOrId({
+      username: profileRouteTarget.username,
+      userId: profileRouteTarget.userId
+    }).then(async (res) => {
+      if (cancelled) return;
+      if (res.status === 'FOUND' && res.user) {
+        setViewedProfileUser(res.user);
+        setAllUsers(prev => (prev.some(u => u.id === res.user!.id) ? prev : [res.user!, ...prev]));
+        const canViewPosts =
+          !res.user.isPrivate ||
+          (currentUser && res.user.id.toLowerCase() === currentUser.id.toLowerCase()) ||
+          followingIds.includes(res.user.id);
+
+        if (canViewPosts) {
+          const userPosts = await fetchPostsByAuthor(res.user.id, 30);
+          if (!cancelled) setViewedProfilePosts(userPosts);
+          setProfileLookupState('FOUND');
+        } else {
+          setViewedProfilePosts([]);
+          setProfileLookupState('FOUND');
+        }
+      } else if (res.status === 'NOT_FOUND') {
+        setProfileLookupState('NOT_FOUND');
+        setProfileLookupError('This VYBE profile is unavailable or no longer exists.');
+      } else {
+        setProfileLookupState('ERROR');
+        setProfileLookupError(res.error || 'Could not load profile.');
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [profileRouteTarget, currentUser?.id, followingIds.length]);
+
+  // Resolve Shared Post Modal directly from Supabase (/post/{id} or /p/{id})
+  useEffect(() => {
+    if (!sharedPostModalId) {
+      setResolvedSharedPost(null);
+      setSharedPostState('IDLE');
+      setSharedPostError(null);
+      return;
+    }
+
+    let cancelled = false;
+    const cachedInState = [...posts, ...reels].find(p => p.id === sharedPostModalId) || null;
+    if (cachedInState) {
+      const blockedByPrivacy = Boolean(
+        cachedInState.author.isPrivate &&
+          cachedInState.author.id !== currentUser?.id &&
+          !followingIds.includes(cachedInState.author.id)
+      );
+      setResolvedSharedPost(cachedInState);
+      setSharedPostState(blockedByPrivacy ? 'PRIVATE' : 'FOUND');
+      setSharedPostError(blockedByPrivacy ? 'This post belongs to a private account.' : null);
+      return;
+    }
+
+    setSharedPostState('LOADING');
+    setSharedPostError(null);
+    setResolvedSharedPost(null);
+
+    fetchSinglePostById(sharedPostModalId).then(res => {
+      if (cancelled) return;
+      if (res.status === 'FOUND' && res.post) {
+        const blockedByPrivacy = Boolean(
+          res.post.author.isPrivate &&
+            res.post.author.id !== currentUser?.id &&
+            !followingIds.includes(res.post.author.id)
+        );
+        setResolvedSharedPost(res.post);
+        setSharedPostState(blockedByPrivacy ? 'PRIVATE' : 'FOUND');
+        setSharedPostError(blockedByPrivacy ? 'This post belongs to a private account.' : null);
+      } else if (res.status === 'NOT_FOUND') {
+        setSharedPostState('NOT_FOUND');
+        setSharedPostError('This post may have been deleted or the link is invalid.');
+      } else {
+        setSharedPostState('ERROR');
+        setSharedPostError(res.error || 'Could not load shared post.');
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sharedPostModalId, currentUser?.id, followingIds.length]);
+
+  // Supabase Realtime Connection (Web <-> Android Instant DMs & Notifications)
+  useEffect(() => {
+    if (!authUser?.id || !authUser?.accessToken) {
+      vybeRealtime.disconnect(true);
+      setIsRealtimeConnected(false);
+      return;
+    }
+
+    const handleRealtimePush = async (payload: RealtimePushPayload) => {
+      const pushType = String(payload.type || '').toUpperCase();
+      if (pushType === 'TYPING') return;
+
+      if (payload.conversation_id) {
+        const convMsgs = await fetchMessagesForConversation(payload.conversation_id, authUser.id);
+        const existingExists = conversations.some(c => c.id === payload.conversation_id);
+        if (!existingExists) {
+          const fresh = await fetchConversationsForUser(authUser.id);
+          setConversations(fresh.conversations);
+        } else if (convMsgs.length > 0) {
+          setConversations(prev =>
+            prev.map(c => {
+              if (c.id !== payload.conversation_id) return c;
+              const isCurrentlyViewing =
+                selectedTab === 'INBOX' && selectedConversationId === c.id;
+              const latest = convMsgs[convMsgs.length - 1];
+              return {
+                ...c,
+                messages: convMsgs,
+                lastMessage: latest?.text || c.lastMessage,
+                lastMessageTimestamp: latest?.createdAtIso
+                  ? formatRelativeTime(latest.createdAtIso)
+                  : c.lastMessageTimestamp,
+                unreadCount: isCurrentlyViewing ? 0 : c.unreadCount + 1
+              };
+            })
+          );
+        }
+      }
+
+      if (payload.body) {
+        const isViewingSameThread =
+          selectedTab === 'INBOX' &&
+          payload.conversation_id &&
+          selectedConversationId === payload.conversation_id;
+        if (!isViewingSameThread) {
+          setInAppNotificationBanner(
+            `${payload.actor_display_name || payload.title || 'New activity'}: ${payload.body}`
+          );
+        }
+      }
+    };
+
+    const handleDbMessage = async (change: RealtimeDbChangePayload) => {
+      const rec = change.record;
+      if (!rec?.id || !rec?.conversation_id) return;
+      const cid = String(rec.conversation_id);
+      const isMe = String(rec.sender_id || '').toLowerCase() === authUser.id.toLowerCase();
+
+      const incomingMsg: DirectMessage = {
+        id: rec.id,
+        senderId: rec.sender_id,
+        text: rec.content || '',
+        timestamp: formatChatClock(rec.created_at),
+        createdAtIso: rec.created_at,
+        isMe,
+        mediaUrl: rec.media_url || undefined,
+        mediaType: (String(rec.media_type || 'TEXT').toUpperCase() as any),
+        status: 'SENT'
+      };
+
+      let matchedConv = false;
+      setConversations(prev => {
+        const idx = prev.findIndex(c => c.id === cid);
+        if (idx === -1) return prev;
+        matchedConv = true;
+        const target = prev[idx];
+        if (target.messages.some(m => m.id === incomingMsg.id)) {
+          return prev;
+        }
+        const isViewing = selectedTab === 'INBOX' && selectedConversationId === cid;
+        const updated: Conversation = {
+          ...target,
+          lastMessage: incomingMsg.text || (incomingMsg.mediaUrl ? 'Sent an attachment' : target.lastMessage),
+          lastMessageTimestamp: 'Just now',
+          lastMessageCreatedAtIso: incomingMsg.createdAtIso || new Date().toISOString(),
+          unreadCount: isMe || isViewing ? 0 : target.unreadCount + 1,
+          messages: [...target.messages, incomingMsg]
+        };
+        if (!isMe && isViewing) {
+          markConversationReadInSupabase(authUser.id, [incomingMsg.id]);
+        }
+        return [updated, ...prev.filter((_, i) => i !== idx)];
+      });
+
+      if (!matchedConv) {
+        const fresh = await fetchConversationsForUser(authUser.id);
+        if (fresh.conversations.some(c => c.id === cid)) {
+          setConversations(fresh.conversations);
+        }
+      }
+    };
+
+    const handleDbNotification = async (change: RealtimeDbChangePayload) => {
+      const rec = change.record;
+      if (!rec?.id) return;
+      const freshNotifs = await fetchLiveNotifications(authUser.id);
+      if (freshNotifs.length > 0) setNotifications(freshNotifs);
+    };
+
+    vybeRealtime.connect(authUser.id, authUser.accessToken, {
+      onPushEvent: handleRealtimePush,
+      onDbMessage: handleDbMessage,
+      onDbNotification: handleDbNotification,
+      onConnectionChange: setIsRealtimeConnected
+    });
+
+    return () => {
+      vybeRealtime.disconnect(false);
+    };
+  }, [authUser?.id, authUser?.accessToken]);
+
+  // GitHub release check
   const setGithubRepo = (newRepo: string) => {
     const cleaned = cleanRepoSlug(newRepo);
     setGithubRepoState(cleaned);
@@ -533,174 +1032,22 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const info = await fetchGitHubUpdates(repo);
       setUpdateInfo(info);
-      if (info.isNewerThanInstalled) {
-        setHasAvailableUpdate(true);
-        if (!silent) {
-          setInAppNotificationBanner(`🚀 Update Available: VYBE ${info.tagName} is now ready!`);
-        }
-      } else {
-        setHasAvailableUpdate(false);
+      setHasAvailableUpdate(Boolean(info.isNewerThanInstalled));
+      if (info.isNewerThanInstalled && !silent) {
+        setInAppNotificationBanner(`VYBE ${info.tagName} release is available.`);
       }
     } catch (err: any) {
-      if (!silent) {
-        setUpdateError(err.message || 'Failed to check GitHub releases.');
-      }
+      if (!silent) setUpdateError(err.message || 'Failed to check GitHub releases.');
     } finally {
       setIsCheckingUpdates(false);
     }
   };
 
-  // Run auto update check silently in background on initial load (no unsolicited preview banner)
   useEffect(() => {
     checkForUpdates(undefined, true);
   }, []);
 
-  // User-isolated cache synchronization
-  useEffect(() => {
-    if (currentUser?.id) {
-      vybeCache.setUserId(currentUser.id);
-    }
-  }, [currentUser?.id]);
-
-  // Synchronize state with real Supabase database using intelligent caching
-  const syncDatabase = async (forceRefresh: boolean = false) => {
-    lastSyncTimeRef.current = Date.now();
-    try {
-      const liveProfiles = await fetchLiveProfiles({ forceRefresh });
-      const userMap = new Map<string, User>();
-      if (liveProfiles && liveProfiles.length > 0) {
-        liveProfiles.forEach(u => userMap.set(u.id, u));
-        setAllUsers(liveProfiles);
-
-        // Pick user matching recognized admin or first profile
-        const savedEmail = (localStorage.getItem('vybe_admin_email') || '').toLowerCase();
-        const preferredUser = liveProfiles.find(u => 
-          (savedEmail && (u.username.toLowerCase().includes('nimai') || u.displayName.toLowerCase().includes('nimai'))) ||
-          u.username === 'test_user' ||
-          u.username === 'nimair' ||
-          u.id === '47650a36-4842-4ce7-a3c6-e706926a71d3'
-        );
-        if (preferredUser) {
-          setCurrentUser(preferredUser);
-        } else if (liveProfiles[0]) {
-          setCurrentUser(liveProfiles[0]);
-        }
-      }
-
-      // Initial page of 20 posts instead of 60 heavy records
-      const livePosts = await fetchLivePosts(userMap, { limit: 20, forceRefresh });
-      if (livePosts && livePosts.length > 0) {
-        setPosts(livePosts);
-        const liveReels = livePosts.filter(p => p.isVybesReel || p.mediaType === 'REEL');
-        if (liveReels.length > 0) {
-          setReels(liveReels);
-        }
-      }
-
-      const liveStories = await fetchLiveStories(userMap, { forceRefresh });
-      if (liveStories && liveStories.length > 0) {
-        setStories(liveStories);
-      }
-
-      setIsDbConnected(true);
-    } catch (err) {
-      console.warn('[VybeContext] Supabase live sync notice:', err);
-    }
-  };
-
-  // Cursor-based pagination to load subsequent batches on demand
-  const loadMorePosts = async () => {
-    if (isLoadingMorePosts || !hasMorePosts) return;
-    setIsLoadingMorePosts(true);
-    try {
-      const oldestPost = posts[posts.length - 1];
-      const cursorCreatedAt = oldestPost?.createdAtIso;
-      const userMap = new Map<string, User>();
-      allUsers.forEach(u => userMap.set(u.id, u));
-
-      const morePosts = await fetchLivePosts(userMap, {
-        limit: 20,
-        cursorCreatedAt
-      });
-
-      if (!morePosts || morePosts.length === 0) {
-        setHasMorePosts(false);
-      } else {
-        if (morePosts.length < 20) {
-          setHasMorePosts(false);
-        }
-        setPosts(prev => {
-          const existingIds = new Set(prev.map(p => p.id));
-          const uniqueNew = morePosts.filter(p => !existingIds.has(p.id));
-          return [...prev, ...uniqueNew];
-        });
-      }
-    } catch (err) {
-      console.warn('[VybeContext] loadMorePosts error:', err);
-    } finally {
-      setIsLoadingMorePosts(false);
-    }
-  };
-
-  // Intelligent lifecycle sync: Loads instantly from cache on mount,
-  // revalidates on window focus only if more than 90 seconds elapsed.
-  // NO UNCONDITIONAL 15-SECOND POLLING.
-  useEffect(() => {
-    syncDatabase(false);
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        const elapsed = Date.now() - lastSyncTimeRef.current;
-        if (elapsed > 90_000) {
-          syncDatabase(true);
-        }
-      }
-    };
-
-    const handleOnline = () => {
-      syncDatabase(true);
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('online', handleOnline);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('online', handleOnline);
-    };
-  }, []);
-
-  // Audio Handler
-  const togglePlayAudio = (trackTitle: string, previewUrl?: string) => {
-    if (isPlayingAudio && currentAudioTrack === trackTitle) {
-      audioElement?.pause();
-      setIsPlayingAudio(false);
-      setCurrentAudioTrack(null);
-      return;
-    }
-
-    if (audioElement) {
-      audioElement.pause();
-    }
-
-    const url = previewUrl || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
-    const newAudio = new Audio(url);
-    newAudio.play().then(() => {
-      setIsPlayingAudio(true);
-      setCurrentAudioTrack(trackTitle);
-      setAudioElement(newAudio);
-    }).catch(() => {
-      setIsPlayingAudio(true);
-      setCurrentAudioTrack(trackTitle);
-    });
-
-    newAudio.onended = () => {
-      setIsPlayingAudio(false);
-      setCurrentAudioTrack(null);
-    };
-  };
-
-  // Call timer effect
+  // Call timer
   useEffect(() => {
     let timer: any;
     if (callState.isActive && !callState.isIncoming) {
@@ -711,116 +1058,311 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => clearInterval(timer);
   }, [callState.isActive, callState.isIncoming]);
 
+  // Navigation & Profile Actions
+  const closeDownloadPage = () => {
+    setIsDownloadPage(false);
+    if (/^\/download/i.test(window.location.pathname)) {
+      window.history.pushState(null, '', '/');
+    }
+  };
+
+  const setSelectedTab = (tab: MainTab) => {
+    if (isDownloadPage) closeDownloadPage();
+    if (tab === 'PROFILE') {
+      if (!profileRouteTarget) {
+        if (!currentUser) {
+          openAuthModal('Sign in to view your profile, or open a shared /u/username link.');
+          return;
+        }
+        setViewedProfileUser(null);
+        setViewedProfilePosts([]);
+      }
+    } else {
+      setProfileRouteTarget(null);
+      setViewedProfileUser(null);
+      if (/^\/(?:u|profile)\//i.test(window.location.pathname)) {
+        window.history.pushState(null, '', '/');
+      }
+    }
+    setSelectedTabState(tab);
+  };
+
+  const openUserProfile = (user: User) => {
+    if (!user) return;
+    if (currentUser && user.id.toLowerCase() === currentUser.id.toLowerCase()) {
+      setProfileRouteTarget(null);
+      setViewedProfileUser(null);
+      setSelectedTabState('PROFILE');
+      if (user.username) {
+        window.history.pushState(null, '', `/u/${encodeURIComponent(user.username)}`);
+      }
+      return;
+    }
+    if (selectedTab !== 'PROFILE') {
+      setPreviousTabBeforeProfile(selectedTab);
+    }
+    setViewedProfileUser(user);
+    setProfileRouteTarget(user.username ? { username: user.username, userId: user.id } : { userId: user.id });
+    setSelectedTabState('PROFILE');
+    if (user.username) {
+      window.history.pushState(null, '', `/u/${encodeURIComponent(user.username)}`);
+    } else {
+      window.history.pushState(null, '', `/profile/${encodeURIComponent(user.id)}`);
+    }
+  };
+
+  const navigateToPublicProfile = (target: ProfileRouteTarget) => {
+    if (selectedTab !== 'PROFILE') {
+      setPreviousTabBeforeProfile(selectedTab);
+    }
+    setProfileRouteTarget(target);
+    setSelectedTabState('PROFILE');
+    if (target.username) {
+      window.history.pushState(null, '', `/u/${encodeURIComponent(target.username)}`);
+    } else if (target.userId) {
+      window.history.pushState(null, '', `/profile/${encodeURIComponent(target.userId)}`);
+    }
+  };
+
+  const closeUserProfile = () => {
+    setProfileRouteTarget(null);
+    setViewedProfileUser(null);
+    setViewedProfilePosts([]);
+    setProfileLookupState('IDLE');
+    setProfileLookupError(null);
+    setSelectedTabState(previousTabBeforeProfile || 'FEED');
+    if (/^\/(?:u|profile)\//i.test(window.location.pathname)) {
+      window.history.pushState(null, '', '/');
+    }
+  };
+
   const openModal = (modal: ModalScreen, data?: any) => {
-    if (modal === 'SHOP_DETAIL' && data) {
-      setSelectedShop(data);
+    const authProtected: ModalScreen[] = [
+      'CREATE_POST',
+      'CREATE_STORY',
+      'CREATE_CAPSULE',
+      'CREATE_CROSSED_PATH',
+      'VERIFICATION_CENTER',
+      'QR_CODE'
+    ];
+    if (authProtected.includes(modal) && !requireAuth('Sign in to your VYBE account to use this feature.')) {
+      return;
     }
-    if (modal === 'UNLOAD_ROOM' && data) {
-      setSelectedUnloadRoom(data);
-    }
+    if (modal === 'SHOP_DETAIL' && data) setSelectedShop(data);
+    if (modal === 'UNLOAD_ROOM' && data) setSelectedUnloadRoom(data);
     setActiveModal(modal);
   };
 
-  const closeModal = () => {
-    setActiveModal(null);
+  const closeModal = () => setActiveModal(null);
+
+  const openSharedPostModal = (postId: string) => {
+    setSharedPostModalId(postId);
+    window.history.pushState(null, '', `/post/${encodeURIComponent(postId)}`);
   };
 
-  // User mood setter
+  const closeSharedPostModal = () => {
+    setSharedPostModalId(null);
+    setResolvedSharedPost(null);
+    setSharedPostState('IDLE');
+    if (/^\/(?:post|p)\//i.test(window.location.pathname)) {
+      window.history.replaceState(null, '', '/');
+    } else if (window.location.hash.startsWith('#post_')) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  };
+
+  // Social Follow / Dismiss
+  const toggleFollowUser = (targetUserId: string) => {
+    if (!requireAuth('Sign in to follow creators and friends on VYBE.')) return;
+    if (!currentUser || !targetUserId || targetUserId === currentUser.id) return;
+
+    const targetUser = allUsers.find(u => u.id === targetUserId) || viewedProfileUser;
+    const isFollowing = followingIds.includes(targetUserId);
+    const isRequested = requestedFollowIds.includes(targetUserId);
+
+    if (isFollowing || isRequested) {
+      setFollowingIds(prev => prev.filter(id => id !== targetUserId));
+      setRequestedFollowIds(prev => prev.filter(id => id !== targetUserId));
+      setAllUsers(prev =>
+        prev.map(u =>
+          u.id === targetUserId
+            ? {
+                ...u,
+                isFollowedByMe: false,
+                isFollowRequestedByMe: false,
+                followersCount: isFollowing ? Math.max(0, u.followersCount - 1) : u.followersCount
+              }
+            : u
+        )
+      );
+      toggleFollowInSupabase({ followerId: currentUser.id, followedId: targetUserId, action: 'UNFOLLOW' });
+    } else if (targetUser?.isPrivate) {
+      setRequestedFollowIds(prev => [...prev, targetUserId]);
+      setAllUsers(prev => prev.map(u => (u.id === targetUserId ? { ...u, isFollowRequestedByMe: true } : u)));
+      toggleFollowInSupabase({ followerId: currentUser.id, followedId: targetUserId, action: 'REQUEST' });
+    } else {
+      setFollowingIds(prev => [...prev, targetUserId]);
+      setAllUsers(prev =>
+        prev.map(u =>
+          u.id === targetUserId
+            ? { ...u, isFollowedByMe: true, followersCount: u.followersCount + 1 }
+            : u
+        )
+      );
+      toggleFollowInSupabase({ followerId: currentUser.id, followedId: targetUserId, action: 'FOLLOW' });
+    }
+  };
+
+  const dismissSuggestedUser = (targetUserId: string) => {
+    if (!targetUserId) return;
+    setDismissedSuggestionIds(prev => (prev.includes(targetUserId) ? prev : [...prev, targetUserId]));
+  };
+
+  const restoreDismissedSuggestions = () => setDismissedSuggestionIds([]);
+
   const setCurrentUserMood = (mood: MoodType) => {
-    setCurrentUser(prev => ({ ...prev, currentMood: mood }));
+    if (!requireAuth('Sign in to update your live mood.')) return;
+    setCurrentUser(prev => (prev ? { ...prev, currentMood: mood } : prev));
+    if (currentUser) {
+      updateProfileInSupabase(currentUser.id, { current_mood: mood });
+    }
   };
 
-  const setCurrentUserPulse = (pulse: any) => {
-    setCurrentUser(prev => ({ ...prev, livePulse: pulse }));
+  const setCurrentUserPulse = (pulse: LivePulseStatus) => {
+    if (!requireAuth('Sign in to update your live pulse status.')) return;
+    setCurrentUser(prev => (prev ? { ...prev, livePulse: pulse } : prev));
+    if (currentUser) {
+      updateProfileInSupabase(currentUser.id, { live_pulse: pulse });
+    }
   };
 
-  // Post Actions (synchronized across Feed Posts, Reels, and Supabase)
-  const applyPostTransform = (postId: string, updater: (p: Post) => Post) => {
+  // Posts & Pagination & Reactions
+  const loadMorePosts = async () => {
+    if (isLoadingMorePosts || !hasMorePosts) return;
+    setIsLoadingMorePosts(true);
+    try {
+      const oldestPost = posts[posts.length - 1];
+      const cursorCreatedAt = oldestPost?.createdAtIso;
+      const morePosts = await fetchLivePosts(undefined, { limit: 20, cursorCreatedAt });
+      if (!morePosts || morePosts.length === 0) {
+        setHasMorePosts(false);
+      } else {
+        if (morePosts.length < 20) setHasMorePosts(false);
+        setPosts(prev => {
+          const existingIds = new Set(prev.map(p => p.id));
+          return [...prev, ...morePosts.filter(p => !existingIds.has(p.id))];
+        });
+      }
+    } finally {
+      setIsLoadingMorePosts(false);
+    }
+  };
+
+  const applyPostTransform = (postId: string, updater: (p: Post) => Post, nextReaction?: VybeReaction | null) => {
     let updatedLikes: number | null = null;
-    setPosts(prev => prev.map(p => {
-      if (p.id === postId) {
+    setPosts(prev =>
+      prev.map(p => {
+        if (p.id !== postId) return p;
         const next = updater(p);
         updatedLikes = next.likesCount;
         return next;
-      }
-      return p;
-    }));
-    setReels(prev => prev.map(p => {
-      if (p.id === postId) {
+      })
+    );
+    setReels(prev =>
+      prev.map(p => {
+        if (p.id !== postId) return p;
         const next = updater(p);
         if (updatedLikes === null) updatedLikes = next.likesCount;
         return next;
-      }
-      return p;
-    }));
+      })
+    );
+    setViewedProfilePosts(prev =>
+      prev.map(p => (p.id === postId ? updater(p) : p))
+    );
+    if (resolvedSharedPost?.id === postId) {
+      setResolvedSharedPost(prev => (prev ? updater(prev) : prev));
+    }
     if (updatedLikes !== null) {
       syncPostLikeCountToSupabase(postId, updatedLikes);
+    }
+    if (currentUser && nextReaction !== undefined) {
+      togglePostReactionInSupabase({ postId, userId: currentUser.id, reactionType: nextReaction });
     }
   };
 
   const toggleLikePost = (postId: string) => {
-    applyPostTransform(postId, p => {
-      const isLiked = !p.isLiked;
-      const nextLikes = isLiked ? p.likesCount + 1 : Math.max(0, p.likesCount - 1);
-      const nextReactions = { ...p.reactionsCount };
-      if (isLiked) {
-        nextReactions.LOVE = (nextReactions.LOVE || 0) + 1;
-      } else if (p.userReaction) {
-        nextReactions[p.userReaction] = Math.max(0, (nextReactions[p.userReaction] || 1) - 1);
-      } else {
-        nextReactions.LOVE = Math.max(0, (nextReactions.LOVE || 1) - 1);
-      }
-      return {
-        ...p,
-        isLiked,
-        likesCount: nextLikes,
-        reactionsCount: nextReactions,
-        userReaction: isLiked ? (p.userReaction || 'LOVE') : undefined
-      };
-    });
+    if (!requireAuth('Sign in to react to posts on VYBE.')) return;
+    const target = posts.find(p => p.id === postId) || reels.find(p => p.id === postId);
+    const willLike = !target?.isLiked;
+    applyPostTransform(
+      postId,
+      p => {
+        const isLiked = !p.isLiked;
+        const nextLikes = isLiked ? p.likesCount + 1 : Math.max(0, p.likesCount - 1);
+        const nextReactions = { ...p.reactionsCount };
+        if (isLiked) {
+          nextReactions.LOVE = (nextReactions.LOVE || 0) + 1;
+        } else if (p.userReaction) {
+          nextReactions[p.userReaction] = Math.max(0, (nextReactions[p.userReaction] || 1) - 1);
+        } else {
+          nextReactions.LOVE = Math.max(0, (nextReactions.LOVE || 1) - 1);
+        }
+        return {
+          ...p,
+          isLiked,
+          likesCount: nextLikes,
+          reactionsCount: nextReactions,
+          userReaction: isLiked ? p.userReaction || 'LOVE' : undefined
+        };
+      },
+      willLike ? target?.userReaction || 'LOVE' : null
+    );
   };
 
   const ensurePostLoved = (postId: string) => {
-    applyPostTransform(postId, p => {
-      if (p.isLiked) return p;
-      const nextReactions = {
-        ...p.reactionsCount,
-        LOVE: (p.reactionsCount?.LOVE || 0) + 1
-      };
-      return {
-        ...p,
-        isLiked: true,
-        likesCount: p.likesCount + 1,
-        reactionsCount: nextReactions,
-        userReaction: 'LOVE'
-      };
-    });
+    if (!requireAuth('Sign in to react to posts on VYBE.')) return;
+    applyPostTransform(
+      postId,
+      p => {
+        if (p.isLiked) return p;
+        return {
+          ...p,
+          isLiked: true,
+          likesCount: p.likesCount + 1,
+          reactionsCount: { ...p.reactionsCount, LOVE: (p.reactionsCount?.LOVE || 0) + 1 },
+          userReaction: 'LOVE'
+        };
+      },
+      'LOVE'
+    );
   };
 
   const reactToPost = (postId: string, reaction: VybeReaction) => {
-    applyPostTransform(postId, p => {
-      const currentReaction = p.userReaction;
-      const nextReaction = currentReaction === reaction ? undefined : reaction;
-      const newReactionsCount = { ...p.reactionsCount };
-
-      if (currentReaction) {
-        newReactionsCount[currentReaction] = Math.max(0, (newReactionsCount[currentReaction] || 1) - 1);
-      }
-      if (nextReaction) {
-        newReactionsCount[nextReaction] = (newReactionsCount[nextReaction] || 0) + 1;
-      }
-
-      return {
-        ...p,
-        userReaction: nextReaction,
-        isLiked: !!nextReaction,
-        reactionsCount: newReactionsCount,
-        likesCount: Object.values(newReactionsCount).reduce((a, b) => a + b, 0)
-      };
-    });
+    if (!requireAuth('Sign in to react to posts on VYBE.')) return;
+    const target = posts.find(p => p.id === postId) || reels.find(p => p.id === postId);
+    const nextReaction = target?.userReaction === reaction ? null : reaction;
+    applyPostTransform(
+      postId,
+      p => {
+        const currentRx = p.userReaction;
+        const resolved = currentRx === reaction ? undefined : reaction;
+        const newReactionsCount = { ...p.reactionsCount };
+        if (currentRx) newReactionsCount[currentRx] = Math.max(0, (newReactionsCount[currentRx] || 1) - 1);
+        if (resolved) newReactionsCount[resolved] = (newReactionsCount[resolved] || 0) + 1;
+        return {
+          ...p,
+          userReaction: resolved,
+          isLiked: !!resolved,
+          reactionsCount: newReactionsCount,
+          likesCount: Object.values(newReactionsCount).reduce((a, b) => a + b, 0)
+        };
+      },
+      nextReaction
+    );
   };
 
   const reactToComment = (postId: string, commentId: string, reaction: VybeReaction) => {
+    if (!requireAuth('Sign in to react to comments.')) return;
     const mapComments = (p: Post): Post => {
       if (p.id !== postId) return p;
       return {
@@ -829,17 +1371,13 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (c.id !== commentId) return c;
           const prevRx = c.userReaction || (c.isLiked ? 'LOVE' : undefined);
           const nextRx = prevRx === reaction ? undefined : reaction;
-          const nextCount = nextRx && !prevRx
-            ? (c.likesCount || 0) + 1
-            : !nextRx && prevRx
-              ? Math.max(0, (c.likesCount || 0) - 1)
-              : (c.likesCount || 0);
-          return {
-            ...c,
-            isLiked: Boolean(nextRx),
-            userReaction: nextRx,
-            likesCount: nextCount
-          };
+          const nextCount =
+            nextRx && !prevRx
+              ? (c.likesCount || 0) + 1
+              : !nextRx && prevRx
+                ? Math.max(0, (c.likesCount || 0) - 1)
+                : c.likesCount || 0;
+          return { ...c, isLiked: Boolean(nextRx), userReaction: nextRx, likesCount: nextCount };
         })
       };
     };
@@ -855,6 +1393,10 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const toggleSavePost = (postId: string) => {
+    if (!requireAuth('Sign in to save posts to your collection.')) return;
+    if (!currentUser) return;
+    const target = posts.find(p => p.id === postId) || reels.find(p => p.id === postId);
+    const shouldSave = !target?.isSaved;
     const mapSave = (p: Post): Post => {
       if (p.id !== postId) return p;
       const isSaved = !p.isSaved;
@@ -866,13 +1408,27 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     setPosts(prev => prev.map(mapSave));
     setReels(prev => prev.map(mapSave));
+    toggleSavePostInSupabase({ postId, userId: currentUser.id, shouldSave });
+  };
+
+  const loadCommentsForPost = async (postId: string) => {
+    const fetched = await fetchCommentsForPost(postId);
+    if (!fetched) return;
+    const attach = (p: Post): Post => (p.id === postId ? { ...p, comments: fetched } : p);
+    setPosts(prev => prev.map(attach));
+    setReels(prev => prev.map(attach));
+    if (resolvedSharedPost?.id === postId) {
+      setResolvedSharedPost(prev => (prev ? { ...prev, comments: fetched } : prev));
+    }
   };
 
   const addCommentToPost = (postId: string, text: string) => {
-    if (!text.trim()) return;
+    if (!requireAuth('Sign in to comment on posts.')) return;
+    if (!currentUser || !text.trim()) return;
     const nowIso = new Date().toISOString();
+    const tempId = `c_${Date.now()}`;
     const newComment = {
-      id: `c_${Date.now()}`,
+      id: tempId,
       postId,
       author: currentUser,
       content: text.trim(),
@@ -891,37 +1447,33 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     setPosts(prev => prev.map(appendComment));
     setReels(prev => prev.map(appendComment));
-
-    // Persist live comment to Supabase
-    submitLiveComment(postId, currentUser.id, text.trim()).catch(err => {
-      console.warn('[Supabase] Comment write notice:', err);
+    submitLiveComment(postId, currentUser.id, text.trim()).then(created => {
+      if (created?.id) {
+        const swapId = (p: Post): Post =>
+          p.id !== postId
+            ? p
+            : { ...p, comments: p.comments.map(c => (c.id === tempId ? { ...c, id: created.id } : c)) };
+        setPosts(prev => prev.map(swapId));
+        setReels(prev => prev.map(swapId));
+      }
     });
   };
 
   const incrementPostShareCount = (postId: string) => {
-    setPosts(prev => prev.map(p => p.id === postId ? { ...p, sharesCount: (p.sharesCount || 0) + 1 } : p));
-  };
-
-  const sharePostToConversation = (post: Post, convId: string, note?: string) => {
-    const shareUrl = `${window.location.origin}/post/${encodeURIComponent(post.id)}`;
-    const bodyLines = [
-      ...(note?.trim() ? [note.trim()] : []),
-      `Shared post from @${post.author.username}${post.caption ? `: ${post.caption.slice(0, 140)}` : ''}`,
-      shareUrl
-    ];
-    sendMessage(convId, bodyLines.join('\n'));
-    incrementPostShareCount(post.id);
-    setInAppNotificationBanner('Post shared via Direct Message');
+    setPosts(prev => prev.map(p => (p.id === postId ? { ...p, sharesCount: (p.sharesCount || 0) + 1 } : p)));
   };
 
   const createPost = (postData: Partial<Post>) => {
+    if (!requireAuth('Sign in to publish posts on VYBE.')) return;
+    if (!currentUser) return;
     const nowIso = new Date().toISOString();
+    const tempId = `temp_post_${Date.now()}`;
     const newPost: Post = {
-      id: `post_${Date.now()}`,
+      id: tempId,
       author: currentUser,
       caption: postData.caption || '',
       mediaUrls: postData.mediaUrls || [],
-      mediaType: postData.mediaType || 'TEXT',
+      mediaType: postData.isVybesReel ? 'REEL' : postData.mediaType || 'TEXT',
       timestamp: 'Just now',
       createdAtIso: nowIso,
       likesCount: 0,
@@ -931,6 +1483,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       viewsCount: 1,
       isLiked: false,
       isSaved: false,
+      isVybesReel: Boolean(postData.isVybesReel),
       tags: postData.tags || [],
       moodZone: postData.moodZone || currentUser.currentMood || 'GENERAL',
       comments: [],
@@ -939,14 +1492,10 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       musicAttachment: postData.musicAttachment,
       reactionsCount: { LOVE: 0, FLAME: 0, LAUGH: 0, WOW: 0, SAD: 0 }
     };
-
-    if (newPost.isVybesReel) {
-      setReels(prev => [newPost, ...prev]);
-    }
+    if (newPost.isVybesReel) setReels(prev => [newPost, ...prev]);
     setPosts(prev => [newPost, ...prev]);
     closeModal();
 
-    // Persist live post to Supabase database
     createLivePost({
       authorId: currentUser.id,
       caption: newPost.caption,
@@ -955,15 +1504,16 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isVybesReel: newPost.isVybesReel,
       moodZone: newPost.moodZone
     }).then(created => {
-      if (created && created.id) {
-        setPosts(prev => prev.map(p => p.id === newPost.id ? { ...p, id: created.id } : p));
+      if (created?.id) {
+        setPosts(prev => prev.map(p => (p.id === tempId ? { ...p, id: created.id } : p)));
+        setReels(prev => prev.map(p => (p.id === tempId ? { ...p, id: created.id } : p)));
+      } else {
+        setInAppNotificationBanner('Post failed to save to Supabase. Please check your connection and try again.');
       }
-    }).catch(err => {
-      console.warn('[Supabase] Post creation persistence notice:', err);
     });
   };
 
-  // Story Actions (case-insensitive cross-user author matching)
+  // Stories
   const openStoryViewer = (authorId: string, index?: number) => {
     const normalizedAuthor = (authorId || '').toLowerCase();
     const matchedIdx =
@@ -979,12 +1529,10 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActiveStoryIndex(safeIdx);
     openModal('STORY_VIEWER');
   };
-
   const closeStoryViewer = () => {
     setActiveStoryAuthorId(null);
     closeModal();
   };
-
   const nextStory = () => {
     setActiveStoryIndex(prev => {
       if (prev < stories.length - 1) {
@@ -996,30 +1544,25 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return prev;
     });
   };
-
-  const prevStory = () => {
-    setActiveStoryIndex(prev => (prev > 0 ? prev - 1 : 0));
-  };
+  const prevStory = () => setActiveStoryIndex(prev => (prev > 0 ? prev - 1 : 0));
 
   const reactToStory = (storyId: string, reaction: VybeReaction) => {
-    setStories(prev => prev.map(s => {
-      if (s.id !== storyId) return s;
-      const prevRx = s.myReaction || (s.isLikedByMe ? 'LOVE' : undefined);
-      const nextRx = prevRx === reaction ? undefined : reaction;
-      const nextCount = nextRx && !prevRx
-        ? (s.reactionsCount || 0) + 1
-        : !nextRx && prevRx
-          ? Math.max(0, (s.reactionsCount || 0) - 1)
-          : (s.reactionsCount || 0);
-      return {
-        ...s,
-        isLikedByMe: Boolean(nextRx),
-        myReaction: nextRx,
-        reactionsCount: nextCount
-      };
-    }));
+    if (!requireAuth('Sign in to react to stories.')) return;
+    setStories(prev =>
+      prev.map(s => {
+        if (s.id !== storyId) return s;
+        const prevRx = s.myReaction || (s.isLikedByMe ? 'LOVE' : undefined);
+        const nextRx = prevRx === reaction ? undefined : reaction;
+        const nextCount =
+          nextRx && !prevRx
+            ? (s.reactionsCount || 0) + 1
+            : !nextRx && prevRx
+              ? Math.max(0, (s.reactionsCount || 0) - 1)
+              : s.reactionsCount || 0;
+        return { ...s, isLikedByMe: Boolean(nextRx), myReaction: nextRx, reactionsCount: nextCount };
+      })
+    );
   };
-
   const toggleStoryLike = (storyId: string) => {
     const target = stories.find(s => s.id === storyId);
     const existing = target?.myReaction || (target?.isLikedByMe ? 'LOVE' : undefined);
@@ -1027,12 +1570,15 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const createStory = (storyData: Partial<Story>) => {
+    if (!requireAuth('Sign in to publish stories.')) return;
+    if (!currentUser) return;
     const nowMs = Date.now();
     const nowIso = new Date(nowMs).toISOString();
     const expIso = new Date(nowMs + 24 * 60 * 60 * 1000).toISOString();
     const resolvedType = storyData.mediaType || (storyData.mediaUrl ? 'PHOTO' : 'TEXT');
+    const tempId = `st_${nowMs}`;
     const newStory: Story = {
-      id: `st_${nowMs}`,
+      id: tempId,
       author: currentUser,
       mediaUrl: storyData.mediaUrl || '',
       caption: storyData.caption || '',
@@ -1045,43 +1591,46 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isViewed: false,
       reactionsCount: 0,
       isLikedByMe: false,
-      textBackgroundColor: storyData.textBackgroundColor || (resolvedType === 'TEXT' ? 'from-[#6366F1] to-[#EC4899]' : undefined),
+      textBackgroundColor:
+        storyData.textBackgroundColor || (resolvedType === 'TEXT' ? 'from-[#6366F1] to-[#EC4899]' : undefined),
       musicTrackTitle: storyData.musicTrackTitle
     };
     setStories(prev => [newStory, ...prev]);
-    setInAppNotificationBanner('Story published! Visible for 24 hours.');
     closeModal();
-
-    // Persist live story to Supabase
     createLiveStory({
       authorId: currentUser.id,
       mediaUrl: newStory.mediaUrl,
       caption: newStory.caption,
       mediaType: newStory.mediaType
-    }).catch(err => {
-      console.warn('[Supabase] Story creation persistence notice:', err);
+    }).then(created => {
+      if (created?.id) {
+        setStories(prev => prev.map(s => (s.id === tempId ? { ...s, id: created.id } : s)));
+        setInAppNotificationBanner('Story published! Visible for 24 hours.');
+      } else {
+        setInAppNotificationBanner('Story upload could not be confirmed by server.');
+      }
     });
   };
 
-  // Crossed Paths
+  // Crossed Paths, Capsules, Rooms, Intentions, Communities
   const sendConnectionRequest = (id: string) => {
-    setCrossedPaths(prev => prev.map(cp => {
-      if (cp.id === id) {
-        return { ...cp, hasSentRequest: true, requestStatus: 'PENDING' };
-      }
-      return cp;
-    }));
+    if (!requireAuth('Sign in to send a connection request.')) return;
+    setCrossedPaths(prev =>
+      prev.map(cp => (cp.id === id ? { ...cp, hasSentRequest: true, requestStatus: 'PENDING' } : cp))
+    );
   };
 
   const createCrossedPath = (encounter: Partial<CrossedPathEncounter>) => {
+    if (!requireAuth('Sign in to post a Crossed Path.')) return;
+    if (!currentUser) return;
     const newEncounter: CrossedPathEncounter = {
       id: `cp_${Date.now()}`,
       type: encounter.type || 'MISSED_CONNECTION',
       title: encounter.title || 'Untitled Encounter',
       description: encounter.description || '',
-      broadLocation: encounter.broadLocation || 'Mumbai, India',
+      broadLocation: encounter.broadLocation || 'Nearby',
       venueOrEventName: encounter.venueOrEventName,
-      encounterDate: 'Today, Just now',
+      encounterDate: 'Just now',
       poster: currentUser,
       isAnonymous: encounter.isAnonymous ?? true,
       expiresHoursRemaining: 72,
@@ -1094,8 +1643,9 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     closeModal();
   };
 
-  // Time Capsules
   const createTimeCapsule = (capsule: Partial<TimeCapsule>) => {
+    if (!requireAuth('Sign in to seal a Time Capsule.')) return;
+    if (!currentUser) return;
     const newCap: TimeCapsule = {
       id: `cap_${Date.now()}`,
       title: capsule.title || 'My Future Capsule',
@@ -1112,14 +1662,14 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     closeModal();
   };
 
-  // Unload Rooms
   const joinUnloadRoom = (room: UnloadRoom) => {
     setSelectedUnloadRoom(room);
     openModal('UNLOAD_ROOM', room);
   };
 
   const sendUnloadMessage = (roomId: string, text: string, isAnonymous: boolean) => {
-    if (!text.trim()) return;
+    if (!requireAuth('Sign in to participate in Unload Rooms.')) return;
+    if (!currentUser || !text.trim()) return;
     const newMsg = {
       id: `um_${Date.now()}`,
       senderName: isAnonymous ? 'Anonymous Listener' : currentUser.displayName,
@@ -1128,63 +1678,77 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       timestamp: 'Just now',
       isMe: true
     };
-
-    setUnloadRooms(prev => prev.map(r => {
-      if (r.id === roomId) {
-        return {
-          ...r,
-          recentMessages: [...r.recentMessages, newMsg]
-        };
-      }
-      return r;
-    }));
-
+    setUnloadRooms(prev =>
+      prev.map(r => (r.id === roomId ? { ...r, recentMessages: [...r.recentMessages, newMsg] } : r))
+    );
     if (selectedUnloadRoom?.id === roomId) {
-      setSelectedUnloadRoom(prev => prev ? {
-        ...prev,
-        recentMessages: [...prev.recentMessages, newMsg]
-      } : null);
+      setSelectedUnloadRoom(prev => (prev ? { ...prev, recentMessages: [...prev.recentMessages, newMsg] } : null));
     }
   };
 
-  // Spiritual Mode
-  const addIntention = (text: string) => {
-    if (!text.trim()) return;
-    const newIntention = {
-      id: `int_${Date.now()}`,
-      text: text.trim(),
-      timestamp: 'Just now',
-      isFulfilled: false
-    };
-    setIntentions(prev => [newIntention, ...prev]);
+  const addIntention = async (text: string) => {
+    if (!requireAuth('Sign in to save personal intentions.')) return;
+    if (!currentUser || !text.trim()) return;
+    const saved = await addSpiritualIntentionInSupabase(currentUser.id, text);
+    if (saved) {
+      setIntentions(prev => [saved, ...prev]);
+    }
   };
 
   const toggleIntention = (id: string) => {
-    setIntentions(prev => prev.map(i => i.id === id ? { ...i, isFulfilled: !i.isFulfilled } : i));
+    if (!requireAuth('Sign in to update intentions.')) return;
+    const target = intentions.find(i => i.id === id);
+    const nextFulfilled = !target?.isFulfilled;
+    setIntentions(prev => prev.map(i => (i.id === id ? { ...i, isFulfilled: nextFulfilled } : i)));
+    toggleSpiritualIntentionInSupabase(id, nextFulfilled);
   };
 
-  // Communities
   const toggleJoinCommunity = (commId: string) => {
-    setCommunities(prev => prev.map(c => {
-      if (c.id === commId) {
-        const isJoined = !c.isJoined;
-        return {
-          ...c,
-          isJoined,
-          membersCount: isJoined ? c.membersCount + 1 : Math.max(1, c.membersCount - 1)
-        };
-      }
-      return c;
-    }));
+    if (!requireAuth('Sign in to join communities.')) return;
+    if (!currentUser) return;
+    const target = communities.find(c => c.id === commId);
+    const shouldJoin = !target?.isJoined;
+    setCommunities(prev =>
+      prev.map(c =>
+        c.id === commId
+          ? {
+              ...c,
+              isJoined: shouldJoin,
+              membersCount: shouldJoin ? c.membersCount + 1 : Math.max(0, c.membersCount - 1)
+            }
+          : c
+      )
+    );
+    toggleJoinCommunityInSupabase({ communityId: commId, userId: currentUser.id, shouldJoin });
   };
 
-  // Shops
   const openShopDetail = (shop: VybeShop) => {
     setSelectedShop(shop);
     openModal('SHOP_DETAIL', shop);
   };
 
-  // Chat & Messaging
+  // Direct Messaging (100% Supabase-backed, Real Statuses & Retry & Read Receipts)
+  const selectedConversation = React.useMemo(() => {
+    if (!selectedConversationId && !selectedConversationPeerId) return null;
+    return (
+      conversations.find(
+        c =>
+          (selectedConversationId && c.id === selectedConversationId) ||
+          (selectedConversationPeerId && c.peerUser.id === selectedConversationPeerId)
+      ) || null
+    );
+  }, [conversations, selectedConversationId, selectedConversationPeerId]);
+
+  const refreshConversations = async () => {
+    if (!currentUser) return;
+    setIsLoadingConversations(true);
+    setDmError(null);
+    const res = await fetchConversationsForUser(currentUser.id);
+    setConversations(res.conversations);
+    if (res.error) setDmError(res.error);
+    setIsLoadingConversations(false);
+  };
+
   const selectConversation = (conv: Conversation | null) => {
     if (!conv) {
       setSelectedConversationId(null);
@@ -1193,97 +1757,261 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     setSelectedConversationId(conv.id);
     setSelectedConversationPeerId(conv.peerUser.id);
-    setConversations(prev => prev.map(c =>
-      (c.id === conv.id || c.peerUser.id === conv.peerUser.id)
-        ? { ...c, unreadCount: 0 }
-        : c
-    ));
-  };
+    setDmError(null);
 
-  const startConversationWithUser = (peerUser: User): Conversation => {
-    const existing = conversations.find(c => c.peerUser.id === peerUser.id);
-    if (existing) {
-      selectConversation(existing);
-      return existing;
+    const incomingIds = conv.messages.filter(m => !m.isMe).map(m => m.id);
+    if (currentUser && incomingIds.length > 0) {
+      markConversationReadInSupabase(currentUser.id, incomingIds);
     }
-    const created: Conversation = {
-      id: `conv_${Date.now()}_${peerUser.id}`,
-      peerUser,
-      lastMessage: 'Conversation started',
-      lastMessageTimestamp: 'Just now',
-      unreadCount: 0,
-      messages: []
-    };
-    setConversations(prev => [created, ...prev]);
-    setSelectedConversationId(created.id);
-    setSelectedConversationPeerId(peerUser.id);
-    return created;
-  };
 
-  const sendMessage = (convId: string, text: string) => {
-    const cleanText = text.trim();
-    if (!cleanText) return;
-    const clientMsgId = `dm_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const newMsg = {
-      id: clientMsgId,
-      senderId: currentUser.id,
-      text: cleanText,
-      timestamp: nowTime,
-      isMe: true
-    };
-
-    const existingConv = conversations.find(
-      c => c.id === convId || (selectedConversationPeerId && c.peerUser.id === selectedConversationPeerId)
+    setConversations(prev =>
+      prev.map(c =>
+        c.id === conv.id || c.peerUser.id === conv.peerUser.id ? { ...c, unreadCount: 0 } : c
+      )
     );
-    const targetPeerId = existingConv?.peerUser.id || selectedConversationPeerId || '';
 
-    setConversations(prev => {
-      const idx = prev.findIndex(c => c.id === convId || (targetPeerId && c.peerUser.id === targetPeerId));
-      if (idx === -1) return prev;
-      const target = prev[idx];
-      const updatedConv: Conversation = {
-        ...target,
-        lastMessage: cleanText,
-        lastMessageTimestamp: 'Just now',
-        unreadCount: 0,
-        messages: [...target.messages, newMsg]
-      };
-      const rest = prev.filter((_, i) => i !== idx);
-      return [updatedConv, ...rest];
-    });
-
-    if (targetPeerId) {
-      sendLiveDirectMessage({
-        conversationId: existingConv?.id || convId,
-        senderId: currentUser.id,
-        peerUserId: targetPeerId,
-        content: cleanText
-      }).then(serverRes => {
-        if (!serverRes) return;
-        setConversations(prev => prev.map(c => {
-          if (c.id === convId || c.peerUser.id === targetPeerId) {
-            return {
-              ...c,
-              id: serverRes.conversationId || c.id,
-              messages: c.messages.map(m =>
-                m.id === clientMsgId
-                  ? { ...m, id: serverRes.messageId || m.id }
-                  : m
-              )
-            };
+    if (currentUser && /^[0-9a-f-]{36}$/i.test(conv.id)) {
+      fetchMessagesForConversation(conv.id, currentUser.id).then(freshMsgs => {
+        if (freshMsgs.length > 0) {
+          setConversations(prev =>
+            prev.map(c => {
+              if (c.id !== conv.id) return c;
+              const failedOrPending = c.messages.filter(m => m.status === 'SENDING' || m.status === 'FAILED');
+              const existingIds = new Set(freshMsgs.map(m => m.id));
+              return {
+                ...c,
+                unreadCount: 0,
+                messages: [...freshMsgs, ...failedOrPending.filter(m => !existingIds.has(m.id))]
+              };
+            })
+          );
+          const unreadServerIds = freshMsgs.filter(m => !m.isMe).map(m => m.id);
+          if (unreadServerIds.length > 0) {
+            markConversationReadInSupabase(currentUser.id, unreadServerIds);
           }
-          return c;
-        }));
-        if (serverRes.conversationId) {
-          setSelectedConversationId(prevId => (prevId === convId ? serverRes.conversationId : prevId));
         }
       });
     }
   };
 
-  // Calls
+  const startConversationWithUser = async (
+    peerUser: User
+  ): Promise<{ ok: boolean; conversation?: Conversation; error?: string }> => {
+    if (!requireAuth('Sign in to send direct messages on VYBE.')) {
+      return { ok: false, error: 'Sign in required.' };
+    }
+    if (!currentUser) return { ok: false, error: 'Sign in required.' };
+    if (peerUser.id === currentUser.id) return { ok: false, error: 'You cannot message yourself.' };
+
+    setDmError(null);
+    const existing = conversations.find(c => c.peerUser.id === peerUser.id);
+    if (existing) {
+      selectConversation(existing);
+      return { ok: true, conversation: existing };
+    }
+
+    const rpc = await resolveOrCreateWebDirectConversation(currentUser.id, peerUser.id);
+    if (!rpc.conversationId) {
+      const msg = rpc.error || 'Cannot open conversation due to recipient privacy settings.';
+      setDmError(msg);
+      return { ok: false, error: msg };
+    }
+
+    const freshMsgs = await fetchMessagesForConversation(rpc.conversationId, currentUser.id);
+    const latest = freshMsgs[freshMsgs.length - 1];
+    const created: Conversation = {
+      id: rpc.conversationId,
+      peerUser,
+      lastMessage: latest?.text || '',
+      lastMessageTimestamp: latest?.createdAtIso ? formatRelativeTime(latest.createdAtIso) : 'Just now',
+      lastMessageCreatedAtIso: latest?.createdAtIso || new Date().toISOString(),
+      unreadCount: 0,
+      messages: freshMsgs
+    };
+
+    setConversations(prev => {
+      const filtered = prev.filter(c => c.id !== created.id && c.peerUser.id !== peerUser.id);
+      return [created, ...filtered];
+    });
+    setSelectedConversationId(created.id);
+    setSelectedConversationPeerId(peerUser.id);
+    return { ok: true, conversation: created };
+  };
+
+  const sendMessage = async (convId: string, text: string, attachmentFile?: Blob) => {
+    if (!requireAuth('Sign in to send messages.')) return;
+    if (!currentUser) return;
+
+    const cleanText = text.trim();
+    if (!cleanText && !attachmentFile) return;
+
+    const existingConv = conversations.find(
+      c => c.id === convId || (selectedConversationPeerId && c.peerUser.id === selectedConversationPeerId)
+    );
+    const targetPeerId = existingConv?.peerUser.id || selectedConversationPeerId || '';
+    if (!targetPeerId) {
+      setDmError('Recipient could not be resolved for this conversation.');
+      return;
+    }
+
+    setDmError(null);
+    const clientMsgId = `dm_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const nowTime = formatChatClock(new Date().toISOString());
+
+    const optimisticMsg: DirectMessage = {
+      id: clientMsgId,
+      clientId: clientMsgId,
+      senderId: currentUser.id,
+      text: cleanText || (attachmentFile ? 'Photo' : ''),
+      timestamp: nowTime,
+      createdAtIso: new Date().toISOString(),
+      isMe: true,
+      mediaType: attachmentFile ? 'IMAGE' : 'TEXT',
+      status: 'SENDING'
+    };
+
+    setConversations(prev => {
+      const idx = prev.findIndex(c => c.id === convId || c.peerUser.id === targetPeerId);
+      if (idx === -1) return prev;
+      const target = prev[idx];
+      const updatedConv: Conversation = {
+        ...target,
+        lastMessage: optimisticMsg.text,
+        lastMessageTimestamp: 'Sending...',
+        unreadCount: 0,
+        messages: [...target.messages, optimisticMsg]
+      };
+      return [updatedConv, ...prev.filter((_, i) => i !== idx)];
+    });
+
+    let uploadedMediaUrl: string | undefined;
+    if (attachmentFile) {
+      const uploaded = await uploadMediaBlobToStorage(
+        attachmentFile,
+        'chat-media',
+        'dm_attachment.webp',
+        attachmentFile.size,
+        { isPrivate: true }
+      );
+      if (!uploaded) {
+        const errText = 'Photo upload failed. Retry sending attachment.';
+        setDmError(errText);
+        setConversations(prev =>
+          prev.map(c =>
+            c.id === convId || c.peerUser.id === targetPeerId
+              ? {
+                  ...c,
+                  messages: c.messages.map(m =>
+                    m.id === clientMsgId ? { ...m, status: 'FAILED', errorMessage: errText } : m
+                  )
+                }
+              : c
+          )
+        );
+        return;
+      }
+      uploadedMediaUrl = uploaded.publicUrl;
+    }
+
+    const serverRes = await sendLiveDirectMessage({
+      conversationId: existingConv?.id || convId,
+      senderId: currentUser.id,
+      peerUserId: targetPeerId,
+      content: cleanText || (uploadedMediaUrl ? '📷 Photo' : ''),
+      mediaUrl: uploadedMediaUrl,
+      mediaType: uploadedMediaUrl ? 'IMAGE' : 'TEXT',
+      actorUsername: currentUser.username,
+      actorDisplayName: currentUser.displayName,
+      actorAvatarUrl: currentUser.avatarUrl
+    });
+
+    if (!serverRes.ok || !serverRes.messageId) {
+      const errMsg = serverRes.error || 'Message failed to deliver.';
+      setDmError(errMsg);
+      setConversations(prev =>
+        prev.map(c =>
+          c.id === convId || c.peerUser.id === targetPeerId
+            ? {
+                ...c,
+                lastMessageTimestamp: 'Failed',
+                messages: c.messages.map(m =>
+                  m.id === clientMsgId ? { ...m, status: 'FAILED', errorMessage: errMsg } : m
+                )
+              }
+            : c
+        )
+      );
+      return;
+    }
+
+    setConversations(prev =>
+      prev.map(c => {
+        if (c.id !== convId && c.peerUser.id !== targetPeerId) return c;
+        const serverId = serverRes.messageId!;
+        const filteredDup = c.messages.filter(m => m.id !== serverId || m.id === clientMsgId);
+        return {
+          ...c,
+          id: serverRes.conversationId || c.id,
+          lastMessage: optimisticMsg.text,
+          lastMessageTimestamp: 'Just now',
+          lastMessageCreatedAtIso: serverRes.createdAt || new Date().toISOString(),
+          messages: filteredDup.map(m =>
+            m.id === clientMsgId
+              ? {
+                  ...m,
+                  id: serverId,
+                  mediaUrl: uploadedMediaUrl || m.mediaUrl,
+                  timestamp: formatChatClock(serverRes.createdAt),
+                  createdAtIso: serverRes.createdAt || m.createdAtIso,
+                  status: 'SENT',
+                  errorMessage: undefined
+                }
+              : m
+          )
+        };
+      })
+    );
+
+    if (serverRes.conversationId && selectedConversationId === convId) {
+      setSelectedConversationId(serverRes.conversationId);
+    }
+  };
+
+  const retryMessage = async (convId: string, messageId: string) => {
+    const conv = conversations.find(c => c.id === convId);
+    const failedMsg = conv?.messages.find(m => m.id === messageId && m.status === 'FAILED');
+    if (!conv || !failedMsg) return;
+
+    setConversations(prev =>
+      prev.map(c =>
+        c.id === convId
+          ? { ...c, messages: c.messages.filter(m => m.id !== messageId) }
+          : c
+      )
+    );
+    await sendMessage(convId, failedMsg.text);
+  };
+
+  const sharePostToConversation = async (post: Post, convId: string, note?: string) => {
+    const shareUrl = `https://vybeonline.netlify.app/post/${encodeURIComponent(post.id)}`;
+    const bodyLines = [
+      ...(note?.trim() ? [note.trim()] : []),
+      `Shared post from @${post.author.username}${post.caption ? `: ${post.caption.slice(0, 140)}` : ''}`,
+      shareUrl
+    ];
+    await sendMessage(convId, bodyLines.join('\n'));
+    incrementPostShareCount(post.id);
+    setInAppNotificationBanner('Post shared cleanly via Direct Message.');
+  };
+
+  const markNotificationRead = (id: string) => {
+    setNotifications(prev => prev.map(n => (n.id === id ? { ...n, isRead: true } : n)));
+    markNotificationReadInSupabase(id);
+  };
+
+  // Calls & Audio
   const startCall = (peerUser: User, isVideo: boolean) => {
+    if (!requireAuth('Sign in to start a call.')) return;
     setCallState({
       isActive: true,
       isIncoming: false,
@@ -1296,11 +2024,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
     openModal('CALL_SCREEN');
   };
-
-  const acceptCall = () => {
-    setCallState(prev => ({ ...prev, isIncoming: false }));
-  };
-
+  const acceptCall = () => setCallState(prev => ({ ...prev, isIncoming: false }));
   const declineCall = () => {
     setCallState({
       isActive: false,
@@ -1314,126 +2038,183 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
     closeModal();
   };
+  const endCall = () => declineCall();
+  const toggleCallMute = () => setCallState(prev => ({ ...prev, isMuted: !prev.isMuted }));
+  const toggleCallCamera = () => setCallState(prev => ({ ...prev, isCameraOff: !prev.isCameraOff }));
 
-  const endCall = () => {
-    declineCall();
-  };
-
-  const toggleCallMute = () => {
-    setCallState(prev => ({ ...prev, isMuted: !prev.isMuted }));
-  };
-
-  const toggleCallCamera = () => {
-    setCallState(prev => ({ ...prev, isCameraOff: !prev.isCameraOff }));
-  };
-
-  const dismissBanner = () => {
-    setInAppNotificationBanner(null);
+  const togglePlayAudio = (trackTitle: string, previewUrl?: string) => {
+    if (isPlayingAudio && currentAudioTrack === trackTitle) {
+      audioElement?.pause();
+      setIsPlayingAudio(false);
+      setCurrentAudioTrack(null);
+      return;
+    }
+    if (audioElement) audioElement.pause();
+    if (!previewUrl) {
+      setIsPlayingAudio(false);
+      setCurrentAudioTrack(null);
+      setInAppNotificationBanner('Audio preview is unavailable for this track.');
+      return;
+    }
+    const newAudio = new Audio(previewUrl);
+    newAudio
+      .play()
+      .then(() => {
+        setIsPlayingAudio(true);
+        setCurrentAudioTrack(trackTitle);
+        setAudioElement(newAudio);
+      })
+      .catch(() => {
+        setIsPlayingAudio(false);
+        setCurrentAudioTrack(null);
+      });
+    newAudio.onended = () => {
+      setIsPlayingAudio(false);
+      setCurrentAudioTrack(null);
+    };
   };
 
   return (
-    <VybeContext.Provider value={{
-      currentUser,
-      allUsers,
-      viewedProfileUser,
-      openUserProfile,
-      closeUserProfile,
-      setCurrentUserMood,
-      setCurrentUserPulse,
-      appMode,
-      setAppMode,
-      growTab,
-      setGrowTab,
-      selectedTab,
-      setSelectedTab,
-      activeModal,
-      openModal,
-      closeModal,
-      selectedMoodFilter,
-      setSelectedMoodFilter,
-      followingIds,
-      requestedFollowIds,
-      dismissedSuggestionIds,
-      toggleFollowUser,
-      dismissSuggestedUser,
-      restoreDismissedSuggestions,
-      posts,
-      reels,
-      toggleLikePost,
-      ensurePostLoved,
-      reactToPost,
-      toggleCommentLike,
-      reactToComment,
-      toggleSavePost,
-      addCommentToPost,
-      createPost,
-      sharePostToConversation,
-      incrementPostShareCount,
-      sharedPostModalId,
-      openSharedPostModal,
-      closeSharedPostModal,
-      hasMorePosts,
-      loadMorePosts,
-      isLoadingMorePosts,
-      themeMode: effectiveThemeMode,
-      setThemeMode,
-      toggleThemeMode,
-      stories,
-      activeStoryAuthorId,
-      activeStoryIndex,
-      openStoryViewer,
-      closeStoryViewer,
-      nextStory,
-      prevStory,
-      toggleStoryLike,
-      reactToStory,
-      createStory,
-      crossedPaths,
-      sendConnectionRequest,
-      createCrossedPath,
-      timeCapsules,
-      createTimeCapsule,
-      unloadRooms,
-      selectedUnloadRoom,
-      joinUnloadRoom,
-      sendUnloadMessage,
-      intentions,
-      addIntention,
-      toggleIntention,
-      reflections,
-      communities,
-      toggleJoinCommunity,
-      shops,
-      selectedShop,
-      openShopDetail,
-      conversations,
-      selectedConversation,
-      selectConversation,
-      startConversationWithUser,
-      sendMessage,
-      callState,
-      startCall,
-      acceptCall,
-      declineCall,
-      endCall,
-      toggleCallMute,
-      toggleCallCamera,
-      currentAudioTrack,
-      isPlayingAudio,
-      togglePlayAudio,
-      githubRepo,
-      setGithubRepo,
-      updateInfo,
-      isCheckingUpdates,
-      updateError,
-      hasAvailableUpdate,
-      checkForUpdates,
-      resetGithubRepo,
-      inAppNotificationBanner,
-      dismissBanner,
-      isDbConnected,
-      refreshFromDatabase: syncDatabase
-    }}>
+    <VybeContext.Provider
+      value={{
+        authUser,
+        isAuthChecking,
+        currentUser,
+        showAuthModal,
+        authModalPrompt,
+        authModalInitialMode,
+        openAuthModal,
+        closeAuthModal,
+        requireAuth,
+        signIn,
+        signUp,
+        requestPasswordReset,
+        signOut,
+        updateMyProfile,
+        allUsers,
+        viewedProfileUser,
+        viewedProfilePosts,
+        profileRouteTarget,
+        profileLookupState,
+        profileLookupError,
+        openUserProfile,
+        navigateToPublicProfile,
+        closeUserProfile,
+        setCurrentUserMood,
+        setCurrentUserPulse,
+        isDownloadPage,
+        closeDownloadPage,
+        appMode,
+        setAppMode,
+        growTab,
+        setGrowTab,
+        selectedTab,
+        setSelectedTab,
+        activeModal,
+        openModal,
+        closeModal,
+        selectedMoodFilter,
+        setSelectedMoodFilter,
+        followingIds,
+        requestedFollowIds,
+        dismissedSuggestionIds,
+        toggleFollowUser,
+        dismissSuggestedUser,
+        restoreDismissedSuggestions,
+        posts,
+        reels,
+        toggleLikePost,
+        ensurePostLoved,
+        reactToPost,
+        toggleCommentLike,
+        reactToComment,
+        toggleSavePost,
+        addCommentToPost,
+        loadCommentsForPost,
+        createPost,
+        sharePostToConversation,
+        incrementPostShareCount,
+        sharedPostModalId,
+        resolvedSharedPost,
+        sharedPostState,
+        sharedPostError,
+        openSharedPostModal,
+        closeSharedPostModal,
+        hasMorePosts,
+        loadMorePosts,
+        isLoadingMorePosts,
+        themeMode: effectiveThemeMode,
+        setThemeMode,
+        toggleThemeMode,
+        stories,
+        activeStoryAuthorId,
+        activeStoryIndex,
+        openStoryViewer,
+        closeStoryViewer,
+        nextStory,
+        prevStory,
+        toggleStoryLike,
+        reactToStory,
+        createStory,
+        crossedPaths,
+        sendConnectionRequest,
+        createCrossedPath,
+        timeCapsules,
+        createTimeCapsule,
+        unloadRooms,
+        selectedUnloadRoom,
+        joinUnloadRoom,
+        sendUnloadMessage,
+        intentions,
+        addIntention,
+        toggleIntention,
+        reflections,
+        communities,
+        toggleJoinCommunity,
+        shops,
+        selectedShop,
+        openShopDetail,
+        conversations,
+        isLoadingConversations,
+        dmError,
+        dismissDmError,
+        isRealtimeConnected,
+        selectedConversation,
+        selectConversation,
+        startConversationWithUser,
+        sendMessage,
+        retryMessage,
+        refreshConversations,
+        notifications,
+        markNotificationRead,
+        callState,
+        startCall,
+        acceptCall,
+        declineCall,
+        endCall,
+        toggleCallMute,
+        toggleCallCamera,
+        currentAudioTrack,
+        isPlayingAudio,
+        togglePlayAudio,
+        githubRepo,
+        setGithubRepo,
+        updateInfo,
+        isCheckingUpdates,
+        updateError,
+        hasAvailableUpdate,
+        checkForUpdates,
+        resetGithubRepo,
+        inAppNotificationBanner,
+        dismissBanner,
+        isInitialLoading,
+        isSyncing,
+        isDbConnected,
+        isOffline,
+        dbError,
+        refreshFromDatabase: syncDatabase
+      }}
+    >
       {children}
     </VybeContext.Provider>
   );

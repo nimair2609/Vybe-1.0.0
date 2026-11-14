@@ -9,7 +9,7 @@ import { FingerHeartReaction, FingerHeartDoubleTapOverlay, FingerHeartIcon } fro
 import { useVybe } from '../context/VybeContext';
 import { formatRelativeTimestamp } from '../utils/timestamp';
 import { resolveMediaUrl } from '../services/supabaseService';
-import { OptimizedImage } from './OptimizedImage';
+import { OptimizedImage, VybeAvatar } from './OptimizedImage';
 
 interface PostCardProps {
   post: Post;
@@ -27,6 +27,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
     reactToComment,
     toggleSavePost,
     addCommentToPost,
+    loadCommentsForPost,
     sharePostToConversation,
     incrementPostShareCount,
     isPlayingAudio,
@@ -85,7 +86,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
 
   const moodConfig = post.moodZone ? MOOD_DEFINITIONS[post.moodZone] : null;
   const canonicalPostUrl = `${window.location.origin}/post/${encodeURIComponent(post.id)}`;
-  const isRestrictedPrivate = Boolean(post.author.isPrivate && post.author.id !== currentUser.id);
+  const isRestrictedPrivate = Boolean(post.author.isPrivate && post.author.id !== currentUser?.id);
   const displayTimestamp = formatRelativeTimestamp(post.createdAtIso, post.timestamp, nowTick);
 
   const handleCopyLink = async () => {
@@ -135,12 +136,11 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
             onClick={() => openUserProfile(post.author)}
             className="relative shrink-0 cursor-pointer"
           >
-            <OptimizedImage
+            <VybeAvatar
               src={post.author.avatarUrl}
-              alt={post.author.displayName}
-              width={40}
-              height={40}
-              className="w-10 h-10 rounded-full object-cover border border-[var(--vybe-border)]"
+              name={post.author.displayName || post.author.username}
+              size={40}
+              className="w-10 h-10"
             />
             {post.author.isOnline && (
               <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-[#22C55E] border-2 border-[var(--vybe-surface)] rounded-full" />
@@ -315,7 +315,11 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
             {/* 2. Comment */}
             <button
               type="button"
-              onClick={() => setShowComments(!showComments)}
+              onClick={() => {
+                const nextOpen = !showComments;
+                setShowComments(nextOpen);
+                if (nextOpen) loadCommentsForPost(post.id);
+              }}
               className="inline-flex items-center justify-center gap-1.5 h-9 px-1.5 rounded-lg text-xs font-semibold text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)] transition-colors"
             >
               <span className="w-5 h-5 inline-flex items-center justify-center">
@@ -442,10 +446,11 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
                   className="flex items-center justify-between p-2 rounded-xl bg-[var(--vybe-surface)] border border-[var(--vybe-border)]"
                 >
                   <div className="flex items-center gap-2.5 overflow-hidden">
-                    <img
+                    <VybeAvatar
                       src={conv.peerUser.avatarUrl}
-                      alt={conv.peerUser.displayName}
-                      className="w-7 h-7 rounded-full object-cover shrink-0"
+                      name={conv.peerUser.displayName || conv.peerUser.username}
+                      size={28}
+                      className="w-7 h-7 shrink-0"
                     />
                     <div className="truncate">
                       <p className="text-xs font-bold text-[var(--vybe-text)] truncate">{conv.peerUser.displayName}</p>
@@ -485,12 +490,14 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
             ) : (
               post.comments?.map(c => (
                 <div key={c.id} className="flex items-start gap-2.5 text-xs">
-                  <img
-                    src={c.author.avatarUrl}
-                    alt={c.author.displayName}
-                    onClick={() => openUserProfile(c.author)}
-                    className="w-7 h-7 rounded-full object-cover shrink-0 mt-0.5 cursor-pointer"
-                  />
+                  <div onClick={() => openUserProfile(c.author)} className="shrink-0 mt-0.5 cursor-pointer">
+                    <VybeAvatar
+                      src={c.author.avatarUrl}
+                      name={c.author.displayName || c.author.username}
+                      size={28}
+                      className="w-7 h-7"
+                    />
+                  </div>
                   <div className="flex-1 bg-[var(--vybe-surface)] border border-[var(--vybe-border)] rounded-xl p-2.5">
                     <div className="flex items-center justify-between gap-2">
                       <span

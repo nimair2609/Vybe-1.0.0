@@ -1,9 +1,11 @@
 import React from 'react';
-import { X, Lock } from 'lucide-react';
+import { X, Lock, Loader2, Smartphone, Download, ExternalLink, WifiOff, AlertTriangle } from 'lucide-react';
 import { useVybe } from './context/VybeContext';
 import { Navbar } from './components/Navbar';
 import { BottomNav } from './components/BottomNav';
 import { PostCard } from './components/PostCard';
+import { AuthModal } from './components/AuthModal';
+import { VybeAvatar } from './components/OptimizedImage';
 
 // Views
 import { FeedView } from './views/FeedView';
@@ -41,26 +43,62 @@ export const App: React.FC = () => {
     callState,
     acceptCall,
     declineCall,
-    posts,
-    reels,
-    currentUser,
     sharedPostModalId,
+    resolvedSharedPost,
+    sharedPostState,
+    sharedPostError,
     closeSharedPostModal,
+    isDownloadPage,
+    closeDownloadPage,
+    updateInfo,
+    githubRepo,
+    isOffline,
+    dbError,
+    refreshFromDatabase,
     inAppNotificationBanner,
     dismissBanner
   } = useVybe();
 
-  const resolvedSharedPost = sharedPostModalId
-    ? [...posts, ...reels].find(p => p.id === sharedPostModalId) || null
-    : null;
-  const isSharedPostPrivateBlocked = Boolean(
-    resolvedSharedPost &&
-      resolvedSharedPost.author.isPrivate &&
-      resolvedSharedPost.author.id !== currentUser.id &&
-      !resolvedSharedPost.author.isFollowedByMe
-  );
-
   const renderCurrentTab = () => {
+    if (isDownloadPage) {
+      const apkUrl =
+        updateInfo?.downloadUrl ||
+        `https://github.com/${githubRepo}/releases/latest`;
+      return (
+        <div className="max-w-lg mx-auto px-4 py-12 pb-28">
+          <div className="p-7 rounded-3xl bg-[var(--vybe-surface)] border border-[var(--vybe-border)] shadow-xl text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-[var(--vybe-accent-soft)] text-[var(--vybe-accent)] flex items-center justify-center mx-auto">
+              <Smartphone className="w-7 h-7" />
+            </div>
+            <h1 className="text-xl font-extrabold brand-font text-[var(--vybe-text)]">
+              Download VYBE for Android
+            </h1>
+            <p className="text-xs text-[var(--vybe-text-secondary)] leading-relaxed">
+              Get the latest signed VYBE Android APK ({updateInfo?.tagName || 'Latest Release'}) with native notifications, reels, and instant QR scanning.
+            </p>
+            <div className="flex flex-col gap-2.5 pt-2">
+              <a
+                href={apkUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-3 rounded-xl bg-[var(--vybe-accent)] text-white keep-white text-xs font-bold flex items-center justify-center gap-2 hover:opacity-95"
+              >
+                <Download className="w-4 h-4" />
+                <span>{updateInfo?.downloadUrl ? 'Download VYBE APK' : 'View Latest GitHub Release'}</span>
+              </a>
+              <button
+                type="button"
+                onClick={closeDownloadPage}
+                className="w-full py-2.5 rounded-xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] text-xs font-semibold text-[var(--vybe-text)]"
+              >
+                Continue to VYBE Web
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     if (appMode === 'GROW') {
       return <GrowWorkspaceView />;
     }
@@ -88,16 +126,32 @@ export const App: React.FC = () => {
 
   return (
     <div className="vybe-app-shell min-h-screen bg-[var(--vybe-bg)] text-[var(--vybe-text)] flex flex-col antialiased transition-colors">
-      {/* Top Navbar */}
       <Navbar />
+
+      {/* Offline / Connection Warning Strip */}
+      {(isOffline || dbError) && (
+        <div className="bg-amber-500/12 border-b border-amber-500/30 px-4 py-2 text-xs text-amber-600 dark:text-amber-400 flex items-center justify-center gap-2.5">
+          {isOffline ? <WifiOff className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
+          <span>{isOffline ? 'You are offline. Live sync paused.' : dbError}</span>
+          {!isOffline && (
+            <button
+              type="button"
+              onClick={() => refreshFromDatabase(true)}
+              className="font-bold underline ml-1"
+            >
+              Retry
+            </button>
+          )}
+        </div>
+      )}
 
       {/* In-App Confirmation Banner */}
       {inAppNotificationBanner && (
-        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-[var(--vybe-surface)] border border-[var(--vybe-border)] shadow-2xl flex items-center gap-3 text-xs font-semibold text-[var(--vybe-text)]">
-          <span>{inAppNotificationBanner}</span>
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-[var(--vybe-surface)] border border-[var(--vybe-border)] shadow-2xl flex items-center gap-3 text-xs font-semibold text-[var(--vybe-text)] max-w-[92vw]">
+          <span className="truncate">{inAppNotificationBanner}</span>
           <button
             onClick={dismissBanner}
-            className="text-[var(--vybe-accent)] font-bold hover:underline"
+            className="text-[var(--vybe-accent)] font-bold hover:underline shrink-0"
           >
             OK
           </button>
@@ -108,10 +162,11 @@ export const App: React.FC = () => {
       {callState.isActive && callState.isIncoming && callState.peerUser && (
         <div className="fixed top-16 inset-x-4 z-50 max-w-md mx-auto p-4 rounded-2xl bg-[var(--vybe-surface)] border border-[var(--vybe-accent)] shadow-2xl flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <img
+            <VybeAvatar
               src={callState.peerUser.avatarUrl}
-              alt={callState.peerUser.displayName}
-              className="w-10 h-10 rounded-full object-cover border border-[var(--vybe-border)]"
+              name={callState.peerUser.displayName}
+              username={callState.peerUser.username}
+              className="w-10 h-10 rounded-full"
             />
             <div>
               <p className="text-xs font-bold text-[var(--vybe-text)]">
@@ -137,34 +192,51 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Main Tab Content */}
       <div className="flex-1 w-full">{renderCurrentTab()}</div>
 
-      {/* Bottom Floating Navigation Dock */}
       <BottomNav />
 
       {/* Shared Post Deep-Link Modal */}
       {sharedPostModalId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto bg-[var(--vybe-surface)] border border-[var(--vybe-border)] rounded-3xl shadow-2xl p-4 space-y-3 no-scrollbar">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+          onClick={closeSharedPostModal}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto bg-[var(--vybe-surface)] border border-[var(--vybe-border)] rounded-3xl shadow-2xl p-4 space-y-3 no-scrollbar"
+          >
             <div className="flex items-center justify-between px-2 pb-2 border-b border-[var(--vybe-border)]">
               <h3 className="text-sm font-bold text-[var(--vybe-text)]">Shared Post</h3>
-              <button
-                onClick={closeSharedPostModal}
-                className="p-1.5 rounded-full text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)]"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <a
+                  href={`vybe://post/${encodeURIComponent(sharedPostModalId)}`}
+                  className="px-2.5 py-1 rounded-lg bg-[var(--vybe-accent-soft)] text-[var(--vybe-accent)] text-[11px] font-bold inline-flex items-center gap-1"
+                >
+                  <span>Open in App</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+                <button
+                  onClick={closeSharedPostModal}
+                  aria-label="Close shared post"
+                  className="p-1.5 rounded-full text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)]"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
-            {!resolvedSharedPost || isSharedPostPrivateBlocked ? (
+            {sharedPostState === 'LOADING' ? (
+              <div className="p-10 text-center space-y-2">
+                <Loader2 className="w-7 h-7 animate-spin text-[var(--vybe-accent)] mx-auto" />
+                <p className="text-xs text-[var(--vybe-text-secondary)]">Loading shared post...</p>
+              </div>
+            ) : !resolvedSharedPost || sharedPostState === 'PRIVATE' || sharedPostState === 'NOT_FOUND' || sharedPostState === 'ERROR' ? (
               <div className="p-6 text-center space-y-2">
-                <Lock className="w-8 h-8 text-red-400 mx-auto" />
+                <Lock className="w-8 h-8 text-amber-500 mx-auto" />
                 <p className="text-sm font-bold text-[var(--vybe-text)]">Post Unavailable</p>
                 <p className="text-xs text-[var(--vybe-text-secondary)]">
-                  {isSharedPostPrivateBlocked
-                    ? 'This post belongs to a private account.'
-                    : 'This post may have been deleted or the link is invalid.'}
+                  {sharedPostError || 'This post may have been deleted or belongs to a private account.'}
                 </p>
               </div>
             ) : (
@@ -173,6 +245,9 @@ export const App: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Global Web Auth Modal */}
+      <AuthModal />
 
       {/* Active Modals */}
       {activeModal === 'GITHUB_UPDATES' && <GitHubUpdateModal />}

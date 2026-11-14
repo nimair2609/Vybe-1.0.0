@@ -1,12 +1,13 @@
 import React from 'react';
 import {
-  Sparkles, RefreshCw, X, PlusCircle, Camera, Users, MapPin, Compass
+  Sparkles, RefreshCw, X, PlusCircle, Camera, Users, MapPin, Compass, LogIn, AlertTriangle
 } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
 import { StoryCarousel } from '../components/StoryCarousel';
 import { PostCard } from '../components/PostCard';
 import { FindYourVybeSection } from '../components/FindYourVybeSection';
 import { VybeEmptyState, VybeCard } from '../components/VybeDesignSystem';
+import { VybeAvatar } from '../components/OptimizedImage';
 import { OfficialBadge } from '../components/Badges';
 import { MOOD_DEFINITIONS, MoodType } from '../types';
 
@@ -19,11 +20,15 @@ export const FeedView: React.FC = () => {
     setSelectedMoodFilter,
     setSelectedTab,
     openModal,
+    openAuthModal,
     inAppNotificationBanner,
     dismissBanner,
     hasMorePosts,
     loadMorePosts,
-    isLoadingMorePosts
+    isLoadingMorePosts,
+    isInitialLoading,
+    dbError,
+    refreshFromDatabase
   } = useVybe();
 
   const filteredPosts = posts.filter(post => {
@@ -109,51 +114,105 @@ export const FeedView: React.FC = () => {
       <div className="max-w-6xl mx-auto px-4 pt-5 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Main Feed Column */}
         <main className="lg:col-span-7 xl:col-span-7 max-w-xl w-full mx-auto lg:mx-0 lg:max-w-none space-y-4">
-          {/* Quick Post Composer Card */}
-          <VybeCard padding="sm" className="flex items-center gap-3">
-            <img
-              src={currentUser.avatarUrl}
-              alt={currentUser.displayName}
-              className="w-10 h-10 rounded-full object-cover border border-[var(--vybe-border)] shrink-0"
-            />
-            <button
-              type="button"
-              onClick={() => openModal('CREATE_POST')}
-              className="flex-1 text-left px-4 py-2.5 rounded-full bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] hover:border-[var(--vybe-accent)] text-xs text-[var(--vybe-text-secondary)] transition-colors"
-            >
-              Share a moment, photo, or mood vibe...
-            </button>
-            <button
-              type="button"
-              onClick={() => openModal('CREATE_STORY')}
-              title="Add Story"
-              className="p-2.5 rounded-xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] hover:border-[var(--vybe-accent)] text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-accent)] transition-colors shrink-0"
-            >
-              <Camera className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => openModal('CREATE_POST')}
-              title="Create Post"
-              className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-[var(--vybe-accent)] text-white keep-white text-xs font-bold hover:opacity-95 transition-opacity shrink-0"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span>Post</span>
-            </button>
-          </VybeCard>
+          {/* Quick Post Composer Card (or Sign In Prompt) */}
+          {currentUser ? (
+            <VybeCard padding="sm" className="flex items-center gap-3">
+              <VybeAvatar
+                src={currentUser.avatarUrl}
+                name={currentUser.displayName}
+                size={40}
+                className="w-10 h-10 shrink-0"
+              />
+              <button
+                type="button"
+                onClick={() => openModal('CREATE_POST')}
+                className="flex-1 text-left px-4 py-2.5 rounded-full bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] hover:border-[var(--vybe-accent)] text-xs text-[var(--vybe-text-secondary)] transition-colors"
+              >
+                Share a moment, photo, or mood vibe...
+              </button>
+              <button
+                type="button"
+                onClick={() => openModal('CREATE_STORY')}
+                title="Add Story"
+                className="p-2.5 rounded-xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] hover:border-[var(--vybe-accent)] text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-accent)] transition-colors shrink-0"
+              >
+                <Camera className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => openModal('CREATE_POST')}
+                title="Create Post"
+                className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-[var(--vybe-accent)] text-white keep-white text-xs font-bold hover:opacity-95 transition-opacity shrink-0"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>Post</span>
+              </button>
+            </VybeCard>
+          ) : (
+            <VybeCard padding="sm" className="flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-0.5 min-w-0">
+                <p className="text-xs font-bold text-[var(--vybe-text)]">Join the live VYBE community</p>
+                <p className="text-[11px] text-[var(--vybe-text-secondary)]">
+                  Sign in with your email or @username to post, react, and message friends.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => openAuthModal('SIGN_IN')}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[var(--vybe-accent)] text-white keep-white text-xs font-bold hover:opacity-95 shrink-0"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Sign In</span>
+              </button>
+            </VybeCard>
+          )}
 
           {/* Inline Find Your Vybe on Mobile/Tablet */}
           <div className="lg:hidden">
             <FindYourVybeSection />
           </div>
 
-          {filteredPosts.length === 0 ? (
+          {dbError && (
+            <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{dbError}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => refreshFromDatabase()}
+                className="px-3 py-1 rounded-lg bg-red-500/20 text-red-300 font-bold hover:bg-red-500/30 shrink-0"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {isInitialLoading && filteredPosts.length === 0 ? (
+            <div className="space-y-4">
+              {[0, 1].map((idx) => (
+                <div
+                  key={idx}
+                  className="p-4 rounded-2xl bg-[var(--vybe-surface)] border border-[var(--vybe-border)] space-y-3 animate-pulse"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-[var(--vybe-elevated)]" />
+                    <div className="space-y-1.5 flex-1">
+                      <div className="h-3 w-32 rounded bg-[var(--vybe-elevated)]" />
+                      <div className="h-2.5 w-20 rounded bg-[var(--vybe-elevated)]" />
+                    </div>
+                  </div>
+                  <div className="h-44 rounded-xl bg-[var(--vybe-elevated)]" />
+                </div>
+              ))}
+            </div>
+          ) : filteredPosts.length === 0 ? (
             <VybeEmptyState
               icon={Sparkles}
               title="No posts in this vibe yet"
               subtitle={`Share a photo, thought, or track in the ${selectedMoodFilter} feed.`}
-              actionLabel="Create Post"
-              onAction={() => openModal('CREATE_POST')}
+              actionLabel={currentUser ? 'Create Post' : 'Sign In to Post'}
+              onAction={() => (currentUser ? openModal('CREATE_POST') : openAuthModal('SIGN_IN'))}
             />
           ) : (
             <>
@@ -190,39 +249,56 @@ export const FeedView: React.FC = () => {
 
         {/* Desktop Sticky Right Sidebar */}
         <aside className="hidden lg:flex lg:col-span-5 xl:col-span-5 flex-col gap-4 sticky top-[120px]">
-          {/* Compact Current User Card */}
-          <VybeCard padding="sm" className="flex items-center justify-between gap-3">
-            <div
-              onClick={() => setSelectedTab('PROFILE')}
-              className="flex items-center gap-3 min-w-0 cursor-pointer"
-            >
-              <img
-                src={currentUser.avatarUrl}
-                alt={currentUser.displayName}
-                className="w-11 h-11 rounded-full object-cover border border-[var(--vybe-border)] shrink-0"
-              />
-              <div className="min-w-0">
-                <div className="flex items-center gap-1">
-                  <span className="text-sm font-bold text-[var(--vybe-text)] truncate hover:underline">
-                    {currentUser.displayName}
-                  </span>
-                  {currentUser.badges?.map(b => (
-                    <OfficialBadge key={b} badge={b} size="sm" />
-                  ))}
+          {/* Compact Current User Card or Sign In Card */}
+          {currentUser ? (
+            <VybeCard padding="sm" className="flex items-center justify-between gap-3">
+              <div
+                onClick={() => setSelectedTab('PROFILE')}
+                className="flex items-center gap-3 min-w-0 cursor-pointer"
+              >
+                <VybeAvatar
+                  src={currentUser.avatarUrl}
+                  name={currentUser.displayName}
+                  size={44}
+                  className="w-11 h-11 shrink-0"
+                />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1">
+                    <span className="text-sm font-bold text-[var(--vybe-text)] truncate hover:underline">
+                      {currentUser.displayName}
+                    </span>
+                    {currentUser.badges?.map(b => (
+                      <OfficialBadge key={b} badge={b} size="sm" />
+                    ))}
+                  </div>
+                  <p className="text-xs text-[var(--vybe-text-secondary)] truncate">
+                    @{currentUser.username} · {currentUser.followersCount.toLocaleString()} followers
+                  </p>
                 </div>
-                <p className="text-xs text-[var(--vybe-text-secondary)] truncate">
-                  @{currentUser.username} · {currentUser.followersCount.toLocaleString()} followers
-                </p>
               </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setSelectedTab('PROFILE')}
-              className="px-3 py-1.5 rounded-xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] hover:border-[var(--vybe-accent)] text-xs font-semibold text-[var(--vybe-text)] shrink-0 transition-colors"
-            >
-              Profile
-            </button>
-          </VybeCard>
+              <button
+                type="button"
+                onClick={() => setSelectedTab('PROFILE')}
+                className="px-3 py-1.5 rounded-xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] hover:border-[var(--vybe-accent)] text-xs font-semibold text-[var(--vybe-text)] shrink-0 transition-colors"
+              >
+                Profile
+              </button>
+            </VybeCard>
+          ) : (
+            <VybeCard padding="sm" className="space-y-2.5">
+              <p className="text-sm font-bold text-[var(--vybe-text)]">Sign in to VYBE</p>
+              <p className="text-xs text-[var(--vybe-text-secondary)] leading-relaxed">
+                Access direct messages, notifications, stories, and synced profile updates across Web and Android.
+              </p>
+              <button
+                type="button"
+                onClick={() => openAuthModal('SIGN_IN')}
+                className="w-full py-2.5 rounded-xl bg-[var(--vybe-accent)] text-white keep-white text-xs font-bold hover:opacity-95"
+              >
+                Sign In or Create Account
+              </button>
+            </VybeCard>
+          )}
 
           {/* Find Your Vybe Discovery */}
           <FindYourVybeSection />

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Sparkles, Users, X, ArrowRight, Lock, Check, Search } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
 import { OfficialBadge } from './Badges';
+import { VybeAvatar } from './OptimizedImage';
 import { User } from '../types';
 
 type FyvTab = 'LINK_UP' | 'SUGGEST';
@@ -62,13 +63,13 @@ export const FindYourVybeSection: React.FC = () => {
 
     const myTags = new Set(
       posts
-        .filter((p) => p.author?.id === currentUser.id)
+        .filter((p) => p.author?.id === currentUser?.id)
         .flatMap((p) => p.tags || [])
         .map((t) => t.toLowerCase())
     );
 
     return Array.from(byId.values())
-      .filter((u) => u.id && u.id !== currentUser.id && !u.isBlocked)
+      .filter((u) => u.id && u.id !== currentUser?.id && !u.isBlocked)
       .map((u) => {
         const peers = interactedByUser.get(u.id) || new Set<string>();
         let mutuals = 0;
@@ -87,7 +88,7 @@ export const FindYourVybeSection: React.FC = () => {
           .flatMap((p) => p.tags || [])
           .map((t) => t.toLowerCase());
         const sharedTag = uTags.find((t) => myTags.has(t));
-        const sameMood = Boolean(currentUser.currentMood && u.currentMood === currentUser.currentMood);
+        const sameMood = Boolean(currentUser?.currentMood && u.currentMood === currentUser.currentMood);
 
         let score = 0;
         if (mutuals > 0) score += 40 + mutuals * 12;
@@ -265,10 +266,11 @@ export const FindYourVybeSection: React.FC = () => {
                   )}
 
                   <div className="relative mb-2">
-                    <img
+                    <VybeAvatar
                       src={u.avatarUrl}
-                      alt={u.displayName}
-                      className="w-14 h-14 rounded-full object-cover border-2 border-[#8B5CF6]/60"
+                      name={u.displayName || u.username}
+                      size={56}
+                      className="w-14 h-14 border-2 border-[#8B5CF6]/60"
                     />
                     {u.isOnline && (
                       <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-[#10162B]" />
@@ -379,10 +381,11 @@ export const FindYourVybeSection: React.FC = () => {
                       className="flex items-center justify-between gap-3 p-3 rounded-2xl border border-[var(--vybe-border)] bg-[var(--vybe-elevated)] cursor-pointer hover:border-[var(--vybe-accent)]/50 transition-colors"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <img
+                        <VybeAvatar
                           src={u.avatarUrl}
-                          alt={u.displayName}
-                          className="w-11 h-11 rounded-full object-cover shrink-0"
+                          name={u.displayName || u.username}
+                          size={44}
+                          className="w-11 h-11 shrink-0"
                         />
                         <div className="min-w-0">
                           <div className="flex items-center gap-1">

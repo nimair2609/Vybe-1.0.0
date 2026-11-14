@@ -48,12 +48,14 @@ object QrCodeGenerator {
     }
   }
 
-  const val CANONICAL_WEB_HOST = "ais-pre-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app"
+  const val CANONICAL_WEB_HOST = "vybeonline.netlify.app"
   const val CANONICAL_DEV_HOST = "ais-dev-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app"
   const val CANONICAL_WEB_BASE = "https://$CANONICAL_WEB_HOST"
 
   private val SUPPORTED_WEB_HOSTS = setOf(
     CANONICAL_WEB_HOST.lowercase(),
+    "www.vybeonline.netlify.app",
+    "ais-pre-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app",
     CANONICAL_DEV_HOST.lowercase(),
     "vybe.social",
     "www.vybe.social"
@@ -82,18 +84,16 @@ object QrCodeGenerator {
 
   /**
    * Generates the canonical HTTPS URL for VYBE profile QR codes and shares.
-   * Uses the immutable user ID as the primary path segment so username changes never break old QR codes.
+   * Uses `/u/{username}` when a username is available and falls back to `/profile/{id}`.
    */
   fun buildCanonicalProfileUrl(immutableUserId: String, username: String): String {
     val cleanId = sanitizeSegment(immutableUserId)
     val cleanUser = sanitizeUsername(username)
-    val primarySegment = cleanId.ifBlank { cleanUser }
-    if (primarySegment.isBlank()) return CANONICAL_WEB_BASE
-    return if (cleanUser.isNotBlank()) {
-      "$CANONICAL_WEB_BASE/profile/$primarySegment?u=${java.net.URLEncoder.encode(cleanUser, "UTF-8")}"
-    } else {
-      "$CANONICAL_WEB_BASE/profile/$primarySegment"
+    if (cleanUser.isNotBlank()) {
+      return "$CANONICAL_WEB_BASE/u/${java.net.URLEncoder.encode(cleanUser, "UTF-8")}"
     }
+    if (cleanId.isBlank()) return CANONICAL_WEB_BASE
+    return "$CANONICAL_WEB_BASE/profile/$cleanId"
   }
 
   /**

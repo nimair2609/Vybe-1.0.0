@@ -111,6 +111,9 @@ export interface User {
   isPrivate?: boolean;
   isBlocked?: boolean;
   role?: string;
+  firstName?: string;
+  lastName?: string;
+  messagePrivacy?: 'EVERYONE' | 'FOLLOWERS' | 'NOBODY';
 }
 
 export type VybeReaction = 'LOVE' | 'FLAME' | 'LAUGH' | 'WOW' | 'SAD';
@@ -254,14 +257,19 @@ export interface UnloadRoom {
 
 export interface DirectMessage {
   id: string;
+  clientId?: string;
   senderId: string;
   text: string;
   timestamp: string;
+  createdAtIso?: string;
   isMe: boolean;
   mediaUrl?: string;
   mediaType?: 'TEXT' | 'IMAGE' | 'AUDIO' | 'LOCATION';
   reactions?: string[];
   replyToText?: string;
+  replyToId?: string;
+  status?: 'SENDING' | 'SENT' | 'FAILED';
+  errorMessage?: string;
 }
 
 export interface Conversation {
@@ -269,10 +277,39 @@ export interface Conversation {
   peerUser: User;
   lastMessage: string;
   lastMessageTimestamp: string;
+  lastMessageCreatedAtIso?: string;
   unreadCount: number;
   messages: DirectMessage[];
   chatTheme?: 'CYBER_LUXE' | 'SUNSET' | 'NEON_VIOLET' | 'EMERALD';
   isMuted?: boolean;
+  isGroup?: boolean;
+  groupName?: string;
+  peerBlocked?: boolean;
+}
+
+export interface NotificationItem {
+  id: string;
+  recipientId: string;
+  actorId?: string;
+  actorUsername?: string;
+  actorDisplayName?: string;
+  actorAvatarUrl?: string;
+  type: string;
+  title: string;
+  body: string;
+  targetId?: string;
+  conversationId?: string;
+  isRead: boolean;
+  createdAtIso: string;
+  timestamp: string;
+}
+
+export interface AuthSessionUser {
+  id: string;
+  email: string;
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: number;
 }
 
 export interface CatalogItem {

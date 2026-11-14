@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.aistudio.vybe.nzqpvx",
+      "sha256_cert_fingerprints": [
+        "7D:CC:AD:18:56:20:B2:0C:A0:8D:D9:0E:9A:C6:CA:92:39:4A:7B:BB:59:15:C1:C9:09:B9:51:A2:D1:2B:50:79"
+      ]
+    }
+  }
+]

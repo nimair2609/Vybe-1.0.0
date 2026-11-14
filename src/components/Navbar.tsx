@@ -2,32 +2,34 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Bell, Shield, Volume2, VolumeX, ChevronDown, Moon, Sun,
   RefreshCw, Feather, PlaySquare, Home, Compass, Sparkles,
-  MapPin, Users, MessageCircle, Plus, Settings, FolderKanban, User
+  MapPin, Users, MessageCircle, Plus, Settings, FolderKanban, User, LogIn
 } from 'lucide-react';
 import { useVybe, MainTab, GrowTab } from '../context/VybeContext';
 import { MOOD_DEFINITIONS, MoodType } from '../types';
 import { isVerifiedAdminSession } from '../services/supabaseService';
 import { VybeBrandMark, VybeModeSwitch } from './VybeDesignSystem';
+import { VybeAvatar } from './OptimizedImage';
 
 export const Navbar: React.FC = () => {
   const {
-    currentUser, setCurrentUserMood, openModal,
+    currentUser, setCurrentUserMood, openModal, openAuthModal,
     hasAvailableUpdate, isPlayingAudio, currentAudioTrack,
     togglePlayAudio, themeMode, toggleThemeMode,
     isDbConnected, refreshFromDatabase,
     appMode, setAppMode,
     selectedTab, setSelectedTab,
     growTab, setGrowTab,
-    conversations
+    conversations, notifications
   } = useVybe();
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showMoodMenu, setShowMoodMenu] = useState(false);
   const moodMenuRef = useRef<HTMLDivElement | null>(null);
 
-  const currentMoodConfig = currentUser.currentMood ? MOOD_DEFINITIONS[currentUser.currentMood] : null;
+  const currentMoodConfig = currentUser?.currentMood ? MOOD_DEFINITIONS[currentUser.currentMood] : null;
   const isGrow = appMode === 'GROW';
   const totalUnread = conversations.reduce((acc, c) => acc + c.unreadCount, 0);
+  const unreadNotifs = notifications.filter(n => !n.isRead).length + totalUnread;
 
   useEffect(() => {
     if (!showMoodMenu) return;
@@ -162,7 +164,7 @@ export const Navbar: React.FC = () => {
                   <div className="grid grid-cols-2 gap-1.5 p-1.5">
                     {(Object.keys(MOOD_DEFINITIONS) as MoodType[]).map(m => {
                       const item = MOOD_DEFINITIONS[m];
-                      const isSelected = currentUser.currentMood === m;
+                      const isSelected = currentUser?.currentMood === m;
                       return (
                         <button
                           key={m}
@@ -250,7 +252,7 @@ export const Navbar: React.FC = () => {
             className="relative p-2 rounded-xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)] transition-colors"
           >
             <Bell className="w-4 h-4" />
-            {(totalUnread > 0 || hasAvailableUpdate) && (
+            {(unreadNotifs > 0 || hasAvailableUpdate) && (
               <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[var(--vybe-accent)]" />
             )}
           </button>
@@ -281,23 +283,35 @@ export const Navbar: React.FC = () => {
             </button>
           )}
 
-          {/* Profile Avatar Shortcut */}
-          <button
-            type="button"
-            onClick={() => {
-              if (isGrow) setGrowTab('PROFILE');
-              else setSelectedTab('PROFILE');
-            }}
-            aria-label="Open profile"
-            title={currentUser.displayName}
-            className="w-8 h-8 rounded-full overflow-hidden border border-[var(--vybe-border)] hover:border-[var(--vybe-accent)] transition-colors shrink-0"
-          >
-            <img
-              src={currentUser.avatarUrl}
-              alt={currentUser.displayName}
-              className="w-full h-full object-cover"
-            />
-          </button>
+          {/* Profile Avatar Shortcut or Sign In CTA */}
+          {currentUser ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (isGrow) setGrowTab('PROFILE');
+                else setSelectedTab('PROFILE');
+              }}
+              aria-label="Open profile"
+              title={currentUser.displayName}
+              className="rounded-full overflow-hidden border border-[var(--vybe-border)] hover:border-[var(--vybe-accent)] transition-colors shrink-0"
+            >
+              <VybeAvatar
+                src={currentUser.avatarUrl}
+                name={currentUser.displayName}
+                size={32}
+                className="w-8 h-8"
+              />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => openAuthModal('SIGN_IN')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--vybe-accent)] text-white keep-white text-xs font-bold shadow-sm hover:opacity-95 transition-opacity shrink-0"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>Sign In</span>
+            </button>
+          )}
         </div>
       </div>
 

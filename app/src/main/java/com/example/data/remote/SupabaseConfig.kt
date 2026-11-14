@@ -217,7 +217,7 @@ object SupabaseConfig {
       !key.contains("placeholder")
   }
 
-  const val CANONICAL_VYBE_WEB_URL = "https://ais-pre-lfp6zq6ltqfgleylo2u72h-707648560411.asia-northeast1.run.app"
+  const val CANONICAL_VYBE_WEB_URL = "https://vybeonline.netlify.app"
 
   val vybeBackendBaseUrl: String
     get() = CANONICAL_VYBE_WEB_URL

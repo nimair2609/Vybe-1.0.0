@@ -347,16 +347,19 @@ class VybeUpgradeVerificationTest {
     val urlA = QrCodeGenerator.buildCanonicalProfileUrl(userA.id, userA.username)
     val urlB = QrCodeGenerator.buildCanonicalProfileUrl(userB.id, userB.username)
 
-    assertTrue(urlA.startsWith("${SupabaseConfig.CANONICAL_VYBE_WEB_URL}/profile/${userA.id}"))
+    assertEquals("${SupabaseConfig.CANONICAL_VYBE_WEB_URL}/u/${userA.username}", urlA)
     assertFalse("QR URL must never leak tokens or keys", urlA.contains("token", ignoreCase = true))
     assertNotEquals("Different users must generate distinct canonical QR URLs", urlA, urlB)
 
     val parsedA = QrCodeGenerator.parseProfileDeepLink(urlA)
+    val parsedLegacyA = QrCodeGenerator.parseProfileDeepLink("${SupabaseConfig.CANONICAL_VYBE_WEB_URL}/profile/${userA.id}?u=${userA.username}")
     val parsedB = QrCodeGenerator.parseProfileDeepLink("vybe://profile/${userB.id}?u=${userB.username}")
 
     assertNotNull(parsedA)
-    assertEquals(userA.id, parsedA?.userId)
     assertEquals("arjun_music", parsedA?.username)
+    assertNotNull(parsedLegacyA)
+    assertEquals(userA.id, parsedLegacyA?.userId)
+    assertEquals("arjun_music", parsedLegacyA?.username)
 
     assertNotNull(parsedB)
     assertEquals(userB.id, parsedB?.userId)
