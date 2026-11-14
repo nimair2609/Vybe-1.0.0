@@ -1,6 +1,5 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *));
 
 :root {
   --font-display: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
@@ -14,11 +13,12 @@
   --vybe-text: #F8FAFC;
   --vybe-text-secondary: #A1ACBE;
   --vybe-text-muted: #64748B;
-  --vybe-accent: #7C3AED;
-  --vybe-accent-soft: #8B5CF6;
-  --vybe-accent-secondary: #2563EB;
+  --vybe-accent: #8B5CF6;
+  --vybe-accent-strong: #7C3AED;
+  --vybe-accent-soft: rgba(139, 92, 246, 0.14);
+  --vybe-accent-secondary: #00C6FF;
   --vybe-accent-tint: rgba(124, 58, 237, 0.14);
-  --vybe-nav-bg: rgba(12, 14, 20, 0.94);
+  --vybe-nav-bg: rgba(12, 14, 20, 0.92);
   --vybe-hero-start: #1E1B4B;
   --vybe-hero-end: #131620;
 }
@@ -30,12 +30,13 @@ html[data-mode="social"][data-theme="light"] {
   --vybe-border: #E2E8F0;
   --vybe-text: #0F172A;
   --vybe-text-secondary: #475569;
-  --vybe-text-muted: #94A3B8;
+  --vybe-text-muted: #64748B;
   --vybe-accent: #7C3AED;
-  --vybe-accent-soft: #8B5CF6;
+  --vybe-accent-strong: #6D28D9;
+  --vybe-accent-soft: rgba(124, 58, 237, 0.11);
   --vybe-accent-secondary: #2563EB;
-  --vybe-accent-tint: rgba(124, 58, 237, 0.1);
-  --vybe-nav-bg: rgba(255, 255, 255, 0.95);
+  --vybe-accent-tint: rgba(124, 58, 237, 0.10);
+  --vybe-nav-bg: rgba(255, 255, 255, 0.94);
   --vybe-hero-start: #EDE9FE;
   --vybe-hero-end: #E0E7FF;
 }
@@ -48,12 +49,13 @@ html[data-mode="grow"] {
   --vybe-border: #E2E8F0;
   --vybe-text: #0F172A;
   --vybe-text-secondary: #475569;
-  --vybe-text-muted: #94A3B8;
+  --vybe-text-muted: #64748B;
   --vybe-accent: #2563EB;
-  --vybe-accent-soft: #3B82F6;
+  --vybe-accent-strong: #1D4ED8;
+  --vybe-accent-soft: rgba(37, 99, 235, 0.11);
   --vybe-accent-secondary: #0284C7;
-  --vybe-accent-tint: rgba(37, 99, 235, 0.1);
-  --vybe-nav-bg: rgba(255, 255, 255, 0.96);
+  --vybe-accent-tint: rgba(37, 99, 235, 0.10);
+  --vybe-nav-bg: rgba(255, 255, 255, 0.95);
   --vybe-hero-start: #EDE9FE;
   --vybe-hero-end: #DBEAFE;
 }
@@ -67,12 +69,46 @@ html[data-mode="grow"][data-theme="dark"] {
   --vybe-text-secondary: #94A3B8;
   --vybe-text-muted: #64748B;
   --vybe-accent: #3B82F6;
-  --vybe-accent-soft: #60A5FA;
+  --vybe-accent-strong: #2563EB;
+  --vybe-accent-soft: rgba(59, 130, 246, 0.15);
   --vybe-accent-secondary: #0EA5E9;
   --vybe-accent-tint: rgba(59, 130, 246, 0.16);
   --vybe-nav-bg: rgba(13, 19, 34, 0.95);
   --vybe-hero-start: #1E1B4B;
   --vybe-hero-end: #0F172A;
+}
+
+/* Enterprise SaaS Admin Command Center Tokens */
+html[data-mode="admin"][data-theme="dark"] {
+  --vybe-bg: #080C16;
+  --vybe-surface: #0F1627;
+  --vybe-elevated: #172035;
+  --vybe-border: #222F4A;
+  --vybe-text: #F8FAFC;
+  --vybe-text-secondary: #94A3B8;
+  --vybe-text-muted: #64748B;
+  --vybe-accent: #8B5CF6;
+  --vybe-accent-strong: #7C3AED;
+  --vybe-accent-soft: rgba(139, 92, 246, 0.16);
+  --vybe-accent-secondary: #0EA5E9;
+  --vybe-accent-tint: rgba(14, 165, 233, 0.14);
+  --vybe-nav-bg: rgba(12, 18, 32, 0.94);
+}
+
+html[data-mode="admin"][data-theme="light"] {
+  --vybe-bg: #F4F6FA;
+  --vybe-surface: #FFFFFF;
+  --vybe-elevated: #F1F5F9;
+  --vybe-border: #E2E8F0;
+  --vybe-text: #0F172A;
+  --vybe-text-secondary: #475569;
+  --vybe-text-muted: #64748B;
+  --vybe-accent: #7C3AED;
+  --vybe-accent-strong: #6D28D9;
+  --vybe-accent-soft: rgba(124, 58, 237, 0.10);
+  --vybe-accent-secondary: #0284C7;
+  --vybe-accent-tint: rgba(2, 132, 199, 0.10);
+  --vybe-nav-bg: rgba(255, 255, 255, 0.95);
 }
 
 body {
@@ -83,11 +119,11 @@ body {
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-h1, h2, h3, .brand-font {
+h1, h2, h3, h4, .brand-font {
   font-family: var(--font-display);
 }
 
-/* Semantic surface overrides so existing components seamlessly honor Social/Grow & Dark/Light tokens */
+/* Semantic surface overrides so existing components seamlessly honor Social/Grow/Admin & Dark/Light tokens */
 .vybe-app-shell {
   background-color: var(--vybe-bg) !important;
   color: var(--vybe-text) !important;
@@ -106,24 +142,31 @@ h1, h2, h3, .brand-font {
 }
 
 html[data-theme="light"] .vybe-app-shell .bg-\[\#060714\],
-html[data-theme="light"] .vybe-app-shell .bg-\[\#090A0F\] {
+html[data-theme="light"] .vybe-app-shell .bg-\[\#090A0F\],
+html[data-theme="light"] .vybe-app-shell .bg-\[\#090D1C\],
+html[data-theme="light"] .vybe-app-shell .bg-\[\#0a0f1d\] {
   background-color: var(--vybe-bg) !important;
 }
 
 html[data-theme="light"] .vybe-app-shell .bg-\[\#060714\]\/90,
 html[data-theme="light"] .vybe-app-shell .bg-\[\#060714\]\/95,
 html[data-theme="light"] .vybe-app-shell .bg-\[\#060714\]\/80,
+html[data-theme="light"] .vybe-app-shell .bg-\[\#060714\]\/60,
+html[data-theme="light"] .vybe-app-shell .bg-\[\#060714\]\/40,
 html[data-theme="light"] .vybe-app-shell .bg-\[\#0C0E14\]\/95 {
   background-color: var(--vybe-nav-bg) !important;
 }
 
 html[data-theme="light"] .vybe-app-shell .bg-\[\#101322\],
+html[data-theme="light"] .vybe-app-shell .bg-\[\#10162B\],
+html[data-theme="light"] .vybe-app-shell .bg-\[\#0B0F1F\],
 html[data-theme="light"] .vybe-app-shell .bg-\[\#12151E\] {
   background-color: var(--vybe-surface) !important;
 }
 
 html[data-theme="light"] .vybe-app-shell .bg-\[\#1A1F36\],
 html[data-theme="light"] .vybe-app-shell .bg-\[\#191D29\],
+html[data-theme="light"] .vybe-app-shell .bg-\[\#151C33\],
 html[data-theme="light"] .vybe-app-shell .bg-\[\#1A1F36\]\/60 {
   background-color: var(--vybe-elevated) !important;
 }
@@ -131,6 +174,10 @@ html[data-theme="light"] .vybe-app-shell .bg-\[\#1A1F36\]\/60 {
 html[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\],
 html[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\]\/80,
 html[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\]\/60,
+html[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\]\/50,
+html[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\]\/40,
+html[data-theme="light"] .vybe-app-shell .border-\[\#262E4A\]\/30,
+html[data-theme="light"] .vybe-app-shell .border-\[\#263152\],
 html[data-theme="light"] .vybe-app-shell .border-\[\#23293A\] {
   border-color: var(--vybe-border) !important;
 }
@@ -147,8 +194,9 @@ html[data-theme="light"] .vybe-app-shell .text-gray-500:not(.keep-white) {
   color: var(--vybe-text-secondary) !important;
 }
 
-/* Map dark classes inside dark mode cleanly to unified obsidian tokens */
-html[data-theme="dark"] .vybe-app-shell .bg-\[\#060714\] {
+/* Map legacy dark classes inside dark mode cleanly to unified obsidian tokens */
+html[data-theme="dark"] .vybe-app-shell .bg-\[\#060714\],
+html[data-theme="dark"] .vybe-app-shell .bg-\[\#0a0f1d\] {
   background-color: var(--vybe-bg) !important;
 }
 html[data-theme="dark"] .vybe-app-shell .bg-\[\#101322\] {
@@ -178,5 +226,5 @@ html[data-theme="dark"] .vybe-app-shell .border-\[\#262E4A\]\/60 {
 }
 
 .animate-fade-in {
-  animation: fadeIn 0.22s ease-out;
+  animation: fadeIn 0.2s ease-out;
 }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   MessageCircle, Share2, Bookmark, Volume2,
-  VolumeX, Music, ArrowUp, ArrowDown, Sparkles, Pause, Play
+  VolumeX, Music, ArrowUp, ArrowDown, Sparkles, Pause, Play, X
 } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
 import { OfficialBadge } from '../components/Badges';
@@ -417,23 +417,31 @@ export const ReelsView: React.FC = () => {
 
       {/* Reel Comments Drawer */}
       {showComments && (
-        <div className="absolute inset-x-0 bottom-0 h-3/5 bg-[#101322]/95 backdrop-blur-xl border-t border-[#262E4A] rounded-t-3xl p-4 z-40 flex flex-col animate-in slide-in-from-bottom">
-          <div className="flex items-center justify-between pb-3 border-b border-[#262E4A]">
-            <h4 className="text-sm font-bold text-white">Reel Comments ({currentReel.commentsCount})</h4>
+        <div className="absolute inset-x-0 bottom-0 h-3/5 bg-[var(--vybe-surface)]/95 backdrop-blur-xl border-t border-[var(--vybe-border)] rounded-t-3xl p-4 z-40 flex flex-col animate-in slide-in-from-bottom">
+          <div className="flex items-center justify-between pb-3 border-b border-[var(--vybe-border)]">
+            <h4 className="text-sm font-bold text-[var(--vybe-text)]">
+              Reel Comments ({currentReel.commentsCount})
+            </h4>
             <button
               type="button"
               onClick={() => setShowComments(false)}
-              className="text-gray-400 text-xs hover:text-white px-2 py-1"
+              aria-label="Close comments"
+              className="text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)] p-1.5 rounded-lg hover:bg-[var(--vybe-elevated)]"
             >
-              ✕
+              <X className="w-4 h-4" />
             </button>
           </div>
           <div className="flex-1 overflow-y-auto py-3 space-y-2.5 no-scrollbar">
             {!currentReel.comments || currentReel.comments.length === 0 ? (
-              <p className="text-xs text-gray-400 text-center py-4">No comments yet. Be the first!</p>
+              <p className="text-xs text-[var(--vybe-text-secondary)] text-center py-4">
+                No comments yet. Be the first!
+              </p>
             ) : (
               currentReel.comments.map(c => (
-                <div key={c.id} className="flex items-start justify-between gap-2 p-2.5 rounded-xl bg-[#060714]/80 border border-[#262E4A]">
+                <div
+                  key={c.id}
+                  className="flex items-start justify-between gap-2 p-2.5 rounded-xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)]"
+                >
                   <div className="flex items-start gap-2">
                     <OptimizedImage
                       src={c.author.avatarUrl}
@@ -443,8 +451,8 @@ export const ReelsView: React.FC = () => {
                       className="w-7 h-7 rounded-full object-cover shrink-0"
                     />
                     <div>
-                      <span className="text-xs font-bold text-white">{c.author.displayName}</span>
-                      <p className="text-xs text-gray-300 mt-0.5">{c.content}</p>
+                      <span className="text-xs font-bold text-[var(--vybe-text)]">{c.author.displayName}</span>
+                      <p className="text-xs text-[var(--vybe-text-secondary)] mt-0.5">{c.content}</p>
                     </div>
                   </div>
                   <FingerHeartReaction
@@ -459,13 +467,13 @@ export const ReelsView: React.FC = () => {
               ))
             )}
           </div>
-          <div className="pt-2 flex items-center gap-2 border-t border-[#262E4A]">
+          <div className="pt-2 flex items-center gap-2 border-t border-[var(--vybe-border)]">
             <input
               type="text"
               value={commentText}
               onChange={(e) => setCommentText(e.target.value)}
               placeholder="Add a comment..."
-              className="flex-1 px-3 py-2 rounded-xl bg-[#060714] border border-[#262E4A] text-xs text-white focus:outline-none focus:border-[#8B5CF6]"
+              className="flex-1 px-3 py-2 rounded-xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] text-xs text-[var(--vybe-text)] placeholder-[var(--vybe-text-muted)] focus:outline-none focus:border-[var(--vybe-accent)]"
             />
             <button
               type="button"
@@ -475,7 +483,7 @@ export const ReelsView: React.FC = () => {
                   setCommentText('');
                 }
               }}
-              className="px-3.5 py-2 rounded-xl bg-[#8B5CF6] text-white keep-white text-xs font-bold"
+              className="px-3.5 py-2 rounded-xl bg-[var(--vybe-accent)] text-white keep-white text-xs font-bold"
             >
               Send
             </button>

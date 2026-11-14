@@ -7059,7 +7059,7 @@ class VybeRepository private constructor() {
       isJoined = true,
       membershipStatus = "ACCEPTED",
       myRole = "ADMIN",
-      createdAtIso = java.time.Instant.now().toString()
+      createdAtIso = TimestampUtils.nowIsoUtc()
     )
     _communities.value = listOf(optimistic) + _communities.value
     _activeCommunity.value = optimistic
@@ -7160,7 +7160,7 @@ class VybeRepository private constructor() {
     }
 
     val tempId = "cp_local_${System.currentTimeMillis()}"
-    val nowIso = java.time.Instant.now().toString()
+    val nowIso = TimestampUtils.nowIsoUtc()
     val optimistic = CommunityPost(
       id = tempId,
       communityId = communityId,
@@ -7227,7 +7227,7 @@ class VybeRepository private constructor() {
     val existing = _communityPosts.value.firstOrNull { it.id == postId } ?: return
     if (existing.author.id != me.id) return // Author-only edit enforced client-side & via Supabase RLS
 
-    val nowIso = java.time.Instant.now().toString()
+    val nowIso = TimestampUtils.nowIsoUtc()
     _communityPosts.value = _communityPosts.value.map { post ->
       if (post.id == postId) {
         post.copy(
@@ -7310,7 +7310,7 @@ class VybeRepository private constructor() {
       postId = postId,
       author = me,
       content = clean,
-      createdAtIso = java.time.Instant.now().toString()
+      createdAtIso = TimestampUtils.nowIsoUtc()
     )
     val prev = _communityComments.value[postId].orEmpty()
     _communityComments.value = _communityComments.value + (postId to (prev + optimistic))
@@ -8488,7 +8488,7 @@ class VybeRepository private constructor() {
       journeyId = journeyId,
       dayNumber = dayNumber,
       reflectionText = text,
-      createdAtIso = java.time.Instant.now().toString(),
+      createdAtIso = TimestampUtils.nowIsoUtc(),
       isSharedPublicly = isShared
     )
     _growReflections.value = listOf(ref) + _growReflections.value

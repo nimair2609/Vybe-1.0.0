@@ -142,15 +142,20 @@ object SupabaseConfig {
       else -> rawPart
     }
     return try {
-      String(java.util.Base64.getUrlDecoder().decode(padded), Charsets.UTF_8)
+      val decodedBytes = android.util.Base64.decode(
+        rawPart,
+        android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP
+      )
+      String(decodedBytes, Charsets.UTF_8)
     } catch (_: Throwable) {
-      try {
-        val decodedBytes = android.util.Base64.decode(
-          rawPart,
-          android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP
-        )
-        String(decodedBytes, Charsets.UTF_8)
-      } catch (_: Throwable) {
+      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O || android.os.Build.VERSION.SDK_INT == 0) {
+        try {
+          @Suppress("NewApi")
+          String(java.util.Base64.getUrlDecoder().decode(padded), Charsets.UTF_8)
+        } catch (_: Throwable) {
+          null
+        }
+      } else {
         null
       }
     }

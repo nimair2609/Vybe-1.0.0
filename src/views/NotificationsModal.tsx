@@ -1,98 +1,117 @@
 import React from 'react';
-import { Bell, X, MessageCircle, Sparkles, UserPlus } from 'lucide-react';
+import { Bell, X, MessageCircle, Sparkles, CheckCircle2 } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
-import { FingerHeartIcon } from '../components/FingerHeartReaction';
+import { VybeEmptyState } from '../components/VybeDesignSystem';
 
 export const NotificationsModal: React.FC = () => {
-  const { closeModal } = useVybe();
+  const {
+    closeModal,
+    conversations,
+    selectConversation,
+    setSelectedTab,
+    updateInfo,
+    openModal
+  } = useVybe();
 
-  const notifications = [
-    {
-      id: 'n_01',
-      type: 'REACTION' as const,
-      iconColor: 'text-[#FF2E93]',
-      bgColor: 'bg-[#FF2E93]/15',
-      title: 'Priya Kapoor reacted to your vibe',
-      subtitle: 'Sent a Finger Heart on Bandra sea link post',
-      time: '12m ago'
-    },
-    {
-      id: 'n_02',
-      type: 'COMMENT' as const,
-      icon: MessageCircle,
-      iconColor: 'text-[#00C6FF]',
-      bgColor: 'bg-[#00C6FF]/10',
-      title: 'New Comment from Rohan Verma',
-      subtitle: '"The color grading is absolutely immaculate!"',
-      time: '45m ago'
-    },
-    {
-      id: 'n_03',
-      type: 'SYSTEM' as const,
-      icon: Sparkles,
-      iconColor: 'text-[#FFB703]',
-      bgColor: 'bg-[#FFB703]/10',
-      title: 'Official VIP Badge Verified',
-      subtitle: 'Your VIP status is now active on your public profile card.',
-      time: '2h ago'
-    },
-    {
-      id: 'n_04',
-      type: 'FOLLOW' as const,
-      icon: UserPlus,
-      iconColor: 'text-[#22C55E]',
-      bgColor: 'bg-[#22C55E]/10',
-      title: 'Crossed Path Match Found!',
-      subtitle: 'Someone replied to your Bandra Blue Tokai missed connection.',
-      time: '5h ago'
-    }
-  ];
+  const unreadConversations = conversations.filter(c => (c.unreadCount || 0) > 0);
+  const hasUpdate = Boolean(updateInfo?.isNewerThanInstalled);
+
+  const hasAnyNotifications = unreadConversations.length > 0 || hasUpdate;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-xl animate-fade-in">
-      <div className="relative w-full max-w-md max-h-[85vh] overflow-y-auto bg-[#101322] border border-[#262E4A] rounded-3xl shadow-2xl p-6 text-white no-scrollbar space-y-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in"
+      onClick={closeModal}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Notifications"
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-md max-h-[85vh] overflow-y-auto bg-[var(--vybe-surface)] border border-[var(--vybe-border)] rounded-3xl shadow-2xl p-6 text-[var(--vybe-text)] no-scrollbar space-y-4"
+      >
         {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-[#262E4A]">
+        <div className="flex items-center justify-between pb-3 border-b border-[var(--vybe-border)]">
           <div className="flex items-center gap-2">
-            <Bell className="w-5 h-5 text-[#00C6FF]" />
-            <h2 className="text-base font-bold brand-font text-white">Notifications</h2>
+            <Bell className="w-5 h-5 text-[var(--vybe-accent)]" />
+            <h2 className="text-base font-bold brand-font text-[var(--vybe-text)]">Notifications</h2>
           </div>
           <button
             type="button"
             onClick={closeModal}
-            className="p-1.5 text-gray-400 hover:text-white rounded-lg"
+            aria-label="Close notifications"
+            className="p-1.5 text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)] hover:bg-[var(--vybe-elevated)] rounded-lg"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Notifications List */}
-        <div className="space-y-2.5">
-          {notifications.map(n => {
-            const Icon = n.icon;
-            return (
-              <div
-                key={n.id}
-                className="p-3.5 rounded-2xl bg-[#060714] border border-[#262E4A] flex items-start gap-3 hover:border-[#00C6FF]/40 transition-colors"
+        {/* Real Session Notifications List */}
+        {!hasAnyNotifications ? (
+          <VybeEmptyState
+            icon={CheckCircle2}
+            title="You're all caught up"
+            subtitle="Unread direct messages and platform release alerts will appear here automatically."
+          />
+        ) : (
+          <div className="space-y-2.5">
+            {hasUpdate && updateInfo && (
+              <button
+                type="button"
+                onClick={() => {
+                  closeModal();
+                  openModal('GITHUB_UPDATES');
+                }}
+                className="w-full text-left p-3.5 rounded-2xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] flex items-start gap-3 hover:border-[var(--vybe-accent)] transition-colors"
               >
-                <div className={`p-2.5 rounded-xl ${n.bgColor} ${n.iconColor} shrink-0 mt-0.5 flex items-center justify-center`}>
-                  {n.type === 'REACTION' ? (
-                    <FingerHeartIcon isLiked={true} size={18} />
-                  ) : (
-                    Icon && <Icon className="w-4 h-4" />
-                  )}
+                <div className="p-2.5 rounded-xl bg-[var(--vybe-accent-soft)] text-[var(--vybe-accent)] shrink-0 mt-0.5">
+                  <Sparkles className="w-4 h-4" />
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <h4 className="text-xs font-bold text-white">{n.title}</h4>
-                    <span className="text-[10px] text-gray-400 shrink-0">{n.time}</span>
+                    <h4 className="text-xs font-bold text-[var(--vybe-text)] truncate">
+                      New VYBE Release {updateInfo.tagName}
+                    </h4>
+                    <span className="text-[10px] text-[var(--vybe-accent)] font-bold shrink-0">Update</span>
                   </div>
-                  <p className="text-[11px] text-gray-300 mt-0.5 leading-relaxed">{n.subtitle}</p>
+                  <p className="text-[11px] text-[var(--vybe-text-secondary)] mt-0.5 line-clamp-2">
+                    {updateInfo.name || 'Tap to view release notes and download APK.'}
+                  </p>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              </button>
+            )}
+
+            {unreadConversations.map(conv => (
+              <button
+                key={`notif_${conv.peerUser.id}`}
+                type="button"
+                onClick={() => {
+                  selectConversation(conv);
+                  setSelectedTab('INBOX');
+                  closeModal();
+                }}
+                className="w-full text-left p-3.5 rounded-2xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] flex items-start gap-3 hover:border-[var(--vybe-accent)] transition-colors"
+              >
+                <div className="p-2.5 rounded-xl bg-sky-500/12 text-sky-500 shrink-0 mt-0.5">
+                  <MessageCircle className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="text-xs font-bold text-[var(--vybe-text)] truncate">
+                      {conv.unreadCount} unread from {conv.peerUser.displayName}
+                    </h4>
+                    <span className="text-[10px] text-[var(--vybe-text-muted)] shrink-0">
+                      {conv.lastMessageTimestamp}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[var(--vybe-text-secondary)] mt-0.5 line-clamp-1">
+                    {conv.lastMessage || 'New message received'}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -59,24 +59,6 @@ class MainActivity : ComponentActivity() {
   private val pendingNotificationPayload = MutableStateFlow<Bundle?>(null)
   private var activeViewModel: VybeViewModel? = null
 
-  private val requestPermissionLauncher = registerForActivityResult(
-    androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
-  ) { isGranted: Boolean ->
-    Log.i("MainActivity", "POST_NOTIFICATIONS permission result: $isGranted")
-    try {
-      VybeRepository.get().refreshDeviceNotificationDiagnostics()
-    } catch (_: Exception) {}
-  }
-
-  private fun requestNotificationPermissionIfEligible() {
-    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-      val perm = android.Manifest.permission.POST_NOTIFICATIONS
-      if (androidx.core.content.ContextCompat.checkSelfPermission(this, perm) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-        requestPermissionLauncher.launch(perm)
-      }
-    }
-  }
-
   private fun checkAndRegisterDeviceToken() {
     try {
       val session = SessionManager.getInstance(applicationContext)
@@ -149,7 +131,6 @@ class MainActivity : ComponentActivity() {
     }
 
     checkAndRegisterDeviceToken()
-    requestNotificationPermissionIfEligible()
 
     enableEdgeToEdge()
     setContent {
@@ -174,6 +155,9 @@ class MainActivity : ComponentActivity() {
           androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
         ) { isGranted ->
           Log.d("MainActivity", "POST_NOTIFICATIONS granted: $isGranted")
+          try {
+            VybeRepository.get().refreshDeviceNotificationDiagnostics()
+          } catch (_: Exception) {}
         }
         LaunchedEffect(currentScreenForPerm != Screen.SPLASH) {
           if (

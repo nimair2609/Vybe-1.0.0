@@ -31,8 +31,7 @@ import com.example.ui.components.VybeEmptyState
 import com.example.ui.components.VybeSubScreenTopBar
 import com.example.ui.components.VybeSurfaceCard
 import com.example.ui.theme.*
-import java.time.Instant
-import java.time.temporal.ChronoUnit
+import com.example.util.TimestampUtils
 
 enum class AdminTab(val title: String) {
   MODERATION("Moderation"),
@@ -162,7 +161,7 @@ fun AdminConsoleScreen(viewModel: VybeViewModel) {
 
   fun computeVipExpiresIso(days: Int?): String? {
     if (days == null || days <= 0) return null
-    return Instant.now().plus(days.toLong(), ChronoUnit.DAYS).toString()
+    return TimestampUtils.formatIsoUtc(System.currentTimeMillis() + days.toLong() * 86_400_000L)
   }
 
   val adminFieldColors = OutlinedTextFieldDefaults.colors(

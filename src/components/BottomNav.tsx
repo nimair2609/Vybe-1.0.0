@@ -20,21 +20,25 @@ export const BottomNav: React.FC = () => {
       { tab: 'HOME', label: 'Home', icon: Home },
       { tab: 'CIRCLE', label: 'Circle', icon: Users },
       { tab: 'PROJECTS', label: 'Projects', icon: FolderKanban },
-      { tab: 'OPPORTUNITIES', label: 'Opportunities', icon: Sparkles },
+      { tab: 'OPPORTUNITIES', label: 'Opps', icon: Sparkles },
       { tab: 'PROFILE', label: 'Profile', icon: User },
     ];
 
     return (
-      <nav className="fixed bottom-0 inset-x-0 z-40 bg-[var(--vybe-nav-bg)] backdrop-blur-xl border-t border-[var(--vybe-border)] py-2 px-3 transition-colors">
-        <div className="max-w-2xl mx-auto flex items-center justify-around">
+      <nav
+        aria-label="Mobile Grow Navigation"
+        className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-[var(--vybe-nav-bg)] backdrop-blur-xl border-t border-[var(--vybe-border)] py-1.5 px-3 transition-colors"
+      >
+        <div className="max-w-xl mx-auto flex items-center justify-around">
           {growItems.map(item => {
             const Icon = item.icon;
             const isSelected = growTab === item.tab;
             return (
               <button
                 key={item.tab}
+                type="button"
                 onClick={() => setGrowTab(item.tab)}
-                className={`flex flex-col items-center justify-center min-w-[56px] py-1 px-2 rounded-xl transition-colors ${
+                className={`flex flex-col items-center justify-center min-w-[56px] min-h-[44px] py-1 px-2 rounded-xl transition-colors ${
                   isSelected
                     ? 'text-[var(--vybe-accent)]'
                     : 'text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)]'
@@ -68,8 +72,9 @@ export const BottomNav: React.FC = () => {
     return (
       <button
         key={item.tab}
+        type="button"
         onClick={() => setSelectedTab(item.tab)}
-        className={`flex flex-col items-center justify-center min-w-[56px] py-1 px-2 rounded-xl transition-colors ${
+        className={`flex flex-col items-center justify-center min-w-[56px] min-h-[44px] py-1 px-2 rounded-xl transition-colors ${
           isSelected
             ? 'text-[var(--vybe-accent)]'
             : 'text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)]'
@@ -91,13 +96,18 @@ export const BottomNav: React.FC = () => {
   };
 
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-40 bg-[var(--vybe-nav-bg)] backdrop-blur-xl border-t border-[var(--vybe-border)] py-1.5 px-3 transition-colors">
-      <div className="max-w-2xl mx-auto flex items-center justify-around">
+    <nav
+      aria-label="Mobile Navigation"
+      className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-[var(--vybe-nav-bg)] backdrop-blur-xl border-t border-[var(--vybe-border)] py-1.5 px-3 transition-colors"
+    >
+      <div className="max-w-xl mx-auto flex items-center justify-around">
         {socialLeft.map(renderSocialBtn)}
 
         <button
+          type="button"
           onClick={() => openModal('CREATE_POST')}
-          title="Create Post or Story"
+          aria-label="Create Post"
+          title="Create Post"
           className="w-11 h-11 rounded-full bg-[var(--vybe-accent)] text-white keep-white shadow-md hover:opacity-95 active:scale-95 transition-all flex items-center justify-center"
         >
           <Plus className="w-5 h-5 stroke-[2.5]" />

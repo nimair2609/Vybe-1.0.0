@@ -121,17 +121,8 @@ data class User(
     get() {
       val raw = vipExpiresAtIso?.trim().orEmpty()
       if (raw.isBlank()) return false
-      return try {
-        val expiryMillis = java.time.Instant.parse(raw).toEpochMilli()
-        System.currentTimeMillis() > expiryMillis
-      } catch (_: Throwable) {
-        try {
-          val expiryMillis = java.time.OffsetDateTime.parse(raw).toInstant().toEpochMilli()
-          System.currentTimeMillis() > expiryMillis
-        } catch (_: Throwable) {
-          false
-        }
-      }
+      val expiryMillis = com.example.util.TimestampUtils.parseIsoMillis(raw) ?: return false
+      return System.currentTimeMillis() > expiryMillis
     }
 
   val hasActiveVip: Boolean

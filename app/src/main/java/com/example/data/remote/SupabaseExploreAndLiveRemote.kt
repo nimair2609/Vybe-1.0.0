@@ -1220,7 +1220,7 @@ object SupabaseExploreAndLiveRemote {
   ): Boolean = withContext(Dispatchers.IO) {
     if (authHeader.isNullOrBlank() || postId.isBlank() || postId.startsWith("cp_local_")) return@withContext false
     try {
-      val nowIso = java.time.Instant.now().toString()
+      val nowIso = com.example.util.TimestampUtils.nowIsoUtc()
       val resp = SupabaseNetworkClient.restApi.patchCommunityPost(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,

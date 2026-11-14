@@ -289,7 +289,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
               />
 
               {showReactionMenu && (
-                <div className="absolute bottom-9 left-0 flex items-center gap-2 p-2 bg-[#0B1022] border border-[#8B5CF6]/50 rounded-full shadow-2xl z-20 animate-in fade-in slide-in-from-bottom-2">
+                <div className="absolute bottom-9 left-0 flex items-center gap-2 p-2 bg-[var(--vybe-surface)] border border-[var(--vybe-accent)]/50 rounded-full shadow-2xl z-20 animate-in fade-in slide-in-from-bottom-2">
                   {VYBE_REACTIONS.map(reaction => (
                     <button
                       key={reaction.id}
@@ -358,7 +358,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
 
         {/* Reaction Breakdown Pills */}
         {post.reactionsCount && Object.values(post.reactionsCount).some(c => c > 0) && (
-          <div className="flex items-center gap-2 mt-3 pt-2.5 border-t border-[#262E4A]/30 text-[11px] text-gray-400">
+          <div className="flex items-center gap-2 mt-3 pt-2.5 border-t border-[var(--vybe-border)] text-[11px] text-[var(--vybe-text-secondary)]">
             <span className="font-medium">Vibes:</span>
             {VYBE_REACTIONS.map(r => {
               const count = post.reactionsCount[r.id] || 0;
@@ -366,16 +366,16 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
               return (
                 <span
                   key={r.id}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#060714] border border-[#262E4A]"
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--vybe-elevated)] border border-[var(--vybe-border)]"
                 >
                   <span className="inline-flex items-center">
                     {r.id === 'LOVE' ? (
-                      <FingerHeartIcon isLiked={true} size={13} forceDarkOverlay={true} />
+                      <FingerHeartIcon isLiked={true} size={13} />
                     ) : (
                       r.emoji
                     )}
                   </span>
-                  <span className="text-gray-300 font-semibold">{count}</span>
+                  <span className="text-[var(--vybe-text)] font-semibold">{count}</span>
                 </span>
               );
             })}
@@ -385,20 +385,20 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
 
       {/* Expandable Share Panel (Internal DM + Copy Link + External Share) */}
       {showShareSheet && (
-        <div className="p-4 bg-[#060714]/90 border-t border-[#262E4A] space-y-3">
+        <div className="p-4 bg-[var(--vybe-elevated)] border-t border-[var(--vybe-border)] space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-white">Share Post</span>
+            <span className="text-xs font-bold text-[var(--vybe-text)]">Share Post</span>
             <button
               type="button"
               onClick={() => setShowShareSheet(false)}
-              className="text-gray-400 hover:text-white p-1"
+              className="text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)] p-1"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
 
           {isRestrictedPrivate && (
-            <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2">
+            <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-500 text-xs flex items-center gap-2">
               <Lock className="w-4 h-4 shrink-0" />
               <span>Private account posts cannot be shared via external links.</span>
             </div>
@@ -409,16 +409,16 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
               type="button"
               disabled={isRestrictedPrivate}
               onClick={handleCopyLink}
-              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[#101322] border border-[#262E4A] hover:border-[#00C6FF]/60 disabled:opacity-40 text-xs font-semibold text-white transition-colors"
+              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[var(--vybe-surface)] border border-[var(--vybe-border)] hover:border-[var(--vybe-accent)] disabled:opacity-40 text-xs font-semibold text-[var(--vybe-text)] transition-colors"
             >
-              <Link2 className="w-3.5 h-3.5 text-[#00C6FF]" />
+              <Link2 className="w-3.5 h-3.5 text-[var(--vybe-accent)]" />
               <span>{copyFeedback ? 'Copied!' : 'Copy Link'}</span>
             </button>
             <button
               type="button"
               disabled={isRestrictedPrivate}
               onClick={handleExternalWebShare}
-              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-gradient-to-r from-[#8B5CF6] to-[#00C6FF] disabled:opacity-40 text-xs font-bold text-white keep-white shadow"
+              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[var(--vybe-accent)] disabled:opacity-40 text-xs font-bold text-white keep-white shadow-sm hover:opacity-95"
             >
               <Share2 className="w-3.5 h-3.5" />
               <span>Share Externally</span>
@@ -430,7 +430,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
             value={shareNote}
             onChange={(e) => setShareNote(e.target.value)}
             placeholder="Write an optional note for Direct Message..."
-            className="w-full px-3 py-2 bg-[#101322] border border-[#262E4A] rounded-xl text-xs text-white focus:outline-none focus:border-[#8B5CF6]"
+            className="w-full px-3 py-2 bg-[var(--vybe-surface)] border border-[var(--vybe-border)] rounded-xl text-xs text-[var(--vybe-text)] placeholder-[var(--vybe-text-muted)] focus:outline-none focus:border-[var(--vybe-accent)]"
           />
 
           <div className="space-y-1.5 max-h-40 overflow-y-auto no-scrollbar">
@@ -439,7 +439,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
               return (
                 <div
                   key={conv.id}
-                  className="flex items-center justify-between p-2 rounded-xl bg-[#101322] border border-[#262E4A]"
+                  className="flex items-center justify-between p-2 rounded-xl bg-[var(--vybe-surface)] border border-[var(--vybe-border)]"
                 >
                   <div className="flex items-center gap-2.5 overflow-hidden">
                     <img
@@ -448,8 +448,8 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
                       className="w-7 h-7 rounded-full object-cover shrink-0"
                     />
                     <div className="truncate">
-                      <p className="text-xs font-bold text-white truncate">{conv.peerUser.displayName}</p>
-                      <p className="text-[10px] text-gray-400 truncate">@{conv.peerUser.username}</p>
+                      <p className="text-xs font-bold text-[var(--vybe-text)] truncate">{conv.peerUser.displayName}</p>
+                      <p className="text-[10px] text-[var(--vybe-text-secondary)] truncate">@{conv.peerUser.username}</p>
                     </div>
                   </div>
                   <button
@@ -462,7 +462,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
                     className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
                       sent
                         ? 'bg-emerald-600 text-white keep-white'
-                        : 'bg-[#8B5CF6] hover:bg-[#7C3AED] text-white keep-white disabled:opacity-40'
+                        : 'bg-[var(--vybe-accent)] hover:opacity-95 text-white keep-white disabled:opacity-40'
                     }`}
                   >
                     {sent ? 'Sent' : 'Send'}
@@ -476,10 +476,12 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
 
       {/* Expandable Comments Section */}
       {showComments && (
-        <div className="p-4 bg-[#060714]/90 border-t border-[#262E4A] space-y-3">
+        <div className="p-4 bg-[var(--vybe-elevated)] border-t border-[var(--vybe-border)] space-y-3">
           <div className="space-y-2.5 max-h-60 overflow-y-auto no-scrollbar">
             {post.comments?.length === 0 ? (
-              <p className="text-xs text-gray-400 py-2 text-center">No comments yet. Start the conversation!</p>
+              <p className="text-xs text-[var(--vybe-text-secondary)] py-2 text-center">
+                No comments yet. Start the conversation!
+              </p>
             ) : (
               post.comments?.map(c => (
                 <div key={c.id} className="flex items-start gap-2.5 text-xs">
@@ -489,16 +491,16 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
                     onClick={() => openUserProfile(c.author)}
                     className="w-7 h-7 rounded-full object-cover shrink-0 mt-0.5 cursor-pointer"
                   />
-                  <div className="flex-1 bg-[#101322] border border-[#262E4A] rounded-xl p-2.5">
+                  <div className="flex-1 bg-[var(--vybe-surface)] border border-[var(--vybe-border)] rounded-xl p-2.5">
                     <div className="flex items-center justify-between gap-2">
                       <span
                         onClick={() => openUserProfile(c.author)}
-                        className="font-bold text-white cursor-pointer hover:underline"
+                        className="font-bold text-[var(--vybe-text)] cursor-pointer hover:underline"
                       >
                         {c.author.displayName}
                       </span>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-gray-400">
+                        <span className="text-[10px] text-[var(--vybe-text-muted)]">
                           {formatRelativeTimestamp(c.createdAtIso, c.timestamp, nowTick)}
                         </span>
                         <FingerHeartReaction
@@ -512,25 +514,26 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
                         />
                       </div>
                     </div>
-                    <p className="text-gray-200 mt-1 leading-relaxed">{c.content}</p>
+                    <p className="text-[var(--vybe-text-secondary)] mt-1 leading-relaxed">{c.content}</p>
                   </div>
                 </div>
               ))
             )}
           </div>
 
-          <form onSubmit={handleAddComment} className="flex items-center gap-2 pt-2 border-t border-[#262E4A]">
+          <form onSubmit={handleAddComment} className="flex items-center gap-2 pt-2 border-t border-[var(--vybe-border)]">
             <input
               type="text"
               value={commentInput}
               onChange={(e) => setCommentInput(e.target.value)}
               placeholder="Drop a vibe or supportive comment..."
-              className="flex-1 px-3 py-2 bg-[#101322] border border-[#262E4A] rounded-xl text-xs text-white focus:outline-none focus:border-[#8B5CF6]"
+              className="flex-1 px-3 py-2 bg-[var(--vybe-surface)] border border-[var(--vybe-border)] rounded-xl text-xs text-[var(--vybe-text)] placeholder-[var(--vybe-text-muted)] focus:outline-none focus:border-[var(--vybe-accent)]"
             />
             <button
               type="submit"
               disabled={!commentInput.trim()}
-              className="p-2 bg-gradient-to-r from-[#00C6FF] to-[#8B5CF6] disabled:opacity-40 text-white keep-white rounded-xl shadow transition-opacity"
+              aria-label="Post comment"
+              className="p-2 bg-[var(--vybe-accent)] disabled:opacity-40 text-white keep-white rounded-xl shadow-sm hover:opacity-95 transition-opacity"
             >
               <Send className="w-3.5 h-3.5" />
             </button>

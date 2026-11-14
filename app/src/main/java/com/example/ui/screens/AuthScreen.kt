@@ -1674,10 +1674,10 @@ fun AuthScreen(viewModel: VybeViewModel) {
             onClick = {
               val millis = datePickerState.selectedDateMillis
               if (millis != null) {
-                val localDate = java.time.Instant.ofEpochMilli(millis)
-                  .atZone(java.time.ZoneOffset.UTC)
-                  .toLocalDate()
-                dateOfBirth = localDate.toString()
+                val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).apply {
+                  timeZone = java.util.TimeZone.getTimeZone("UTC")
+                }
+                dateOfBirth = sdf.format(java.util.Date(millis))
                 errorMessage = null
               }
               showDobDatePicker = false
@@ -1701,15 +1701,40 @@ fun AuthScreen(viewModel: VybeViewModel) {
 private fun validateRegistrationDob(rawDob: String): String? {
   val trimmed = rawDob.trim()
   if (trimmed.isEmpty()) return "Date of birth is required (YYYY-MM-DD)."
+  val match = Regex("^(\\d{4})-(\\d{2})-(\\d{2})$").matchEntire(trimmed)
+    ?: return "Enter date of birth in YYYY-MM-DD format (e.g. 2004-05-21)."
+  val year = match.groupValues[1].toIntOrNull()
+    ?: return "Enter date of birth in YYYY-MM-DD format (e.g. 2004-05-21)."
+  val month = match.groupValues[2].toIntOrNull()
+    ?: return "Enter date of birth in YYYY-MM-DD format (e.g. 2004-05-21)."
+  val day = match.groupValues[3].toIntOrNull()
+    ?: return "Enter date of birth in YYYY-MM-DD format (e.g. 2004-05-21)."
   return try {
-    val parsed = java.time.LocalDate.parse(trimmed)
-    val today = java.time.LocalDate.now()
-    if (parsed.isAfter(today)) {
+    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).apply {
+      isLenient = false
+    }
+    val parsedDate = sdf.parse(trimmed)
+      ?: return "Enter date of birth in YYYY-MM-DD format (e.g. 2004-05-21)."
+    val dobCal = java.util.Calendar.getInstance().apply { time = parsedDate }
+    val todayCal = java.util.Calendar.getInstance()
+    val dobKey = year * 10000 + month * 100 + day
+    val todayKey = todayCal.get(java.util.Calendar.YEAR) * 10000 +
+      (todayCal.get(java.util.Calendar.MONTH) + 1) * 100 +
+      todayCal.get(java.util.Calendar.DAY_OF_MONTH)
+    if (dobKey > todayKey) {
       "Date of birth cannot be in the future."
-    } else if (parsed.isBefore(java.time.LocalDate.of(1905, 1, 1))) {
+    } else if (year < 1905) {
       "Please enter a valid date of birth."
     } else {
-      val age = java.time.Period.between(parsed, today).years
+      var age = todayCal.get(java.util.Calendar.YEAR) - dobCal.get(java.util.Calendar.YEAR)
+      val todayMonth = todayCal.get(java.util.Calendar.MONTH)
+      val dobMonth = dobCal.get(java.util.Calendar.MONTH)
+      if (
+        todayMonth < dobMonth ||
+        (todayMonth == dobMonth && todayCal.get(java.util.Calendar.DAY_OF_MONTH) < dobCal.get(java.util.Calendar.DAY_OF_MONTH))
+      ) {
+        age--
+      }
       if (age < 16) "You must be at least 16 years old to register on VYBE." else null
     }
   } catch (_: Exception) {

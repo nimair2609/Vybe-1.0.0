@@ -139,12 +139,10 @@ export const FindYourVybeSection: React.FC = () => {
         }}
         className={`w-full py-2 px-3 rounded-xl text-xs font-bold transition-all ${
           isFollowing
-            ? isLight
-              ? 'bg-slate-200 text-slate-900 border border-slate-300'
-              : 'bg-[#1A2138] text-slate-200 border border-[#334155]'
+            ? 'bg-[var(--vybe-elevated)] text-[var(--vybe-text)] border border-[var(--vybe-border)]'
             : isRequested
-              ? 'bg-amber-500/15 text-amber-400 border border-amber-500/50'
-              : 'bg-gradient-to-r from-[#2563EB] to-[#7C3AED] text-white keep-white shadow-md shadow-[#7C3AED]/20 hover:opacity-95'
+              ? 'bg-amber-500/15 text-amber-500 border border-amber-500/40'
+              : 'bg-[var(--vybe-accent)] text-white keep-white shadow-sm hover:opacity-95'
         }`}
       >
         {isFollowing ? (
@@ -226,12 +224,8 @@ export const FindYourVybeSection: React.FC = () => {
 
         {/* Horizontal Cards */}
         {activeItems.length === 0 ? (
-          <div
-            className={`rounded-xl p-4 text-center border ${
-              isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#090D1C] border-[#1E293B]'
-            }`}
-          >
-            <p className="text-xs font-bold">
+          <div className="rounded-xl p-4 text-center border border-[var(--vybe-border)] bg-[var(--vybe-elevated)]">
+            <p className="text-xs font-bold text-[var(--vybe-text)]">
               {activeTab === 'SUGGEST' && dismissedSuggestionIds.length > 0
                 ? "You're all caught up on suggestions"
                 : 'No people to show right now'}
@@ -240,7 +234,7 @@ export const FindYourVybeSection: React.FC = () => {
               <button
                 type="button"
                 onClick={restoreDismissedSuggestions}
-                className="mt-2 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#8B5CF6]/20 text-[#8B5CF6] hover:bg-[#8B5CF6]/30"
+                className="mt-2 px-3 py-1.5 rounded-lg text-xs font-bold bg-[var(--vybe-accent-soft)] text-[var(--vybe-accent)] hover:opacity-90"
               >
                 Reset Dismissed
               </button>
@@ -254,11 +248,7 @@ export const FindYourVybeSection: React.FC = () => {
                 <div
                   key={`${activeTab}_${u.id}`}
                   onClick={() => openUserProfile(u)}
-                  className={`relative shrink-0 w-48 rounded-2xl border p-3.5 flex flex-col items-center text-center cursor-pointer transition-all hover:-translate-y-0.5 ${
-                    isLight
-                      ? 'bg-slate-50 border-slate-200 hover:border-indigo-400'
-                      : 'bg-[#10162B] border-[#263152] hover:border-[#8B5CF6]/60'
-                  }`}
+                  className="relative shrink-0 w-48 rounded-2xl border border-[var(--vybe-border)] bg-[var(--vybe-elevated)] hover:border-[var(--vybe-accent)]/60 p-3.5 flex flex-col items-center text-center cursor-pointer transition-all hover:-translate-y-0.5"
                 >
                   {activeTab === 'SUGGEST' && (
                     <button
@@ -319,39 +309,32 @@ export const FindYourVybeSection: React.FC = () => {
 
       {/* See All Modal */}
       {showSeeAll && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-          <div
-            className={`w-full max-w-lg max-h-[85vh] rounded-3xl border flex flex-col overflow-hidden shadow-2xl ${
-              isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-[#0B0F1F] border-[#262E4A] text-white'
-            }`}
-          >
-            <div className="p-4 border-b border-[#262E4A]/50 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg max-h-[85vh] rounded-3xl border border-[var(--vybe-border)] bg-[var(--vybe-surface)] text-[var(--vybe-text)] flex flex-col overflow-hidden shadow-2xl">
+            <div className="p-4 border-b border-[var(--vybe-border)] flex items-center justify-between">
               <div>
                 <h3 className="text-base font-extrabold">Find Your Vybe</h3>
-                <p className="text-xs text-gray-400">Link Up & Personalized Suggestions</p>
+                <p className="text-xs text-[var(--vybe-text-secondary)]">Link Up & Personalized Suggestions</p>
               </div>
               <button
                 type="button"
                 onClick={() => setShowSeeAll(false)}
-                className="p-2 rounded-full hover:bg-white/10"
+                aria-label="Close"
+                className="p-2 rounded-full text-[var(--vybe-text-secondary)] hover:bg-[var(--vybe-elevated)] hover:text-[var(--vybe-text)]"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-4 space-y-3 border-b border-[#262E4A]/40">
+            <div className="p-4 space-y-3 border-b border-[var(--vybe-border)]">
               <div className="relative">
-                <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <Search className="w-4 h-4 text-[var(--vybe-text-muted)] absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Filter by name, @username, or bio..."
-                  className={`w-full pl-9 pr-4 py-2 rounded-xl border text-xs focus:outline-none focus:border-[#8B5CF6] ${
-                    isLight
-                      ? 'bg-slate-50 border-slate-200 text-slate-900'
-                      : 'bg-[#10162B] border-[#263152] text-white'
-                  }`}
+                  className="w-full pl-9 pr-4 py-2 rounded-xl border border-[var(--vybe-border)] bg-[var(--vybe-elevated)] text-xs text-[var(--vybe-text)] focus:outline-none focus:border-[var(--vybe-accent)]"
                 />
               </div>
 
@@ -361,10 +344,10 @@ export const FindYourVybeSection: React.FC = () => {
                     key={t}
                     type="button"
                     onClick={() => setActiveTab(t)}
-                    className={`py-2 rounded-xl text-xs font-bold ${
+                    className={`py-2 rounded-xl text-xs font-bold transition-colors ${
                       activeTab === t
-                        ? 'bg-gradient-to-r from-[#2563EB] to-[#7C3AED] text-white keep-white'
-                        : 'bg-[#151C33] text-gray-400'
+                        ? 'bg-[var(--vybe-accent)] text-white keep-white'
+                        : 'bg-[var(--vybe-elevated)] text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)]'
                     }`}
                   >
                     {t === 'LINK_UP' ? 'Link Up' : 'Suggest'}
@@ -393,11 +376,7 @@ export const FindYourVybeSection: React.FC = () => {
                         setShowSeeAll(false);
                         openUserProfile(u);
                       }}
-                      className={`flex items-center justify-between gap-3 p-3 rounded-2xl border cursor-pointer ${
-                        isLight
-                          ? 'bg-slate-50 border-slate-200'
-                          : 'bg-[#10162B] border-[#263152]'
-                      }`}
+                      className="flex items-center justify-between gap-3 p-3 rounded-2xl border border-[var(--vybe-border)] bg-[var(--vybe-elevated)] cursor-pointer hover:border-[var(--vybe-accent)]/50 transition-colors"
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         <img
