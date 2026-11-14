@@ -952,7 +952,10 @@ const server = http.createServer(async (req, res) => {
           p_badge_category: rpcCategory,
           p_is_grant: Boolean(value),
           p_admin_id: callerId,
-          p_reason: `Admin console ${value ? 'grant' : 'revoke'}`
+          p_vip_expires_at: null,
+          p_reason: `Admin console ${value ? 'grant' : 'revoke'}`,
+          p_require_acceptance: false,
+          p_worker_mandatory: rpcCategory === 'WORKER'
         })
       });
       if (!rpcResp.ok) {
@@ -1773,7 +1776,7 @@ const server = http.createServer(async (req, res) => {
     } catch {}
 
     try {
-      const postResp = await fetch(`${base}/rest/v1/posts?select=id,is_vybes_reel,is_unfiltered,likes_count,comments_count,shares_count&limit=1000`, { headers: hdrs });
+      const postResp = await fetch(`${base}/rest/v1/posts?select=id,is_vybes_reel,is_unfiltered,likes_count,comments_count&limit=1000`, { headers: hdrs });
       if (postResp.ok) {
         const posts = await postResp.json();
         if (Array.isArray(posts)) {
@@ -1783,7 +1786,6 @@ const server = http.createServer(async (req, res) => {
             if (p.is_unfiltered) unfilteredCount++;
             totalLikes += Number(p.likes_count || 0);
             totalComments += Number(p.comments_count || 0);
-            totalShares += Number(p.shares_count || 0);
           });
         }
       }
@@ -1887,7 +1889,7 @@ const server = http.createServer(async (req, res) => {
     let resp;
     try {
       resp = await fetch(
-        `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/posts?select=id,author_id,caption,media_type,media_urls,is_vybes_reel,is_unfiltered,is_archived,likes_count,comments_count,shares_count,created_at,profiles:author_id(username,display_name,avatar_url)&order=created_at.desc&limit=60`,
+        `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/posts?select=id,author_id,caption,media_type,is_vybes_reel,is_unfiltered,is_archived,likes_count,comments_count,created_at,profiles:author_id(username,display_name,avatar_url),post_media(id,media_url,media_type,display_order)&order=created_at.desc&limit=60`,
         { headers: buildSupabaseHeaders({}, true, adminAuth.token) }
       );
     } catch (err) {
@@ -1904,6 +1906,10 @@ const server = http.createServer(async (req, res) => {
     const posts = (Array.isArray(rawPosts) ? rawPosts : []).map(p => {
       const authorObj = p.profiles || {};
       const isHidden = Boolean(p.is_archived);
+      const mediaRows = Array.isArray(p.post_media)
+        ? [...p.post_media].sort((a, b) => Number(a?.display_order || 0) - Number(b?.display_order || 0))
+        : [];
+      const mediaUrls = mediaRows.map(m => m?.media_url).filter(Boolean);
       return {
         id: p.id,
         author_id: p.author_id,
@@ -1911,13 +1917,13 @@ const server = http.createServer(async (req, res) => {
         author_username: authorObj.username || 'unknown',
         author_avatar: authorObj.avatar_url || null,
         caption: p.caption || '',
-        media_urls: p.media_urls || [],
+        media_urls: mediaUrls,
         media_type: p.media_type || (p.is_vybes_reel ? 'VIDEO' : 'PHOTO'),
         is_vybes_reel: Boolean(p.is_vybes_reel),
         is_unfiltered: Boolean(p.is_unfiltered),
         likes_count: Number(p.likes_count || 0),
         comments_count: Number(p.comments_count || 0),
-        shares_count: Number(p.shares_count || 0),
+        shares_count: 0,
         created_at: p.created_at,
         is_hidden: isHidden,
         moderation_status: isHidden ? 'HIDDEN' : 'APPROVED'
@@ -2277,7 +2283,7 @@ const server = http.createServer(async (req, res) => {
     let postRow = null;
     try {
       if (postId) {
-        const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/posts?id=eq.${encodeURIComponent(postId)}&select=id,caption,media_urls,media_type,likes_count,comments_count,is_archived,profiles:author_id(username,display_name,is_private_account)&limit=1`, {
+        const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/posts?id=eq.${encodeURIComponent(postId)}&select=id,caption,media_type,likes_count,comments_count,is_archived,profiles:author_id(username,display_name,is_private_account),post_media(media_url,media_type,display_order)&limit=1`, {
           headers: { 'apikey': SUPABASE_ANON_KEY }
         });
         if (resp.ok) {
@@ -2298,7 +2304,10 @@ const server = http.createServer(async (req, res) => {
 
     const author = postRow.profiles || {};
     const appDeepLink = `vybe://post/${encodeURIComponent(postRow.id)}`;
-    const firstMedia = Array.isArray(postRow.media_urls) && postRow.media_urls.length > 0 ? postRow.media_urls[0] : '';
+    const mediaRows = Array.isArray(postRow.post_media)
+      ? [...postRow.post_media].sort((a, b) => Number(a?.display_order || 0) - Number(b?.display_order || 0))
+      : [];
+    const firstMedia = mediaRows[0]?.media_url || '';
     const isVideo = String(postRow.media_type || '').toUpperCase().includes('VIDEO') || String(postRow.media_type || '').toUpperCase().includes('REEL') || /\.(mp4|webm|mov)(\?|$)/i.test(firstMedia);
     const mediaHtml = firstMedia
       ? (isVideo

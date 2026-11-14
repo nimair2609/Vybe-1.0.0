@@ -224,7 +224,10 @@ export async function handler(event: NetlifyEvent): Promise<NetlifyResponse> {
             p_badge_category: rpcCategory,
             p_is_grant: Boolean(enabled),
             p_admin_id: authCheck.userId,
-            p_reason: `Netlify Admin API ${Boolean(enabled) ? 'grant' : 'revoke'}`
+            p_vip_expires_at: typeof body.vipExpiresAt === 'string' && body.vipExpiresAt ? body.vipExpiresAt : null,
+            p_reason: `Netlify Admin API ${Boolean(enabled) ? 'grant' : 'revoke'}`,
+            p_require_acceptance: false,
+            p_worker_mandatory: rpcCategory === 'WORKER'
           })
         });
 
@@ -345,6 +348,29 @@ export async function handler(event: NetlifyEvent): Promise<NetlifyResponse> {
             success: true,
             ...edgePayload,
             deliveredAt: new Date().toISOString()
+          })
+        };
+      } catch (err: any) {
+        return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ error: err.message }) };
+      }
+    }
+
+    // 4. Push token telemetry stats for Admin Console
+    if (urlPath === '/v1/admin/push-stats' && event.httpMethod === 'GET') {
+      try {
+        const tokRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/user_device_tokens?is_active=eq.true&select=id&limit=1000`,
+          { headers: dbHeaders }
+        );
+        const rows = tokRes.ok ? await tokRes.json().catch(() => []) : [];
+        return {
+          statusCode: 200,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({
+            success: true,
+            activeTokensCount: Array.isArray(rows) ? rows.length : 0,
+            fcmConfigured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FCM_SERVER_KEY),
+            realtimeConfigured: true
           })
         };
       } catch (err: any) {

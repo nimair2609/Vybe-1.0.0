@@ -287,6 +287,7 @@ export const AdminConsoleModal: React.FC = () => {
           p_target_user_id: selectedUserForBadge,
           p_badge_category: rpcCategory,
           p_is_grant: badgeGrantMode,
+          p_admin_id: adminUserId || null,
           p_vip_expires_at: vipExpiresAt,
           p_reason: 'Admin Console badge management',
           p_require_acceptance: false,

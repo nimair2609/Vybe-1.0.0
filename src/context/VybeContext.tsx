@@ -27,7 +27,8 @@ import {
 } from '../services/githubUpdater';
 import {
   getStoredWebSession,
-  refreshWebAccessToken,
+  getValidWebAccessToken,
+  clearWebSessionStorage,
   signInWithIdentifier,
   signUpWithEmail,
   sendPasswordResetEmail,
@@ -43,7 +44,6 @@ import {
   createLiveStory,
   submitLiveComment,
   fetchCommentsForPost,
-  syncPostLikeCountToSupabase,
   togglePostReactionInSupabase,
   toggleSavePostInSupabase,
   toggleFollowInSupabase,
@@ -716,8 +716,13 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       let activeSession = getStoredWebSession();
       if (activeSession) {
-        const refreshed = await refreshWebAccessToken();
-        if (refreshed) activeSession = refreshed;
+        const validToken = await getValidWebAccessToken();
+        if (validToken) {
+          activeSession = getStoredWebSession();
+        } else {
+          clearWebSessionStorage();
+          activeSession = null;
+        }
       }
       setAuthUser(activeSession);
       setIsAuthChecking(false);
@@ -1340,11 +1345,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     if (currentUser && nextReaction !== undefined) {
       togglePostReactionInSupabase({ postId, userId: currentUser.id, reactionType: nextReaction }).then(ok => {
-        if (ok) {
-          if (updatedLikes !== null) {
-            syncPostLikeCountToSupabase(postId, updatedLikes);
-          }
-        } else if (prevSnapshot) {
+        if (!ok && prevSnapshot) {
           setPosts(prev => prev.map(p => (p.id === postId ? prevSnapshot : p)));
           setReels(prev => prev.map(p => (p.id === postId ? prevSnapshot : p)));
           setViewedProfilePosts(prev => prev.map(p => (p.id === postId ? prevSnapshot : p)));
@@ -1354,8 +1355,6 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setInAppNotificationBanner('Could not save reaction. Please try again.');
         }
       });
-    } else if (updatedLikes !== null) {
-      syncPostLikeCountToSupabase(postId, updatedLikes);
     }
   };
 
@@ -1588,7 +1587,9 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       mediaUrls: newPost.mediaUrls,
       mediaType: newPost.mediaType,
       isVybesReel: newPost.isVybesReel,
-      moodZone: newPost.moodZone
+      moodZone: newPost.moodZone,
+      locationName: newPost.locationName,
+      audioTrackTitle: newPost.audioTrackTitle
     });
 
     if (created?.id) {
@@ -1692,7 +1693,10 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       authorId: currentUser.id,
       mediaUrl: newStory.mediaUrl,
       caption: newStory.caption,
-      mediaType: newStory.mediaType
+      mediaType: newStory.mediaType,
+      audience: newStory.audience,
+      textBackgroundColor: newStory.textBackgroundColor,
+      musicTrackTitle: newStory.musicTrackTitle
     });
 
     if (created?.id) {

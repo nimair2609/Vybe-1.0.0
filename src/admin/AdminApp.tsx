@@ -276,6 +276,8 @@ export const AdminApp: React.FC = () => {
           p_target_user_id: userId,
           p_badge_category: categoryMap[badge],
           p_is_grant: nextGrant,
+          p_admin_id: adminUserId || null,
+          p_vip_expires_at: null,
           p_reason: 'Admin portal badge update',
           p_require_acceptance: false,
           p_worker_mandatory: badge === 'WORKER_GREEN',

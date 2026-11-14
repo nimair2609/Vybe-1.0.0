@@ -293,6 +293,8 @@ export async function resolveLoginIdentifier(identifier: string): Promise<{
   if (raw.includes('@') && !raw.startsWith('@')) {
     return { found: true, mode: 'email', email: raw.toLowerCase() };
   }
+  const normalizedIdentifier = raw.startsWith('@') ? raw.slice(1).trim() : raw;
+  if (!normalizedIdentifier) return { found: false };
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/resolve_login_identifier`, {
       method: 'POST',
@@ -301,7 +303,7 @@ export async function resolveLoginIdentifier(identifier: string): Promise<{
         ...(SUPABASE_ANON_KEY.startsWith('eyJ') ? { 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } : {}),
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ p_identifier: raw })
+      body: JSON.stringify({ p_identifier: normalizedIdentifier })
     });
     if (!res.ok) return { found: false };
     const data = await res.json();
@@ -344,18 +346,21 @@ export async function signInWithIdentifier(
     }
   }
 
-  try {
-    const body = targetEmail
-      ? { email: targetEmail, password }
-      : { phone: targetPhone, password };
+  if (!targetEmail && targetPhone) {
+    return {
+      success: false,
+      error: 'Phone sign-in is disabled on this project. Please sign in with your registered email address or @username.'
+    };
+  }
 
+  try {
     const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
       method: 'POST',
       headers: {
         'apikey': SUPABASE_ANON_KEY,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify({ email: targetEmail, password })
     });
 
     const data = await res.json().catch(() => ({}));
@@ -510,8 +515,10 @@ export async function signOutWebSession(): Promise<void> {
         method: 'POST',
         headers: {
           'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${token}`
-        }
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: '{}'
       });
     } catch {
       // ignore remote revoke network failures after clearing local storage
@@ -525,24 +532,6 @@ export async function fetchMyAuthenticatedProfile(
 ): Promise<User | null> {
   const token = explicitToken || (await getValidWebAccessToken());
   if (!token || !UUID_REGEX.test(userId)) return null;
-
-  try {
-    const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_my_private_profile`, {
-      method: 'POST',
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-    if (rpcRes.ok) {
-      const rows = await rpcRes.json();
-      const row = Array.isArray(rows) ? rows[0] : rows;
-      if (row?.id) return mapSupabaseProfileToUser(row);
-    }
-  } catch {
-    // fallback to authenticated profile select below
-  }
 
   try {
     const res = await fetch(
@@ -601,15 +590,12 @@ const POST_SELECT_COLUMNS = [
   'author_id',
   'caption',
   'media_type',
-  'media_url',
-  'media_urls',
   'is_vybes_reel',
   'is_unfiltered',
   'is_archived',
   'likes_count',
   'comments_count',
   'saves_count',
-  'shares_count',
   'views_count',
   'mood_zone',
   'love_count',
@@ -629,6 +615,9 @@ const STORY_SELECT_COLUMNS = [
   'caption',
   'media_type',
   'story_type',
+  'text_bg_key',
+  'audience',
+  'music_title',
   'created_at',
   'expires_at',
   `profiles:author_id(${STORY_PROFILE_COLUMNS})`
@@ -637,14 +626,50 @@ const STORY_SELECT_COLUMNS = [
 function normalizeLivePulse(raw: any): LivePulseStatus {
   const val = String(raw || '').trim();
   if (!val) return 'None';
-  if (val === 'OPEN_TO_CHAT' || val === 'Open to chatting') return 'Open to chatting';
-  if (val === 'FEELING_CREATIVE' || val === 'Feeling creative') return 'Feeling creative';
-  if (val === 'LISTENING_TO_MUSIC' || val === 'Listening to music') return 'Listening to music';
-  if (val === 'GAMING' || val === 'Looking for gaming partner') return 'Looking for gaming partner';
-  if (val === 'QUIET_TIME' || val === 'Taking quiet time') return 'Taking quiet time';
-  if (val === 'NONE' || val === 'None') return 'None';
+  const upper = val.toUpperCase();
+  if (upper === 'OPEN_TO_CHAT' || val === 'Open to chatting') return 'Open to chatting';
+  if (upper === 'FEELING_CREATIVE' || upper === 'FOCUSED' || val === 'Feeling creative') return 'Feeling creative';
+  if (upper === 'LISTENING_MUSIC' || upper === 'LISTENING_TO_MUSIC' || upper === 'DEEP_DIVE' || val === 'Listening to music') return 'Listening to music';
+  if (upper === 'GAMING_PARTNER' || upper === 'GAMING' || upper === 'LOOKING_FOR_ADVENTURE' || val === 'Looking for gaming partner') return 'Looking for gaming partner';
+  if (upper === 'QUIET_TIME' || upper === 'QUIET_MODE' || val === 'Taking quiet time') return 'Taking quiet time';
+  if (upper === 'NONE' || val === 'None') return 'None';
   return 'Open to chatting';
 }
+
+export function toDbLivePulse(raw: any): string {
+  const val = String(raw || '').trim();
+  const upper = val.toUpperCase();
+  if (!val || upper === 'NONE' || val === 'None') return 'NONE';
+  if (upper === 'OPEN_TO_CHAT' || val === 'Open to chatting') return 'OPEN_TO_CHAT';
+  if (upper === 'FEELING_CREATIVE' || val === 'Feeling creative') return 'FEELING_CREATIVE';
+  if (upper === 'LISTENING_MUSIC' || upper === 'LISTENING_TO_MUSIC' || val === 'Listening to music') return 'LISTENING_MUSIC';
+  if (upper === 'GAMING_PARTNER' || upper === 'GAMING' || val === 'Looking for gaming partner') return 'GAMING_PARTNER';
+  if (upper === 'QUIET_TIME' || upper === 'QUIET_MODE' || val === 'Taking quiet time') return 'QUIET_TIME';
+  return 'OPEN_TO_CHAT';
+}
+
+const LEGACY_LIVE_PULSE_FALLBACK: Record<string, string> = {
+  FEELING_CREATIVE: 'FOCUSED',
+  LISTENING_MUSIC: 'DEEP_DIVE',
+  GAMING_PARTNER: 'LOOKING_FOR_ADVENTURE',
+  QUIET_TIME: 'QUIET_MODE'
+};
+
+const BASE_MOOD_ENUM_VALUES = new Set([
+  'HAPPY',
+  'SAD',
+  'PEACEFUL',
+  'HOPEFUL',
+  'REFLECTIVE',
+  'LONELY',
+  'MOTIVATED',
+  'GRATEFUL',
+  'EXCITED',
+  'HEARTBREAK',
+  'CHILL',
+  'HEALING',
+  'FUN'
+]);
 
 function normalizeMessagePrivacy(raw: any): 'EVERYONE' | 'FOLLOWERS' | 'NOBODY' {
   const upper = String(raw || 'EVERYONE').toUpperCase();
@@ -779,6 +804,14 @@ export function mapSupabasePost(row: any, userMap?: Map<string, User>): Post {
   };
 }
 
+function normalizeStoryAudience(raw: any): Story['audience'] {
+  const upper = String(raw || 'EVERYONE').toUpperCase();
+  if (upper === 'FOLLOWERS') return 'Followers';
+  if (upper === 'VYBE_MATCHES' || upper === 'CLOSE_FRIENDS') return 'VYBE Matches';
+  if (upper === 'ONLY_ME') return 'Only Me';
+  return 'Public';
+}
+
 export function mapSupabaseStory(row: any, userMap?: Map<string, User>): Story {
   let authorUser: User;
   if (row.profiles) {
@@ -791,21 +824,26 @@ export function mapSupabaseStory(row: any, userMap?: Map<string, User>): Story {
 
   const expiresAt = row.expires_at ? new Date(row.expires_at).getTime() : Date.now() + 24 * 3600000;
   const remainingHours = Math.max(1, Math.round((expiresAt - Date.now()) / 3600000));
+  const rawUrl = String(row.media_url || '').trim();
+  const normalizedUrl = rawUrl === 'text://story' ? '' : resolveMediaUrl(rawUrl);
+  const rawType = String(row.media_type || row.story_type || 'PHOTO').toUpperCase();
 
   return {
     id: row.id,
     author: authorUser,
-    mediaUrl: resolveMediaUrl(row.media_url || ''),
+    mediaUrl: normalizedUrl,
     caption: row.caption || '',
     mediaType:
-      row.media_type === 'VIDEO'
+      rawType === 'VIDEO'
         ? 'VIDEO'
-        : row.media_type === 'TEXT'
+        : rawType === 'TEXT'
           ? 'TEXT'
-          : row.media_type === 'MUSIC'
+          : rawType === 'MUSIC'
             ? 'MUSIC'
             : 'PHOTO',
-    audience: 'Public',
+    audience: normalizeStoryAudience(row.audience),
+    musicTrackTitle: row.music_title || undefined,
+    textBackgroundColor: row.text_bg_key || undefined,
     timestamp: row.created_at ? formatRelativeTime(row.created_at) : 'Just now',
     createdAtIso: row.created_at,
     expiresAtIso: row.expires_at,
@@ -1108,7 +1146,7 @@ export async function fetchCommentsForPost(
   return deduplicatedFetch<PostComment[]>(cacheKey, async () => {
     try {
       const hdrs = await getOptionalRestHeaders(false);
-      const commentCols = `id,post_id,author_id,content,created_at,likes_count,profiles:author_id(${STORY_PROFILE_COLUMNS})`;
+      const commentCols = `id,post_id,author_id,content,created_at,profiles:author_id(${STORY_PROFILE_COLUMNS})`;
       const url = `${SUPABASE_URL}/rest/v1/comments?post_id=eq.${encodeURIComponent(postId)}&select=${encodeURIComponent(commentCols)}&order=created_at.asc&limit=50`;
       const res = await fetch(url, { headers: hdrs });
 
@@ -1181,27 +1219,32 @@ export async function createLivePost(postData: {
   mediaType: string;
   isVybesReel?: boolean;
   moodZone?: string;
+  locationName?: string;
+  audioTrackTitle?: string;
 }): Promise<any> {
   if (!UUID_REGEX.test(postData.authorId)) return null;
   try {
     const isReel = postData.isVybesReel || postData.mediaType === 'REEL';
     const isVideo =
       postData.mediaType === 'VIDEO' || isReel || postData.mediaUrls.some(u => u.includes('.mp4'));
+    const rawMood = postData.moodZone ? String(postData.moodZone).toUpperCase().trim() : '';
 
-    const postPayload = {
+    const postPayload: Record<string, any> = {
       author_id: postData.authorId,
       caption: postData.caption || '',
       media_type: isReel ? 'REEL' : isVideo ? 'VIDEO' : postData.mediaUrls.length > 0 ? 'IMAGE' : 'TEXT',
-      mood_zone: postData.moodZone || 'GENERAL',
+      mood_zone: rawMood || null,
       is_vybes_reel: Boolean(isReel),
       is_unfiltered: false,
       likes_count: 0,
       comments_count: 0,
       saves_count: 0,
-      views_count: 1
+      views_count: 1,
+      ...(postData.locationName ? { location_name: postData.locationName } : {}),
+      ...(postData.audioTrackTitle ? { music_title: postData.audioTrackTitle } : {})
     };
 
-    const res = await authedFetch(
+    let res = await authedFetch(
       `${SUPABASE_URL}/rest/v1/posts`,
       {
         method: 'POST',
@@ -1209,6 +1252,26 @@ export async function createLivePost(postData: {
       },
       { 'Prefer': 'return=representation' }
     );
+
+    if (res.status === 400 && postPayload.mood_zone && !BASE_MOOD_ENUM_VALUES.has(postPayload.mood_zone)) {
+      res = await authedFetch(
+        `${SUPABASE_URL}/rest/v1/posts`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ ...postPayload, mood_zone: null })
+        },
+        { 'Prefer': 'return=representation' }
+      );
+    } else if (res.status === 400 && postPayload.mood_zone) {
+      res = await authedFetch(
+        `${SUPABASE_URL}/rest/v1/posts`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ ...postPayload, mood_zone: null })
+        },
+        { 'Prefer': 'return=representation' }
+      );
+    }
 
     if (!res.ok) return null;
 
@@ -1249,15 +1312,34 @@ export async function createLiveStory(storyData: {
   mediaUrl: string;
   caption?: string;
   mediaType?: string;
+  audience?: Story['audience'];
+  textBackgroundColor?: string;
+  musicTrackTitle?: string;
 }): Promise<any> {
   if (!UUID_REGEX.test(storyData.authorId)) return null;
   try {
-    const payload = {
+    const cleanMediaUrl = String(storyData.mediaUrl || '').trim() || 'text://story';
+    const resolvedType = String(
+      storyData.mediaType || (cleanMediaUrl.includes('.mp4') ? 'VIDEO' : cleanMediaUrl === 'text://story' ? 'TEXT' : 'PHOTO')
+    ).toUpperCase();
+    const audienceDb =
+      storyData.audience === 'Followers'
+        ? 'FOLLOWERS'
+        : storyData.audience === 'VYBE Matches'
+          ? 'VYBE_MATCHES'
+          : storyData.audience === 'Only Me'
+            ? 'ONLY_ME'
+            : 'EVERYONE';
+
+    const payload: Record<string, any> = {
       author_id: storyData.authorId,
-      media_url: storyData.mediaUrl,
+      media_url: cleanMediaUrl,
       caption: storyData.caption || '',
-      media_type: storyData.mediaType || (storyData.mediaUrl.includes('.mp4') ? 'VIDEO' : 'IMAGE'),
-      story_type: storyData.mediaType || 'IMAGE',
+      media_type: resolvedType,
+      story_type: resolvedType,
+      audience: audienceDb,
+      ...(storyData.textBackgroundColor ? { text_bg_key: storyData.textBackgroundColor } : {}),
+      ...(storyData.musicTrackTitle ? { music_title: storyData.musicTrackTitle } : {}),
       expires_at: new Date(Date.now() + 24 * 3600000).toISOString()
     };
 
@@ -1281,25 +1363,8 @@ export async function createLiveStory(storyData: {
   return null;
 }
 
-export async function syncPostLikeCountToSupabase(postId: string, nextLikesCount: number): Promise<void> {
-  if (!postId || !UUID_REGEX.test(postId)) return;
-  try {
-    const token = await getValidWebAccessToken();
-    if (!token) return;
-    await fetch(`${SUPABASE_URL}/rest/v1/posts?id=eq.${encodeURIComponent(postId)}`, {
-      method: 'PATCH',
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        likes_count: Math.max(0, nextLikesCount)
-      })
-    });
-  } catch {
-    // ignore background sync notice
-  }
+export async function syncPostLikeCountToSupabase(_postId: string, _nextLikesCount: number): Promise<void> {
+  // Handled server-side by post_reactions database triggers; direct PATCH from non-authors fails RLS.
 }
 
 export async function togglePostReactionInSupabase(params: {
@@ -1317,7 +1382,7 @@ export async function togglePostReactionInSupabase(params: {
       return res.ok;
     }
     const res = await authedFetch(
-      `${SUPABASE_URL}/rest/v1/post_reactions`,
+      `${SUPABASE_URL}/rest/v1/post_reactions?on_conflict=post_id,user_id`,
       {
         method: 'POST',
         body: JSON.stringify({
@@ -1343,7 +1408,7 @@ export async function toggleSavePostInSupabase(params: {
   try {
     if (params.shouldSave) {
       const res = await authedFetch(
-        `${SUPABASE_URL}/rest/v1/saved_posts`,
+        `${SUPABASE_URL}/rest/v1/saved_posts?on_conflict=user_id,post_id`,
         {
           method: 'POST',
           body: JSON.stringify({
@@ -1451,7 +1516,7 @@ export async function toggleFollowInSupabase(params: {
       return res.ok;
     }
     const res = await authedFetch(
-      `${SUPABASE_URL}/rest/v1/follows`,
+      `${SUPABASE_URL}/rest/v1/follows?on_conflict=follower_id,followed_id`,
       {
         method: 'POST',
         body: JSON.stringify({
@@ -1473,15 +1538,43 @@ export async function updateProfileInSupabase(
   patch: Record<string, any>
 ): Promise<{ ok: boolean; user?: User; error?: string }> {
   if (!UUID_REGEX.test(userId)) return { ok: false, error: 'Valid user session required.' };
+  const normalizedPatch: Record<string, any> = { ...patch };
+  if ('live_pulse' in normalizedPatch && normalizedPatch.live_pulse !== undefined) {
+    normalizedPatch.live_pulse = toDbLivePulse(normalizedPatch.live_pulse);
+  }
+  if ('current_mood' in normalizedPatch && typeof normalizedPatch.current_mood === 'string') {
+    normalizedPatch.current_mood = normalizedPatch.current_mood.toUpperCase().trim() || null;
+  }
+
   try {
-    const res = await authedFetch(
-      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=${encodeURIComponent(PROFILE_SELECT_COLUMNS)}`,
+    const endpoint = `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=${encodeURIComponent(PROFILE_SELECT_COLUMNS)}`;
+    let res = await authedFetch(
+      endpoint,
       {
         method: 'PATCH',
-        body: JSON.stringify(patch)
+        body: JSON.stringify(normalizedPatch)
       },
       { 'Prefer': 'return=representation' }
     );
+
+    if (res.status === 400 && (normalizedPatch.live_pulse || normalizedPatch.current_mood)) {
+      const fallbackPatch: Record<string, any> = { ...normalizedPatch };
+      if (fallbackPatch.live_pulse && LEGACY_LIVE_PULSE_FALLBACK[fallbackPatch.live_pulse]) {
+        fallbackPatch.live_pulse = LEGACY_LIVE_PULSE_FALLBACK[fallbackPatch.live_pulse];
+      }
+      if (fallbackPatch.current_mood && !BASE_MOOD_ENUM_VALUES.has(fallbackPatch.current_mood)) {
+        fallbackPatch.current_mood = null;
+      }
+      res = await authedFetch(
+        endpoint,
+        {
+          method: 'PATCH',
+          body: JSON.stringify(fallbackPatch)
+        },
+        { 'Prefer': 'return=representation' }
+      );
+    }
+
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       return { ok: false, error: parseSupabaseError(err, 'Failed to update profile.') };
@@ -1735,13 +1828,15 @@ export async function markConversationReadInSupabase(
   const nowIso = new Date().toISOString();
   try {
     await authedFetch(
-      `${SUPABASE_URL}/rest/v1/message_receipts`,
+      `${SUPABASE_URL}/rest/v1/message_receipts?on_conflict=message_id,user_id`,
       {
         method: 'POST',
         body: JSON.stringify(
           validIds.slice(-50).map(id => ({
             message_id: id,
             user_id: myUserId,
+            is_delivered: true,
+            is_read: true,
             read_at: nowIso
           }))
         )
@@ -1995,7 +2090,7 @@ export async function toggleJoinCommunityInSupabase(params: {
   try {
     if (params.shouldJoin) {
       const res = await authedFetch(
-        `${SUPABASE_URL}/rest/v1/community_members`,
+        `${SUPABASE_URL}/rest/v1/community_members?on_conflict=community_id,user_id`,
         {
           method: 'POST',
           body: JSON.stringify({
@@ -2823,19 +2918,6 @@ export async function suspendUserInSupabase(params: {
       const errData = await resp.json().catch(() => ({}));
       return { ok: false, error: errData?.message || `Account moderation failed (${resp.status}).` };
     }
-    await fetch(`${SUPABASE_URL}/rest/v1/user_moderation_actions`, {
-      method: 'POST',
-      headers: { ...auth.headers, 'Prefer': 'return=minimal' },
-      body: JSON.stringify({
-        user_id: params.userId,
-        action_type: params.action === 'RESTORE' ? 'UNBAN' : params.action,
-        reason: params.reason || `Admin ${params.action}`,
-        duration_hours: params.action === 'SUSPEND' ? hours : null,
-        expires_at: params.action === 'SUSPEND' ? until : null,
-        is_active: params.action !== 'RESTORE',
-        created_by: UUID_REGEX.test(auth.adminId) ? auth.adminId : null
-      })
-    }).catch(() => null);
     await recordAdminAuditLogToSupabase({
       action: `USER_${params.action}`,
       targetType: 'profiles',
