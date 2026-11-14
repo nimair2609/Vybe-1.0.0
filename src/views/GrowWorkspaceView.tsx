@@ -12,6 +12,7 @@ import {
   VybeEmptyState
 } from '../components/VybeDesignSystem';
 import { ProfileView } from './ProfileView';
+import { VybeAvatar } from '../components/OptimizedImage';
 
 export const GrowWorkspaceView: React.FC = () => {
   const {
@@ -105,7 +106,7 @@ export const GrowWorkspaceView: React.FC = () => {
         >
           <div className="relative z-10 max-w-sm">
             <h1 className="text-xl sm:text-2xl font-extrabold text-[var(--vybe-text)] tracking-tight">
-              Welcome back, {currentUser.displayName.split(' ')[0]}
+              Welcome back, {(currentUser?.displayName || 'Explorer').split(' ')[0]}
             </h1>
             <p className="text-xs sm:text-sm text-[var(--vybe-text-secondary)] mt-1">
               Keep learning. Keep growing.
@@ -262,10 +263,12 @@ export const GrowWorkspaceView: React.FC = () => {
                 >
                   <div className="flex items-center gap-3">
                     <button onClick={() => openUserProfile(post.author)} className="shrink-0">
-                      <img
+                      <VybeAvatar
                         src={post.author.avatarUrl}
-                        alt={post.author.displayName}
-                        className="w-10 h-10 rounded-full object-cover border border-[var(--vybe-border)]"
+                        name={post.author.displayName}
+                        username={post.author.username}
+                        size={40}
+                        className="w-10 h-10 border border-[var(--vybe-border)]"
                       />
                     </button>
                     <div className="min-w-0 flex-1">
@@ -336,10 +339,12 @@ export const GrowWorkspaceView: React.FC = () => {
                     className="rounded-2xl bg-[var(--vybe-surface)] border border-[var(--vybe-border)] p-3.5 flex items-center gap-3"
                   >
                     <button onClick={() => openUserProfile(member)} className="shrink-0">
-                      <img
+                      <VybeAvatar
                         src={member.avatarUrl}
-                        alt={member.displayName}
-                        className="w-11 h-11 rounded-full object-cover border border-[var(--vybe-border)]"
+                        name={member.displayName}
+                        username={member.username}
+                        size={44}
+                        className="w-11 h-11 border border-[var(--vybe-border)]"
                       />
                     </button>
                     <div className="flex-1 min-w-0">
@@ -354,7 +359,7 @@ export const GrowWorkspaceView: React.FC = () => {
                       </div>
                       <p className="text-xs text-[var(--vybe-text-secondary)] truncate">@{member.username}</p>
                     </div>
-                    {member.id !== currentUser.id && (
+                    {member.id !== currentUser?.id && (
                       <button
                         onClick={() => toggleFollowUser(member.id)}
                         className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors ${
@@ -521,11 +526,20 @@ export const GrowWorkspaceView: React.FC = () => {
               className="rounded-2xl bg-[var(--vybe-surface)] border border-[var(--vybe-border)] p-4 flex items-center justify-between gap-3"
             >
               <div className="flex items-center gap-3 min-w-0">
-                <img
-                  src={shop.logoUrl}
-                  alt={shop.businessName}
-                  className="w-12 h-12 rounded-xl object-cover border border-[var(--vybe-border)] shrink-0"
-                />
+                {shop.logoUrl ? (
+                  <img
+                    src={shop.logoUrl}
+                    alt={shop.businessName}
+                    className="w-12 h-12 rounded-xl object-cover border border-[var(--vybe-border)] shrink-0"
+                  />
+                ) : (
+                  <VybeAvatar
+                    src=""
+                    name={shop.businessName}
+                    size={48}
+                    className="w-12 h-12 rounded-xl border border-[var(--vybe-border)] shrink-0"
+                  />
+                )}
                 <div className="min-w-0">
                   <h3 className="text-sm font-bold text-[var(--vybe-text)] truncate">{shop.businessName}</h3>
                   <p className="text-xs text-[var(--vybe-text-secondary)] truncate">{shop.category} · {shop.locationAddress}</p>

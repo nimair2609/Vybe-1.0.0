@@ -2263,7 +2263,10 @@ const server = http.createServer(async (req, res) => {
     <div style="color:#94a3b8;font-size:14px;margin-top:4px">@${esc(profileRow.username)}${isPrivate ? ' 🔒 Private' : ''}</div>
     <p style="color:#cbd5e1;font-size:14px;line-height:1.5;margin:16px 0">${esc(bioText)}</p>
     <div style="color:#94a3b8;font-size:12px">${Number(profileRow.followers_count || 0)} LINKUPS • ${Number(profileRow.posts_count || 0)} Posts</div>
-    <a class="btn" href="${esc(appDeepLink)}">Open Profile in VYBE App</a></div></body></html>`);
+    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:20px">
+    <a class="btn" style="margin-top:0" href="${esc(appDeepLink)}">Open Profile in VYBE App</a>
+    <a class="btn" style="margin-top:0;background:#1e293b;border:1px solid #334155" href="/?web=1#u=${esc(encodeURIComponent(profileRow.username || profileRow.id))}">View on Web</a>
+    </div></div></body></html>`);
     return;
   }
 
@@ -2311,7 +2314,10 @@ const server = http.createServer(async (req, res) => {
     ${postRow.caption ? `<p style="color:#e2e8f0;font-size:14px;line-height:1.5;margin:12px 0 0">${esc(postRow.caption)}</p>` : ''}
     ${mediaHtml}
     <div style="color:#94a3b8;font-size:12px;margin-top:14px">🫰 ${Number(postRow.likes_count || 0)} • 💬 ${Number(postRow.comments_count || 0)}</div>
-    <a class="btn" href="${esc(appDeepLink)}">Open Post in VYBE App</a></div></body></html>`);
+    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:20px">
+    <a class="btn" style="margin-top:0;flex:1" href="${esc(appDeepLink)}">Open Post in VYBE App</a>
+    <a class="btn" style="margin-top:0;flex:1;background:#1e293b;border:1px solid #334155" href="/?web=1#post_${esc(encodeURIComponent(postRow.id))}">View on Web</a>
+    </div></div></body></html>`);
     return;
   }
 
@@ -2370,8 +2376,8 @@ const server = http.createServer(async (req, res) => {
   const decodedSegments = safeDecodedPath.split('/').filter(Boolean);
   const BLOCKED_MANIFEST_RE = /^(package(-lock)?\.json|tsconfig.*\.json|vite\.config\.[tj]s|netlify.*\.toml|capacitor\.config\.[tj]s|firebase-service-account\.json|admin_state_override\.json|platform_config\.json)$/i;
   if (
-    rawSegments.some(seg => seg === '..' || seg.startsWith('.') || BLOCKED_MANIFEST_RE.test(seg)) ||
-    decodedSegments.some(seg => seg === '..' || seg.startsWith('.') || BLOCKED_MANIFEST_RE.test(seg))
+    rawSegments.some(seg => seg === '..' || (seg.startsWith('.') && seg !== '.well-known') || BLOCKED_MANIFEST_RE.test(seg)) ||
+    decodedSegments.some(seg => seg === '..' || (seg.startsWith('.') && seg !== '.well-known') || BLOCKED_MANIFEST_RE.test(seg))
   ) {
     res.writeHead(403, { 'Content-Type': 'text/plain' });
     res.end('Forbidden');
@@ -2392,16 +2398,11 @@ const server = http.createServer(async (req, res) => {
     return sendStaticFile(publicCandidate, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
   }
 
-  // 4. Static Assets: Check DIST_DIR (Vite JS/CSS bundles) and PUBLIC_WEBAPP_DIR fallback
+  // 4. Static Assets: Check DIST_DIR (Vite JS/CSS bundles)
   const distCandidate = path.resolve(DIST_DIR, relRequestPath);
   if (isSafeWithinDir(DIST_DIR, distCandidate) && fs.existsSync(distCandidate) && fs.statSync(distCandidate).isFile()) {
     const ext = path.extname(distCandidate).toLowerCase();
     return sendStaticFile(distCandidate, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
-  }
-  const persistedWebappCandidate = path.resolve(PUBLIC_WEBAPP_DIR, relRequestPath);
-  if (isSafeWithinDir(PUBLIC_WEBAPP_DIR, persistedWebappCandidate) && fs.existsSync(persistedWebappCandidate) && fs.statSync(persistedWebappCandidate).isFile()) {
-    const ext = path.extname(persistedWebappCandidate).toLowerCase();
-    return sendStaticFile(persistedWebappCandidate, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
   }
 
   // 5. Static Assets: Check WEB_DIR strictly for /admin/* and /badges/* routes
@@ -2430,11 +2431,6 @@ const server = http.createServer(async (req, res) => {
   const appIndex = path.join(DIST_DIR, 'index.html');
   if (fs.existsSync(appIndex)) {
     return sendStaticFile(appIndex, { 'Content-Type': 'text/html; charset=utf-8' });
-  }
-
-  const persistedAppIndex = path.join(PUBLIC_WEBAPP_DIR, 'index.html');
-  if (fs.existsSync(persistedAppIndex)) {
-    return sendStaticFile(persistedAppIndex, { 'Content-Type': 'text/html; charset=utf-8' });
   }
 
   const fallbackAdmin = path.join(WEB_DIR, 'index.html');

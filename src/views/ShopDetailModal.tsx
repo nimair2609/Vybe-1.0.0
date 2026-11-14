@@ -20,11 +20,15 @@ export const ShopDetailModal: React.FC = () => {
         
         {/* Cover */}
         <div className="h-44 w-full relative">
-          <img 
-            src={selectedShop.coverUrl} 
-            alt={selectedShop.businessName}
-            className="w-full h-full object-cover"
-          />
+          {selectedShop.coverUrl ? (
+            <img 
+              src={selectedShop.coverUrl} 
+              alt={selectedShop.businessName}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="w-full h-full bg-gradient-to-br from-[#1A1F36] via-[#241B46] to-[#0a0f1d]" />
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-[#0a0f1d] via-transparent to-transparent" />
           <button 
             onClick={closeModal}
@@ -37,11 +41,17 @@ export const ShopDetailModal: React.FC = () => {
         {/* Content */}
         <div className="p-6 -mt-12 relative space-y-5">
           <div className="flex items-center gap-4">
-            <img 
-              src={selectedShop.logoUrl} 
-              alt={selectedShop.businessName}
-              className="w-20 h-20 rounded-2xl object-cover border-4 border-[#0a0f1d] shadow-xl"
-            />
+            {selectedShop.logoUrl ? (
+              <img 
+                src={selectedShop.logoUrl} 
+                alt={selectedShop.businessName}
+                className="w-20 h-20 rounded-2xl object-cover border-4 border-[#0a0f1d] shadow-xl"
+              />
+            ) : (
+              <div className="w-20 h-20 rounded-2xl bg-[#1A1F36] border-4 border-[#0a0f1d] shadow-xl flex items-center justify-center text-amber-400 shrink-0">
+                <Store className="w-8 h-8" />
+              </div>
+            )}
             <div>
               <div className="flex items-center gap-1.5">
                 <h2 className="text-xl font-bold brand-font text-white">{selectedShop.businessName}</h2>
@@ -92,11 +102,17 @@ export const ShopDetailModal: React.FC = () => {
                   key={item.id}
                   className="p-3 rounded-xl bg-[#101322] border border-[#262E4A] flex items-center justify-between gap-3"
                 >
-                  <img 
-                    src={item.imageUrl} 
-                    alt={item.name}
-                    className="w-14 h-14 rounded-xl object-cover shrink-0" 
-                  />
+                  {item.imageUrl ? (
+                    <img 
+                      src={item.imageUrl} 
+                      alt={item.name}
+                      className="w-14 h-14 rounded-xl object-cover shrink-0" 
+                    />
+                  ) : (
+                    <div className="w-14 h-14 rounded-xl bg-[#1A1F36] flex items-center justify-center text-[#00C6FF] shrink-0">
+                      <ShoppingBag className="w-5 h-5" />
+                    </div>
+                  )}
                   <div className="flex-1">
                     <h4 className="text-xs font-bold text-white">{item.name}</h4>
                     <p className="text-[11px] text-gray-400 line-clamp-1">{item.description}</p>

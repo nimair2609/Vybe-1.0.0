@@ -1,21 +1,55 @@
 import React, { useState } from 'react';
-import { ShieldCheck, X, Check, Send } from 'lucide-react';
+import { ShieldCheck, X, Check, Send, AlertCircle, Loader2 } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
 import { OfficialBadge } from '../components/Badges';
+import { submitVerificationRequestToSupabase } from '../services/supabaseService';
+
+const BADGE_REQUEST_MAP: Record<
+  'VERIFIED_BLUE' | 'VIP_GOLD' | 'SHOP_GOLD' | 'WORKER_GREEN',
+  { requestType: 'VERIFIED' | 'VIP' | 'SHOP' | 'WORKER'; category: string }
+> = {
+  VERIFIED_BLUE: { requestType: 'VERIFIED', category: 'Creator' },
+  VIP_GOLD: { requestType: 'VIP', category: 'VIP' },
+  SHOP_GOLD: { requestType: 'SHOP', category: 'Business' },
+  WORKER_GREEN: { requestType: 'WORKER', category: 'Staff' }
+};
 
 export const VerificationCenterModal: React.FC = () => {
-  const { closeModal } = useVybe();
+  const { closeModal, currentUser, requireAuth } = useVybe();
   const [selectedBadge, setSelectedBadge] = useState<'VERIFIED_BLUE' | 'VIP_GOLD' | 'SHOP_GOLD' | 'WORKER_GREEN'>('VERIFIED_BLUE');
   const [submitted, setSubmitted] = useState(false);
   const [portfolioLink, setPortfolioLink] = useState('');
   const [reason, setReason] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitError(null);
+    if (!requireAuth('Sign in to submit a verification application.') || !currentUser) return;
+    if (!portfolioLink.trim() || !reason.trim()) return;
+
+    setIsSubmitting(true);
+    const meta = BADGE_REQUEST_MAP[selectedBadge];
+    const res = await submitVerificationRequestToSupabase({
+      userId: currentUser.id,
+      requestType: meta.requestType,
+      fullName: currentUser.displayName || currentUser.username,
+      category: meta.category,
+      statement: reason.trim(),
+      supportingLink: portfolioLink.trim()
+    });
+    setIsSubmitting(false);
+
+    if (!res.ok) {
+      setSubmitError(res.error || 'Could not submit verification application.');
+      return;
+    }
+
     setSubmitted(true);
     setTimeout(() => {
       closeModal();
-    }, 2500);
+    }, 2200);
   };
 
   return (
@@ -122,13 +156,20 @@ export const VerificationCenterModal: React.FC = () => {
               />
             </div>
 
+            {submitError && (
+              <div className="p-2.5 rounded-xl bg-red-500/15 border border-red-500/40 text-red-400 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{submitError}</span>
+              </div>
+            )}
+
             <button
               type="submit"
-              disabled={!portfolioLink.trim() || !reason.trim()}
+              disabled={isSubmitting || !portfolioLink.trim() || !reason.trim()}
               className="w-full py-3 bg-[var(--vybe-accent)] disabled:opacity-40 text-white keep-white font-bold text-xs rounded-xl shadow-sm flex items-center justify-center gap-2 hover:opacity-95"
             >
-              <Send className="w-4 h-4" />
-              <span>Submit Verification Review</span>
+              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              <span>{isSubmitting ? 'Submitting Application...' : 'Submit Verification Review'}</span>
             </button>
           </form>
         )}

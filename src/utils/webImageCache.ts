@@ -56,7 +56,7 @@ export async function trackAndCacheImage(url: string): Promise<void> {
     }
 
     // Only prefetch cacheable public URLs (avoid re-fetching private signed URLs into CORS issues)
-    if (cleanUrl.includes('/storage/v1/object/public/') || cleanUrl.startsWith('https://images.unsplash.com/')) {
+    if (cleanUrl.includes('/storage/v1/object/public/')) {
       const res = await fetch(cleanUrl, { cache: 'force-cache', mode: 'cors' });
       if (res.ok) {
         await cache.put(cacheReq, res.clone());

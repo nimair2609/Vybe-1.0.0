@@ -11,6 +11,31 @@ export const UnloadModal: React.FC = () => {
 
   const room = selectedUnloadRoom || unloadRooms[0];
 
+  if (!room) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-xl animate-fade-in">
+        <div className="relative w-full max-w-md bg-[#0a0f1d] border border-[#262E4A] rounded-3xl shadow-2xl p-6 text-white text-center space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-purple-500/10 text-purple-400 border border-purple-500/20 flex items-center justify-center mx-auto">
+            <Users className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="font-bold text-base text-white">No Active Unload Rooms</h3>
+            <p className="text-xs text-gray-400">
+              There are no live Unload rooms available right now. Check back soon.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={closeModal}
+            className="w-full py-2.5 rounded-xl bg-[#1A1F36] hover:bg-[#262E4A] text-white text-xs font-bold transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
     if (messageText.trim() && room) {

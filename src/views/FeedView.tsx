@@ -158,7 +158,7 @@ export const FeedView: React.FC = () => {
               </div>
               <button
                 type="button"
-                onClick={() => openAuthModal('SIGN_IN')}
+                onClick={() => openAuthModal(undefined, 'LOGIN')}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[var(--vybe-accent)] text-white keep-white text-xs font-bold hover:opacity-95 shrink-0"
               >
                 <LogIn className="w-3.5 h-3.5" />
@@ -212,7 +212,7 @@ export const FeedView: React.FC = () => {
               title="No posts in this vibe yet"
               subtitle={`Share a photo, thought, or track in the ${selectedMoodFilter} feed.`}
               actionLabel={currentUser ? 'Create Post' : 'Sign In to Post'}
-              onAction={() => (currentUser ? openModal('CREATE_POST') : openAuthModal('SIGN_IN'))}
+              onAction={() => (currentUser ? openModal('CREATE_POST') : openAuthModal(undefined, 'LOGIN'))}
             />
           ) : (
             <>
@@ -292,7 +292,7 @@ export const FeedView: React.FC = () => {
               </p>
               <button
                 type="button"
-                onClick={() => openAuthModal('SIGN_IN')}
+                onClick={() => openAuthModal(undefined, 'LOGIN')}
                 className="w-full py-2.5 rounded-xl bg-[var(--vybe-accent)] text-white keep-white text-xs font-bold hover:opacity-95"
               >
                 Sign In or Create Account

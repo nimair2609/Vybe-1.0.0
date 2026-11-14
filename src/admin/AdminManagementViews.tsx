@@ -7,6 +7,7 @@ import {
 import { OfficialVybeBadge, Post, User } from '../types';
 import { LiveReportItem } from '../services/supabaseService';
 import { OfficialBadge } from '../components/Badges';
+import { VybeAvatar } from '../components/OptimizedImage';
 import {
   VybeButton, VybeCard, VybeEmptyState, VybeModal, VybeSelect, VybeStatusChip
 } from '../components/VybeDesignSystem';
@@ -232,10 +233,12 @@ export const AdminManagementViews: React.FC<AdminManagementViewsProps> = ({
                     >
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
-                          <img
+                          <VybeAvatar
                             src={u.avatarUrl}
-                            alt={u.displayName}
-                            className="w-9 h-9 rounded-full object-cover border border-[var(--vybe-border)] shrink-0"
+                            name={u.displayName}
+                            username={u.username}
+                            size={36}
+                            className="w-9 h-9 border border-[var(--vybe-border)] shrink-0"
                           />
                           <div className="min-w-0">
                             <div className="flex items-center gap-1 font-bold text-[var(--vybe-text)]">
@@ -324,10 +327,12 @@ export const AdminManagementViews: React.FC<AdminManagementViewsProps> = ({
               <VybeCard key={`m_${u.id}`} padding="sm" className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <img
+                    <VybeAvatar
                       src={u.avatarUrl}
-                      alt={u.displayName}
-                      className="w-10 h-10 rounded-full object-cover border border-[var(--vybe-border)]"
+                      name={u.displayName}
+                      username={u.username}
+                      size={40}
+                      className="w-10 h-10 border border-[var(--vybe-border)]"
                     />
                     <div className="min-w-0">
                       <div className="flex items-center gap-1 font-bold text-xs text-[var(--vybe-text)]">
@@ -396,10 +401,12 @@ export const AdminManagementViews: React.FC<AdminManagementViewsProps> = ({
           {activeInspectedUser && (
             <div className="space-y-4 text-xs">
               <div className="flex items-center gap-3.5">
-                <img
+                <VybeAvatar
                   src={activeInspectedUser.avatarUrl}
-                  alt={activeInspectedUser.displayName}
-                  className="w-16 h-16 rounded-2xl object-cover border border-[var(--vybe-border)]"
+                  name={activeInspectedUser.displayName}
+                  username={activeInspectedUser.username}
+                  size={64}
+                  className="w-16 h-16 rounded-2xl border border-[var(--vybe-border)]"
                 />
                 <div className="space-y-1 min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -654,10 +661,12 @@ export const AdminManagementViews: React.FC<AdminManagementViewsProps> = ({
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <img
+                      <VybeAvatar
                         src={post.author.avatarUrl}
-                        alt={post.author.displayName}
-                        className="w-8 h-8 rounded-full object-cover border border-[var(--vybe-border)] shrink-0"
+                        name={post.author.displayName}
+                        username={post.author.username}
+                        size={32}
+                        className="w-8 h-8 border border-[var(--vybe-border)] shrink-0"
                       />
                       <div className="min-w-0">
                         <div className="font-bold text-[var(--vybe-text)] text-xs truncate">

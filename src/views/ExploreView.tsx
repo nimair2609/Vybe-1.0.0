@@ -250,11 +250,17 @@ export const ExploreView: React.FC = () => {
                 onClick={() => openShopDetail(shop)}
                 className="p-3.5 rounded-2xl bg-[var(--vybe-surface)] border border-[var(--vybe-border)] hover:border-amber-500/60 cursor-pointer flex items-center gap-3 transition-all"
               >
-                <img
-                  src={shop.logoUrl}
-                  alt={shop.businessName}
-                  className="w-12 h-12 rounded-xl object-cover shrink-0 border border-[var(--vybe-border)]"
-                />
+                {shop.logoUrl ? (
+                  <img
+                    src={shop.logoUrl}
+                    alt={shop.businessName}
+                    className="w-12 h-12 rounded-xl object-cover shrink-0 border border-[var(--vybe-border)]"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-xl shrink-0 border border-[var(--vybe-border)] bg-[var(--vybe-elevated)] flex items-center justify-center text-amber-500">
+                    <Store className="w-5 h-5" />
+                  </div>
+                )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1">
                     <h4 className="font-bold text-xs text-[var(--vybe-text)] truncate">{shop.businessName}</h4>
@@ -300,15 +306,20 @@ export const ExploreView: React.FC = () => {
                 onClick={() => openSharedPostModal(p.id)}
                 className="aspect-square bg-[var(--vybe-surface)] border border-[var(--vybe-border)] rounded-2xl overflow-hidden relative group cursor-pointer"
               >
-                <img
-                  src={
-                    p.mediaUrls[0] ||
-                    'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=400&q=80'
-                  }
-                  alt={p.caption}
-                  loading="lazy"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                />
+                {p.mediaUrls[0] ? (
+                  <img
+                    src={p.mediaUrls[0]}
+                    alt={p.caption}
+                    loading="lazy"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-br from-[#12172B] via-[#1B1436] to-[#080B18] p-4 flex items-center justify-center text-center">
+                    <p className="text-xs font-semibold text-white/85 keep-white line-clamp-4 leading-relaxed">
+                      {p.caption || p.author.displayName}
+                    </p>
+                  </div>
+                )}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent p-3 flex flex-col justify-between">
                   <div className="flex justify-end">
                     <div className="rounded-full bg-black/50 backdrop-blur-md px-1.5 py-0.5">

@@ -305,7 +305,7 @@ export const Navbar: React.FC = () => {
           ) : (
             <button
               type="button"
-              onClick={() => openAuthModal('SIGN_IN')}
+              onClick={() => openAuthModal(undefined, 'LOGIN')}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--vybe-accent)] text-white keep-white text-xs font-bold shadow-sm hover:opacity-95 transition-opacity shrink-0"
             >
               <LogIn className="w-3.5 h-3.5" />

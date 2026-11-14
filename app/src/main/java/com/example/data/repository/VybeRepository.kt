@@ -7692,97 +7692,26 @@ class VybeRepository private constructor() {
     val pendingReps = reports.count { it.status == ReportStatus.PENDING }
 
     _adminStats.value = AdminDashboardStats(
-      totalUsers = users.size.coerceAtLeast(if (users.isEmpty()) 148 else users.size),
-      activeUsers24h = (users.size * 0.45f).toInt().coerceAtLeast(32),
-      activeUsers7d = (users.size * 0.82f).toInt().coerceAtLeast(96),
-      totalPosts = posts.size.coerceAtLeast(24),
-      totalReels = posts.count { it.isVybesReel || it.mediaType == MediaType.REEL }.coerceAtLeast(14),
-      totalStories = stories.size.coerceAtLeast(8),
-      totalCommunities = communities.size.coerceAtLeast(6),
-      verifiedCreators = verifiedCount.coerceAtLeast(12),
+      totalUsers = users.size,
+      activeUsers24h = users.count { it.isOnline },
+      activeUsers7d = users.size,
+      totalPosts = posts.size,
+      totalReels = posts.count { it.isVybesReel || it.mediaType == MediaType.REEL },
+      totalStories = stories.size,
+      totalCommunities = communities.size,
+      verifiedCreators = verifiedCount,
       pendingReports = pendingReps,
       activeAdCampaigns = activeAdsCount,
       totalImpressionsCount = totalImpressions,
       totalClicksCount = totalClicks,
-      storageUsageMb = (posts.size * 12.4f + stories.size * 3.8f + 142.8f),
+      storageUsageMb = (posts.size * 12.4f + stories.size * 3.8f),
       apiErrorCount24h = 0,
-      backendStatus = if (supabaseRepo.isConfigured) "OPERATIONAL" else "STANDALONE / READY",
-      realtimeLatencyMs = if (VybeRealtimePushManager.isRealtimeConnected.value) 28 else 32
+      backendStatus = if (supabaseRepo.isConfigured) "OPERATIONAL" else "UNCONFIGURED",
+      realtimeLatencyMs = if (VybeRealtimePushManager.isRealtimeConnected.value) 28 else 0
     )
   }
 
-  private fun createInitialAdCampaigns(): List<AdCampaign> {
-    return listOf(
-      AdCampaign(
-        id = "ad_101",
-        advertiserName = "Acoustix Labs India",
-        campaignTitle = "SoundWave Studio Pro Headphones",
-        placement = AdCampaignPlacement.FEED_NATIVE,
-        creativeUrl = "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&q=80",
-        targetCtaUrl = "https://vybe.nrnext.in/shop/acoustix",
-        ctaButtonText = "Shop 30% Off",
-        dailyBudgetInr = 2500,
-        totalBudgetInr = 50000,
-        spentInr = 18400,
-        impressions = 42500,
-        clicks = 1840,
-        status = AdCampaignStatus.ACTIVE,
-        startDateIso = "2026-10-01",
-        endDateIso = "2026-11-15"
-      ),
-      AdCampaign(
-        id = "ad_102",
-        advertiserName = "Sunburn Arena Festivals",
-        campaignTitle = "Sunburn 2026 Early Bird Pass",
-        placement = AdCampaignPlacement.REELS_IN_STREAM,
-        creativeUrl = "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=800&q=80",
-        targetCtaUrl = "https://vybe.nrnext.in/events/sunburn",
-        ctaButtonText = "Book Passes",
-        dailyBudgetInr = 5000,
-        totalBudgetInr = 120000,
-        spentInr = 45000,
-        impressions = 98200,
-        clicks = 5120,
-        status = AdCampaignStatus.ACTIVE,
-        startDateIso = "2026-10-10",
-        endDateIso = "2026-12-01"
-      ),
-      AdCampaign(
-        id = "ad_103",
-        advertiserName = "Roast & Bloom Coffee Co.",
-        campaignTitle = "Cold Brew Nitro Cans Delivered",
-        placement = AdCampaignPlacement.EXPLORE_BANNER,
-        creativeUrl = "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=800&q=80",
-        targetCtaUrl = "https://vybe.nrnext.in/shop/roast",
-        ctaButtonText = "Try Free Pack",
-        dailyBudgetInr = 1000,
-        totalBudgetInr = 25000,
-        spentInr = 9200,
-        impressions = 22800,
-        clicks = 760,
-        status = AdCampaignStatus.PAUSED,
-        startDateIso = "2026-09-15",
-        endDateIso = "2026-10-30"
-      ),
-      AdCampaign(
-        id = "ad_104",
-        advertiserName = "VYBE Creator Academy",
-        campaignTitle = "Founding Creator Mentorship Batch #2",
-        placement = AdCampaignPlacement.STORIES_INTERSTITIAL,
-        creativeUrl = "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&q=80",
-        targetCtaUrl = "https://vybe.nrnext.in/creators/founding",
-        ctaButtonText = "Apply Now",
-        dailyBudgetInr = 1500,
-        totalBudgetInr = 30000,
-        spentInr = 12500,
-        impressions = 61400,
-        clicks = 3420,
-        status = AdCampaignStatus.SCHEDULED,
-        startDateIso = "2026-11-01",
-        endDateIso = "2026-12-15"
-      )
-    )
-  }
+  private fun createInitialAdCampaigns(): List<AdCampaign> = emptyList()
 
   private fun createInitialAdminIntegrations(): List<AdminIntegrationItem> {
     return listOf(
@@ -7884,81 +7813,9 @@ class VybeRepository private constructor() {
     )
   }
 
-  private fun createInitialAdminAuditLogs(): List<AdminAuditLog> {
-    return listOf(
-      AdminAuditLog(
-        id = "log_init_01",
-        adminEmail = "owner@vybe.nrnext.in",
-        adminRole = "Owner / Super Admin",
-        action = "PLATFORM_INITIALIZATION",
-        targetType = "CORE_SYSTEM",
-        targetId = "vybe_v3.5.0",
-        details = "Central Admin Control Center initialized with enterprise role enforcement and RLS auditing.",
-        timestamp = "Today, 09:30 AM"
-      ),
-      AdminAuditLog(
-        id = "log_init_02",
-        adminEmail = "tech_admin@vybe.nrnext.in",
-        adminRole = "Technical Administrator",
-        action = "INTEGRATION_SYNC",
-        targetType = "API",
-        targetId = "supabase_core",
-        details = "Verified Supabase database connection pool and real-time push broadcast channels.",
-        timestamp = "Today, 10:15 AM"
-      ),
-      AdminAuditLog(
-        id = "log_init_03",
-        adminEmail = "moderator@vybe.nrnext.in",
-        adminRole = "Content Moderator",
-        action = "REPORT_INVESTIGATION",
-        targetType = "REPORT",
-        targetId = "rep_p101",
-        details = "Opened copyright infringement review for uncredited audio in dance video.",
-        timestamp = "15 mins ago"
-      )
-    )
-  }
+  private fun createInitialAdminAuditLogs(): List<AdminAuditLog> = emptyList()
 
-  private fun createInitialAdminReports(): List<AdminReport> {
-    return listOf(
-      AdminReport(
-        id = "rep_p101",
-        targetType = ReportTargetType.POST,
-        targetId = "post_copyright_sample",
-        summaryText = "Uncredited soundtrack in dance reel without commercial sync license rights",
-        reportedByUsername = "tseries_legal",
-        reportedUser = "dj_rohan",
-        reason = "Copyright / DMCA Infringement",
-        timestamp = "10 mins ago",
-        status = ReportStatus.PENDING,
-        severity = "High"
-      ),
-      AdminReport(
-        id = "rep_u202",
-        targetType = ReportTargetType.USER_PROFILE,
-        targetId = "user_spam_bot_99",
-        summaryText = "Automated crypto giveaway links posted across multiple comment threads",
-        reportedByUsername = "neha_sharma",
-        reportedUser = "crypto_drop_99",
-        reason = "Spam & Commercial Phishing",
-        timestamp = "25 mins ago",
-        status = ReportStatus.PENDING,
-        severity = "Critical"
-      ),
-      AdminReport(
-        id = "rep_r303",
-        targetType = ReportTargetType.REEL,
-        targetId = "reel_dangerous_stunt",
-        summaryText = "High-speed rooftop motorcycle stunt without safety equipment or warning",
-        reportedByUsername = "safety_observer",
-        reportedUser = "daredevil_raj",
-        reason = "Dangerous Activities & Harm",
-        timestamp = "1 hour ago",
-        status = ReportStatus.PENDING,
-        severity = "High"
-      )
-    )
-  }
+  private fun createInitialAdminReports(): List<AdminReport> = emptyList()
 
   // =========================================================================
   // OFFICIAL BADGES, VERIFICATION WORKFLOW & CANONICAL PROFILE DEEP LINKING

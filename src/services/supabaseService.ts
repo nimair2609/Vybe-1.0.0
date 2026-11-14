@@ -838,7 +838,7 @@ export function formatChatClock(isoString?: string | null): string {
 // -------------------------------------------------------------
 // 1. Fetch live profiles & deep-link profile resolution
 // -------------------------------------------------------------
-export async function fetchLiveProfiles(options: { forceRefresh?: boolean } = {}): Promise<User[]> {
+export async function fetchLiveProfiles(options: { forceRefresh?: boolean; throwOnError?: boolean } = {}): Promise<User[]> {
   const cacheKey = 'live_profiles_v3';
 
   if (!options.forceRefresh) {
@@ -851,6 +851,7 @@ export async function fetchLiveProfiles(options: { forceRefresh?: boolean } = {}
 
   return deduplicatedFetch<User[]>(cacheKey, async () => {
     const startTime = Date.now();
+    let lastErr: unknown = null;
     try {
       const hdrs = await getOptionalRestHeaders(false);
       const url = `${SUPABASE_URL}/rest/v1/profiles?select=${encodeURIComponent(PROFILE_SELECT_COLUMNS)}&is_deactivated=not.is.true&order=created_at.desc&limit=80`;
@@ -871,11 +872,18 @@ export async function fetchLiveProfiles(options: { forceRefresh?: boolean } = {}
         return users;
       }
     } catch (err) {
+      lastErr = err;
       console.warn('[Supabase] Failed to fetch profiles:', err);
     }
 
     const fallback = await vybeCache.get<User[]>(cacheKey, { allowStale: true });
-    return fallback?.data || [];
+    if (fallback?.data && fallback.data.length > 0) {
+      return fallback.data;
+    }
+    if (options.throwOnError && lastErr) {
+      throw lastErr instanceof Error ? lastErr : new Error('Unable to load VYBE profiles.');
+    }
+    return [];
   });
 }
 
@@ -963,6 +971,7 @@ export async function fetchLivePosts(
     limit?: number;
     cursorCreatedAt?: string;
     forceRefresh?: boolean;
+    throwOnError?: boolean;
   } = {}
 ): Promise<Post[]> {
   const limit = options.limit || 20;
@@ -979,6 +988,7 @@ export async function fetchLivePosts(
 
   return deduplicatedFetch<Post[]>(cacheKey, async () => {
     const startTime = Date.now();
+    let lastErr: unknown = null;
     try {
       const hdrs = await getOptionalRestHeaders(false);
       let queryParams = `select=${encodeURIComponent(POST_SELECT_COLUMNS)}&is_archived=not.is.true&order=created_at.desc&limit=${limit}`;
@@ -1006,12 +1016,18 @@ export async function fetchLivePosts(
         return posts;
       }
     } catch (err) {
+      lastErr = err;
       console.warn('[Supabase] Failed to fetch posts:', err);
     }
 
     if (isFirstPage) {
       const fallback = await vybeCache.get<Post[]>(cacheKey, { allowStale: true });
-      return fallback?.data || [];
+      if (fallback?.data && fallback.data.length > 0) {
+        return fallback.data;
+      }
+    }
+    if (options.throwOnError && lastErr) {
+      throw lastErr instanceof Error ? lastErr : new Error('Unable to load VYBE feed posts.');
     }
     return [];
   });
@@ -1022,7 +1038,7 @@ export async function fetchLivePosts(
 // -------------------------------------------------------------
 export async function fetchLiveStories(
   userMap?: Map<string, User>,
-  options: { forceRefresh?: boolean } = {}
+  options: { forceRefresh?: boolean; throwOnError?: boolean } = {}
 ): Promise<Story[]> {
   const cacheKey = 'live_stories_v3';
 
@@ -1036,6 +1052,7 @@ export async function fetchLiveStories(
 
   return deduplicatedFetch<Story[]>(cacheKey, async () => {
     const startTime = Date.now();
+    let lastErr: unknown = null;
     try {
       const hdrs = await getOptionalRestHeaders(false);
       const nowIso = encodeURIComponent(new Date().toISOString());
@@ -1057,11 +1074,18 @@ export async function fetchLiveStories(
         return stories;
       }
     } catch (err) {
+      lastErr = err;
       console.warn('[Supabase] Failed to fetch stories:', err);
     }
 
     const fallback = await vybeCache.get<Story[]>(cacheKey, { allowStale: true });
-    return fallback?.data || [];
+    if (fallback?.data && fallback.data.length > 0) {
+      return fallback.data;
+    }
+    if (options.throwOnError && lastErr) {
+      throw lastErr instanceof Error ? lastErr : new Error('Unable to load VYBE stories.');
+    }
+    return [];
   });
 }
 
@@ -1199,14 +1223,17 @@ export async function createLivePost(postData: {
         display_order: idx
       }));
 
-      await authedFetch(
+      const mediaRes = await authedFetch(
         `${SUPABASE_URL}/rest/v1/post_media`,
         {
           method: 'POST',
           body: JSON.stringify(mediaInserts)
         },
         { 'Prefer': 'return=minimal' }
-      ).catch(() => null);
+      );
+      if (!mediaRes.ok) {
+        console.warn('[Supabase] post_media insert failed:', mediaRes.status);
+      }
     }
 
     await vybeCache.invalidatePrefix('live_posts_');
@@ -1591,7 +1618,11 @@ export async function fetchConversationsForUser(myUserId: string): Promise<{
 
     const msgsByConvId = new Map<string, DirectMessage[]>();
     if (Array.isArray(msgRows)) {
-      for (const m of msgRows) {
+      const resolvedUrls = await Promise.all(
+        msgRows.map((m: any) => (m.media_url ? signChatMediaUrlIfNeeded(m.media_url) : Promise.resolve('')))
+      );
+      for (let i = 0; i < msgRows.length; i++) {
+        const m = msgRows[i];
         const cid = m.conversation_id;
         if (!cid) continue;
         const list = msgsByConvId.get(cid) || [];
@@ -1603,7 +1634,7 @@ export async function fetchConversationsForUser(myUserId: string): Promise<{
           timestamp: formatChatClock(m.created_at),
           createdAtIso: m.created_at,
           isMe,
-          mediaUrl: m.media_url ? resolveMediaUrl(m.media_url) : undefined,
+          mediaUrl: resolvedUrls[i] || undefined,
           mediaType: (String(m.media_type || 'TEXT').toUpperCase() as any),
           replyToId: m.reply_to_message_id || undefined,
           status: 'SENT'
@@ -1673,14 +1704,17 @@ export async function fetchMessagesForConversation(
     if (!res.ok) return [];
     const rows = await res.json();
     if (!Array.isArray(rows)) return [];
-    return rows.map((m: any) => ({
+    const resolvedUrls = await Promise.all(
+      rows.map((m: any) => (m.media_url ? signChatMediaUrlIfNeeded(m.media_url) : Promise.resolve('')))
+    );
+    return rows.map((m: any, i: number) => ({
       id: m.id,
       senderId: m.sender_id,
       text: m.content || '',
       timestamp: formatChatClock(m.created_at),
       createdAtIso: m.created_at,
       isMe: String(m.sender_id || '').toLowerCase() === myUserId.toLowerCase(),
-      mediaUrl: m.media_url ? resolveMediaUrl(m.media_url) : undefined,
+      mediaUrl: resolvedUrls[i] || undefined,
       mediaType: (String(m.media_type || 'TEXT').toUpperCase() as any),
       replyToId: m.reply_to_message_id || undefined,
       status: 'SENT'
@@ -2223,18 +2257,88 @@ export async function submitVerificationRequestToSupabase(params: {
 // -------------------------------------------------------------
 // Media URL Resolution & Storage Upload
 // -------------------------------------------------------------
+const chatMediaSignedUrlCache = new Map<string, { url: string; expiresAtMs: number }>();
+const CHAT_MEDIA_CACHE_TTL_MS = 6 * 3600 * 1000;
+
+export async function signChatMediaUrlIfNeeded(rawUrl?: string | null): Promise<string> {
+  const trimmed = String(rawUrl || '').trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return trimmed;
+  if (trimmed.includes('/storage/v1/object/sign/') && trimmed.includes('token=')) {
+    return trimmed;
+  }
+
+  let objectPath = '';
+  if (trimmed.startsWith('chat-media/')) {
+    objectPath = trimmed.slice('chat-media/'.length);
+  } else {
+    const match = trimmed.match(/\/storage\/v1\/object\/(?:public\/|authenticated\/|sign\/)?chat-media\/([^?#]+)/i);
+    if (match?.[1]) {
+      objectPath = decodeURIComponent(match[1]);
+    }
+  }
+
+  if (!objectPath) {
+    return resolveMediaUrl(trimmed);
+  }
+
+  const cached = chatMediaSignedUrlCache.get(objectPath);
+  if (cached && cached.expiresAtMs > Date.now()) {
+    return cached.url;
+  }
+
+  const token = await getValidWebAccessToken();
+  if (!token) {
+    return resolveMediaUrl(trimmed);
+  }
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/chat-media/${objectPath}`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ expiresIn: 604800 })
+    });
+    if (res.ok) {
+      const json = await res.json();
+      const signedPath = json?.signedURL || json?.signedUrl || '';
+      if (signedPath) {
+        const fullSigned = signedPath.startsWith('http')
+          ? signedPath
+          : signedPath.startsWith('/storage/v1')
+            ? `${SUPABASE_URL}${signedPath}`
+            : `${SUPABASE_URL}/storage/v1${signedPath}`;
+        chatMediaSignedUrlCache.set(objectPath, {
+          url: fullSigned,
+          expiresAtMs: Date.now() + CHAT_MEDIA_CACHE_TTL_MS
+        });
+        return fullSigned;
+      }
+    }
+  } catch {
+    // ignore sign failure
+  }
+
+  return resolveMediaUrl(trimmed);
+}
+
 export function resolveMediaUrl(rawUrl: string): string {
   if (!rawUrl) return '';
-  if (rawUrl.startsWith('data:')) return rawUrl;
+  if (rawUrl.startsWith('data:') || rawUrl.startsWith('blob:')) return rawUrl;
   if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) return rawUrl;
   if (
     rawUrl.startsWith('posts/') ||
     rawUrl.startsWith('avatars/') ||
     rawUrl.startsWith('banners/') ||
-    rawUrl.startsWith('stories/') ||
-    rawUrl.startsWith('chat-media/')
+    rawUrl.startsWith('stories/')
   ) {
     return `${SUPABASE_URL}/storage/v1/object/public/${rawUrl}`;
+  }
+  if (rawUrl.startsWith('chat-media/')) {
+    return `${SUPABASE_URL}/storage/v1/object/authenticated/${rawUrl}`;
   }
   return rawUrl;
 }

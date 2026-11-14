@@ -1,6 +1,7 @@
 import React from 'react';
 import { Phone, PhoneOff, Mic, MicOff, Video, VideoOff, Volume2, VolumeX } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
+import { VybeAvatar } from '../components/OptimizedImage';
 
 export const CallModal: React.FC = () => {
   const { callState, endCall, toggleCallMute, toggleCallCamera } = useVybe();
@@ -34,11 +35,14 @@ export const CallModal: React.FC = () => {
         {/* Center Pulsing Avatar */}
         <div className="relative flex items-center justify-center my-auto">
           <div className="w-40 h-40 rounded-full bg-gradient-to-tr from-[#00C6FF]/30 to-[#8B5CF6]/30 animate-ping absolute inset-0 opacity-40" />
-          <div className="w-36 h-36 rounded-full bg-gradient-to-tr from-[#00C6FF] to-[#D946EF] p-1 shadow-2xl z-10">
-            <img 
-              src={callState.peerUser.avatarUrl} 
-              alt={callState.peerUser.displayName}
-              className="w-full h-full object-cover rounded-full"
+          <div className="w-36 h-36 rounded-full bg-gradient-to-tr from-[#00C6FF] to-[#D946EF] p-1 shadow-2xl z-10 overflow-hidden">
+            <VybeAvatar
+              src={callState.peerUser.avatarUrl}
+              name={callState.peerUser.displayName}
+              username={callState.peerUser.username}
+              size={136}
+              className="w-full h-full"
+              textClassName="text-3xl"
             />
           </div>
         </div>

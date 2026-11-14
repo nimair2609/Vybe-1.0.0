@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { 
-  X, Image, Music, MapPin, Sparkles, Send, PlaySquare, Upload, Loader2, CheckCircle2 
+  X, Image, Music, MapPin, Sparkles, Send, PlaySquare, Upload, Loader2, CheckCircle2, AlertCircle 
 } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
 import { MOOD_DEFINITIONS, MoodType } from '../types';
@@ -11,7 +11,7 @@ export const CreatePostModal: React.FC = () => {
   const { closeModal, createPost, currentUser } = useVybe();
 
   const [caption, setCaption] = useState('');
-  const [selectedMood, setSelectedMood] = useState<MoodType>(currentUser.currentMood || 'GENERAL');
+  const [selectedMood, setSelectedMood] = useState<MoodType>(currentUser?.currentMood || 'GENERAL');
   const [imageUrl, setImageUrl] = useState('');
   const [selectedBlob, setSelectedBlob] = useState<Blob | null>(null);
   const [blobFileName, setBlobFileName] = useState<string>('photo.webp');
@@ -23,13 +23,7 @@ export const CreatePostModal: React.FC = () => {
   const [tagsInput, setTagsInput] = useState('');
   const [isCompressing, setIsCompressing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-
-  const sampleImages = [
-    'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=1000&q=80',
-    'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=1000&q=80',
-    'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=1000&q=80',
-    'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=1000&q=80',
-  ];
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -76,6 +70,7 @@ export const CreatePostModal: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!caption.trim() && !imageUrl) return;
+    setUploadError(null);
 
     let finalMediaUrl = imageUrl;
 
@@ -88,16 +83,16 @@ export const CreatePostModal: React.FC = () => {
           'posts',
           blobFileName,
           originalSizeBytes,
-          { isPrivate: Boolean(currentUser.isPrivate) }
+          { isPrivate: Boolean(currentUser?.isPrivate) }
         );
-        if (uploadResult && uploadResult.publicUrl) {
-          finalMediaUrl = uploadResult.publicUrl;
-        } else {
-          // If storage upload restricted or failed, compress to lightweight WebP data URL
-          finalMediaUrl = await compressImageToDataUrl(selectedBlob, { maxWidth: 1080, quality: 0.75 });
+        if (!uploadResult?.publicUrl) {
+          setUploadError('Could not upload photo to cloud storage. Check your connection and try again.');
+          return;
         }
-      } catch (err) {
-        console.warn('Upload error, using compressed inline media:', err);
+        finalMediaUrl = uploadResult.publicUrl;
+      } catch (err: any) {
+        setUploadError(err?.message || 'Media upload failed. Please retry.');
+        return;
       } finally {
         setIsUploading(false);
       }
@@ -108,7 +103,7 @@ export const CreatePostModal: React.FC = () => {
       .map(t => t.trim().toLowerCase())
       .filter(Boolean);
 
-    createPost({
+    const ok = await createPost({
       caption: caption.trim(),
       mediaUrls: finalMediaUrl ? [finalMediaUrl] : [],
       mediaType: isVybesReel ? 'REEL' : finalMediaUrl ? 'IMAGE' : 'TEXT',
@@ -118,6 +113,9 @@ export const CreatePostModal: React.FC = () => {
       audioTrackTitle: audioTrackTitle.trim() || undefined,
       tags
     });
+    if (!ok) {
+      setUploadError('Post could not be published right now. Please try again.');
+    }
   };
 
   return (
@@ -246,18 +244,6 @@ export const CreatePostModal: React.FC = () => {
                 )}
               </div>
             )}
-            <div className="flex gap-2 pt-1">
-              {sampleImages.map((src, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => setImageUrl(src)}
-                  className="w-12 h-12 rounded-lg overflow-hidden border border-[var(--vybe-border)] hover:border-[var(--vybe-accent)] transition-all"
-                >
-                  <img src={src} alt="preset" className="w-full h-full object-cover" />
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* Audio Tag & Location */}
@@ -317,6 +303,13 @@ export const CreatePostModal: React.FC = () => {
               className="w-4 h-4 accent-[var(--vybe-accent)]"
             />
           </div>
+
+          {uploadError && (
+            <div className="p-2.5 rounded-xl bg-red-500/15 border border-red-500/40 text-red-400 text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{uploadError}</span>
+            </div>
+          )}
 
           {/* Submit */}
           <button

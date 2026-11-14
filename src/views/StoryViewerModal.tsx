@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Music, Send, RotateCcw, Loader2 } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
 import { FingerHeartReaction } from '../components/FingerHeartReaction';
+import { VybeAvatar } from '../components/OptimizedImage';
 import { formatRelativeTimestamp } from '../utils/timestamp';
 
 const PHOTO_STORY_DURATION_MS = 5500;
@@ -16,8 +17,12 @@ export const StoryViewerModal: React.FC = () => {
     toggleStoryLike,
     reactToStory,
     openUserProfile,
-    setInAppNotificationBanner
-  } = useVybe() as any;
+    setInAppNotificationBanner,
+    requireAuth,
+    currentUser,
+    startConversationWithUser,
+    sendMessage
+  } = useVybe();
 
   const currentStory = stories[activeStoryIndex] || stories[0];
 
@@ -115,14 +120,25 @@ export const StoryViewerModal: React.FC = () => {
     touchStartYRef.current = null;
   };
 
-  const handleSendReply = (e: React.FormEvent) => {
+  const handleSendReply = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!replyText.trim()) return;
+    const clean = replyText.trim();
+    if (!clean) return;
+    if (!requireAuth('Sign in to reply to stories.') || !currentUser) return;
+    if (currentStory.author.id === currentUser.id) {
+      setReplyText('');
+      setIsReplyFocused(false);
+      return;
+    }
+
     setReplyText('');
     setIsReplyFocused(false);
-    if (typeof setInAppNotificationBanner === 'function') {
-      setInAppNotificationBanner(`Reply sent to @${currentStory.author.username}`);
+    const convRes = await startConversationWithUser(currentStory.author);
+    if (!convRes.ok || !convRes.conversation) {
+      return;
     }
+    await sendMessage(convRes.conversation.id, `[Story reply] ${clean}`);
+    setInAppNotificationBanner(`Reply sent to @${currentStory.author.username}`);
   };
 
   return (
@@ -155,10 +171,12 @@ export const StoryViewerModal: React.FC = () => {
             }}
             className="flex items-center gap-2.5 cursor-pointer"
           >
-            <img
+            <VybeAvatar
               src={currentStory.author.avatarUrl}
-              alt={currentStory.author.displayName}
-              className="w-9 h-9 rounded-full object-cover border border-white/30"
+              name={currentStory.author.displayName}
+              username={currentStory.author.username}
+              size={36}
+              className="w-9 h-9 border border-white/30"
             />
             <div>
               <p className="text-xs font-bold text-white keep-white hover:underline">

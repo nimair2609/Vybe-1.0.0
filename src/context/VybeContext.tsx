@@ -55,6 +55,7 @@ import {
   markConversationReadInSupabase,
   sendLiveDirectMessage,
   uploadMediaBlobToStorage,
+  signChatMediaUrlIfNeeded,
   fetchLiveNotifications,
   markNotificationReadInSupabase,
   fetchLiveCommunities,
@@ -208,7 +209,7 @@ interface VybeContextType {
   toggleSavePost: (postId: string) => void;
   addCommentToPost: (postId: string, text: string) => void;
   loadCommentsForPost: (postId: string) => Promise<void>;
-  createPost: (postData: Partial<Post>) => void;
+  createPost: (postData: Partial<Post>) => Promise<boolean>;
   sharePostToConversation: (post: Post, convId: string, note?: string) => void;
   incrementPostShareCount: (postId: string) => void;
   sharedPostModalId: string | null;
@@ -236,7 +237,7 @@ interface VybeContextType {
   prevStory: () => void;
   toggleStoryLike: (storyId: string) => void;
   reactToStory: (storyId: string, reaction: VybeReaction) => void;
-  createStory: (storyData: Partial<Story>) => void;
+  createStory: (storyData: Partial<Story>) => Promise<boolean>;
 
   // Crossed Paths
   crossedPaths: CrossedPathEncounter[];
@@ -309,6 +310,7 @@ interface VybeContextType {
   checkForUpdates: (repoToTest?: string, silent?: boolean) => Promise<void>;
   resetGithubRepo: () => void;
   inAppNotificationBanner: string | null;
+  setInAppNotificationBanner: (msg: string | null) => void;
   dismissBanner: () => void;
 
   // Real Database Status & Live Sync
@@ -478,6 +480,24 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [selectedConversationPeerId, setSelectedConversationPeerId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+
+  // Mutable refs for real-time callbacks and failed DM attachment retries
+  const conversationsRef = useRef<Conversation[]>(conversations);
+  const selectedTabRef = useRef<MainTab>(selectedTab);
+  const selectedConversationIdRef = useRef<string | null>(selectedConversationId);
+  const pendingAttachmentsRef = useRef<Map<string, Blob>>(new Map());
+
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  useEffect(() => {
+    selectedTabRef.current = selectedTab;
+  }, [selectedTab]);
+
+  useEffect(() => {
+    selectedConversationIdRef.current = selectedConversationId;
+  }, [selectedConversationId]);
 
   // Theme Mode
   const [themeMode, setThemeModeState] = useState<'dark' | 'light'>(() => {
@@ -703,9 +723,9 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsAuthChecking(false);
 
       const [liveProfiles, livePosts, liveStories, liveComms, liveRooms, livePaths, liveShops] = await Promise.all([
-        fetchLiveProfiles({ forceRefresh }),
-        fetchLivePosts(undefined, { limit: 20, forceRefresh }),
-        fetchLiveStories(undefined, { forceRefresh }),
+        fetchLiveProfiles({ forceRefresh, throwOnError: true }),
+        fetchLivePosts(undefined, { limit: 20, forceRefresh, throwOnError: true }),
+        fetchLiveStories(undefined, { forceRefresh, throwOnError: true }),
         fetchLiveCommunities(activeSession?.id),
         fetchLiveUnloadRooms(),
         fetchLiveCrossedPaths(),
@@ -905,7 +925,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (payload.conversation_id) {
         const convMsgs = await fetchMessagesForConversation(payload.conversation_id, authUser.id);
-        const existingExists = conversations.some(c => c.id === payload.conversation_id);
+        const existingExists = conversationsRef.current.some(c => c.id === payload.conversation_id);
         if (!existingExists) {
           const fresh = await fetchConversationsForUser(authUser.id);
           setConversations(fresh.conversations);
@@ -914,7 +934,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
             prev.map(c => {
               if (c.id !== payload.conversation_id) return c;
               const isCurrentlyViewing =
-                selectedTab === 'INBOX' && selectedConversationId === c.id;
+                selectedTabRef.current === 'INBOX' && selectedConversationIdRef.current === c.id;
               const latest = convMsgs[convMsgs.length - 1];
               return {
                 ...c,
@@ -932,9 +952,9 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (payload.body) {
         const isViewingSameThread =
-          selectedTab === 'INBOX' &&
+          selectedTabRef.current === 'INBOX' &&
           payload.conversation_id &&
-          selectedConversationId === payload.conversation_id;
+          selectedConversationIdRef.current === payload.conversation_id;
         if (!isViewingSameThread) {
           setInAppNotificationBanner(
             `${payload.actor_display_name || payload.title || 'New activity'}: ${payload.body}`
@@ -948,6 +968,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!rec?.id || !rec?.conversation_id) return;
       const cid = String(rec.conversation_id);
       const isMe = String(rec.sender_id || '').toLowerCase() === authUser.id.toLowerCase();
+      const signedMediaUrl = rec.media_url ? await signChatMediaUrlIfNeeded(rec.media_url) : undefined;
 
       const incomingMsg: DirectMessage = {
         id: rec.id,
@@ -956,36 +977,37 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         timestamp: formatChatClock(rec.created_at),
         createdAtIso: rec.created_at,
         isMe,
-        mediaUrl: rec.media_url || undefined,
+        mediaUrl: signedMediaUrl || undefined,
         mediaType: (String(rec.media_type || 'TEXT').toUpperCase() as any),
         status: 'SENT'
       };
 
-      let matchedConv = false;
+      const knownConv = conversationsRef.current.some(c => c.id === cid);
+      const activeConvView =
+        selectedTabRef.current === 'INBOX' && selectedConversationIdRef.current === cid;
+
       setConversations(prev => {
         const idx = prev.findIndex(c => c.id === cid);
         if (idx === -1) return prev;
-        matchedConv = true;
         const target = prev[idx];
         if (target.messages.some(m => m.id === incomingMsg.id)) {
           return prev;
         }
-        const isViewing = selectedTab === 'INBOX' && selectedConversationId === cid;
         const updated: Conversation = {
           ...target,
           lastMessage: incomingMsg.text || (incomingMsg.mediaUrl ? 'Sent an attachment' : target.lastMessage),
           lastMessageTimestamp: 'Just now',
           lastMessageCreatedAtIso: incomingMsg.createdAtIso || new Date().toISOString(),
-          unreadCount: isMe || isViewing ? 0 : target.unreadCount + 1,
+          unreadCount: isMe || activeConvView ? 0 : target.unreadCount + 1,
           messages: [...target.messages, incomingMsg]
         };
-        if (!isMe && isViewing) {
+        if (!isMe && activeConvView) {
           markConversationReadInSupabase(authUser.id, [incomingMsg.id]);
         }
         return [updated, ...prev.filter((_, i) => i !== idx)];
       });
 
-      if (!matchedConv) {
+      if (!knownConv) {
         const fresh = await fetchConversationsForUser(authUser.id);
         if (fresh.conversations.some(c => c.id === cid)) {
           setConversations(fresh.conversations);
@@ -1180,6 +1202,28 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const isFollowing = followingIds.includes(targetUserId);
     const isRequested = requestedFollowIds.includes(targetUserId);
 
+    const prevFollowingIds = followingIds;
+    const prevRequestedIds = requestedFollowIds;
+    const prevFollowersCount = targetUser?.followersCount ?? 0;
+
+    const revertFollow = () => {
+      setFollowingIds(prevFollowingIds);
+      setRequestedFollowIds(prevRequestedIds);
+      setAllUsers(prev =>
+        prev.map(u =>
+          u.id === targetUserId
+            ? {
+                ...u,
+                isFollowedByMe: isFollowing,
+                isFollowRequestedByMe: isRequested,
+                followersCount: prevFollowersCount
+              }
+            : u
+        )
+      );
+      setInAppNotificationBanner('Could not update follow status. Check your connection.');
+    };
+
     if (isFollowing || isRequested) {
       setFollowingIds(prev => prev.filter(id => id !== targetUserId));
       setRequestedFollowIds(prev => prev.filter(id => id !== targetUserId));
@@ -1195,11 +1239,15 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
             : u
         )
       );
-      toggleFollowInSupabase({ followerId: currentUser.id, followedId: targetUserId, action: 'UNFOLLOW' });
+      toggleFollowInSupabase({ followerId: currentUser.id, followedId: targetUserId, action: 'UNFOLLOW' }).then(ok => {
+        if (!ok) revertFollow();
+      });
     } else if (targetUser?.isPrivate) {
       setRequestedFollowIds(prev => [...prev, targetUserId]);
       setAllUsers(prev => prev.map(u => (u.id === targetUserId ? { ...u, isFollowRequestedByMe: true } : u)));
-      toggleFollowInSupabase({ followerId: currentUser.id, followedId: targetUserId, action: 'REQUEST' });
+      toggleFollowInSupabase({ followerId: currentUser.id, followedId: targetUserId, action: 'REQUEST' }).then(ok => {
+        if (!ok) revertFollow();
+      });
     } else {
       setFollowingIds(prev => [...prev, targetUserId]);
       setAllUsers(prev =>
@@ -1209,7 +1257,9 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
             : u
         )
       );
-      toggleFollowInSupabase({ followerId: currentUser.id, followedId: targetUserId, action: 'FOLLOW' });
+      toggleFollowInSupabase({ followerId: currentUser.id, followedId: targetUserId, action: 'FOLLOW' }).then(ok => {
+        if (!ok) revertFollow();
+      });
     }
   };
 
@@ -1259,6 +1309,12 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const applyPostTransform = (postId: string, updater: (p: Post) => Post, nextReaction?: VybeReaction | null) => {
+    const prevSnapshot =
+      posts.find(p => p.id === postId) ||
+      reels.find(p => p.id === postId) ||
+      viewedProfilePosts.find(p => p.id === postId) ||
+      (resolvedSharedPost?.id === postId ? resolvedSharedPost : undefined);
+
     let updatedLikes: number | null = null;
     setPosts(prev =>
       prev.map(p => {
@@ -1282,11 +1338,24 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (resolvedSharedPost?.id === postId) {
       setResolvedSharedPost(prev => (prev ? updater(prev) : prev));
     }
-    if (updatedLikes !== null) {
-      syncPostLikeCountToSupabase(postId, updatedLikes);
-    }
     if (currentUser && nextReaction !== undefined) {
-      togglePostReactionInSupabase({ postId, userId: currentUser.id, reactionType: nextReaction });
+      togglePostReactionInSupabase({ postId, userId: currentUser.id, reactionType: nextReaction }).then(ok => {
+        if (ok) {
+          if (updatedLikes !== null) {
+            syncPostLikeCountToSupabase(postId, updatedLikes);
+          }
+        } else if (prevSnapshot) {
+          setPosts(prev => prev.map(p => (p.id === postId ? prevSnapshot : p)));
+          setReels(prev => prev.map(p => (p.id === postId ? prevSnapshot : p)));
+          setViewedProfilePosts(prev => prev.map(p => (p.id === postId ? prevSnapshot : p)));
+          if (resolvedSharedPost?.id === postId) {
+            setResolvedSharedPost(prevSnapshot);
+          }
+          setInAppNotificationBanner('Could not save reaction. Please try again.');
+        }
+      });
+    } else if (updatedLikes !== null) {
+      syncPostLikeCountToSupabase(postId, updatedLikes);
     }
   };
 
@@ -1408,7 +1477,13 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     setPosts(prev => prev.map(mapSave));
     setReels(prev => prev.map(mapSave));
-    toggleSavePostInSupabase({ postId, userId: currentUser.id, shouldSave });
+    toggleSavePostInSupabase({ postId, userId: currentUser.id, shouldSave }).then(ok => {
+      if (!ok) {
+        setPosts(prev => prev.map(mapSave));
+        setReels(prev => prev.map(mapSave));
+        setInAppNotificationBanner('Could not update saved state. Please try again.');
+      }
+    });
   };
 
   const loadCommentsForPost = async (postId: string) => {
@@ -1455,6 +1530,18 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
             : { ...p, comments: p.comments.map(c => (c.id === tempId ? { ...c, id: created.id } : c)) };
         setPosts(prev => prev.map(swapId));
         setReels(prev => prev.map(swapId));
+      } else {
+        const revertComment = (p: Post): Post =>
+          p.id !== postId
+            ? p
+            : {
+                ...p,
+                commentsCount: Math.max(0, p.commentsCount - 1),
+                comments: (p.comments || []).filter(c => c.id !== tempId)
+              };
+        setPosts(prev => prev.map(revertComment));
+        setReels(prev => prev.map(revertComment));
+        setInAppNotificationBanner('Comment failed to save. Please try again.');
       }
     });
   };
@@ -1463,9 +1550,9 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setPosts(prev => prev.map(p => (p.id === postId ? { ...p, sharesCount: (p.sharesCount || 0) + 1 } : p)));
   };
 
-  const createPost = (postData: Partial<Post>) => {
-    if (!requireAuth('Sign in to publish posts on VYBE.')) return;
-    if (!currentUser) return;
+  const createPost = async (postData: Partial<Post>): Promise<boolean> => {
+    if (!requireAuth('Sign in to publish posts on VYBE.')) return false;
+    if (!currentUser) return false;
     const nowIso = new Date().toISOString();
     const tempId = `temp_post_${Date.now()}`;
     const newPost: Post = {
@@ -1494,23 +1581,27 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     if (newPost.isVybesReel) setReels(prev => [newPost, ...prev]);
     setPosts(prev => [newPost, ...prev]);
-    closeModal();
 
-    createLivePost({
+    const created = await createLivePost({
       authorId: currentUser.id,
       caption: newPost.caption,
       mediaUrls: newPost.mediaUrls,
       mediaType: newPost.mediaType,
       isVybesReel: newPost.isVybesReel,
       moodZone: newPost.moodZone
-    }).then(created => {
-      if (created?.id) {
-        setPosts(prev => prev.map(p => (p.id === tempId ? { ...p, id: created.id } : p)));
-        setReels(prev => prev.map(p => (p.id === tempId ? { ...p, id: created.id } : p)));
-      } else {
-        setInAppNotificationBanner('Post failed to save to Supabase. Please check your connection and try again.');
-      }
     });
+
+    if (created?.id) {
+      setPosts(prev => prev.map(p => (p.id === tempId ? { ...p, id: created.id } : p)));
+      setReels(prev => prev.map(p => (p.id === tempId ? { ...p, id: created.id } : p)));
+      closeModal();
+      return true;
+    }
+
+    setPosts(prev => prev.filter(p => p.id !== tempId));
+    setReels(prev => prev.filter(p => p.id !== tempId));
+    setInAppNotificationBanner('Post failed to save to Supabase. Please check your connection and try again.');
+    return false;
   };
 
   // Stories
@@ -1569,9 +1660,9 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     reactToStory(storyId, existing || 'LOVE');
   };
 
-  const createStory = (storyData: Partial<Story>) => {
-    if (!requireAuth('Sign in to publish stories.')) return;
-    if (!currentUser) return;
+  const createStory = async (storyData: Partial<Story>): Promise<boolean> => {
+    if (!requireAuth('Sign in to publish stories.')) return false;
+    if (!currentUser) return false;
     const nowMs = Date.now();
     const nowIso = new Date(nowMs).toISOString();
     const expIso = new Date(nowMs + 24 * 60 * 60 * 1000).toISOString();
@@ -1596,20 +1687,24 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       musicTrackTitle: storyData.musicTrackTitle
     };
     setStories(prev => [newStory, ...prev]);
-    closeModal();
-    createLiveStory({
+
+    const created = await createLiveStory({
       authorId: currentUser.id,
       mediaUrl: newStory.mediaUrl,
       caption: newStory.caption,
       mediaType: newStory.mediaType
-    }).then(created => {
-      if (created?.id) {
-        setStories(prev => prev.map(s => (s.id === tempId ? { ...s, id: created.id } : s)));
-        setInAppNotificationBanner('Story published! Visible for 24 hours.');
-      } else {
-        setInAppNotificationBanner('Story upload could not be confirmed by server.');
-      }
     });
+
+    if (created?.id) {
+      setStories(prev => prev.map(s => (s.id === tempId ? { ...s, id: created.id } : s)));
+      closeModal();
+      setInAppNotificationBanner('Story published! Visible for 24 hours.');
+      return true;
+    }
+
+    setStories(prev => prev.filter(s => s.id !== tempId));
+    setInAppNotificationBanner('Story upload could not be confirmed by server.');
+    return false;
   };
 
   // Crossed Paths, Capsules, Rooms, Intentions, Communities
@@ -1856,6 +1951,9 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setDmError(null);
     const clientMsgId = `dm_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    if (attachmentFile) {
+      pendingAttachmentsRef.current.set(clientMsgId, attachmentFile);
+    }
     const nowTime = formatChatClock(new Date().toISOString());
 
     const optimisticMsg: DirectMessage = {
@@ -1944,6 +2042,8 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
+    pendingAttachmentsRef.current.delete(clientMsgId);
+
     setConversations(prev =>
       prev.map(c => {
         if (c.id !== convId && c.peerUser.id !== targetPeerId) return c;
@@ -1982,6 +2082,10 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const failedMsg = conv?.messages.find(m => m.id === messageId && m.status === 'FAILED');
     if (!conv || !failedMsg) return;
 
+    const blobKey = failedMsg.clientId || failedMsg.id;
+    const savedBlob = pendingAttachmentsRef.current.get(blobKey);
+    pendingAttachmentsRef.current.delete(blobKey);
+
     setConversations(prev =>
       prev.map(c =>
         c.id === convId
@@ -1989,7 +2093,11 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
           : c
       )
     );
-    await sendMessage(convId, failedMsg.text);
+    const retryText =
+      savedBlob && failedMsg.text === 'Photo' && failedMsg.mediaType === 'IMAGE'
+        ? ''
+        : failedMsg.text;
+    await sendMessage(convId, retryText, savedBlob);
   };
 
   const sharePostToConversation = async (post: Post, convId: string, note?: string) => {
@@ -2206,6 +2314,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         checkForUpdates,
         resetGithubRepo,
         inAppNotificationBanner,
+        setInAppNotificationBanner,
         dismissBanner,
         isInitialLoading,
         isSyncing,

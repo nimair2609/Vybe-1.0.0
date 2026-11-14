@@ -6,7 +6,7 @@ import {
 import { useVybe } from '../context/VybeContext';
 import { OfficialBadge } from '../components/Badges';
 import { FingerHeartReaction, FingerHeartDoubleTapOverlay } from '../components/FingerHeartReaction';
-import { OptimizedImage } from '../components/OptimizedImage';
+import { OptimizedImage, VybeAvatar } from '../components/OptimizedImage';
 import { resolveMediaUrl } from '../services/supabaseService';
 
 export const ReelsView: React.FC = () => {
@@ -19,7 +19,10 @@ export const ReelsView: React.FC = () => {
     toggleCommentLike,
     reactToComment,
     toggleSavePost,
-    addCommentToPost
+    addCommentToPost,
+    loadCommentsForPost,
+    incrementPostShareCount,
+    setInAppNotificationBanner
   } = useVybe();
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -249,17 +252,20 @@ export const ReelsView: React.FC = () => {
                 }`}
               />
             </>
-          ) : (
+          ) : mediaUrl ? (
             <OptimizedImage
-              src={
-                mediaUrl ||
-                'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=800&q=80'
-              }
+              src={mediaUrl}
               alt="Reel content"
               aspectRatio="9 / 16"
               eager
               className="w-full h-full object-cover"
             />
+          ) : (
+            <div className="w-full h-full bg-gradient-to-br from-[#12172B] via-[#1B1436] to-[#080B18] flex items-center justify-center p-8 text-center">
+              <p className="text-base font-bold text-white keep-white leading-relaxed max-w-xs">
+                {currentReel.caption || 'VYBE Reel'}
+              </p>
+            </div>
           )}
         </div>
         <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-transparent to-black/90 pointer-events-none z-10" />
@@ -309,7 +315,13 @@ export const ReelsView: React.FC = () => {
         {/* Comments */}
         <button
           type="button"
-          onClick={() => setShowComments(!showComments)}
+          onClick={() => {
+            const nextOpen = !showComments;
+            setShowComments(nextOpen);
+            if (nextOpen && currentReel?.id) {
+              loadCommentsForPost(currentReel.id);
+            }
+          }}
           className="flex flex-col items-center gap-1 group"
         >
           <div className="p-3 rounded-full bg-black/50 backdrop-blur-md border border-white/10 text-white keep-white hover:bg-black/70 transition-transform active:scale-75">
@@ -344,7 +356,14 @@ export const ReelsView: React.FC = () => {
         <button
           type="button"
           onClick={() => {
-            navigator.clipboard?.writeText(`${window.location.origin}/post/${encodeURIComponent(currentReel.id)}`);
+            const shareUrl = `${window.location.origin}/post/${encodeURIComponent(currentReel.id)}`;
+            if (navigator.share) {
+              navigator.share({ title: currentReel.author.displayName, url: shareUrl }).catch(() => {});
+            } else {
+              navigator.clipboard?.writeText(shareUrl);
+              setInAppNotificationBanner('Reel link copied to clipboard.');
+            }
+            incrementPostShareCount(currentReel.id);
           }}
           className="p-3 rounded-full bg-black/50 backdrop-blur-md border border-white/10 text-white keep-white hover:bg-black/70 transition-transform active:scale-75"
         >
@@ -358,12 +377,12 @@ export const ReelsView: React.FC = () => {
           onClick={() => openUserProfile(currentReel.author)}
           className="flex items-center gap-2.5 cursor-pointer"
         >
-          <OptimizedImage
+          <VybeAvatar
             src={currentReel.author.avatarUrl}
-            alt={currentReel.author.displayName}
-            width={40}
-            height={40}
-            className="w-10 h-10 rounded-full object-cover border-2 border-white/25"
+            name={currentReel.author.displayName}
+            username={currentReel.author.username}
+            size={40}
+            className="w-10 h-10 border-2 border-white/25"
           />
           <div>
             <div className="flex items-center gap-1.5">
@@ -443,12 +462,12 @@ export const ReelsView: React.FC = () => {
                   className="flex items-start justify-between gap-2 p-2.5 rounded-xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)]"
                 >
                   <div className="flex items-start gap-2">
-                    <OptimizedImage
+                    <VybeAvatar
                       src={c.author.avatarUrl}
-                      alt={c.author.displayName}
-                      width={28}
-                      height={28}
-                      className="w-7 h-7 rounded-full object-cover shrink-0"
+                      name={c.author.displayName}
+                      username={c.author.username}
+                      size={28}
+                      className="w-7 h-7 shrink-0"
                     />
                     <div>
                       <span className="text-xs font-bold text-[var(--vybe-text)]">{c.author.displayName}</span>

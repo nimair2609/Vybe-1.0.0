@@ -76,13 +76,13 @@ export const MoodZonesView: React.FC = () => {
               type="button"
               onClick={() => setCurrentUserMood(activeZone)}
               className={`inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold transition-all border ${
-                currentUser.currentMood === activeZone
+                currentUser?.currentMood === activeZone
                   ? 'bg-emerald-600 text-white keep-white border-transparent'
                   : 'bg-[var(--vybe-elevated)] text-[var(--vybe-text)] border-[var(--vybe-border)] hover:border-[var(--vybe-accent)]'
               }`}
             >
-              {currentUser.currentMood === activeZone && <Check className="w-3.5 h-3.5" />}
-              <span>{currentUser.currentMood === activeZone ? 'Your Active Mood' : 'Set as My Mood'}</span>
+              {currentUser?.currentMood === activeZone && <Check className="w-3.5 h-3.5" />}
+              <span>{currentUser?.currentMood === activeZone ? 'Your Active Mood' : 'Set as My Mood'}</span>
             </button>
             <button
               type="button"

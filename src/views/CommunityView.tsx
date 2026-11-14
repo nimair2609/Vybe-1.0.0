@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Users, Plus, Check, Search } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
 import { VybeEmptyState } from '../components/VybeDesignSystem';
+import { VybeAvatar } from '../components/OptimizedImage';
 
 export const CommunityView: React.FC = () => {
   const { communities, toggleJoinCommunity } = useVybe();
@@ -68,11 +69,15 @@ export const CommunityView: React.FC = () => {
             >
               {/* Banner */}
               <div className="h-28 w-full relative">
-                <img
-                  src={comm.bannerUrl}
-                  alt={comm.name}
-                  className="w-full h-full object-cover"
-                />
+                {comm.bannerUrl ? (
+                  <img
+                    src={comm.bannerUrl}
+                    alt={comm.name}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-br from-[#1e1b4b] via-[#312e81] to-[#0c4a6e]" />
+                )}
                 <div className="absolute inset-0 bg-gradient-to-t from-[var(--vybe-surface)] via-transparent to-transparent" />
               </div>
 
@@ -80,10 +85,11 @@ export const CommunityView: React.FC = () => {
               <div className="p-4 pt-0 -mt-6 relative flex-1 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <img
+                    <VybeAvatar
                       src={comm.avatarUrl}
-                      alt={comm.name}
-                      className="w-14 h-14 rounded-2xl object-cover border-2 border-[var(--vybe-surface)] shadow-md"
+                      name={comm.name}
+                      size={56}
+                      className="w-14 h-14 rounded-2xl border-2 border-[var(--vybe-surface)] shadow-md"
                     />
                     <button
                       type="button"

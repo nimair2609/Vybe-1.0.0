@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
 import { OfficialBadge } from '../components/Badges';
+import { VybeAvatar } from '../components/OptimizedImage';
 import {
   SUPABASE_URL,
   SUPABASE_ANON_KEY,
@@ -574,7 +575,7 @@ export const AdminConsoleModal: React.FC = () => {
                           .map(u => (
                             <tr key={u.id} className="hover:bg-[#160F2C] transition">
                               <td className="p-3.5 flex items-center gap-2.5">
-                                <img src={u.avatarUrl} alt={u.displayName} className="w-8 h-8 rounded-full object-cover border border-[#262E4A]" />
+                                <VybeAvatar src={u.avatarUrl} name={u.displayName} username={u.username} size={32} className="w-8 h-8 border border-[#262E4A]" />
                                 <div>
                                   <span className="font-bold text-white block">{u.displayName}</span>
                                   <span className="text-[11px] text-gray-400">@{u.username}</span>
@@ -638,7 +639,7 @@ export const AdminConsoleModal: React.FC = () => {
                         className="p-5 rounded-2xl bg-[#120D22] border border-[#221840] flex flex-col md:flex-row md:items-center justify-between gap-4"
                       >
                         <div className="flex items-start gap-3.5">
-                          <img src={item.avatarUrl} alt={item.displayName} className="w-12 h-12 rounded-full object-cover border border-[#2A1E4A]" />
+                          <VybeAvatar src={item.avatarUrl} name={item.displayName} username={item.username} size={48} className="w-12 h-12 border border-[#2A1E4A]" />
                           <div>
                             <div className="flex items-center gap-2">
                               <span className="font-bold text-white text-sm">{item.displayName}</span>
@@ -850,7 +851,7 @@ export const AdminConsoleModal: React.FC = () => {
                     {posts.slice(0, 12).map(p => (
                       <div key={p.id} className="p-3.5 rounded-2xl bg-[#120D22] border border-[#221840] space-y-2.5">
                         <div className="flex items-center gap-2">
-                          <img src={p.author.avatarUrl} alt={p.author.displayName} className="w-6 h-6 rounded-full object-cover" />
+                          <VybeAvatar src={p.author.avatarUrl} name={p.author.displayName} username={p.author.username} size={24} className="w-6 h-6" />
                           <span className="text-xs font-bold text-white truncate">@{p.author.username}</span>
                           <span className="text-[10px] text-gray-400 ml-auto">{p.moodZone || 'GENERAL'}</span>
                         </div>

@@ -24,9 +24,6 @@ export const VybeBrandMark: React.FC<{
       <div className="leading-none">
         <span className="text-[18px] font-extrabold tracking-tight brand-font text-[var(--vybe-text)] flex items-baseline gap-1">
           <span>VYBE</span>
-          {isGrow && (
-            <span className="font-bold text-[var(--vybe-accent)]">Grow</span>
-          )}
         </span>
         {subtitle && (
           <span className="block text-[10px] font-semibold tracking-wider uppercase text-[var(--vybe-text-secondary)] mt-0.5">

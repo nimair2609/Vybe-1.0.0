@@ -126,14 +126,15 @@ export const CreateStoryModal: React.FC = () => {
           originalSizeBytes,
           { isPrivate: targetAudience !== 'Public' }
         );
-        if (uploadRes?.publicUrl) {
-          resolvedMediaUrl = uploadRes.publicUrl;
-        } else if (mode === 'PHOTO') {
-          resolvedMediaUrl = await compressImageToDataUrl(selectedBlob, UPLOAD_COMPRESSION_PRESETS.STORY);
+        if (!uploadRes?.publicUrl) {
+          setValidationError('Could not upload story media to cloud storage. Please retry.');
+          setIsPublishing(false);
+          return;
         }
+        resolvedMediaUrl = uploadRes.publicUrl;
       }
 
-      createStory({
+      const ok = await createStory({
         caption: caption.trim(),
         mediaUrl: resolvedMediaUrl,
         mediaType: mode,
@@ -141,6 +142,10 @@ export const CreateStoryModal: React.FC = () => {
         textBackgroundColor: mode === 'TEXT' ? selectedBg : undefined,
         musicTrackTitle: musicTrack
       });
+      if (!ok) {
+        setValidationError('Story could not be saved right now. Please try again.');
+        setIsPublishing(false);
+      }
     } catch (err: any) {
       setValidationError(err?.message || 'Failed to publish story.');
       setIsPublishing(false);
