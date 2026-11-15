@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import {
   Users, FileText, Zap, Database, AlertTriangle, HelpCircle, Send,
-  Radio, ScrollText, Download, ShieldCheck, Activity, RotateCcw
+  Radio, ScrollText, Download, ShieldCheck, Activity, RotateCcw, Sparkles, Bell
 } from 'lucide-react';
-import { Post, User } from '../types';
+import { AdminDashboardMetrics, Post, User } from '../types';
 import { DiagnosticsSummary } from '../utils/performanceDiagnostics';
 import { LiveReportItem } from '../services/supabaseService';
 import {
@@ -11,11 +11,14 @@ import {
 } from '../components/VybeDesignSystem';
 import { AdminConfirmRequest, AdminSectionId, AuditRecord, VerificationApp } from './types';
 
-interface FeatureFlagsState {
+export interface AdminFeatureFlagsState {
   unloadRooms: boolean;
   crossedPaths: boolean;
   timeCapsules: boolean;
   spiritualMode: boolean;
+  growEcosystem: boolean;
+  growthCircles: boolean;
+  stories2: boolean;
   maintenanceMode: boolean;
 }
 
@@ -30,12 +33,15 @@ interface AdminSystemViewsProps {
   diagnostics: DiagnosticsSummary;
   apiHealthOk: boolean | null;
   configApiAvailable: boolean;
-  featureFlags: FeatureFlagsState;
+  featureFlags: AdminFeatureFlagsState;
+  overviewStats: AdminDashboardMetrics | null;
+  isOwnerAdmin: boolean;
+  adminRole: string;
   adminEmail: string;
   onNavigate: (section: AdminSectionId) => void;
   onResetDiagnostics: () => void;
   onSendBroadcast: (title: string, message: string) => Promise<boolean>;
-  onToggleFeatureFlag: (key: keyof FeatureFlagsState, label: string, nextValue: boolean) => Promise<void>;
+  onToggleFeatureFlag: (key: keyof AdminFeatureFlagsState, label: string, nextValue: boolean) => Promise<void>;
   requestConfirm: (req: AdminConfirmRequest) => void;
 }
 
@@ -51,6 +57,9 @@ export const AdminSystemViews: React.FC<AdminSystemViewsProps> = ({
   apiHealthOk,
   configApiAvailable,
   featureFlags,
+  overviewStats,
+  isOwnerAdmin,
+  adminRole,
   adminEmail,
   onNavigate,
   onResetDiagnostics,
@@ -115,34 +124,40 @@ export const AdminSystemViews: React.FC<AdminSystemViewsProps> = ({
   };
 
   if (section === 'overview') {
-    const pendingTotal = verificationQueue.length + reports.length;
+    const pendingTotal =
+      (overviewStats ? overviewStats.pendingVerifications + overviewStats.openReports : null) ??
+      (verificationQueue.length + reports.length);
     return (
       <div className="space-y-6 animate-fade-in">
-        {/* Live KPI Cards */}
+        {/* Live Super Admin KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <VybeCard padding="md" className="space-y-1.5">
             <div className="flex items-center justify-between text-[var(--vybe-text-secondary)]">
-              <span className="text-[11px] font-bold uppercase tracking-wider">Loaded Profiles</span>
+              <span className="text-[11px] font-bold uppercase tracking-wider">Registered Users</span>
               <Users className="w-4 h-4 text-[var(--vybe-accent)]" />
             </div>
             <div className="text-2xl font-extrabold brand-font text-[var(--vybe-text)]">
-              {users.length.toLocaleString()}
+              {(overviewStats?.totalUsers ?? users.length).toLocaleString()}
             </div>
             <div className="text-[11px] text-emerald-500 font-medium">
-              {verifiedOrVipCount} with official badges
+              {overviewStats
+                ? `+${overviewStats.newUsers24h} today · +${overviewStats.newUsers7d} 7d · ${overviewStats.suspendedUsers} susp / ${overviewStats.bannedUsers} banned`
+                : `${verifiedOrVipCount} with official badges`}
             </div>
           </VybeCard>
 
           <VybeCard padding="md" className="space-y-1.5">
             <div className="flex items-center justify-between text-[var(--vybe-text-secondary)]">
-              <span className="text-[11px] font-bold uppercase tracking-wider">Posts & Reels</span>
+              <span className="text-[11px] font-bold uppercase tracking-wider">Active & Content</span>
               <FileText className="w-4 h-4 text-[var(--vybe-accent-secondary)]" />
             </div>
             <div className="text-2xl font-extrabold brand-font text-[var(--vybe-text)]">
-              {posts.length.toLocaleString()}
+              {(overviewStats?.totalPosts ?? posts.length).toLocaleString()}
             </div>
             <div className="text-[11px] text-[var(--vybe-text-secondary)]">
-              Recent Supabase batch (max 50)
+              {overviewStats
+                ? `DAU ${overviewStats.activeDailyUsers} · WAU ${overviewStats.activeWeeklyUsers} · MAU ${overviewStats.activeMonthlyUsers} · ${overviewStats.totalStories} stories`
+                : 'Recent Supabase batch (max 50)'}
             </div>
           </VybeCard>
 
@@ -153,23 +168,49 @@ export const AdminSystemViews: React.FC<AdminSystemViewsProps> = ({
             </div>
             <div className="text-2xl font-extrabold brand-font text-[var(--vybe-text)]">{pendingTotal}</div>
             <div className="text-[11px] text-[var(--vybe-text-secondary)]">
-              {verificationQueue.length} verifications · {reports.length} reports
+              {(overviewStats?.pendingVerifications ?? verificationQueue.length)} verifications ·{' '}
+              {(overviewStats?.openReports ?? reports.length)} open reports
             </div>
           </VybeCard>
 
           <VybeCard padding="md" className="space-y-1.5">
             <div className="flex items-center justify-between text-[var(--vybe-text-secondary)]">
-              <span className="text-[11px] font-bold uppercase tracking-wider">Cache Hit Ratio</span>
-              <Zap className="w-4 h-4 text-emerald-500" />
+              <span className="text-[11px] font-bold uppercase tracking-wider">
+                {overviewStats ? 'Ecosystem & Push' : 'Cache Hit Ratio'}
+              </span>
+              {overviewStats ? <Sparkles className="w-4 h-4 text-emerald-500" /> : <Zap className="w-4 h-4 text-emerald-500" />}
             </div>
             <div className="text-2xl font-extrabold brand-font text-emerald-500">
-              {diagnostics.cacheHitRatio}%
+              {overviewStats ? `${overviewStats.totalCircles + overviewStats.totalPrograms}` : `${diagnostics.cacheHitRatio}%`}
             </div>
             <div className="text-[11px] text-[var(--vybe-text-secondary)]">
-              {(diagnostics.estimatedBytesSaved / 1024).toFixed(1)} KB saved ({diagnostics.cacheHits} hits)
+              {overviewStats
+                ? `${overviewStats.totalCircles} circles · ${overviewStats.totalPrograms} programs · ${overviewStats.activeDevices} push devices`
+                : `${(diagnostics.estimatedBytesSaved / 1024).toFixed(1)} KB saved (${diagnostics.cacheHits} hits)`}
             </div>
           </VybeCard>
         </div>
+
+        {overviewStats && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <VybeCard padding="sm">
+              <span className="text-[10px] uppercase tracking-wider text-[var(--vybe-text-muted)] block">Total Reactions</span>
+              <span className="text-lg font-extrabold text-[var(--vybe-text)]">{overviewStats.totalLikes.toLocaleString()}</span>
+            </VybeCard>
+            <VybeCard padding="sm">
+              <span className="text-[10px] uppercase tracking-wider text-[var(--vybe-text-muted)] block">Total Comments</span>
+              <span className="text-lg font-extrabold text-[var(--vybe-text)]">{overviewStats.totalComments.toLocaleString()}</span>
+            </VybeCard>
+            <VybeCard padding="sm">
+              <span className="text-[10px] uppercase tracking-wider text-[var(--vybe-text-muted)] block">GROW Projects</span>
+              <span className="text-lg font-extrabold text-[var(--vybe-text)]">{overviewStats.totalProjects.toLocaleString()}</span>
+            </VybeCard>
+            <VybeCard padding="sm">
+              <span className="text-[10px] uppercase tracking-wider text-[var(--vybe-text-muted)] block">Opportunities</span>
+              <span className="text-lg font-extrabold text-[var(--vybe-text)]">{overviewStats.totalOpportunities.toLocaleString()}</span>
+            </VybeCard>
+          </div>
+        )}
 
         {/* System Architecture Status */}
         <VybeCard padding="md" className="space-y-3">
@@ -619,11 +660,15 @@ export const AdminSystemViews: React.FC<AdminSystemViewsProps> = ({
   }
 
   // section === 'settings'
-  const featureItems: { key: keyof FeatureFlagsState; label: string; desc: string }[] = [
+  const featureItems: { key: keyof AdminFeatureFlagsState; label: string; desc: string }[] = [
+    { key: 'growEcosystem', label: 'VYBE GROW 2.0 Ecosystem', desc: 'Habits, Goals, Growth Programs, Builder Projects & Opportunities.' },
+    { key: 'growthCircles', label: 'Growth Circles 2.0', desc: 'Approval-gated Circles, Polls, Events, Resources & Group Chats.' },
+    { key: 'stories2', label: 'Stories 2.0 Studio & Audio', desc: 'Crop/rotate/trim editor, text overlays, live audio catalog & owner viewers.' },
     { key: 'unloadRooms', label: 'UNLOAD Voice & Listening Lounges', desc: 'Zero-record voice vent lounges in Explore.' },
     { key: 'crossedPaths', label: 'Crossed Paths Discovery', desc: 'Mutual nearby encounter cards and connection requests.' },
     { key: 'timeCapsules', label: 'Time Capsules', desc: 'Date-locked future memory publishing.' },
     { key: 'spiritualMode', label: 'Spiritual Mode & Reflections', desc: 'Mindfulness intentions and daily calm reflections.' },
+    { key: 'maintenanceMode', label: 'Platform Maintenance Mode', desc: 'Display a global maintenance notice across Web & Android.' },
   ];
 
   return (
@@ -632,9 +677,9 @@ export const AdminSystemViews: React.FC<AdminSystemViewsProps> = ({
         <div className="p-4 rounded-2xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] text-xs text-[var(--vybe-text-secondary)] flex items-start gap-3">
           <Activity className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
           <div>
-            <strong className="text-[var(--vybe-text)] block">Serverless Runtime Note</strong>
+            <strong className="text-[var(--vybe-text)] block">Config Endpoint Notice</strong>
             <span>
-              Runtime experience flag endpoints (<code className="font-mono">/api/v1/admin/platform-config</code>) require the stateful Node backend server and are unavailable on static Netlify Functions deployments.
+              Runtime experience flag endpoints (<code className="font-mono">/api/v1/admin/platform-config</code>) persist to <code className="font-mono">platform_config</code> in Supabase.
             </span>
           </div>
         </div>
@@ -688,9 +733,12 @@ export const AdminSystemViews: React.FC<AdminSystemViewsProps> = ({
       </VybeCard>
 
       <VybeCard padding="md" className="space-y-2 text-xs">
-        <div className="flex items-center gap-2 font-bold text-[var(--vybe-text)]">
-          <ShieldCheck className="w-4 h-4 text-emerald-500" />
-          <span>Active Administrator Session</span>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 font-bold text-[var(--vybe-text)]">
+            <ShieldCheck className="w-4 h-4 text-emerald-500" />
+            <span>Active Administrator Session</span>
+          </div>
+          <VybeStatusChip tone={isOwnerAdmin ? 'accent' : 'info'}>{adminRole}</VybeStatusChip>
         </div>
         <p className="text-[var(--vybe-text-secondary)]">
           Authenticated via Supabase Auth JWT & <code className="font-mono">admin_users</code> RLS as{' '}

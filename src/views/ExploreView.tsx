@@ -303,7 +303,7 @@ export const ExploreView: React.FC = () => {
               ))}
             </div>
             <p className="text-[11px] text-[var(--vybe-text-secondary)] truncate">
-              @{creator.username} · {creator.followersCount.toLocaleString()} followers
+              @{creator.username} · {creator.followersCount.toLocaleString()} LINKUPS
             </p>
           </div>
         </div>
@@ -338,7 +338,7 @@ export const ExploreView: React.FC = () => {
             ) : (
               <UserPlus className="w-3 h-3" />
             )}
-            <span>{isFollowing ? 'LINKED' : isRequested ? 'Requested' : 'Follow'}</span>
+            <span>{isFollowing ? 'LINKED' : isRequested ? 'LINKUP Requested' : 'LINK UP'}</span>
           </button>
         </div>
       </div>
@@ -369,7 +369,7 @@ export const ExploreView: React.FC = () => {
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent p-3 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              {(p.isVybesReel || p.mediaType === 'REEL' || p.mediaType === 'VIDEO') ? (
+              {p.mediaType === 'VIDEO' ? (
                 <span className="p-1.5 rounded-full bg-black/50 text-white keep-white">
                   <Play className="w-3 h-3 fill-current" />
                 </span>
@@ -407,7 +407,7 @@ export const ExploreView: React.FC = () => {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search people, #hashtags, posts, reels, or circles..."
+          placeholder="Search people, #hashtags, posts, videos, or circles..."
           className="w-full pl-11 pr-10 py-3 bg-[var(--vybe-surface)] border border-[var(--vybe-border)] rounded-2xl text-xs text-[var(--vybe-text)] placeholder-[var(--vybe-text-muted)] focus:outline-none focus:border-[var(--vybe-accent)] transition-colors shadow-sm"
         />
         {search && (

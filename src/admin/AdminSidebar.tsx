@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   Activity, Users, Award, FileText, AlertTriangle, Radio,
   Zap, ScrollText, Settings, ChevronDown, ChevronRight,
-  LogOut, ExternalLink, X
+  LogOut, ExternalLink, X, ShieldCheck, Sparkles, Music, Globe
 } from 'lucide-react';
 import { AdminSectionId } from './types';
 
@@ -31,6 +31,8 @@ interface AdminSidebarProps {
     reports: number;
   };
   adminEmail: string;
+  adminRole?: string;
+  isOwnerAdmin?: boolean;
   onLogout: () => void;
 }
 
@@ -42,6 +44,8 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   onCloseMobile,
   counts,
   adminEmail,
+  adminRole = 'ADMIN',
+  isOwnerAdmin = false,
   onLogout,
 }) => {
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
@@ -64,6 +68,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
       label: 'User Management',
       items: [
         { id: 'users', label: 'Users Directory', icon: Users, badge: counts.users },
+        { id: 'staff', label: 'Staff Roles', icon: ShieldCheck },
         {
           id: 'verifications',
           label: 'Verification Queue',
@@ -77,7 +82,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
       id: 'safety',
       label: 'Content & Safety',
       items: [
-        { id: 'content', label: 'Posts & Reels', icon: FileText, badge: counts.posts },
+        { id: 'content', label: 'Posts', icon: FileText, badge: counts.posts },
         {
           id: 'reports',
           label: 'Safety Reports',
@@ -85,6 +90,15 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
           badge: counts.reports,
           badgeTone: counts.reports > 0 ? 'warning' : 'accent',
         },
+      ],
+    },
+    {
+      id: 'ecosystem',
+      label: 'Ecosystem & Audio',
+      items: [
+        { id: 'circles', label: 'Circles Moderation', icon: Globe },
+        { id: 'grow', label: 'GROW 2.0 Moderation', icon: Sparkles },
+        { id: 'audio', label: 'Audio Catalog', icon: Music },
       ],
     },
     {
@@ -130,7 +144,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
                 </span>
                 <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-500">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  Command Center
+                  {isOwnerAdmin ? 'Owner Command' : adminRole}
                 </span>
               </div>
             )}

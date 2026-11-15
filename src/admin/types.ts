@@ -3,8 +3,12 @@ import { OfficialVybeBadge } from '../types';
 export type AdminSectionId =
   | 'overview'
   | 'users'
+  | 'staff'
   | 'verifications'
   | 'content'
+  | 'circles'
+  | 'grow'
+  | 'audio'
   | 'reports'
   | 'broadcast'
   | 'diagnostics'
@@ -69,15 +73,35 @@ export const ADMIN_SECTION_META: Record<AdminSectionId, SectionMetadata> = {
     group: 'User Management',
     subtitle: 'Inspect profiles, manage official badges, and enforce account safety',
   },
+  staff: {
+    title: 'Staff Roles & Access',
+    group: 'User Management',
+    subtitle: 'Owner-gated assignment of moderator, support, analyst, and admin permissions',
+  },
   verifications: {
     title: 'Verification Queue',
     group: 'User Management',
     subtitle: 'Review creator, VIP, business storefront, and staff badge requests',
   },
   content: {
-    title: 'Posts & Reels',
+    title: 'Posts',
     group: 'Content & Safety',
-    subtitle: 'Inspect published posts and reels with archive or removal moderation',
+    subtitle: 'Inspect published posts and videos with archive or removal moderation',
+  },
+  circles: {
+    title: 'Circles Moderation',
+    group: 'Ecosystem',
+    subtitle: 'Oversee Growth Circles privacy modes, archives, and community reports',
+  },
+  grow: {
+    title: 'GROW 2.0 Moderation',
+    group: 'Ecosystem',
+    subtitle: 'Moderate Growth Programs, showcase projects, opportunities, and listing reports',
+  },
+  audio: {
+    title: 'Stories Audio Catalog',
+    group: 'Ecosystem',
+    subtitle: 'Manage verified audio tracks available in Stories 2.0 across web and Android',
   },
   reports: {
     title: 'Safety Reports',

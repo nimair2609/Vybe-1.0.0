@@ -26,7 +26,8 @@ import {
   LiveReportItem,
   LiveAuditLogItem
 } from '../services/supabaseService';
-import { User, Post, OfficialVybeBadge } from '../types';
+import { fetchAdminIdentity, fetchAdminOverviewStats } from '../services/adminExtendedService';
+import { User, Post, OfficialVybeBadge, AdminDashboardMetrics } from '../types';
 
 type AdminSection =
   | 'overview'
@@ -62,6 +63,8 @@ export const AdminConsoleModal: React.FC = () => {
   const [reportsQueue, setReportsQueue] = useState<LiveReportItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<LiveAuditLogItem[]>([]);
   const [pushStats, setPushStats] = useState<{ activeTokensCount: number; fcmConfigured: boolean; realtimeConfigured: boolean } | null>(null);
+  const [adminRole, setAdminRole] = useState<string>('ADMIN');
+  const [overviewStats, setOverviewStats] = useState<AdminDashboardMetrics | null>(null);
 
   const [broadcastTitle, setBroadcastTitle] = useState('');
   const [broadcastMessage, setBroadcastMessage] = useState('');
@@ -82,7 +85,7 @@ export const AdminConsoleModal: React.FC = () => {
     if (!adminToken) return;
     setIsLoadingData(true);
     try {
-      const [liveUsers, livePosts, liveVerifs, liveReports, liveAudits, statsResp] = await Promise.all([
+      const [liveUsers, livePosts, liveVerifs, liveReports, liveAudits, statsResp, identity, metrics] = await Promise.all([
         fetchLiveProfiles({ forceRefresh }),
         fetchLivePosts(undefined, { limit: 50, forceRefresh }),
         fetchLiveVerificationRequests(),
@@ -90,7 +93,9 @@ export const AdminConsoleModal: React.FC = () => {
         fetchLiveAuditLogs(),
         fetch('/api/v1/admin/push-stats', {
           headers: { Authorization: `Bearer ${adminToken}` }
-        }).then(r => (r.ok ? r.json() : null)).catch(() => null)
+        }).then(r => (r.ok ? r.json() : null)).catch(() => null),
+        fetchAdminIdentity(),
+        fetchAdminOverviewStats()
       ]);
       setUsers(liveUsers || []);
       if (liveUsers && liveUsers.length > 0 && !selectedUserForBadge) {
@@ -100,6 +105,8 @@ export const AdminConsoleModal: React.FC = () => {
       setVerificationQueue((liveVerifs || []).filter(v => v.status === 'PENDING' || v.status === 'MORE_INFO_REQUIRED'));
       setReportsQueue((liveReports || []).filter(r => r.status === 'OPEN' || r.status === 'INVESTIGATING'));
       setAuditLogs(liveAudits || []);
+      if (identity?.role) setAdminRole(identity.role);
+      setOverviewStats(metrics);
       if (statsResp) {
         setPushStats({
           activeTokensCount: Number(statsResp.activeTokensCount || 0),
@@ -384,7 +391,7 @@ export const AdminConsoleModal: React.FC = () => {
               <div className="flex items-center gap-2">
                 <h1 className="text-lg font-black tracking-wider text-white">VYBE CENTRAL ADMIN</h1>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#22C55E]/15 text-[#22C55E] border border-[#22C55E]/30">
-                  LIVE SUPABASE JWT
+                  {adminRole}
                 </span>
               </div>
               <p className="text-xs text-gray-400">Authenticated: {adminEmail || 'Administrator'}</p>
@@ -478,12 +485,42 @@ export const AdminConsoleModal: React.FC = () => {
 
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   {[
-                    { label: 'Fetched Profiles', val: String(users.length), change: 'Live Supabase rows', color: '#00C6FF' },
-                    { label: 'Fetched Posts & Reels', val: String(posts.length), change: 'Live database feed', color: '#FBBF24' },
-                    { label: 'Pending Verifications', val: String(verificationQueue.length), change: 'Awaiting review', color: '#FFB703' },
-                    { label: 'Open Safety Reports', val: String(reportsQueue.length), change: 'Active queue', color: '#EF4444' },
-                    { label: 'Active Push Devices', val: String(pushStats?.activeTokensCount ?? 0), change: 'Registered FCM tokens', color: '#22C55E' },
-                    { label: 'Audit Trail Records', val: String(auditLogs.length), change: 'Immutable admin logs', color: '#8B5CF6' }
+                    {
+                      label: 'Registered Users',
+                      val: String(overviewStats?.totalUsers ?? users.length),
+                      change: overviewStats ? `DAU ${overviewStats.activeDailyUsers} · WAU ${overviewStats.activeWeeklyUsers}` : 'Live Supabase rows',
+                      color: '#00C6FF'
+                    },
+                    {
+                      label: 'Published Posts',
+                      val: String(overviewStats?.totalPosts ?? posts.length),
+                      change: overviewStats ? `${overviewStats.totalStories} stories · ${overviewStats.totalComments} comments` : 'Live database feed',
+                      color: '#FBBF24'
+                    },
+                    {
+                      label: 'Pending Verifications',
+                      val: String(overviewStats?.pendingVerifications ?? verificationQueue.length),
+                      change: 'Awaiting review',
+                      color: '#FFB703'
+                    },
+                    {
+                      label: 'Open Safety Reports',
+                      val: String(overviewStats?.openReports ?? reportsQueue.length),
+                      change: 'Active queue',
+                      color: '#EF4444'
+                    },
+                    {
+                      label: 'Active Push Devices',
+                      val: String(overviewStats?.activeDevices ?? pushStats?.activeTokensCount ?? 0),
+                      change: 'Registered FCM tokens',
+                      color: '#22C55E'
+                    },
+                    {
+                      label: 'Audit Trail Records',
+                      val: String(auditLogs.length),
+                      change: 'Immutable admin logs',
+                      color: '#8B5CF6'
+                    }
                   ].map((stat, i) => (
                     <div key={i} className="p-4 rounded-2xl bg-[#120D22] border border-[#221840]">
                       <span className="text-[11px] font-medium text-gray-400 block">{stat.label}</span>
@@ -841,7 +878,7 @@ export const AdminConsoleModal: React.FC = () => {
               <div className="space-y-5">
                 <div>
                   <h2 className="text-xl font-bold text-white">Content Library Moderation</h2>
-                  <p className="text-xs text-gray-400">Live posts and reels fetched from Supabase ({posts.length})</p>
+                  <p className="text-xs text-gray-400">Live posts and videos fetched from Supabase ({posts.length})</p>
                 </div>
                 {posts.length === 0 ? (
                   <div className="text-center py-12 bg-[#100B20] rounded-2xl border border-[#1E1638] text-xs text-gray-400">

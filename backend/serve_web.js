@@ -145,12 +145,19 @@ function getDefaultPlatformConfigState() {
       double_take: true,
       crossed_paths: true,
       live_stream: true,
-      voice_calls: true
+      voice_calls: true,
+      growEcosystem: true,
+      growthCircles: true,
+      stories2: true,
+      unloadRooms: true,
+      crossedPaths: true,
+      timeCapsules: true,
+      spiritualMode: true
     },
     platformConfig: {
       maintenanceMode: false,
       maintenanceMessage: "VYBE is undergoing scheduled performance upgrades. We'll be back shortly!",
-      announcementBanner: "Welcome to VYBE 3.0 — Six intentional ways to connect.",
+      announcementBanner: "Welcome to VYBE 2.0 — Meaningful connections, Circles & GROW.",
       announcementActive: false,
       announcementLink: "",
       communityGuidelinesUrl: "https://vybeonline.netlify.app/community-guidelines"
@@ -485,6 +492,50 @@ const server = http.createServer(async (req, res) => {
       server: 'VYBE Admin & Push Gateway',
       timestamp: new Date().toISOString()
     });
+    return;
+  }
+
+  if (cleanUrl === '/api/v1/platform-config' && req.method === 'GET') {
+    let configState = loadPlatformConfigState();
+    try {
+      const cfgResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/platform_config?id=eq.1&select=*&limit=1`, {
+        headers: buildSupabaseHeaders({}, true)
+      });
+      if (cfgResp.ok) {
+        const rows = await cfgResp.json();
+        const row = Array.isArray(rows) ? rows[0] : rows;
+        if (row) {
+          configState = {
+            featureFlags: { ...configState.featureFlags, ...(row.feature_flags || {}) },
+            platformConfig: {
+              ...configState.platformConfig,
+              maintenanceMode: Boolean(row.maintenance_mode),
+              maintenanceMessage: row.maintenance_message || configState.platformConfig.maintenanceMessage,
+              announcementBanner: row.announcement_banner || configState.platformConfig.announcementBanner,
+              announcementActive: Boolean(row.announcement_active),
+              announcementLink: row.announcement_link || ''
+            }
+          };
+        }
+      }
+    } catch {}
+    sendJson(res, 200, { success: true, config: configState.platformConfig, featureFlags: configState.featureFlags });
+    return;
+  }
+
+  if (cleanUrl === '/api/v1/music/catalog' && req.method === 'GET') {
+    let tracks = [];
+    try {
+      const mResp = await fetch(
+        `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/audio_tracks?is_active=eq.true&select=id,title,artist,album,genre,duration_sec,stream_url,cover_url,is_active,created_at&order=created_at.desc&limit=200`,
+        { headers: buildSupabaseHeaders({}, true) }
+      );
+      if (mResp.ok) {
+        const rows = await mResp.json();
+        if (Array.isArray(rows)) tracks = rows;
+      }
+    } catch {}
+    sendJson(res, 200, { success: true, tracks });
     return;
   }
 
@@ -980,7 +1031,7 @@ const server = http.createServer(async (req, res) => {
       if (normalizedType === 'verified') {
         if (value) {
           notifTitle = '🌟 Official Account Verification';
-          notifBody = `Congratulations ${safeUser}! Your VYBE profile has been officially verified by NR Next Platform Administration. Your Electric Blue Verification Badge is now active on your profile across all feeds, reels, and comments.`;
+          notifBody = `Congratulations ${safeUser}! Your VYBE profile has been officially verified by NR Next Platform Administration. Your Electric Blue Verification Badge is now active on your profile across all feeds, stories, and comments.`;
         } else {
           notifTitle = 'VYBE Account Update';
           notifBody = `${safeUser}, your Blue Verified status has been revised by Platform Administration.`;
@@ -1853,9 +1904,8 @@ const server = http.createServer(async (req, res) => {
         },
         content: {
           totalPosts,
-          reels: reelsCount,
           unfiltered: unfilteredCount,
-          standardPosts: Math.max(0, totalPosts - reelsCount - unfilteredCount),
+          standardPosts: Math.max(0, totalPosts - unfilteredCount),
           stories: totalStories,
           totalLikes,
           totalComments,
@@ -2052,6 +2102,13 @@ const server = http.createServer(async (req, res) => {
     configState.featureFlags = configState.featureFlags || {};
     configState.featureFlags[cleanKey] = Boolean(enabled);
     savePlatformConfigState(configState);
+    try {
+      await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/platform_config?on_conflict=id`, {
+        method: 'POST',
+        headers: buildSupabaseHeaders({ 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, true, adminAuth.token),
+        body: JSON.stringify({ id: 1, feature_flags: configState.featureFlags, updated_by: adminAuth.userId, updated_at: new Date().toISOString() })
+      });
+    } catch {}
 
     await recordSupabaseAuditLog({
       adminId: adminAuth.userId,
@@ -2080,7 +2137,7 @@ const server = http.createServer(async (req, res) => {
 
   if (cleanUrl === '/api/v1/admin/platform-config' && req.method === 'POST') {
     const body = await readJsonBody(req);
-    const { maintenanceMode, maintenanceMessage, announcementBanner, announcementActive, announcementLink } = body;
+    const { maintenanceMode, maintenanceMessage, announcementBanner, announcementActive, announcementLink, featureFlags } = body;
     const configState = loadPlatformConfigState();
     configState.platformConfig = configState.platformConfig || {};
     if (maintenanceMode !== undefined) configState.platformConfig.maintenanceMode = Boolean(maintenanceMode);
@@ -2088,8 +2145,26 @@ const server = http.createServer(async (req, res) => {
     if (announcementBanner !== undefined) configState.platformConfig.announcementBanner = String(announcementBanner);
     if (announcementActive !== undefined) configState.platformConfig.announcementActive = Boolean(announcementActive);
     if (announcementLink !== undefined) configState.platformConfig.announcementLink = String(announcementLink);
+    if (featureFlags && typeof featureFlags === 'object') configState.featureFlags = { ...(configState.featureFlags || {}), ...featureFlags };
 
     savePlatformConfigState(configState);
+    try {
+      await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/platform_config?on_conflict=id`, {
+        method: 'POST',
+        headers: buildSupabaseHeaders({ 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, true, adminAuth.token),
+        body: JSON.stringify({
+          id: 1,
+          feature_flags: configState.featureFlags,
+          maintenance_mode: configState.platformConfig.maintenanceMode,
+          maintenance_message: configState.platformConfig.maintenanceMessage,
+          announcement_banner: configState.platformConfig.announcementBanner,
+          announcement_active: configState.platformConfig.announcementActive,
+          announcement_link: configState.platformConfig.announcementLink,
+          updated_by: adminAuth.userId,
+          updated_at: new Date().toISOString()
+        })
+      });
+    } catch {}
 
     await recordSupabaseAuditLog({
       adminId: adminAuth.userId,
@@ -2101,7 +2176,7 @@ const server = http.createServer(async (req, res) => {
       callerJwt: adminAuth.token
     });
 
-    sendJson(res, 200, { success: true, config: configState.platformConfig });
+    sendJson(res, 200, { success: true, config: configState.platformConfig, featureFlags: configState.featureFlags });
     return;
   }
 
@@ -2143,6 +2218,163 @@ const server = http.createServer(async (req, res) => {
 
     sendJson(res, 200, { success: true, staff, total: staff.length });
     return;
+  }
+
+  // 14a. ADMIN IDENTITY & VYBE 2.0 GOVERNANCE ROUTES (/me, /circles, /grow, /audio-tracks)
+  if (cleanUrl === '/api/v1/admin/me' && req.method === 'GET') {
+    sendJson(res, 200, {
+      success: true,
+      userId: adminAuth.userId,
+      email: adminAuth.email,
+      role: adminAuth.role,
+      isOwner: Boolean(adminAuth.isSuperAdmin),
+      isSuperAdmin: Boolean(adminAuth.isSuperAdmin)
+    });
+    return;
+  }
+
+  if (cleanUrl === '/api/v1/admin/circles' && req.method === 'GET') {
+    const hdrs = buildSupabaseHeaders({}, true, adminAuth.token);
+    const base = SUPABASE_URL.replace(/\/$/, '');
+    const [cResp, rResp] = await Promise.all([
+      fetch(`${base}/rest/v1/communities?select=id,name,description,category,join_mode,members_count,is_verified,created_at,creator:creator_id(id,username,display_name)&order=created_at.desc&limit=100`, { headers: hdrs }).catch(() => null),
+      fetch(`${base}/rest/v1/community_reports?select=id,community_id,reporter_id,reason,status,created_at&order=created_at.desc&limit=50`, { headers: hdrs }).catch(() => null)
+    ]);
+    const circles = cResp && cResp.ok ? await cResp.json().catch(() => []) : [];
+    const reports = rResp && rResp.ok ? await rResp.json().catch(() => []) : [];
+    sendJson(res, 200, { success: true, circles: Array.isArray(circles) ? circles : [], reports: Array.isArray(reports) ? reports : [] });
+    return;
+  }
+
+  if (cleanUrl === '/api/v1/admin/circles/moderate' && req.method === 'POST') {
+    const body = await readJsonBody(req);
+    const { communityId, reportId, action } = body;
+    const act = String(action || '').toUpperCase();
+    const hdrs = buildSupabaseHeaders({ 'Content-Type': 'application/json' }, true, adminAuth.token);
+    const base = SUPABASE_URL.replace(/\/$/, '');
+    if (act === 'RESOLVE_REPORT' && reportId && UUID_RE.test(String(reportId))) {
+      await fetch(`${base}/rest/v1/community_reports?id=eq.${encodeURIComponent(reportId)}`, { method: 'PATCH', headers: hdrs, body: JSON.stringify({ status: 'RESOLVED' }) });
+      sendJson(res, 200, { success: true });
+      return;
+    }
+    if (!communityId || !UUID_RE.test(String(communityId))) {
+      sendJson(res, 400, { error: 'Valid UUID communityId required.' });
+      return;
+    }
+    if (act === 'DELETE') {
+      await fetch(`${base}/rest/v1/communities?id=eq.${encodeURIComponent(communityId)}`, { method: 'DELETE', headers: hdrs });
+    } else if (act === 'VERIFY' || act === 'UNVERIFY') {
+      await fetch(`${base}/rest/v1/communities?id=eq.${encodeURIComponent(communityId)}`, { method: 'PATCH', headers: hdrs, body: JSON.stringify({ is_verified: act === 'VERIFY' }) });
+    } else {
+      sendJson(res, 400, { error: 'Unsupported action.' });
+      return;
+    }
+    await recordSupabaseAuditLog({ adminId: adminAuth.userId, adminEmail: adminAuth.email, action: `CIRCLE_${act}`, targetType: 'communities', targetId: String(communityId), callerJwt: adminAuth.token });
+    sendJson(res, 200, { success: true });
+    return;
+  }
+
+  if (cleanUrl === '/api/v1/admin/grow' && req.method === 'GET') {
+    const hdrs = buildSupabaseHeaders({}, true, adminAuth.token);
+    const base = SUPABASE_URL.replace(/\/$/, '');
+    const [pResp, prResp, oResp, orResp] = await Promise.all([
+      fetch(`${base}/rest/v1/growth_programs?select=id,owner_id,title,category,duration_days,enrollment_mode,is_published,members_count,created_at&order=created_at.desc&limit=80`, { headers: hdrs }).catch(() => null),
+      fetch(`${base}/rest/v1/projects?select=id,owner_id,title,category,stage,likes_count,created_at&order=created_at.desc&limit=80`, { headers: hdrs }).catch(() => null),
+      fetch(`${base}/rest/v1/opportunities?select=id,posted_by,title,organization_name,category,work_mode,is_verified_org,status,created_at&order=created_at.desc&limit=80`, { headers: hdrs }).catch(() => null),
+      fetch(`${base}/rest/v1/opportunity_reports?select=id,opportunity_id,reporter_id,reason,status,created_at&order=created_at.desc&limit=50`, { headers: hdrs }).catch(() => null)
+    ]);
+    sendJson(res, 200, {
+      success: true,
+      programs: pResp && pResp.ok ? await pResp.json().catch(() => []) : [],
+      projects: prResp && prResp.ok ? await prResp.json().catch(() => []) : [],
+      opportunities: oResp && oResp.ok ? await oResp.json().catch(() => []) : [],
+      opportunityReports: orResp && orResp.ok ? await orResp.json().catch(() => []) : []
+    });
+    return;
+  }
+
+  if (cleanUrl === '/api/v1/admin/grow/moderate' && req.method === 'POST') {
+    const body = await readJsonBody(req);
+    const { entityType, entityId, action } = body;
+    if (!entityId || !UUID_RE.test(String(entityId))) {
+      sendJson(res, 400, { error: 'Valid UUID entityId required.' });
+      return;
+    }
+    const hdrs = buildSupabaseHeaders({ 'Content-Type': 'application/json' }, true, adminAuth.token);
+    const base = SUPABASE_URL.replace(/\/$/, '');
+    const kind = String(entityType || '').toUpperCase();
+    const act = String(action || '').toUpperCase();
+    if (kind === 'PROGRAM') {
+      if (act === 'DELETE') await fetch(`${base}/rest/v1/growth_programs?id=eq.${encodeURIComponent(entityId)}`, { method: 'DELETE', headers: hdrs });
+      else await fetch(`${base}/rest/v1/growth_programs?id=eq.${encodeURIComponent(entityId)}`, { method: 'PATCH', headers: hdrs, body: JSON.stringify({ is_published: act === 'PUBLISH' }) });
+    } else if (kind === 'PROJECT' && act === 'DELETE') {
+      await fetch(`${base}/rest/v1/projects?id=eq.${encodeURIComponent(entityId)}`, { method: 'DELETE', headers: hdrs });
+    } else if (kind === 'OPPORTUNITY') {
+      if (act === 'DELETE') await fetch(`${base}/rest/v1/opportunities?id=eq.${encodeURIComponent(entityId)}`, { method: 'DELETE', headers: hdrs });
+      else if (act === 'VERIFY') await fetch(`${base}/rest/v1/opportunities?id=eq.${encodeURIComponent(entityId)}`, { method: 'PATCH', headers: hdrs, body: JSON.stringify({ is_verified_org: true }) });
+      else await fetch(`${base}/rest/v1/opportunities?id=eq.${encodeURIComponent(entityId)}`, { method: 'PATCH', headers: hdrs, body: JSON.stringify({ status: act === 'OPEN' ? 'OPEN' : 'CLOSED' }) });
+    } else if (kind === 'OPPORTUNITY_REPORT') {
+      await fetch(`${base}/rest/v1/opportunity_reports?id=eq.${encodeURIComponent(entityId)}`, { method: 'PATCH', headers: hdrs, body: JSON.stringify({ status: act === 'DISMISS' ? 'DISMISSED' : 'RESOLVED' }) });
+    } else {
+      sendJson(res, 400, { error: 'Unsupported GROW moderation action.' });
+      return;
+    }
+    await recordSupabaseAuditLog({ adminId: adminAuth.userId, adminEmail: adminAuth.email, action: `GROW_${kind}_${act}`, targetType: kind, targetId: String(entityId), callerJwt: adminAuth.token });
+    sendJson(res, 200, { success: true });
+    return;
+  }
+
+  if (cleanUrl === '/api/v1/admin/audio-tracks') {
+    const hdrs = buildSupabaseHeaders({ 'Content-Type': 'application/json', Prefer: 'return=representation' }, true, adminAuth.token);
+    const base = SUPABASE_URL.replace(/\/$/, '');
+    if (req.method === 'GET') {
+      const aResp = await fetch(`${base}/rest/v1/audio_tracks?select=id,title,artist,album,genre,duration_sec,stream_url,cover_url,is_active,created_at&order=created_at.desc&limit=200`, { headers: hdrs }).catch(() => null);
+      const tracks = aResp && aResp.ok ? await aResp.json().catch(() => []) : [];
+      sendJson(res, 200, { success: true, tracks: Array.isArray(tracks) ? tracks : [] });
+      return;
+    }
+    if (req.method === 'POST') {
+      const body = await readJsonBody(req);
+      const { title, artist, album, genre, durationSec, streamUrl, coverUrl } = body;
+      if (!title || !artist || !streamUrl) {
+        sendJson(res, 400, { error: 'title, artist, and streamUrl are required.' });
+        return;
+      }
+      const cResp = await fetch(`${base}/rest/v1/audio_tracks`, {
+        method: 'POST',
+        headers: hdrs,
+        body: JSON.stringify({
+          title: String(title).trim(),
+          artist: String(artist).trim(),
+          album: String(album || '').trim(),
+          genre: String(genre || 'Ambient').trim(),
+          duration_sec: Math.max(5, Math.min(600, Number(durationSec) || 30)),
+          stream_url: String(streamUrl).trim(),
+          cover_url: coverUrl ? String(coverUrl).trim() : null,
+          is_active: true,
+          created_by: adminAuth.userId
+        })
+      });
+      if (!cResp.ok) {
+        sendJson(res, cResp.status, { error: 'Failed creating audio track.' });
+        return;
+      }
+      const created = await cResp.json();
+      sendJson(res, 200, { success: true, track: Array.isArray(created) ? created[0] : created });
+      return;
+    }
+    if (req.method === 'DELETE') {
+      const parsed = new URL(req.url || '/', 'http://localhost');
+      const body = await readJsonBody(req);
+      const id = String(parsed.searchParams.get('id') || body?.trackId || '').trim();
+      if (!UUID_RE.test(id)) {
+        sendJson(res, 400, { error: 'Valid UUID trackId required.' });
+        return;
+      }
+      await fetch(`${base}/rest/v1/audio_tracks?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE', headers: hdrs });
+      sendJson(res, 200, { success: true });
+      return;
+    }
   }
 
   // 15. CSV DATA EXPORT FOR AUDIT & COMPLIANCE (Live Supabase data only; PII stripped)
@@ -2260,7 +2492,7 @@ const server = http.createServer(async (req, res) => {
 
     const appDeepLink = `vybe://profile/${encodeURIComponent(profileRow.id)}?u=${encodeURIComponent(profileRow.username || '')}`;
     const isPrivate = Boolean(profileRow.is_private_account);
-    const bioText = isPrivate ? 'This account is private. LINK UP in the VYBE app to see their posts and reels.' : (profileRow.bio || 'Official member on VYBE.');
+    const bioText = isPrivate ? 'This account is private. LINK UP in the VYBE app to see their posts and moments.' : (profileRow.bio || 'Official member on VYBE.');
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(profileRow.display_name || profileRow.username)} (@${esc(profileRow.username)}) • VYBE</title>
     <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070913;color:#fff;font-family:system-ui,-apple-system,sans-serif;padding:24px}.card{max-width:420px;width:100%;background:#111729;border:1px solid #263252;border-radius:24px;padding:32px;text-align:center}.btn{display:inline-block;margin-top:20px;padding:13px 24px;border-radius:14px;background:linear-gradient(90deg,#2563eb,#7c3aed);color:#fff;text-decoration:none;font-weight:700;font-size:15px}</style></head>

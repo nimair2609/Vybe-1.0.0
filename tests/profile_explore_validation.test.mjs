@@ -141,19 +141,19 @@ describe('VYBE Profile & Explore Validation Suite', () => {
     assert.equal(sanitizePostgrestSearchTerm('x'.repeat(100)).length, 64);
   });
 
-  it('filterProfileTabPosts separates Posts, Vybe Reels, Unfiltered, Tagged, Highlights, and Saved without duplication', () => {
+  it('filterProfileTabPosts separates Posts (including Video & legacy REEL), Unfiltered, Tagged, Highlights, and Saved without duplication', () => {
     const owner = makeUser({ id: 'u1', username: 'aria_vybe' });
     const other = makeUser({ id: 'u2', username: 'rohan_k' });
 
     const photoPost = makePost('p_photo', { author: owner, mediaType: 'IMAGE' });
-    const reelPost = makePost('p_reel', { author: owner, mediaType: 'REEL', isVybesReel: true });
+    const legacyReelPost = makePost('p_reel', { author: owner, mediaType: 'VIDEO', isVybesReel: false });
     const videoPost = makePost('p_video', { author: owner, mediaType: 'VIDEO' });
     const unfilteredPost = makePost('p_raw', { author: owner, isUnfiltered: true });
     const selfMention = makePost('p_self_tag', { author: owner, caption: 'Shoutout @aria_vybe' });
     const peerMention = makePost('p_peer_tag', { author: other, caption: 'Collab with @aria_vybe' });
     const savedPeer = makePost('p_saved', { author: other, isSaved: true });
 
-    const userPosts = [photoPost, reelPost, videoPost, unfilteredPost, selfMention];
+    const userPosts = [photoPost, legacyReelPost, videoPost, unfilteredPost, selfMention];
     const allPosts = [...userPosts, peerMention, savedPeer];
     const common = {
       userPosts,
@@ -166,11 +166,7 @@ describe('VYBE Profile & Explore Validation Suite', () => {
 
     assert.deepEqual(
       filterProfileTabPosts({ ...common, tab: 'POSTS' }).map(p => p.id),
-      ['p_photo', 'p_self_tag']
-    );
-    assert.deepEqual(
-      filterProfileTabPosts({ ...common, tab: 'REELS' }).map(p => p.id),
-      ['p_reel', 'p_video']
+      ['p_photo', 'p_reel', 'p_video', 'p_self_tag']
     );
     assert.deepEqual(
       filterProfileTabPosts({ ...common, tab: 'UNFILTERED' }).map(p => p.id),

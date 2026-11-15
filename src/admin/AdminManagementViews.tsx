@@ -192,7 +192,7 @@ export const AdminManagementViews: React.FC<AdminManagementViewsProps> = ({
               onChange={(e) => setUserSort(e.target.value as any)}
             >
               <option value="NAME">Sort: Name (A–Z)</option>
-              <option value="FOLLOWERS">Sort: Followers</option>
+              <option value="FOLLOWERS">Sort: LINKUPS</option>
               <option value="POSTS">Sort: Posts</option>
             </VybeSelect>
 
@@ -265,7 +265,7 @@ export const AdminManagementViews: React.FC<AdminManagementViewsProps> = ({
                         </VybeStatusChip>
                       </td>
                       <td className="py-3 px-4 text-[var(--vybe-text-secondary)]">
-                        <div>{u.followersCount.toLocaleString()} followers</div>
+                        <div>{u.followersCount.toLocaleString()} LINKUPS</div>
                         <div className="text-[10px] text-[var(--vybe-text-muted)]">{u.postsCount} posts</div>
                       </td>
                       <td className="py-3 px-4">
@@ -440,13 +440,13 @@ export const AdminManagementViews: React.FC<AdminManagementViewsProps> = ({
                   <div className="font-bold text-sm text-[var(--vybe-text)]">
                     {activeInspectedUser.followersCount.toLocaleString()}
                   </div>
-                  <div className="text-[10px] text-[var(--vybe-text-secondary)]">Followers</div>
+                  <div className="text-[10px] text-[var(--vybe-text-secondary)]">LINKUPS</div>
                 </div>
                 <div className="p-2.5 rounded-xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)]">
                   <div className="font-bold text-sm text-[var(--vybe-text)]">
                     {activeInspectedUser.followingCount.toLocaleString()}
                   </div>
-                  <div className="text-[10px] text-[var(--vybe-text-secondary)]">Following</div>
+                  <div className="text-[10px] text-[var(--vybe-text-secondary)]">LINKED</div>
                 </div>
                 <div className="p-2.5 rounded-xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)]">
                   <div className="font-bold text-sm text-[var(--vybe-text)]">{activeInspectedUser.postsCount}</div>

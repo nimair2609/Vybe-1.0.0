@@ -272,7 +272,7 @@ export const FeedView: React.FC = () => {
                     ))}
                   </div>
                   <p className="text-xs text-[var(--vybe-text-secondary)] truncate">
-                    @{currentUser.username} · {currentUser.followersCount.toLocaleString()} followers
+                    @{currentUser.username} · {currentUser.followersCount.toLocaleString()} LINKUPS
                   </p>
                 </div>
               </div>
@@ -325,7 +325,7 @@ export const FeedView: React.FC = () => {
               >
                 <Users className="w-4 h-4 text-[var(--vybe-accent)] shrink-0" />
                 <div className="min-w-0">
-                  <p className="text-xs font-bold text-[var(--vybe-text)] truncate">Communities</p>
+                  <p className="text-xs font-bold text-[var(--vybe-text)] truncate">Growth Circles</p>
                   <p className="text-[10px] text-[var(--vybe-text-secondary)]">{communities.length} circles</p>
                 </div>
               </button>

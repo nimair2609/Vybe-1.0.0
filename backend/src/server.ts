@@ -1126,12 +1126,482 @@ app.post('/api/v1/user/verification/badge-display', requireAuth, async (req: Req
   }
 });
 
-// Licensed Music Catalog Proxy Routes (Provider-Adapter Architecture; Private API keys stay server-side)
-const handleUnconfiguredMusicCatalog = (_req: Request, res: Response): void => {
-  res.status(501).json({ error: 'Licensed music catalog provider is not configured.' });
+// Live Platform Config (Stateless Supabase public.platform_config with defaults fallback)
+const DEFAULT_FEATURE_FLAGS: Record<string, boolean> = {
+  unload: true,
+  unfiltered: true,
+  what_next: true,
+  time_capsule: true,
+  double_take: true,
+  crossed_paths: true,
+  live_stream: true,
+  voice_calls: true,
+  growEcosystem: true,
+  growthCircles: true,
+  stories2: true,
+  unloadRooms: true,
+  crossedPaths: true,
+  timeCapsules: true,
+  spiritualMode: true
 };
-app.get('/api/v1/music/catalog', handleUnconfiguredMusicCatalog);
-app.get('/api/v1/music/tracks/:trackId', handleUnconfiguredMusicCatalog);
+
+const DEFAULT_PLATFORM_CONFIG = {
+  maintenanceMode: false,
+  maintenanceMessage: "VYBE is undergoing scheduled performance upgrades. We'll be back shortly!",
+  announcementBanner: 'Welcome to VYBE 2.0 — Meaningful connections, Circles & GROW.',
+  announcementActive: false,
+  announcementLink: '',
+  communityGuidelinesUrl: 'https://vybeonline.netlify.app/community-guidelines'
+};
+
+async function getPlatformConfigState() {
+  if (supabaseAdmin) {
+    try {
+      const { data } = await supabaseAdmin.from('platform_config').select('*').eq('id', 1).maybeSingle();
+      if (data) {
+        return {
+          featureFlags: { ...DEFAULT_FEATURE_FLAGS, ...(data.feature_flags || {}) },
+          config: {
+            maintenanceMode: Boolean(data.maintenance_mode),
+            maintenanceMessage: data.maintenance_message || DEFAULT_PLATFORM_CONFIG.maintenanceMessage,
+            announcementBanner: data.announcement_banner || DEFAULT_PLATFORM_CONFIG.announcementBanner,
+            announcementActive: Boolean(data.announcement_active),
+            announcementLink: data.announcement_link || '',
+            communityGuidelinesUrl: data.community_guidelines_url || DEFAULT_PLATFORM_CONFIG.communityGuidelinesUrl
+          }
+        };
+      }
+    } catch {}
+  }
+  return { featureFlags: { ...DEFAULT_FEATURE_FLAGS }, config: { ...DEFAULT_PLATFORM_CONFIG } };
+}
+
+// Public Platform Config & Active Music Catalog (Live Supabase public.audio_tracks)
+app.get('/api/v1/platform-config', async (_req: Request, res: Response): Promise<void> => {
+  const state = await getPlatformConfigState();
+  res.status(200).json({ success: true, config: state.config, featureFlags: state.featureFlags });
+});
+
+app.get('/api/v1/music/catalog', async (_req: Request, res: Response): Promise<void> => {
+  if (!supabaseAdmin) {
+    res.status(200).json({ success: true, tracks: [] });
+    return;
+  }
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('audio_tracks')
+      .select('id,title,artist,album,genre,duration_sec,stream_url,cover_url,is_active,created_at')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (error) {
+      res.status(200).json({ success: true, tracks: [] });
+      return;
+    }
+    res.status(200).json({ success: true, tracks: data || [] });
+  } catch {
+    res.status(200).json({ success: true, tracks: [] });
+  }
+});
+
+app.get('/api/v1/music/tracks/:trackId', async (req: Request, res: Response): Promise<void> => {
+  const trackId = String(req.params.trackId || '').trim();
+  if (!supabaseAdmin || !UUID_RE.test(trackId)) {
+    res.status(404).json({ error: 'Track not found.' });
+    return;
+  }
+  const { data } = await supabaseAdmin
+    .from('audio_tracks')
+    .select('id,title,artist,album,genre,duration_sec,stream_url,cover_url,is_active,created_at')
+    .eq('id', trackId)
+    .maybeSingle();
+  if (!data) {
+    res.status(404).json({ error: 'Track not found.' });
+    return;
+  }
+  res.status(200).json({ success: true, track: data });
+});
+
+// VYBE 2.0 Admin Identity & Command Center Routes
+app.get('/api/v1/admin/me', requireAdmin, (req: Request, res: Response): void => {
+  const user = (req as any).user;
+  const adminRole = String((req as any).adminRole || 'MODERATOR').toUpperCase();
+  const isSuperAdmin = Boolean((req as any).isSuperAdmin);
+  res.status(200).json({
+    success: true,
+    userId: user?.id,
+    email: user?.email || 'admin',
+    role: adminRole,
+    isOwner: isSuperAdmin,
+    isSuperAdmin
+  });
+});
+
+app.get('/api/v1/admin/overview-stats', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  const adminRole = String((req as any).adminRole || 'MODERATOR').toUpperCase();
+  const isSuperAdmin = Boolean((req as any).isSuperAdmin);
+  if (supabaseAdmin) {
+    try {
+      const { data: metrics, error } = await supabaseAdmin.rpc('get_admin_dashboard_metrics');
+      if (!error && metrics && typeof metrics === 'object') {
+        res.status(200).json({
+          success: true,
+          adminRole,
+          isOwner: isSuperAdmin,
+          isSuperAdmin,
+          stats: {
+            ...metrics,
+            push: { activeDevices: (metrics as any).push?.activeDevices || 0, recentPushes: recentPushLogs.length },
+            systemHealth: {
+              supabase: { status: 'HEALTHY', url: supabaseUrl },
+              fcm: { status: getFirebaseServiceAccount() ? 'CONFIGURED' : 'STANDBY', registeredDevices: (metrics as any).push?.activeDevices || 0 },
+              realtime: { status: 'LIVE', channel: 'vybe_broadcast_high_v2' }
+            }
+          }
+        });
+        return;
+      }
+    } catch {}
+  }
+  res.status(200).json({
+    success: true,
+    adminRole,
+    isOwner: isSuperAdmin,
+    isSuperAdmin,
+    stats: {
+      users: { total: 0, dau: 0, wau: 0, mau: 0, newToday: 0, newWeek: 0, banned: 0, suspended: 0, verified: 0, vip: 0, official: 0 },
+      content: { totalPosts: 0, unfiltered: 0, standardPosts: 0, stories: 0, totalLikes: 0, totalComments: 0, totalSaves: 0, totalShares: 0 },
+      moderation: { totalReports: 0, pendingReports: 0, verificationPending: 0 },
+      ecosystem: { circles: 0, circlePosts: 0, growthPrograms: 0, projects: 0, opportunities: 0, applications: 0, audioTracks: 0 },
+      push: { activeDevices: 0, recentPushes: recentPushLogs.length }
+    }
+  });
+});
+
+app.get('/api/v1/admin/staff', requireAdmin, async (_req: Request, res: Response): Promise<void> => {
+  if (!supabaseAdmin) {
+    res.status(200).json({ success: true, staff: [], total: 0 });
+    return;
+  }
+  const { data } = await supabaseAdmin
+    .from('admin_users')
+    .select('user_id,email,role,is_active,created_at,profiles:user_id(id,username,display_name,avatar_url)')
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(200);
+  const staff = (data || []).map((r: any) => {
+    const p = r.profiles || {};
+    const role = String(r.role || 'MODERATOR').toUpperCase();
+    return {
+      id: r.user_id || p.id,
+      username: p.username || r.email || 'admin',
+      display_name: p.display_name || p.username || r.email || 'Administrator',
+      email: r.email || '',
+      role,
+      is_owner: SUPER_ADMIN_ROLES.has(role),
+      avatar_url: p.avatar_url || null,
+      created_at: r.created_at
+    };
+  });
+  res.status(200).json({ success: true, staff, total: staff.length });
+});
+
+app.post('/api/v1/admin/set-role', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  const adminUser = (req as any).user;
+  if (!(req as any).isSuperAdmin) {
+    res.status(403).json({ error: 'Forbidden: Only Owner / Super Admin may modify platform roles.' });
+    return;
+  }
+  const { userId, role, email } = req.body || {};
+  if (!userId || !UUID_RE.test(String(userId)) || !role) {
+    res.status(400).json({ error: 'Valid UUID userId and role are required.' });
+    return;
+  }
+  if (String(adminUser?.id || '').toLowerCase() === String(userId).toLowerCase()) {
+    res.status(403).json({ error: 'Security Policy: Administrators cannot modify their own platform role.' });
+    return;
+  }
+  if (!supabaseAdmin) {
+    res.status(503).json({ error: 'Database service unavailable.' });
+    return;
+  }
+
+  const reqRole = String(role).toUpperCase().trim();
+  const ROLE_MAP: Record<string, { profileRole: string; subRole: string | null }> = {
+    OWNER_ADMIN: { profileRole: 'ADMIN', subRole: 'OWNER_ADMIN' },
+    SUPER_ADMIN: { profileRole: 'ADMIN', subRole: 'OWNER_ADMIN' },
+    ADMIN: { profileRole: 'ADMIN', subRole: 'ADMIN' },
+    MODERATOR: { profileRole: 'MODERATOR', subRole: 'MODERATOR' },
+    SUPPORT_ADMIN: { profileRole: 'MODERATOR', subRole: 'SUPPORT_ADMIN' },
+    ANALYST: { profileRole: 'MODERATOR', subRole: 'ANALYST' },
+    USER: { profileRole: 'USER', subRole: null }
+  };
+  const mapped = ROLE_MAP[reqRole] || { profileRole: 'USER', subRole: null };
+
+  const { error: pErr } = await supabaseAdmin.from('profiles').update({ role: mapped.profileRole }).eq('id', userId);
+  if (pErr) {
+    res.status(500).json({ error: 'Failed updating user role in Supabase.' });
+    return;
+  }
+
+  if (mapped.subRole) {
+    await supabaseAdmin.from('admin_users').upsert({
+      user_id: userId,
+      ...(email ? { email: String(email).toLowerCase() } : {}),
+      role: mapped.subRole,
+      is_active: true,
+      assigned_by: adminUser.id,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id' });
+  } else {
+    await supabaseAdmin.from('admin_users').update({ is_active: false, updated_at: new Date().toISOString() }).eq('user_id', userId);
+  }
+
+  await recordServerAuditLog({
+    adminId: String(adminUser?.id || ''),
+    adminEmail: String(adminUser?.email || 'admin'),
+    action: 'UPDATE_ROLE',
+    targetType: 'profiles',
+    targetId: String(userId),
+    details: { requestedRole: reqRole, profileRole: mapped.profileRole, adminSubRole: mapped.subRole }
+  });
+
+  res.status(200).json({ success: true, userId, role: mapped.subRole || mapped.profileRole });
+});
+
+app.get('/api/v1/admin/circles', requireAdmin, async (_req: Request, res: Response): Promise<void> => {
+  if (!supabaseAdmin) {
+    res.status(200).json({ success: true, circles: [], reports: [] });
+    return;
+  }
+  const [{ data: circles }, { data: reports }] = await Promise.all([
+    supabaseAdmin
+      .from('communities')
+      .select('id,name,description,category,join_mode,members_count,is_verified,created_at,creator:creator_id(id,username,display_name)')
+      .order('created_at', { ascending: false })
+      .limit(100),
+    supabaseAdmin
+      .from('community_reports')
+      .select('id,community_id,reporter_id,reason,status,created_at')
+      .order('created_at', { ascending: false })
+      .limit(50)
+  ]);
+  res.status(200).json({ success: true, circles: circles || [], reports: reports || [] });
+});
+
+app.post('/api/v1/admin/circles/moderate', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  if (!supabaseAdmin) {
+    res.status(503).json({ error: 'Database service unavailable.' });
+    return;
+  }
+  const adminUser = (req as any).user;
+  const { communityId, reportId, action } = req.body || {};
+  const act = String(action || '').toUpperCase();
+  if (act === 'RESOLVE_REPORT' && reportId && UUID_RE.test(String(reportId))) {
+    await supabaseAdmin.from('community_reports').update({ status: 'RESOLVED' }).eq('id', reportId);
+    res.status(200).json({ success: true });
+    return;
+  }
+  if (!communityId || !UUID_RE.test(String(communityId))) {
+    res.status(400).json({ error: 'Valid UUID communityId is required.' });
+    return;
+  }
+  if (act === 'DELETE') {
+    await supabaseAdmin.from('communities').delete().eq('id', communityId);
+  } else if (act === 'VERIFY' || act === 'UNVERIFY') {
+    await supabaseAdmin.from('communities').update({ is_verified: act === 'VERIFY' }).eq('id', communityId);
+  } else {
+    res.status(400).json({ error: 'Unsupported action.' });
+    return;
+  }
+  await recordServerAuditLog({
+    adminId: String(adminUser?.id || ''),
+    adminEmail: String(adminUser?.email || 'admin'),
+    action: `CIRCLE_${act}`,
+    targetType: 'communities',
+    targetId: String(communityId)
+  });
+  res.status(200).json({ success: true });
+});
+
+app.get('/api/v1/admin/grow', requireAdmin, async (_req: Request, res: Response): Promise<void> => {
+  if (!supabaseAdmin) {
+    res.status(200).json({ success: true, programs: [], projects: [], opportunities: [], opportunityReports: [] });
+    return;
+  }
+  const [prog, proj, opp, oppRep] = await Promise.all([
+    supabaseAdmin.from('growth_programs').select('id,owner_id,title,category,duration_days,enrollment_mode,is_published,members_count,created_at').order('created_at', { ascending: false }).limit(80),
+    supabaseAdmin.from('projects').select('id,owner_id,title,category,stage,likes_count,created_at').order('created_at', { ascending: false }).limit(80),
+    supabaseAdmin.from('opportunities').select('id,posted_by,title,organization_name,category,work_mode,is_verified_org,status,created_at').order('created_at', { ascending: false }).limit(80),
+    supabaseAdmin.from('opportunity_reports').select('id,opportunity_id,reporter_id,reason,status,created_at').order('created_at', { ascending: false }).limit(50)
+  ]);
+  res.status(200).json({
+    success: true,
+    programs: prog.data || [],
+    projects: proj.data || [],
+    opportunities: opp.data || [],
+    opportunityReports: oppRep.data || []
+  });
+});
+
+app.post('/api/v1/admin/grow/moderate', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  if (!supabaseAdmin) {
+    res.status(503).json({ error: 'Database service unavailable.' });
+    return;
+  }
+  const adminUser = (req as any).user;
+  const { entityType, entityId, action } = req.body || {};
+  if (!entityId || !UUID_RE.test(String(entityId))) {
+    res.status(400).json({ error: 'Valid UUID entityId is required.' });
+    return;
+  }
+  const kind = String(entityType || '').toUpperCase();
+  const act = String(action || '').toUpperCase();
+  if (kind === 'PROGRAM') {
+    if (act === 'DELETE') await supabaseAdmin.from('growth_programs').delete().eq('id', entityId);
+    else await supabaseAdmin.from('growth_programs').update({ is_published: act === 'PUBLISH' }).eq('id', entityId);
+  } else if (kind === 'PROJECT' && act === 'DELETE') {
+    await supabaseAdmin.from('projects').delete().eq('id', entityId);
+  } else if (kind === 'OPPORTUNITY') {
+    if (act === 'DELETE') await supabaseAdmin.from('opportunities').delete().eq('id', entityId);
+    else if (act === 'VERIFY') await supabaseAdmin.from('opportunities').update({ is_verified_org: true }).eq('id', entityId);
+    else await supabaseAdmin.from('opportunities').update({ status: act === 'OPEN' ? 'OPEN' : 'CLOSED' }).eq('id', entityId);
+  } else if (kind === 'OPPORTUNITY_REPORT') {
+    await supabaseAdmin.from('opportunity_reports').update({ status: act === 'DISMISS' ? 'DISMISSED' : 'RESOLVED' }).eq('id', entityId);
+  } else {
+    res.status(400).json({ error: 'Unsupported GROW moderation action.' });
+    return;
+  }
+  await recordServerAuditLog({
+    adminId: String(adminUser?.id || ''),
+    adminEmail: String(adminUser?.email || 'admin'),
+    action: `GROW_${kind}_${act}`,
+    targetType: kind,
+    targetId: String(entityId)
+  });
+  res.status(200).json({ success: true });
+});
+
+app.get('/api/v1/admin/audio-tracks', requireAdmin, async (_req: Request, res: Response): Promise<void> => {
+  if (!supabaseAdmin) {
+    res.status(200).json({ success: true, tracks: [] });
+    return;
+  }
+  const { data } = await supabaseAdmin
+    .from('audio_tracks')
+    .select('id,title,artist,album,genre,duration_sec,stream_url,cover_url,is_active,created_at')
+    .order('created_at', { ascending: false })
+    .limit(200);
+  res.status(200).json({ success: true, tracks: data || [] });
+});
+
+app.post('/api/v1/admin/audio-tracks', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  if (!supabaseAdmin) {
+    res.status(503).json({ error: 'Database service unavailable.' });
+    return;
+  }
+  const adminUser = (req as any).user;
+  const { title, artist, album, genre, durationSec, streamUrl, coverUrl } = req.body || {};
+  if (!title || !artist || !streamUrl) {
+    res.status(400).json({ error: 'title, artist, and streamUrl are required.' });
+    return;
+  }
+  const { data, error } = await supabaseAdmin
+    .from('audio_tracks')
+    .insert({
+      title: String(title).trim(),
+      artist: String(artist).trim(),
+      album: String(album || '').trim(),
+      genre: String(genre || 'Ambient').trim(),
+      duration_sec: Math.max(5, Math.min(600, Number(durationSec) || 30)),
+      stream_url: String(streamUrl).trim(),
+      cover_url: coverUrl ? String(coverUrl).trim() : null,
+      is_active: true,
+      created_by: adminUser.id
+    })
+    .select()
+    .single();
+  if (error) {
+    res.status(500).json({ error: error.message });
+    return;
+  }
+  res.status(200).json({ success: true, track: data });
+});
+
+app.delete('/api/v1/admin/audio-tracks', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  if (!supabaseAdmin) {
+    res.status(503).json({ error: 'Database service unavailable.' });
+    return;
+  }
+  const id = String(req.query.id || req.body?.trackId || '').trim();
+  if (!UUID_RE.test(id)) {
+    res.status(400).json({ error: 'Valid UUID trackId is required.' });
+    return;
+  }
+  await supabaseAdmin.from('audio_tracks').delete().eq('id', id);
+  res.status(200).json({ success: true });
+});
+
+app.get('/api/v1/admin/platform-config', requireAdmin, async (_req: Request, res: Response): Promise<void> => {
+  const state = await getPlatformConfigState();
+  res.status(200).json({ success: true, config: state.config, featureFlags: state.featureFlags });
+});
+
+app.post('/api/v1/admin/platform-config', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  if (!supabaseAdmin) {
+    res.status(503).json({ error: 'Database service unavailable.' });
+    return;
+  }
+  const adminUser = (req as any).user;
+  const current = await getPlatformConfigState();
+  const body = req.body || {};
+  const nextConfig = {
+    maintenanceMode: body.maintenanceMode !== undefined ? Boolean(body.maintenanceMode) : current.config.maintenanceMode,
+    maintenanceMessage: body.maintenanceMessage !== undefined ? String(body.maintenanceMessage) : current.config.maintenanceMessage,
+    announcementBanner: body.announcementBanner !== undefined ? String(body.announcementBanner) : current.config.announcementBanner,
+    announcementActive: body.announcementActive !== undefined ? Boolean(body.announcementActive) : current.config.announcementActive,
+    announcementLink: body.announcementLink !== undefined ? String(body.announcementLink) : current.config.announcementLink,
+    communityGuidelinesUrl: current.config.communityGuidelinesUrl
+  };
+  const nextFlags = body.featureFlags && typeof body.featureFlags === 'object'
+    ? { ...current.featureFlags, ...body.featureFlags }
+    : current.featureFlags;
+  await supabaseAdmin.from('platform_config').upsert({
+    id: 1,
+    feature_flags: nextFlags,
+    maintenance_mode: nextConfig.maintenanceMode,
+    maintenance_message: nextConfig.maintenanceMessage,
+    announcement_banner: nextConfig.announcementBanner,
+    announcement_active: nextConfig.announcementActive,
+    announcement_link: nextConfig.announcementLink,
+    updated_by: adminUser.id,
+    updated_at: new Date().toISOString()
+  });
+  res.status(200).json({ success: true, config: nextConfig, featureFlags: nextFlags });
+});
+
+app.post('/api/v1/admin/experiences/toggle', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  if (!supabaseAdmin) {
+    res.status(503).json({ error: 'Database service unavailable.' });
+    return;
+  }
+  const adminUser = (req as any).user;
+  const { experienceKey, enabled } = req.body || {};
+  const key = String(experienceKey || '').trim();
+  if (!key) {
+    res.status(400).json({ error: 'experienceKey required' });
+    return;
+  }
+  const current = await getPlatformConfigState();
+  const nextFlags = { ...current.featureFlags, [key]: Boolean(enabled) };
+  await supabaseAdmin.from('platform_config').upsert({
+    id: 1,
+    feature_flags: nextFlags,
+    updated_by: adminUser.id,
+    updated_at: new Date().toISOString()
+  });
+  res.status(200).json({ success: true, experienceKey: key, enabled: Boolean(enabled), featureFlags: nextFlags });
+});
 
 // Canonical Public Profile Landing Page for VYBE QR Codes & Share Links
 app.get(['/profile/:identifier', '/u/:identifier'], async (req: Request, res: Response): Promise<void> => {
@@ -1160,14 +1630,14 @@ app.get(['/profile/:identifier', '/u/:identifier'], async (req: Request, res: Re
 
   const appDeepLink = `vybe://profile/${encodeURIComponent(profileRow.id)}?u=${encodeURIComponent(profileRow.username || '')}`;
   const isPrivate = Boolean(profileRow.is_private_account);
-  const bioText = isPrivate ? 'This account is private. Follow in the VYBE app to see posts and reels.' : (profileRow.bio || 'Official member on VYBE.');
+  const bioText = isPrivate ? 'This account is private. LINK UP in the VYBE app to see their posts and moments.' : (profileRow.bio || 'Official member on VYBE.');
   res.status(200).type('html').send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(profileRow.display_name || profileRow.username)} (@${esc(profileRow.username)}) • VYBE</title>
   <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070913;color:#fff;font-family:system-ui,sans-serif;padding:24px}.card{max-width:420px;width:100%;background:#111729;border:1px solid #263252;border-radius:24px;padding:32px;text-align:center}.btn{display:inline-block;margin-top:20px;padding:13px 24px;border-radius:14px;background:linear-gradient(90deg,#2563eb,#7c3aed);color:#fff;text-decoration:none;font-weight:700;font-size:15px}</style></head>
   <body><div class="card"><div style="font-size:12px;letter-spacing:2px;color:#38bdf8;font-weight:800;margin-bottom:14px">VYBE PROFILE</div>
   <h1 style="font-size:22px;margin:0">${esc(profileRow.display_name || profileRow.username)}</h1>
   <div style="color:#94a3b8;font-size:14px;margin-top:4px">@${esc(profileRow.username)}${isPrivate ? ' 🔒 Private' : ''}</div>
   <p style="color:#cbd5e1;font-size:14px;line-height:1.5;margin:16px 0">${esc(bioText)}</p>
-  <div style="color:#94a3b8;font-size:12px">${Number(profileRow.followers_count || 0)} Followers • ${Number(profileRow.posts_count || 0)} Posts</div>
+  <div style="color:#94a3b8;font-size:12px">${Number(profileRow.followers_count || 0)} LINKUPS • ${Number(profileRow.posts_count || 0)} Posts</div>
   <a class="btn" href="${esc(appDeepLink)}">Open Profile in VYBE App</a></div></body></html>`);
 });
 

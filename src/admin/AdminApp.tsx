@@ -17,14 +17,19 @@ import {
   fetchLiveAuditLogs,
   LiveReportItem
 } from '../services/supabaseService';
+import {
+  fetchAdminIdentity,
+  fetchAdminOverviewStats
+} from '../services/adminExtendedService';
 import { vybeDiagnostics, DiagnosticsSummary } from '../utils/performanceDiagnostics';
-import { OfficialVybeBadge, Post, User } from '../types';
+import { AdminDashboardMetrics, OfficialVybeBadge, Post, User } from '../types';
 import { VybeConfirmDialog, VybeToast } from '../components/VybeDesignSystem';
 import { AdminLoginScreen } from './AdminLoginScreen';
 import { AdminSidebar } from './AdminSidebar';
 import { AdminTopBar } from './AdminTopBar';
 import { AdminManagementViews } from './AdminManagementViews';
-import { AdminSystemViews } from './AdminSystemViews';
+import { AdminFeatureFlagsState, AdminSystemViews } from './AdminSystemViews';
+import { AdminCommandSections } from './AdminCommandSections';
 import {
   AdminConfirmRequest,
   AdminSectionId,
@@ -80,12 +85,18 @@ export const AdminApp: React.FC = () => {
   const [diagnostics, setDiagnostics] = useState<DiagnosticsSummary>(vybeDiagnostics.getSummary());
   const [apiHealthOk, setApiHealthOk] = useState<boolean | null>(null);
   const [configApiAvailable, setConfigApiAvailable] = useState<boolean>(false);
+  const [adminRole, setAdminRole] = useState<string>('ADMIN');
+  const [isOwnerAdmin, setIsOwnerAdmin] = useState<boolean>(false);
+  const [overviewStats, setOverviewStats] = useState<AdminDashboardMetrics | null>(null);
 
-  const [featureFlags, setFeatureFlags] = useState({
+  const [featureFlags, setFeatureFlags] = useState<AdminFeatureFlagsState>({
     unloadRooms: true,
     crossedPaths: true,
     timeCapsules: true,
     spiritualMode: true,
+    growEcosystem: true,
+    growthCircles: true,
+    stories2: true,
     maintenanceMode: false,
   });
 
@@ -138,7 +149,7 @@ export const AdminApp: React.FC = () => {
     setIsLoadingData(true);
     try {
       const token = localStorage.getItem('vybe_admin_jwt') || '';
-      const [liveUsers, livePosts, liveVerifs, liveReports, liveAudits, healthOk, configRes] =
+      const [liveUsers, livePosts, liveVerifs, liveReports, liveAudits, healthOk, configRes, identity, metrics] =
         await Promise.all([
           fetchLiveProfiles({ forceRefresh }),
           fetchLivePosts(undefined, { limit: 50, forceRefresh }),
@@ -155,6 +166,8 @@ export const AdminApp: React.FC = () => {
                 .then(r => (r.ok ? r.json() : null))
                 .catch(() => null)
             : Promise.resolve(null),
+          fetchAdminIdentity(),
+          fetchAdminOverviewStats(),
         ]);
 
       setUsers(liveUsers || []);
@@ -186,6 +199,11 @@ export const AdminApp: React.FC = () => {
         }))
       );
       setApiHealthOk(Boolean(healthOk));
+      if (identity) {
+        setAdminRole(identity.role);
+        setIsOwnerAdmin(identity.isOwnerAdmin);
+      }
+      setOverviewStats(metrics);
       setConfigApiAvailable(Boolean(configRes?.featureFlags));
       if (configRes?.featureFlags) {
         const ff = configRes.featureFlags;
@@ -195,6 +213,9 @@ export const AdminApp: React.FC = () => {
           crossedPaths: ff.crossedPaths ?? ff.crossed_paths ?? prev.crossedPaths,
           timeCapsules: ff.timeCapsules ?? ff.time_capsule ?? prev.timeCapsules,
           spiritualMode: ff.spiritualMode ?? prev.spiritualMode,
+          growEcosystem: ff.growEcosystem ?? prev.growEcosystem,
+          growthCircles: ff.growthCircles ?? prev.growthCircles,
+          stories2: ff.stories2 ?? prev.stories2,
           maintenanceMode: configRes.config?.maintenanceMode ?? prev.maintenanceMode,
         }));
       }
@@ -507,6 +528,11 @@ export const AdminApp: React.FC = () => {
     activeSection === 'verifications' ||
     activeSection === 'content' ||
     activeSection === 'reports';
+  const isCommandSection =
+    activeSection === 'staff' ||
+    activeSection === 'circles' ||
+    activeSection === 'grow' ||
+    activeSection === 'audio';
 
   return (
     <div className="vybe-app-shell min-h-screen flex">
@@ -523,6 +549,8 @@ export const AdminApp: React.FC = () => {
           reports: reports.length,
         }}
         adminEmail={adminEmail}
+        adminRole={adminRole}
+        isOwnerAdmin={isOwnerAdmin}
         onLogout={handleLogout}
       />
 
@@ -567,9 +595,20 @@ export const AdminApp: React.FC = () => {
               onResolveReportSuspendUser={handleResolveReportSuspendUser}
               requestConfirm={setConfirmState}
             />
+          ) : isCommandSection ? (
+            <AdminCommandSections
+              section={activeSection}
+              searchQuery={searchQuery}
+              users={users}
+              isOwnerAdmin={isOwnerAdmin}
+              adminRole={adminRole}
+              onShowToast={showToast}
+              onRecordAudit={recordAudit}
+              requestConfirm={setConfirmState}
+            />
           ) : (
             <AdminSystemViews
-              section={activeSection}
+              section={activeSection as Extract<AdminSectionId, 'overview' | 'broadcast' | 'diagnostics' | 'audit' | 'settings'>}
               searchQuery={searchQuery}
               users={users}
               posts={posts}
@@ -580,6 +619,9 @@ export const AdminApp: React.FC = () => {
               apiHealthOk={apiHealthOk}
               configApiAvailable={configApiAvailable}
               featureFlags={featureFlags}
+              overviewStats={overviewStats}
+              isOwnerAdmin={isOwnerAdmin}
+              adminRole={adminRole}
               adminEmail={adminEmail}
               onNavigate={setActiveSection}
               onResetDiagnostics={() => {

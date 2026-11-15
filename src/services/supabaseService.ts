@@ -16,7 +16,9 @@ import {
   NotificationItem,
   AuthSessionUser,
   VybeReaction,
-  LivePulseStatus
+  LivePulseStatus,
+  PlatformConfigState,
+  DEFAULT_PLATFORM_CONFIG
 } from '../types';
 import { vybeCache, CACHE_TTL } from '../utils/indexedDbCache';
 import { vybeDiagnostics } from '../utils/performanceDiagnostics';
@@ -27,7 +29,7 @@ export const SUPABASE_URL = metaEnv.VITE_SUPABASE_URL || 'https://cppwadedazpbev
 export const SUPABASE_ANON_KEY =
   metaEnv.VITE_SUPABASE_ANON_KEY || 'sb_publishable_MI-UdOqfccHVZIHjQq9vrw_IjEzeR7H';
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const WEB_ACCESS_TOKEN_KEY = 'vybe_access_token';
 const WEB_REFRESH_TOKEN_KEY = 'vybe_refresh_token';
@@ -213,7 +215,7 @@ export async function getValidWebAccessToken(): Promise<string | null> {
   return session.accessToken;
 }
 
-async function getOptionalRestHeaders(preferRepresentation: boolean = true): Promise<Record<string, string>> {
+export async function getOptionalRestHeaders(preferRepresentation: boolean = true): Promise<Record<string, string>> {
   const token = await getValidWebAccessToken();
   return {
     'apikey': SUPABASE_ANON_KEY,
@@ -241,7 +243,7 @@ function getWebAuthHeaders(): Record<string, string> | null {
   }
 }
 
-async function authedFetch(
+export async function authedFetch(
   input: string,
   init: RequestInit = {},
   extraHeaders: Record<string, string> = {}
@@ -590,7 +592,7 @@ const PROFILE_SELECT_COLUMNS = [
 
 const EXTENDED_PROFILE_SELECT_COLUMNS = `${PROFILE_SELECT_COLUMNS},location,website,interest_tags,pinned_post_ids,profile_views_count`;
 
-const STORY_PROFILE_COLUMNS =
+export const STORY_PROFILE_COLUMNS =
   'id,username,display_name,avatar_url,is_verified,is_verified_public_figure,is_vip,is_worker,is_verified_business,is_private_account';
 
 const POST_SELECT_COLUMNS = [
@@ -616,7 +618,7 @@ const POST_SELECT_COLUMNS = [
   'post_media(id,media_url,media_type,display_order)'
 ].join(',');
 
-const STORY_SELECT_COLUMNS = [
+const LEGACY_STORY_SELECT_COLUMNS = [
   'id',
   'author_id',
   'media_url',
@@ -629,6 +631,22 @@ const STORY_SELECT_COLUMNS = [
   'created_at',
   'expires_at',
   `profiles:author_id(${STORY_PROFILE_COLUMNS})`
+].join(',');
+
+const STORY_SELECT_COLUMNS = [
+  LEGACY_STORY_SELECT_COLUMNS,
+  'views_count',
+  'comments_count',
+  'crop_rect',
+  'transform_json',
+  'overlays_json',
+  'trim_start_ms',
+  'trim_end_ms',
+  'audio_track_id',
+  'audio_track_url',
+  'audio_volume',
+  'story_volume',
+  'background_gradient'
 ].join(',');
 
 function normalizeLivePulse(raw: any): LivePulseStatus {
@@ -735,7 +753,7 @@ export function mapSupabaseProfileToUser(p: any): User {
   };
 }
 
-function buildFallbackMinimalUser(userId?: string, label: string = 'VYBE Member'): User {
+export function buildFallbackMinimalUser(userId?: string, label: string = 'VYBE Member'): User {
   const safeId = userId || 'unknown';
   return {
     id: safeId,
@@ -860,6 +878,7 @@ export async function fetchPostAnalytics(postId: string): Promise<{
 
 function normalizeStoryAudience(raw: any): Story['audience'] {
   const upper = String(raw || 'EVERYONE').toUpperCase();
+  if (upper === 'LINKUPS') return 'LINKUPS';
   if (upper === 'FOLLOWERS') return 'Followers';
   if (upper === 'VYBE_MATCHES' || upper === 'CLOSE_FRIENDS') return 'VYBE Matches';
   if (upper === 'ONLY_ME') return 'Only Me';
@@ -897,7 +916,19 @@ export function mapSupabaseStory(row: any, userMap?: Map<string, User>): Story {
             : 'PHOTO',
     audience: normalizeStoryAudience(row.audience),
     musicTrackTitle: row.music_title || undefined,
-    textBackgroundColor: row.text_bg_key || undefined,
+    textBackgroundColor: row.text_bg_key || row.background_gradient || undefined,
+    backgroundGradient: row.background_gradient || row.text_bg_key || undefined,
+    viewsCount: Number(row.views_count || 0),
+    commentsCount: Number(row.comments_count || 0),
+    cropRect: row.crop_rect || undefined,
+    transform: row.transform_json || undefined,
+    overlays: Array.isArray(row.overlays_json) ? row.overlays_json : undefined,
+    trimStartMs: typeof row.trim_start_ms === 'number' ? row.trim_start_ms : undefined,
+    trimEndMs: typeof row.trim_end_ms === 'number' ? row.trim_end_ms : undefined,
+    audioTrackId: row.audio_track_id || undefined,
+    audioTrackUrl: row.audio_track_url ? resolveMediaUrl(row.audio_track_url) : undefined,
+    audioVolume: typeof row.audio_volume === 'number' ? row.audio_volume : undefined,
+    storyVolume: typeof row.story_volume === 'number' ? row.story_volume : undefined,
     timestamp: row.created_at ? formatRelativeTime(row.created_at) : 'Just now',
     createdAtIso: row.created_at,
     expiresAtIso: row.expires_at,
@@ -1159,8 +1190,12 @@ export async function fetchLiveStories(
     try {
       const hdrs = await getOptionalRestHeaders(false);
       const nowIso = encodeURIComponent(new Date().toISOString());
-      const url = `${SUPABASE_URL}/rest/v1/stories?expires_at=gt.${nowIso}&select=${encodeURIComponent(STORY_SELECT_COLUMNS)}&order=created_at.desc&limit=40`;
-      const res = await fetch(url, { headers: hdrs });
+      let url = `${SUPABASE_URL}/rest/v1/stories?expires_at=gt.${nowIso}&select=${encodeURIComponent(STORY_SELECT_COLUMNS)}&order=created_at.desc&limit=40`;
+      let res = await fetch(url, { headers: hdrs });
+      if (res.status === 400) {
+        url = `${SUPABASE_URL}/rest/v1/stories?expires_at=gt.${nowIso}&select=${encodeURIComponent(LEGACY_STORY_SELECT_COLUMNS)}&order=created_at.desc&limit=40`;
+        res = await fetch(url, { headers: hdrs });
+      }
       const duration = Date.now() - startTime;
 
       if (!res.ok) {
@@ -1380,7 +1415,17 @@ export async function createLiveStory(storyData: {
   mediaType?: string;
   audience?: Story['audience'];
   textBackgroundColor?: string;
+  backgroundGradient?: string;
   musicTrackTitle?: string;
+  cropRect?: Story['cropRect'];
+  transform?: Story['transform'];
+  overlays?: Story['overlays'];
+  trimStartMs?: number;
+  trimEndMs?: number;
+  audioTrackId?: string;
+  audioTrackUrl?: string;
+  audioVolume?: number;
+  storyVolume?: number;
 }): Promise<any> {
   if (!UUID_REGEX.test(storyData.authorId)) return null;
   try {
@@ -1389,7 +1434,7 @@ export async function createLiveStory(storyData: {
       storyData.mediaType || (cleanMediaUrl.includes('.mp4') ? 'VIDEO' : cleanMediaUrl === 'text://story' ? 'TEXT' : 'PHOTO')
     ).toUpperCase();
     const audienceDb =
-      storyData.audience === 'Followers'
+      storyData.audience === 'Followers' || storyData.audience === 'LINKUPS'
         ? 'FOLLOWERS'
         : storyData.audience === 'VYBE Matches'
           ? 'VYBE_MATCHES'
@@ -1397,7 +1442,7 @@ export async function createLiveStory(storyData: {
             ? 'ONLY_ME'
             : 'EVERYONE';
 
-    const payload: Record<string, any> = {
+    const legacyPayload: Record<string, any> = {
       author_id: storyData.authorId,
       media_url: cleanMediaUrl,
       caption: storyData.caption || '',
@@ -1409,14 +1454,39 @@ export async function createLiveStory(storyData: {
       expires_at: new Date(Date.now() + 24 * 3600000).toISOString()
     };
 
-    const res = await authedFetch(
+    const fullPayload: Record<string, any> = {
+      ...legacyPayload,
+      ...(storyData.backgroundGradient ? { background_gradient: storyData.backgroundGradient } : {}),
+      ...(storyData.cropRect ? { crop_rect: storyData.cropRect } : {}),
+      ...(storyData.transform ? { transform_json: storyData.transform } : {}),
+      ...(storyData.overlays && storyData.overlays.length > 0 ? { overlays_json: storyData.overlays } : {}),
+      ...(typeof storyData.trimStartMs === 'number' ? { trim_start_ms: storyData.trimStartMs } : {}),
+      ...(typeof storyData.trimEndMs === 'number' ? { trim_end_ms: storyData.trimEndMs } : {}),
+      ...(storyData.audioTrackId && UUID_REGEX.test(storyData.audioTrackId) ? { audio_track_id: storyData.audioTrackId } : {}),
+      ...(storyData.audioTrackUrl ? { audio_track_url: storyData.audioTrackUrl } : {}),
+      ...(typeof storyData.audioVolume === 'number' ? { audio_volume: storyData.audioVolume } : {}),
+      ...(typeof storyData.storyVolume === 'number' ? { story_volume: storyData.storyVolume } : {})
+    };
+
+    let res = await authedFetch(
       `${SUPABASE_URL}/rest/v1/stories`,
       {
         method: 'POST',
-        body: JSON.stringify(payload)
+        body: JSON.stringify(fullPayload)
       },
       { 'Prefer': 'return=representation' }
     );
+
+    if (res.status === 400) {
+      res = await authedFetch(
+        `${SUPABASE_URL}/rest/v1/stories`,
+        {
+          method: 'POST',
+          body: JSON.stringify(legacyPayload)
+        },
+        { 'Prefer': 'return=representation' }
+      );
+    }
 
     if (res.ok) {
       const data = await res.json();
@@ -2220,6 +2290,15 @@ export async function sendLiveDirectMessage(params: {
 // -------------------------------------------------------------
 // 7. Notifications, Communities, Rooms, Crossed Paths, Capsules, Shops, Intentions
 // -------------------------------------------------------------
+export function normalizeLinkupNotificationCopy(raw: string): string {
+  return String(raw || '')
+    .replace(/\bNew Follower\b/gi, 'New LINKUP')
+    .replace(/\bFollow Request\b/gi, 'LINKUP Request')
+    .replace(/accepted your follow request/gi, 'accepted your LINKUP request')
+    .replace(/started following you/gi, 'LINKED UP with you')
+    .replace(/\bfollowed you\b/gi, 'sent you a new LINKUP');
+}
+
 export async function fetchLiveNotifications(userId: string): Promise<NotificationItem[]> {
   if (!UUID_REGEX.test(userId)) return [];
   try {
@@ -2237,8 +2316,8 @@ export async function fetchLiveNotifications(userId: string): Promise<Notificati
       actorDisplayName: r.actor?.display_name || r.actor?.username || undefined,
       actorAvatarUrl: r.actor?.avatar_url ? resolveMediaUrl(r.actor.avatar_url) : undefined,
       type: String(r.type || 'ACTIVITY').toUpperCase(),
-      title: r.title || 'VYBE Notification',
-      body: r.message || '',
+      title: normalizeLinkupNotificationCopy(r.title || 'VYBE Notification'),
+      body: normalizeLinkupNotificationCopy(r.message || ''),
       targetId: r.target_id || undefined,
       isRead: Boolean(r.is_read),
       createdAtIso: r.created_at || new Date().toISOString(),
@@ -2264,32 +2343,78 @@ export async function markNotificationReadInSupabase(notificationId: string): Pr
 export async function fetchLiveCommunities(currentUserId?: string): Promise<Community[]> {
   try {
     const hdrs = await getOptionalRestHeaders(false);
-    const [commsRes, memRes] = await Promise.all([
-      fetch(`${SUPABASE_URL}/rest/v1/communities?select=id,creator_id,name,description,category,avatar_url,banner_url,members_count&order=members_count.desc&limit=40`, { headers: hdrs }),
+    const extCols =
+      'id,creator_id,name,description,category,avatar_url,banner_url,members_count,join_mode,rules,tags,is_verified,conversation_id,is_archived';
+    const baseCols = 'id,creator_id,name,description,category,avatar_url,banner_url,members_count';
+
+    let commsRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/communities?select=${encodeURIComponent(extCols)}&is_archived=not.is.true&order=members_count.desc&limit=50`,
+      { headers: hdrs }
+    );
+    if (commsRes.status === 400) {
+      commsRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/communities?select=${encodeURIComponent(baseCols)}&order=members_count.desc&limit=50`,
+        { headers: hdrs }
+      );
+    }
+
+    const memRes =
       currentUserId && UUID_REGEX.test(currentUserId)
-        ? fetch(`${SUPABASE_URL}/rest/v1/community_members?user_id=eq.${encodeURIComponent(currentUserId)}&select=community_id`, { headers: hdrs })
-        : Promise.resolve(null)
-    ]);
+        ? await fetch(
+            `${SUPABASE_URL}/rest/v1/community_members?user_id=eq.${encodeURIComponent(currentUserId)}&select=community_id,role,status`,
+            { headers: hdrs }
+          ).catch(() => null)
+        : null;
 
     if (!commsRes.ok) return [];
     const rows = await commsRes.json();
     const myMemRows = memRes && memRes.ok ? await memRes.json() : [];
-    const joinedSet = new Set<string>(
-      Array.isArray(myMemRows) ? myMemRows.map((m: any) => m.community_id).filter(Boolean) : []
-    );
+    const memByCommId = new Map<string, { role: string; status: string }>();
+    if (Array.isArray(myMemRows)) {
+      for (const m of myMemRows) {
+        if (m?.community_id) {
+          memByCommId.set(m.community_id, {
+            role: String(m.role || 'MEMBER').toUpperCase(),
+            status: String(m.status || 'ACCEPTED').toUpperCase()
+          });
+        }
+      }
+    }
 
     if (!Array.isArray(rows)) return [];
-    return rows.map((c: any) => ({
-      id: c.id,
-      name: c.name || 'VYBE Community',
-      description: c.description || '',
-      category: c.category || 'General',
-      avatarUrl: resolveMediaUrl(c.avatar_url || ''),
-      bannerUrl: resolveMediaUrl(c.banner_url || ''),
-      membersCount: Number(c.members_count || 1),
-      isJoined: joinedSet.has(c.id),
-      tags: c.category ? [String(c.category)] : []
-    }));
+    return rows.map((c: any) => {
+      const mem = memByCommId.get(c.id);
+      const isJoined = mem?.status === 'ACCEPTED';
+      const isPending = mem?.status === 'PENDING';
+      const rawJoinMode = String(c.join_mode || 'PUBLIC').toUpperCase();
+      const joinMode =
+        rawJoinMode === 'PRIVATE' ? 'PRIVATE' : rawJoinMode === 'APPROVAL' ? 'APPROVAL' : 'PUBLIC';
+      const myRole =
+        c.creator_id && currentUserId && String(c.creator_id).toLowerCase() === currentUserId.toLowerCase()
+          ? 'OWNER'
+          : mem?.role === 'OWNER' || mem?.role === 'MODERATOR'
+            ? (mem.role as 'OWNER' | 'MODERATOR')
+            : 'MEMBER';
+      return {
+        id: c.id,
+        creatorId: c.creator_id || undefined,
+        name: c.name || 'VYBE Circle',
+        description: c.description || '',
+        category: c.category || 'General',
+        avatarUrl: resolveMediaUrl(c.avatar_url || ''),
+        bannerUrl: resolveMediaUrl(c.banner_url || ''),
+        membersCount: Number(c.members_count || 1),
+        isJoined,
+        isPending,
+        joinMode,
+        myRole,
+        rules: Array.isArray(c.rules) ? c.rules.filter(Boolean) : [],
+        tags: Array.isArray(c.tags) && c.tags.length > 0 ? c.tags : c.category ? [String(c.category)] : [],
+        isVerified: Boolean(c.is_verified),
+        conversationId: c.conversation_id || undefined,
+        isArchived: Boolean(c.is_archived)
+      };
+    });
   } catch {
     return [];
   }
@@ -2634,6 +2759,55 @@ export async function signChatMediaUrlIfNeeded(rawUrl?: string | null): Promise<
   return resolveMediaUrl(trimmed);
 }
 
+export async function signPrivateResumeUrlIfNeeded(rawUrl?: string | null): Promise<string> {
+  const trimmed = String(rawUrl || '').trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return trimmed;
+  if (trimmed.includes('/storage/v1/object/sign/') && trimmed.includes('token=')) {
+    return trimmed;
+  }
+
+  let objectPath = '';
+  if (trimmed.startsWith('resumes/')) {
+    objectPath = trimmed.slice('resumes/'.length);
+  } else {
+    const match = trimmed.match(/\/storage\/v1\/object\/(?:public\/|authenticated\/|sign\/)?resumes\/([^?#]+)/i);
+    if (match?.[1]) {
+      objectPath = decodeURIComponent(match[1]);
+    }
+  }
+  if (!objectPath) return trimmed;
+
+  const token = (await getValidWebAccessToken()) || localStorage.getItem('vybe_admin_jwt') || '';
+  if (!token) return trimmed;
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/resumes/${objectPath}`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ expiresIn: 3600 })
+    });
+    if (res.ok) {
+      const json = await res.json();
+      const signedPath = json?.signedURL || json?.signedUrl || '';
+      if (signedPath) {
+        return signedPath.startsWith('http')
+          ? signedPath
+          : signedPath.startsWith('/storage/v1')
+            ? `${SUPABASE_URL}${signedPath}`
+            : `${SUPABASE_URL}/storage/v1${signedPath}`;
+      }
+    }
+  } catch {
+    // ignore sign failure
+  }
+  return trimmed;
+}
+
 export function resolveMediaUrl(rawUrl: string): string {
   if (!rawUrl) return '';
   if (rawUrl.startsWith('data:') || rawUrl.startsWith('blob:')) return rawUrl;
@@ -2642,11 +2816,14 @@ export function resolveMediaUrl(rawUrl: string): string {
     rawUrl.startsWith('posts/') ||
     rawUrl.startsWith('avatars/') ||
     rawUrl.startsWith('banners/') ||
-    rawUrl.startsWith('stories/')
+    rawUrl.startsWith('stories/') ||
+    rawUrl.startsWith('projects/') ||
+    rawUrl.startsWith('program-covers/') ||
+    rawUrl.startsWith('circle-resources/')
   ) {
     return `${SUPABASE_URL}/storage/v1/object/public/${rawUrl}`;
   }
-  if (rawUrl.startsWith('chat-media/')) {
+  if (rawUrl.startsWith('chat-media/') || rawUrl.startsWith('resumes/')) {
     return `${SUPABASE_URL}/storage/v1/object/authenticated/${rawUrl}`;
   }
   return rawUrl;
@@ -2657,9 +2834,20 @@ export interface UploadStorageOptions {
   cacheControl?: string;
 }
 
+export type VybeStorageBucket =
+  | 'posts'
+  | 'avatars'
+  | 'banners'
+  | 'stories'
+  | 'chat-media'
+  | 'projects'
+  | 'program-covers'
+  | 'circle-resources'
+  | 'resumes';
+
 export async function uploadMediaBlobToStorage(
   blob: Blob,
-  bucket: 'posts' | 'avatars' | 'banners' | 'stories' | 'chat-media',
+  bucket: VybeStorageBucket,
   fileName: string = 'media',
   originalSizeBytes?: number,
   options: UploadStorageOptions = {}
@@ -2676,22 +2864,31 @@ export async function uploadMediaBlobToStorage(
     return null;
   }
 
-  const mime = (blob.type || 'image/webp').toLowerCase();
-  const cleanExt = mime.includes('mp4')
-    ? 'mp4'
-    : mime.includes('webm')
-      ? 'webm'
-      : mime.includes('webp')
-        ? 'webp'
-        : mime.includes('png')
-          ? 'png'
-          : 'jpg';
+  const mime = (blob.type || 'application/octet-stream').toLowerCase();
+  const leafExtMatch = (fileName || '').match(/\.([a-zA-Z0-9]{2,5})$/);
+  const cleanExt = mime.includes('pdf')
+    ? 'pdf'
+    : mime.includes('wordprocessingml') || leafExtMatch?.[1]?.toLowerCase() === 'docx'
+      ? 'docx'
+      : mime.includes('msword') || leafExtMatch?.[1]?.toLowerCase() === 'doc'
+        ? 'doc'
+        : mime.includes('mp4')
+          ? 'mp4'
+          : mime.includes('webm')
+            ? 'webm'
+            : mime.includes('webp')
+              ? 'webp'
+              : mime.includes('png')
+                ? 'png'
+                : mime.includes('audio') || mime.includes('mpeg')
+                  ? 'mp3'
+                  : 'jpg';
   const baseLeaf = (fileName || 'media').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.[^/.]+$/, '');
   const uniqueName = `${Date.now()}_${baseLeaf.slice(0, 24)}_${Math.random().toString(36).slice(2, 6)}.${cleanExt}`;
   const storagePath = `${uid}/${uniqueName}`;
   const targetUrl = `${SUPABASE_URL}/storage/v1/object/${bucket}/${storagePath}`;
 
-  const isRestricted = Boolean(options.isPrivate || bucket === 'chat-media');
+  const isRestricted = Boolean(options.isPrivate || bucket === 'chat-media' || bucket === 'resumes');
   const cacheControlHeader =
     options.cacheControl ||
     (isRestricted ? 'private, max-age=0, must-revalidate' : 'public, max-age=31536000, immutable');
@@ -2870,7 +3067,7 @@ export function isVerifiedAdminSession(_user?: User | null): boolean {
   }
 }
 
-function getAdminAuthHeaders(): { headers: Record<string, string>; token: string; adminId: string; adminEmail: string } | null {
+export function getAdminAuthHeaders(): { headers: Record<string, string>; token: string; adminId: string; adminEmail: string } | null {
   try {
     const token = localStorage.getItem('vybe_admin_jwt') || '';
     if (!token || !token.startsWith('eyJ')) return null;
@@ -2888,6 +3085,34 @@ function getAdminAuthHeaders(): { headers: Record<string, string>; token: string
     };
   } catch {
     return null;
+  }
+}
+
+export async function fetchPlatformConfigPublic(): Promise<PlatformConfigState> {
+  try {
+    const hdrs = await getOptionalRestHeaders(false);
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/platform_config?select=stories_enabled,circles_enabled,grow_enabled,opportunities_enabled,direct_messages_enabled,voice_rooms_enabled,crossed_paths_enabled,time_capsules_enabled,maintenance_mode,maintenance_banner&limit=1`,
+      { headers: hdrs }
+    );
+    if (!res.ok) return { ...DEFAULT_PLATFORM_CONFIG };
+    const rows = await res.json();
+    const r = Array.isArray(rows) ? rows[0] : rows;
+    if (!r) return { ...DEFAULT_PLATFORM_CONFIG };
+    return {
+      storiesEnabled: r.stories_enabled ?? true,
+      circlesEnabled: r.circles_enabled ?? true,
+      growEnabled: r.grow_enabled ?? true,
+      opportunitiesEnabled: r.opportunities_enabled ?? true,
+      directMessagesEnabled: r.direct_messages_enabled ?? true,
+      voiceRoomsEnabled: r.voice_rooms_enabled ?? true,
+      crossedPathsEnabled: r.crossed_paths_enabled ?? true,
+      timeCapsulesEnabled: r.time_capsules_enabled ?? true,
+      maintenanceMode: Boolean(r.maintenance_mode),
+      maintenanceBanner: String(r.maintenance_banner || '')
+    };
+  } catch {
+    return { ...DEFAULT_PLATFORM_CONFIG };
   }
 }
 

@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   MessageCircle, Bookmark, MapPin,
-  Music, Volume2, VolumeX, Send, Link2, Share2, X, Lock
+  Music, Volume2, VolumeX, Send, Link2, Share2, X, Lock,
+  Eye, BarChart2, Loader2
 } from 'lucide-react';
 import { Post, VYBE_REACTIONS, MOOD_DEFINITIONS } from '../types';
 import { OfficialBadge } from './Badges';
 import { FingerHeartReaction, FingerHeartDoubleTapOverlay, FingerHeartIcon } from './FingerHeartReaction';
 import { useVybe } from '../context/VybeContext';
 import { formatRelativeTimestamp } from '../utils/timestamp';
-import { resolveMediaUrl } from '../services/supabaseService';
+import { resolveMediaUrl, fetchPostAnalytics, isVerifiedAdminSession } from '../services/supabaseService';
 import { OptimizedImage, VybeAvatar } from './OptimizedImage';
 
 interface PostCardProps {
@@ -43,7 +44,39 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
   const [commentInput, setCommentInput] = useState('');
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const [showInsights, setShowInsights] = useState(false);
+  const [insightsData, setInsightsData] = useState<{
+    viewsCount: number;
+    likesCount: number;
+    commentsCount: number;
+    savesCount: number;
+  } | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  const canViewInsights = Boolean(
+    (currentUser && currentUser.id.toLowerCase() === post.author.id.toLowerCase()) ||
+      isVerifiedAdminSession(currentUser)
+  );
+
+  const handleToggleInsights = async () => {
+    if (!canViewInsights) return;
+    const nextOpen = !showInsights;
+    setShowInsights(nextOpen);
+    if (nextOpen && !insightsData && !insightsLoading) {
+      setInsightsLoading(true);
+      const data = await fetchPostAnalytics(post.id);
+      if (data) {
+        setInsightsData({
+          viewsCount: data.viewsCount,
+          likesCount: data.likesCount,
+          commentsCount: data.commentsCount,
+          savesCount: data.savesCount
+        });
+      }
+      setInsightsLoading(false);
+    }
+  };
 
   useEffect(() => {
     const timer = setInterval(() => setNowTick(Date.now()), 30_000);
@@ -210,7 +243,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
             onDoubleTap={() => ensurePostLoved(post.id)}
             className="w-full max-h-[500px] bg-[var(--vybe-elevated)] rounded-xl overflow-hidden flex items-center justify-center"
           >
-            {post.mediaType === 'VIDEO' || post.mediaType === 'REEL' ? (
+            {post.mediaType === 'VIDEO' ? (
               <video
                 ref={videoRef}
                 src={resolveMediaUrl(post.mediaUrls[0])}
@@ -342,18 +375,76 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
             </button>
           </div>
 
-          {/* 4. Bookmark / Save */}
-          <button
-            type="button"
-            onClick={() => toggleSavePost(post.id)}
-            aria-label="Save post"
-            className={`inline-flex items-center justify-center w-9 h-9 rounded-lg transition-colors ${
-              post.isSaved ? 'text-[var(--vybe-accent)]' : 'text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)]'
-            }`}
-          >
-            <Bookmark className={`w-5 h-5 ${post.isSaved ? 'fill-current' : ''}`} />
-          </button>
+          <div className="flex items-center gap-1.5">
+            {canViewInsights && (
+              <button
+                type="button"
+                onClick={handleToggleInsights}
+                aria-label="View post insights"
+                className={`inline-flex items-center gap-1 h-9 px-2.5 rounded-lg text-xs font-semibold transition-colors ${
+                  showInsights
+                    ? 'bg-[var(--vybe-accent-soft)] text-[var(--vybe-accent)]'
+                    : 'text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)] hover:bg-[var(--vybe-elevated)]'
+                }`}
+              >
+                <Eye className="w-4 h-4" />
+                <span>{(insightsData?.viewsCount ?? post.viewsCount ?? 0).toLocaleString()}</span>
+                <span className="hidden sm:inline text-[10px]">Insights</span>
+              </button>
+            )}
+
+            {/* 4. Bookmark / Save */}
+            <button
+              type="button"
+              onClick={() => toggleSavePost(post.id)}
+              aria-label="Save post"
+              className={`inline-flex items-center justify-center w-9 h-9 rounded-lg transition-colors ${
+                post.isSaved ? 'text-[var(--vybe-accent)]' : 'text-[var(--vybe-text-secondary)] hover:text-[var(--vybe-text)]'
+              }`}
+            >
+              <Bookmark className={`w-5 h-5 ${post.isSaved ? 'fill-current' : ''}`} />
+            </button>
+          </div>
         </div>
+
+        {/* Author/Admin-Only Post Insights Breakdown */}
+        {canViewInsights && showInsights && (
+          <div className="mt-3 p-3 rounded-xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-[var(--vybe-text)] flex items-center gap-1.5">
+                <BarChart2 className="w-3.5 h-3.5 text-[var(--vybe-accent)]" />
+                <span>Post Insights (Private to Author & Admins)</span>
+              </span>
+              {insightsLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--vybe-accent)]" />}
+            </div>
+            <div className="grid grid-cols-4 gap-2 text-center">
+              <div className="p-2 rounded-lg bg-[var(--vybe-surface)] border border-[var(--vybe-border)]">
+                <span className="block text-xs font-bold text-[var(--vybe-accent)]">
+                  {(insightsData?.viewsCount ?? post.viewsCount ?? 0).toLocaleString()}
+                </span>
+                <span className="text-[10px] text-[var(--vybe-text-secondary)]">Views</span>
+              </div>
+              <div className="p-2 rounded-lg bg-[var(--vybe-surface)] border border-[var(--vybe-border)]">
+                <span className="block text-xs font-bold text-[var(--vybe-text)]">
+                  {(insightsData?.likesCount ?? post.likesCount ?? 0).toLocaleString()}
+                </span>
+                <span className="text-[10px] text-[var(--vybe-text-secondary)]">Likes</span>
+              </div>
+              <div className="p-2 rounded-lg bg-[var(--vybe-surface)] border border-[var(--vybe-border)]">
+                <span className="block text-xs font-bold text-[var(--vybe-text)]">
+                  {(insightsData?.commentsCount ?? post.commentsCount ?? 0).toLocaleString()}
+                </span>
+                <span className="text-[10px] text-[var(--vybe-text-secondary)]">Comments</span>
+              </div>
+              <div className="p-2 rounded-lg bg-[var(--vybe-surface)] border border-[var(--vybe-border)]">
+                <span className="block text-xs font-bold text-[var(--vybe-text)]">
+                  {(insightsData?.savesCount ?? 0).toLocaleString()}
+                </span>
+                <span className="text-[10px] text-[var(--vybe-text-secondary)]">Saves</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Reaction Breakdown Pills */}
         {post.reactionsCount && Object.values(post.reactionsCount).some(c => c > 0) && (

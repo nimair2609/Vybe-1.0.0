@@ -160,7 +160,7 @@ export const QrCodeModal: React.FC = () => {
           {targetUser.isPrivate && (
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-[10px] font-semibold text-amber-500">
               <Lock className="w-3 h-3" />
-              <span>Private account: visitors can view bio, approved followers see posts</span>
+              <span>Private account: visitors can view bio, approved LINKUPS see posts</span>
             </div>
           )}
         </div>

@@ -185,13 +185,71 @@ export interface Post {
   reactionsCount: Record<VybeReaction, number>;
 }
 
+export interface StoryCropRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  aspect?: string;
+}
+
+export interface StoryTransform {
+  scale: number;
+  rotation: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+export interface StoryOverlay {
+  id: string;
+  type: 'TEXT' | 'STICKER';
+  content: string;
+  x: number; // 0..100 percent
+  y: number; // 0..100 percent
+  color?: string;
+  bgColor?: string;
+  scale?: number;
+  rotation?: number;
+}
+
+export interface AudioTrack {
+  id: string;
+  title: string;
+  artist: string;
+  album?: string;
+  genre?: string;
+  durationSec: number;
+  audioUrl: string;
+  coverUrl?: string;
+  usageCount?: number;
+  isActive?: boolean;
+}
+
+export interface StoryViewerItem {
+  viewerId: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  isVerified: boolean;
+  viewedAt: string;
+}
+
+export interface StoryComment {
+  id: string;
+  storyId: string;
+  author: User;
+  content: string;
+  createdAtIso: string;
+  timestamp: string;
+}
+
 export interface Story {
   id: string;
   author: User;
   mediaUrl: string;
   caption: string;
   mediaType: 'PHOTO' | 'VIDEO' | 'TEXT' | 'MUSIC';
-  audience: 'Public' | 'Followers' | 'VYBE Matches' | 'Only Me';
+  audience: 'Public' | 'Followers' | 'LINKUPS' | 'VYBE Matches' | 'Only Me';
   musicTrackTitle?: string;
   timestamp: string;
   createdAtIso?: string;
@@ -202,6 +260,18 @@ export interface Story {
   isLikedByMe: boolean;
   myReaction?: VybeReaction;
   textBackgroundColor?: string;
+  viewsCount?: number;
+  commentsCount?: number;
+  cropRect?: StoryCropRect;
+  transform?: StoryTransform;
+  overlays?: StoryOverlay[];
+  trimStartMs?: number;
+  trimEndMs?: number;
+  audioTrackId?: string;
+  audioTrackUrl?: string;
+  audioVolume?: number;
+  storyVolume?: number;
+  backgroundGradient?: string;
 }
 
 export interface CrossedPathEncounter {
@@ -353,8 +423,13 @@ export interface VybeShop {
   followersCount: number;
 }
 
+export type CircleJoinMode = 'PUBLIC' | 'PRIVATE' | 'APPROVAL';
+export type CircleMemberRole = 'OWNER' | 'MODERATOR' | 'MEMBER';
+export type CircleMemberStatus = 'ACCEPTED' | 'PENDING' | 'REJECTED';
+
 export interface Community {
   id: string;
+  creatorId?: string;
   name: string;
   description: string;
   category: string;
@@ -362,7 +437,81 @@ export interface Community {
   bannerUrl: string;
   membersCount: number;
   isJoined: boolean;
+  isPending?: boolean;
+  joinMode?: CircleJoinMode;
+  myRole?: CircleMemberRole;
+  rules?: string[];
   tags: string[];
+  isVerified?: boolean;
+  conversationId?: string;
+  isArchived?: boolean;
+}
+
+export interface CircleMember {
+  communityId: string;
+  userId: string;
+  role: CircleMemberRole;
+  status: CircleMemberStatus;
+  joinedAt?: string;
+  user: User;
+}
+
+export interface CirclePost {
+  id: string;
+  communityId: string;
+  author: User;
+  title?: string;
+  content: string;
+  mediaUrl?: string;
+  postKind: 'POST' | 'ANNOUNCEMENT' | 'QUESTION' | 'WIN';
+  isPinned: boolean;
+  likesCount: number;
+  commentsCount: number;
+  createdAtIso: string;
+  timestamp: string;
+}
+
+export interface CirclePollOption {
+  id: string;
+  label: string;
+  votesCount: number;
+}
+
+export interface CirclePoll {
+  id: string;
+  communityId: string;
+  creator: User;
+  question: string;
+  options: CirclePollOption[];
+  allowMultiple: boolean;
+  endsAtIso?: string;
+  myVoteOptionIds: string[];
+  createdAtIso: string;
+}
+
+export interface CircleEvent {
+  id: string;
+  communityId: string;
+  creator: User;
+  title: string;
+  description: string;
+  eventType: 'ONLINE' | 'IN_PERSON';
+  locationOrLink: string;
+  startsAtIso: string;
+  goingCount: number;
+  interestedCount: number;
+  myRsvp?: 'GOING' | 'INTERESTED' | 'NOT_GOING';
+}
+
+export interface CircleResource {
+  id: string;
+  communityId: string;
+  uploader: User;
+  title: string;
+  description: string;
+  resourceType: 'LINK' | 'FILE' | 'GUIDE' | 'TEMPLATE';
+  resourceUrl: string;
+  createdAtIso: string;
 }
 
 export interface SpiritualReflection {
@@ -393,4 +542,239 @@ export interface GitHubReleaseInfo {
   publishedAt?: string;
   latestCommitShortSha?: string;
   latestActionRunNumber?: number;
+}
+
+// -------------------------------------------------------------
+// VYBE GROW 2.0 Types (100% Supabase-Backed)
+// -------------------------------------------------------------
+export type FieldVisibility = 'PUBLIC' | 'CONNECTIONS' | 'PRIVATE';
+
+export interface GrowProfile {
+  userId: string;
+  headline: string;
+  currentRole: string;
+  companyOrSchool: string;
+  location: string;
+  skills: string[];
+  interests: string[];
+  educationJson: Array<{ school: string; degree: string; field: string; period: string }>;
+  experienceJson: Array<{ role: string; company: string; period: string; summary: string }>;
+  achievements: string[];
+  portfolioLinks: Array<{ label: string; url: string }>;
+  openToCollaborate: boolean;
+  openToMentor: boolean;
+  openToHire: boolean;
+  isPublicDiscoverable: boolean;
+  headlineVisibility: FieldVisibility;
+  skillsVisibility: FieldVisibility;
+  educationVisibility: FieldVisibility;
+  experienceVisibility: FieldVisibility;
+  linksVisibility: FieldVisibility;
+  user?: User;
+  canViewFull?: boolean;
+  isConnected?: boolean;
+}
+
+export interface GrowRequest {
+  id: string;
+  senderId: string;
+  recipientId: string;
+  requestType: 'CONNECT' | 'MENTORSHIP' | 'COLLABORATION';
+  note: string;
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED';
+  createdAtIso: string;
+  sender?: User;
+  recipient?: User;
+}
+
+export interface GrowthProgramTask {
+  id: string;
+  programId: string;
+  title: string;
+  description: string;
+  sortOrder: number;
+  points: number;
+  isCompletedByMe?: boolean;
+}
+
+export interface GrowthProgram {
+  id: string;
+  creatorId: string;
+  creator?: User;
+  title: string;
+  description: string;
+  category: string;
+  difficulty: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
+  durationDays: number;
+  coverUrl?: string;
+  participantsCount: number;
+  isFeatured: boolean;
+  isArchived?: boolean;
+  isEnrolled?: boolean;
+  progressPercent?: number;
+  tasks: GrowthProgramTask[];
+}
+
+export interface PersonalHabit {
+  id: string;
+  userId: string;
+  title: string;
+  category: string;
+  cadence: 'DAILY' | 'WEEKLY';
+  targetPerWeek: number;
+  currentStreak: number;
+  bestStreak: number;
+  isArchived: boolean;
+  completedToday: boolean;
+}
+
+export interface PersonalGoal {
+  id: string;
+  userId: string;
+  title: string;
+  description: string;
+  category: string;
+  targetDate?: string;
+  progressPercent: number;
+  status: 'ACTIVE' | 'COMPLETED' | 'PAUSED';
+  milestones: Array<{ id: string; title: string; done: boolean }>;
+}
+
+export interface GrowProject {
+  id: string;
+  authorId: string;
+  author: User;
+  title: string;
+  summary: string;
+  category: string;
+  tags: string[];
+  mediaUrls: string[];
+  demoUrl?: string;
+  repoUrl?: string;
+  seekingRoles: string[];
+  likesCount: number;
+  bookmarksCount: number;
+  isLikedByMe: boolean;
+  isBookmarkedByMe: boolean;
+  isArchived?: boolean;
+  createdAtIso: string;
+}
+
+export type OpportunityCategory =
+  | 'INTERNSHIPS'
+  | 'FULL_TIME_JOBS'
+  | 'PART_TIME_JOBS'
+  | 'FREELANCE_GIGS'
+  | 'PROJECTS'
+  | 'COLLABORATIONS'
+  | 'HACKATHONS'
+  | 'GRANTS_FELLOWSHIPS'
+  | 'RESEARCH'
+  | 'MENTORSHIP';
+
+export const OPPORTUNITY_CATEGORIES: Array<{ id: OpportunityCategory; label: string }> = [
+  { id: 'INTERNSHIPS', label: 'Internships' },
+  { id: 'FULL_TIME_JOBS', label: 'Full-Time Jobs' },
+  { id: 'PART_TIME_JOBS', label: 'Part-Time Jobs' },
+  { id: 'FREELANCE_GIGS', label: 'Freelance Gigs' },
+  { id: 'PROJECTS', label: 'Projects' },
+  { id: 'COLLABORATIONS', label: 'Collaborations' },
+  { id: 'HACKATHONS', label: 'Hackathons' },
+  { id: 'GRANTS_FELLOWSHIPS', label: 'Grants & Fellowships' },
+  { id: 'RESEARCH', label: 'Research' },
+  { id: 'MENTORSHIP', label: 'Mentorship' }
+];
+
+export interface Opportunity {
+  id: string;
+  posterId: string;
+  poster: User;
+  title: string;
+  organization: string;
+  description: string;
+  category: OpportunityCategory;
+  workMode: 'REMOTE' | 'HYBRID' | 'ON_SITE';
+  location?: string;
+  compensation?: string;
+  deadline?: string;
+  applyUrl?: string;
+  skillsRequired: string[];
+  applicantsCount: number;
+  hasApplied?: boolean;
+  isBookmarked?: boolean;
+  isClosed?: boolean;
+  createdAtIso: string;
+}
+
+export interface OpportunityApplication {
+  id: string;
+  opportunityId: string;
+  applicantId: string;
+  applicant?: User;
+  coverNote: string;
+  resumeUrl?: string;
+  resumeFileName?: string;
+  portfolioUrl?: string;
+  status: 'SUBMITTED' | 'REVIEWING' | 'SHORTLISTED' | 'ACCEPTED' | 'REJECTED';
+  createdAtIso: string;
+}
+
+// -------------------------------------------------------------
+// Platform Config & Super Admin Types
+// -------------------------------------------------------------
+export interface PlatformConfigState {
+  storiesEnabled: boolean;
+  circlesEnabled: boolean;
+  growEnabled: boolean;
+  opportunitiesEnabled: boolean;
+  directMessagesEnabled: boolean;
+  voiceRoomsEnabled: boolean;
+  crossedPathsEnabled: boolean;
+  timeCapsulesEnabled: boolean;
+  maintenanceMode: boolean;
+  maintenanceBanner: string;
+}
+
+export const DEFAULT_PLATFORM_CONFIG: PlatformConfigState = {
+  storiesEnabled: true,
+  circlesEnabled: true,
+  growEnabled: true,
+  opportunitiesEnabled: true,
+  directMessagesEnabled: true,
+  voiceRoomsEnabled: true,
+  crossedPathsEnabled: true,
+  timeCapsulesEnabled: true,
+  maintenanceMode: false,
+  maintenanceBanner: ''
+};
+
+export interface AdminDashboardMetrics {
+  totalUsers: number;
+  dauUsers: number;
+  wauUsers: number;
+  mauUsers: number;
+  newUsers24h: number;
+  suspendedUsers: number;
+  bannedUsers: number;
+  totalPosts: number;
+  totalStories: number;
+  totalComments: number;
+  totalLikes: number;
+  totalMessages: number;
+  totalCircles: number;
+  totalOpportunities: number;
+  pendingReports: number;
+  pendingVerifications: number;
+}
+
+export type AdminStaffRole = 'OWNER_ADMIN' | 'SUPER_ADMIN' | 'ADMIN' | 'MODERATOR' | 'SUPPORT_ADMIN' | 'ANALYST';
+
+export interface AdminStaffMember {
+  userId: string;
+  role: AdminStaffRole;
+  isActive: boolean;
+  username?: string;
+  displayName?: string;
+  avatarUrl?: string;
+  createdAtIso?: string;
 }

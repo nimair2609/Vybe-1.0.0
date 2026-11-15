@@ -18,7 +18,10 @@ import {
   MoodType,
   VybeReaction,
   GitHubReleaseInfo,
-  LivePulseStatus
+  LivePulseStatus,
+  AudioTrack,
+  PlatformConfigState,
+  DEFAULT_PLATFORM_CONFIG
 } from '../types';
 import {
   DEFAULT_GITHUB_REPO,
@@ -72,9 +75,16 @@ import {
   fetchLiveSpiritualIntentions,
   addSpiritualIntentionInSupabase,
   toggleSpiritualIntentionInSupabase,
+  fetchPlatformConfigPublic,
   formatChatClock,
   formatRelativeTime
 } from '../services/supabaseService';
+import {
+  fetchAudioTracksCatalog,
+  joinOrRequestCircleRpc,
+  createCircleInSupabase,
+  openCircleChatRpc
+} from '../services/storiesCirclesService';
 import { validateProfileEditInput } from '../utils/profileValidation';
 import { vybeRealtime, RealtimePushPayload, RealtimeDbChangePayload } from '../services/realtimeService';
 
@@ -251,6 +261,10 @@ interface VybeContextType {
   setThemeMode: (mode: 'dark' | 'light') => void;
   toggleThemeMode: () => void;
 
+  // Platform Config & Live Audio Catalog
+  platformConfig: PlatformConfigState;
+  audioTracks: AudioTrack[];
+
   // Stories
   stories: Story[];
   activeStoryAuthorId: string | null;
@@ -262,6 +276,7 @@ interface VybeContextType {
   toggleStoryLike: (storyId: string) => void;
   reactToStory: (storyId: string, reaction: VybeReaction) => void;
   createStory: (storyData: Partial<Story>) => Promise<boolean>;
+  patchStoryCounts: (storyId: string, patch: { viewsCount?: number; commentsCount?: number }) => void;
 
   // Crossed Paths
   crossedPaths: CrossedPathEncounter[];
@@ -284,9 +299,20 @@ interface VybeContextType {
   toggleIntention: (id: string) => void;
   reflections: SpiritualReflection[];
 
-  // Communities
+  // Communities / Growth Circles 2.0
   communities: Community[];
-  toggleJoinCommunity: (commId: string) => void;
+  selectedCircle: Community | null;
+  openCircleWorkspace: (comm: Community | null) => void;
+  createCircle: (params: {
+    name: string;
+    description: string;
+    category: string;
+    joinMode: 'PUBLIC' | 'PRIVATE' | 'APPROVAL';
+    rules: string[];
+    tags: string[];
+  }) => Promise<{ ok: boolean; error?: string }>;
+  toggleJoinCommunity: (commId: string) => Promise<void>;
+  openCircleGroupChat: (commId: string) => Promise<{ ok: boolean; error?: string }>;
 
   // Shops
   shops: VybeShop[];
@@ -497,7 +523,9 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
   const [sharedPostError, setSharedPostError] = useState<string | null>(null);
 
-  // Stories
+  // Stories & Platform Config & Live Audio Catalog
+  const [platformConfig, setPlatformConfig] = useState<PlatformConfigState>(DEFAULT_PLATFORM_CONFIG);
+  const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
   const [stories, setStories] = useState<Story[]>([]);
   const [activeStoryAuthorId, setActiveStoryAuthorId] = useState<string | null>(null);
   const [activeStoryIndex, setActiveStoryIndex] = useState<number>(0);
@@ -510,6 +538,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [intentions, setIntentions] = useState<SpiritualIntention[]>([]);
   const reflections = SPIRITUAL_REFLECTIONS_CATALOG;
   const [communities, setCommunities] = useState<Community[]>([]);
+  const [selectedCircle, setSelectedCircle] = useState<Community | null>(null);
   const [shops, setShops] = useState<VybeShop[]>([]);
   const [selectedShop, setSelectedShop] = useState<VybeShop | null>(null);
 
@@ -827,14 +856,16 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setAuthUser(activeSession);
       setIsAuthChecking(false);
 
-      const [liveProfiles, livePosts, liveStories, liveComms, liveRooms, livePaths, liveShops] = await Promise.all([
+      const [liveProfiles, livePosts, liveStories, liveComms, liveRooms, livePaths, liveShops, liveTracks, liveCfg] = await Promise.all([
         fetchLiveProfiles({ forceRefresh, throwOnError: true }),
         fetchLivePosts(undefined, { limit: 20, forceRefresh, throwOnError: true }),
         fetchLiveStories(undefined, { forceRefresh, throwOnError: true }),
         fetchLiveCommunities(activeSession?.id),
         fetchLiveUnloadRooms(),
         fetchLiveCrossedPaths(),
-        fetchLiveShops()
+        fetchLiveShops(),
+        fetchAudioTracksCatalog(),
+        fetchPlatformConfigPublic()
       ]);
 
       setAllUsers(liveProfiles);
@@ -853,6 +884,8 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUnloadRooms(liveRooms);
       setCrossedPaths(livePaths);
       setShops(liveShops);
+      setAudioTracks(liveTracks);
+      setPlatformConfig(liveCfg);
       setIsDbConnected(true);
 
       if (activeSession) {
@@ -1330,9 +1363,9 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Social Follow / Dismiss
+  // Social LINKUP / Follow & Dismiss
   const toggleFollowUser = (targetUserId: string) => {
-    if (!requireAuth('Sign in to follow creators and friends on VYBE.')) return;
+    if (!requireAuth('Sign in to LINK UP with creators and friends on VYBE.')) return;
     if (!currentUser || !targetUserId || targetUserId === currentUser.id) return;
 
     const targetUser = allUsers.find(u => u.id === targetUserId) || viewedProfileUser;
@@ -1342,58 +1375,50 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const prevFollowingIds = followingIds;
     const prevRequestedIds = requestedFollowIds;
     const prevFollowersCount = targetUser?.followersCount ?? 0;
+    const prevMyFollowingCount = currentUser.followingCount ?? 0;
+
+    const patchTargetUser = (patch: Partial<User>) => {
+      setAllUsers(prev => prev.map(u => (u.id === targetUserId ? { ...u, ...patch } : u)));
+      setViewedProfileUser(prev => (prev && prev.id === targetUserId ? { ...prev, ...patch } : prev));
+    };
 
     const revertFollow = () => {
       setFollowingIds(prevFollowingIds);
       setRequestedFollowIds(prevRequestedIds);
-      setAllUsers(prev =>
-        prev.map(u =>
-          u.id === targetUserId
-            ? {
-                ...u,
-                isFollowedByMe: isFollowing,
-                isFollowRequestedByMe: isRequested,
-                followersCount: prevFollowersCount
-              }
-            : u
-        )
-      );
-      setInAppNotificationBanner('Could not update follow status. Check your connection.');
+      patchTargetUser({
+        isFollowedByMe: isFollowing,
+        isFollowRequestedByMe: isRequested,
+        followersCount: prevFollowersCount
+      });
+      setCurrentUser(prev => (prev ? { ...prev, followingCount: prevMyFollowingCount } : prev));
+      setInAppNotificationBanner('Could not update LINKUP status. Check your connection.');
     };
 
     if (isFollowing || isRequested) {
+      const nextFollowersCount = isFollowing ? Math.max(0, prevFollowersCount - 1) : prevFollowersCount;
       setFollowingIds(prev => prev.filter(id => id !== targetUserId));
       setRequestedFollowIds(prev => prev.filter(id => id !== targetUserId));
-      setAllUsers(prev =>
-        prev.map(u =>
-          u.id === targetUserId
-            ? {
-                ...u,
-                isFollowedByMe: false,
-                isFollowRequestedByMe: false,
-                followersCount: isFollowing ? Math.max(0, u.followersCount - 1) : u.followersCount
-              }
-            : u
-        )
-      );
+      patchTargetUser({
+        isFollowedByMe: false,
+        isFollowRequestedByMe: false,
+        followersCount: nextFollowersCount
+      });
+      if (isFollowing) {
+        setCurrentUser(prev => (prev ? { ...prev, followingCount: Math.max(0, prev.followingCount - 1) } : prev));
+      }
       toggleFollowInSupabase({ followerId: currentUser.id, followedId: targetUserId, action: 'UNFOLLOW' }).then(ok => {
         if (!ok) revertFollow();
       });
     } else if (targetUser?.isPrivate) {
       setRequestedFollowIds(prev => [...prev, targetUserId]);
-      setAllUsers(prev => prev.map(u => (u.id === targetUserId ? { ...u, isFollowRequestedByMe: true } : u)));
+      patchTargetUser({ isFollowRequestedByMe: true });
       toggleFollowInSupabase({ followerId: currentUser.id, followedId: targetUserId, action: 'REQUEST' }).then(ok => {
         if (!ok) revertFollow();
       });
     } else {
       setFollowingIds(prev => [...prev, targetUserId]);
-      setAllUsers(prev =>
-        prev.map(u =>
-          u.id === targetUserId
-            ? { ...u, isFollowedByMe: true, followersCount: u.followersCount + 1 }
-            : u
-        )
-      );
+      patchTargetUser({ isFollowedByMe: true, followersCount: prevFollowersCount + 1 });
+      setCurrentUser(prev => (prev ? { ...prev, followingCount: prev.followingCount + 1 } : prev));
       toggleFollowInSupabase({ followerId: currentUser.id, followedId: targetUserId, action: 'FOLLOW' }).then(ok => {
         if (!ok) revertFollow();
       });
@@ -1928,9 +1953,21 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isViewed: false,
       reactionsCount: 0,
       isLikedByMe: false,
+      viewsCount: 0,
+      commentsCount: 0,
       textBackgroundColor:
         storyData.textBackgroundColor || (resolvedType === 'TEXT' ? 'from-[#6366F1] to-[#EC4899]' : undefined),
-      musicTrackTitle: storyData.musicTrackTitle
+      backgroundGradient: storyData.backgroundGradient || storyData.textBackgroundColor,
+      musicTrackTitle: storyData.musicTrackTitle,
+      cropRect: storyData.cropRect,
+      transform: storyData.transform,
+      overlays: storyData.overlays,
+      trimStartMs: storyData.trimStartMs,
+      trimEndMs: storyData.trimEndMs,
+      audioTrackId: storyData.audioTrackId,
+      audioTrackUrl: storyData.audioTrackUrl,
+      audioVolume: storyData.audioVolume,
+      storyVolume: storyData.storyVolume
     };
     setStories(prev => [newStory, ...prev]);
 
@@ -1941,7 +1978,17 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       mediaType: newStory.mediaType,
       audience: newStory.audience,
       textBackgroundColor: newStory.textBackgroundColor,
-      musicTrackTitle: newStory.musicTrackTitle
+      backgroundGradient: newStory.backgroundGradient,
+      musicTrackTitle: newStory.musicTrackTitle,
+      cropRect: newStory.cropRect,
+      transform: newStory.transform,
+      overlays: newStory.overlays,
+      trimStartMs: newStory.trimStartMs,
+      trimEndMs: newStory.trimEndMs,
+      audioTrackId: newStory.audioTrackId,
+      audioTrackUrl: newStory.audioTrackUrl,
+      audioVolume: newStory.audioVolume,
+      storyVolume: newStory.storyVolume
     });
 
     if (created?.id) {
@@ -1954,6 +2001,20 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setStories(prev => prev.filter(s => s.id !== tempId));
     setInAppNotificationBanner('Story upload could not be confirmed by server.');
     return false;
+  };
+
+  const patchStoryCounts = (storyId: string, patch: { viewsCount?: number; commentsCount?: number }) => {
+    setStories(prev =>
+      prev.map(s =>
+        s.id === storyId
+          ? {
+              ...s,
+              ...(typeof patch.viewsCount === 'number' ? { viewsCount: patch.viewsCount } : {}),
+              ...(typeof patch.commentsCount === 'number' ? { commentsCount: patch.commentsCount } : {})
+            }
+          : s
+      )
+    );
   };
 
   // Crossed Paths, Capsules, Rooms, Intentions, Communities
@@ -2047,23 +2108,113 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     toggleSpiritualIntentionInSupabase(id, nextFulfilled);
   };
 
-  const toggleJoinCommunity = (commId: string) => {
-    if (!requireAuth('Sign in to join communities.')) return;
+  const openCircleWorkspace = (comm: Community | null) => {
+    setSelectedCircle(comm);
+  };
+
+  const createCircle = async (params: {
+    name: string;
+    description: string;
+    category: string;
+    joinMode: 'PUBLIC' | 'PRIVATE' | 'APPROVAL';
+    rules: string[];
+    tags: string[];
+  }): Promise<{ ok: boolean; error?: string }> => {
+    if (!requireAuth('Sign in to create a Growth Circle.')) return { ok: false, error: 'Sign in required.' };
+    if (!currentUser) return { ok: false, error: 'Sign in required.' };
+    const res = await createCircleInSupabase({ creatorId: currentUser.id, ...params });
+    if (res.ok && res.community) {
+      setCommunities(prev => [res.community!, ...prev]);
+      setInAppNotificationBanner(`Created Circle "${res.community.name}".`);
+    }
+    return { ok: res.ok, error: res.error };
+  };
+
+  const toggleJoinCommunity = async (commId: string) => {
+    if (!requireAuth('Sign in to join Growth Circles.')) return;
     if (!currentUser) return;
     const target = communities.find(c => c.id === commId);
-    const shouldJoin = !target?.isJoined;
-    setCommunities(prev =>
-      prev.map(c =>
-        c.id === commId
+    if (!target) return;
+    const isCurrentlyMemberOrPending = Boolean(target.isJoined || target.isPending);
+    if (isCurrentlyMemberOrPending) {
+      const ok = await toggleJoinCommunityInSupabase({
+        communityId: commId,
+        userId: currentUser.id,
+        shouldJoin: false
+      });
+      if (ok) {
+        setCommunities(prev =>
+          prev.map(c =>
+            c.id === commId
+              ? {
+                  ...c,
+                  isJoined: false,
+                  isPending: false,
+                  membersCount: target.isJoined ? Math.max(0, c.membersCount - 1) : c.membersCount
+                }
+              : c
+          )
+        );
+        setSelectedCircle(prev =>
+          prev && prev.id === commId
+            ? {
+                ...prev,
+                isJoined: false,
+                isPending: false,
+                membersCount: target.isJoined ? Math.max(0, prev.membersCount - 1) : prev.membersCount
+              }
+            : prev
+        );
+      }
+      return;
+    }
+
+    const res = await joinOrRequestCircleRpc(commId);
+    if (res.ok) {
+      const accepted = res.status !== 'PENDING';
+      setCommunities(prev =>
+        prev.map(c =>
+          c.id === commId
+            ? {
+                ...c,
+                isJoined: accepted,
+                isPending: !accepted,
+                membersCount: accepted ? c.membersCount + 1 : c.membersCount
+              }
+            : c
+        )
+      );
+      setSelectedCircle(prev =>
+        prev && prev.id === commId
           ? {
-              ...c,
-              isJoined: shouldJoin,
-              membersCount: shouldJoin ? c.membersCount + 1 : Math.max(0, c.membersCount - 1)
+              ...prev,
+              isJoined: accepted,
+              isPending: !accepted,
+              membersCount: accepted ? prev.membersCount + 1 : prev.membersCount
             }
-          : c
-      )
-    );
-    toggleJoinCommunityInSupabase({ communityId: commId, userId: currentUser.id, shouldJoin });
+          : prev
+      );
+      setInAppNotificationBanner(accepted ? `Joined ${target.name}!` : `Join request sent to ${target.name}.`);
+    } else if (res.error) {
+      setInAppNotificationBanner(res.error);
+    }
+  };
+
+  const openCircleGroupChat = async (commId: string): Promise<{ ok: boolean; error?: string }> => {
+    if (!requireAuth('Sign in to open Circle Group Chat.')) return { ok: false, error: 'Sign in required.' };
+    if (!currentUser) return { ok: false, error: 'Sign in required.' };
+    const rpc = await openCircleChatRpc(commId);
+    if (!rpc.conversationId) {
+      return { ok: false, error: rpc.error || 'Could not open Circle chat.' };
+    }
+    const fresh = await fetchConversationsForUser(currentUser.id);
+    setConversations(fresh.conversations);
+    setSelectedConversationId(rpc.conversationId);
+    setSelectedConversationPeerId(null);
+    setSelectedCircle(null);
+    setAppModeState('SOCIAL');
+    setSelectedTabState('INBOX');
+    return { ok: true };
   };
 
   const openShopDetail = (shop: VybeShop) => {
@@ -2511,6 +2662,8 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         themeMode: effectiveThemeMode,
         setThemeMode,
         toggleThemeMode,
+        platformConfig,
+        audioTracks,
         stories,
         activeStoryAuthorId,
         activeStoryIndex,
@@ -2521,6 +2674,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         toggleStoryLike,
         reactToStory,
         createStory,
+        patchStoryCounts,
         crossedPaths,
         sendConnectionRequest,
         createCrossedPath,
@@ -2535,7 +2689,11 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         toggleIntention,
         reflections,
         communities,
+        selectedCircle,
+        openCircleWorkspace,
+        createCircle,
         toggleJoinCommunity,
+        openCircleGroupChat,
         shops,
         selectedShop,
         openShopDetail,

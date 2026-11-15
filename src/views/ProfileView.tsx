@@ -643,8 +643,17 @@ export const ProfileView: React.FC = () => {
                     ) : (
                       <UserPlus className="w-3.5 h-3.5" />
                     )}
-                    <span>{isFollowingPeer ? 'Following' : isFollowRequested ? 'Requested' : 'Follow'}</span>
+                    <span>{isFollowingPeer ? 'LINKED' : isFollowRequested ? 'LINKUP Requested' : 'LINK UP'}</span>
                   </button>
+                  {isFollowingPeer && (
+                    <button
+                      type="button"
+                      onClick={() => toggleFollowUser(targetUser.id)}
+                      className="px-3 py-2 rounded-full bg-[var(--vybe-surface)] border border-[var(--vybe-border)] hover:border-red-500/50 text-xs font-bold text-[var(--vybe-text-secondary)] hover:text-red-400 transition-colors"
+                    >
+                      UNLINK
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={handleMessagePeer}
@@ -816,13 +825,13 @@ export const ProfileView: React.FC = () => {
             <span className="block text-base font-bold text-[var(--vybe-text)]">
               {targetUser.followersCount.toLocaleString()}
             </span>
-            <span className="text-[11px] text-[var(--vybe-text-secondary)]">Followers</span>
+            <span className="text-[11px] text-[var(--vybe-text-secondary)]">LINKUPS</span>
           </div>
           <div>
             <span className="block text-base font-bold text-[var(--vybe-text)]">
               {targetUser.followingCount.toLocaleString()}
             </span>
-            <span className="text-[11px] text-[var(--vybe-text-secondary)]">Following</span>
+            <span className="text-[11px] text-[var(--vybe-text-secondary)]">LINKED</span>
           </div>
           <div>
             <span className="block text-base font-bold text-[var(--vybe-accent)]">
@@ -852,7 +861,7 @@ export const ProfileView: React.FC = () => {
             <Lock className="w-8 h-8 text-[var(--vybe-accent)] mx-auto" />
             <h2 className="text-sm font-bold text-[var(--vybe-text)]">This account is private</h2>
             <p className="text-xs text-[var(--vybe-text-secondary)] max-w-xs mx-auto">
-              Follow @{targetUser.username} to see their photos, videos, and updates once approved.
+              LINK UP with @{targetUser.username} to see their photos, videos, and updates once approved.
             </p>
           </div>
         ) : (
@@ -884,7 +893,7 @@ export const ProfileView: React.FC = () => {
             ) : (
               <div className="grid grid-cols-3 gap-1.5 pt-1">
                 {displayedPosts.map(p => {
-                  const isVideoTile = p.mediaType === 'VIDEO' || p.mediaType === 'REEL' || p.isVybesReel;
+                  const isVideoTile = p.mediaType === 'VIDEO';
                   const isPinnedHighlight = pinnedPostIds.includes(p.id);
                   const canPin = isOwnProfile && p.author.id.toLowerCase() === targetUser.id.toLowerCase();
 
@@ -1153,7 +1162,7 @@ export const ProfileView: React.FC = () => {
               <div>
                 <span className="text-xs font-bold text-[var(--vybe-text)] block">Private Account</span>
                 <span className="text-[11px] text-[var(--vybe-text-secondary)]">
-                  Only approved followers see your posts and reels
+                  Only approved LINKUPS see your posts and videos
                 </span>
               </div>
               <input
