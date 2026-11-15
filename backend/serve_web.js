@@ -153,7 +153,7 @@ function getDefaultPlatformConfigState() {
       announcementBanner: "Welcome to VYBE 3.0 — Six intentional ways to connect.",
       announcementActive: false,
       announcementLink: "",
-      communityGuidelinesUrl: "https://vybe.app/community-guidelines"
+      communityGuidelinesUrl: "https://vybeonline.netlify.app/community-guidelines"
     }
   };
 }

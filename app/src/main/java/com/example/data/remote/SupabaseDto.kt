@@ -115,7 +115,12 @@ data class SupabaseProfileDto(
   @Json(name = "posts_count") val postsCount: Int? = 0,
   @Json(name = "live_pulse") val livePulse: String? = null,
   @Json(name = "last_seen_at") val lastSeenAt: String? = null,
-  @Json(name = "created_at") val createdAt: String? = null
+  @Json(name = "created_at") val createdAt: String? = null,
+  val location: String? = null,
+  val website: String? = null,
+  @Json(name = "interest_tags") val interestTags: List<String>? = null,
+  @Json(name = "pinned_post_ids") val pinnedPostIds: List<String>? = null,
+  @Json(name = "profile_views_count") val profileViewsCount: Long? = null
 )
 
 data class SupabaseProfilePatchDto(
@@ -130,11 +135,16 @@ data class SupabaseProfilePatchDto(
   val phone: String? = null,
   @Json(name = "is_email_verified") val isEmailVerified: Boolean? = null,
   @Json(name = "is_phone_verified") val isPhoneVerified: Boolean? = null,
+  @Json(name = "is_deactivated") val isDeactivated: Boolean? = null,
   @Json(name = "is_private_account") val isPrivateAccount: Boolean? = null,
   @Json(name = "message_privacy") val messagePrivacy: String? = null,
   @Json(name = "live_pulse") val livePulse: String? = null,
   @Json(name = "last_seen_at") val lastSeenAt: String? = null,
-  @Json(name = "badge_display_status") val badgeDisplayStatus: String? = null
+  @Json(name = "badge_display_status") val badgeDisplayStatus: String? = null,
+  val location: String? = null,
+  val website: String? = null,
+  @Json(name = "interest_tags") val interestTags: List<String>? = null,
+  @Json(name = "pinned_post_ids") val pinnedPostIds: List<String>? = null
 )
 
 data class SupabasePresencePatchDto(
@@ -1077,4 +1087,13 @@ data class SupabaseAuditLogDto(
   @Json(name = "created_at") val createdAt: String? = null
 )
 
+data class SupabaseRpcRecordProfileViewRequest(
+  @Json(name = "p_profile_owner_id") val profileOwnerId: String
+)
+
+data class SupabaseRpcRecordProfileViewResponse(
+  val recorded: Boolean = false,
+  val reason: String? = null,
+  @Json(name = "profile_views_count") val profileViewsCount: Long? = null
+)
 

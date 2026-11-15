@@ -27,6 +27,8 @@ class VybeLocalStore private constructor(context: Context) {
     private const val KEY_DISMISSED_SUGGESTIONS = "saved_dismissed_suggestions_json"
     private const val KEY_COMMENT_REACTIONS = "saved_comment_reactions_json"
     private const val KEY_STORY_REACTIONS = "saved_story_reactions_json"
+    private const val KEY_SEARCH_HISTORY = "saved_search_history_json"
+    private const val KEY_PROFILE_VIEW_LEDGER = "saved_profile_view_ledger_json"
 
     private val LEGACY_SAMPLE_IDS = setOf(
       "u_me", "u_aarav", "u_priya", "u_vikram",
@@ -390,6 +392,69 @@ class VybeLocalStore private constructor(context: Context) {
     }
   }
 
+  // --- Explore Search History Cache (User-scoped) ---
+  fun saveSearchHistory(userId: String, queries: List<String>) {
+    if (userId.isBlank()) return
+    val array = JSONArray()
+    queries.map { it.trim() }.filter { it.isNotBlank() }.distinctBy { it.lowercase() }.take(12).forEach {
+      array.put(it)
+    }
+    prefs.edit().putString("${KEY_SEARCH_HISTORY}_$userId", array.toString()).apply()
+  }
+
+  fun loadSearchHistory(userId: String): List<String> {
+    if (userId.isBlank()) return emptyList()
+    val raw = prefs.getString("${KEY_SEARCH_HISTORY}_$userId", null) ?: return emptyList()
+    return try {
+      val array = JSONArray(raw)
+      val out = mutableListOf<String>()
+      for (i in 0 until array.length()) {
+        val q = array.optString(i, "").trim()
+        if (q.isNotBlank() && out.none { existing -> existing.equals(q, ignoreCase = true) }) {
+          out.add(q)
+        }
+      }
+      out.take(12)
+    } catch (_: Exception) {
+      emptyList()
+    }
+  }
+
+  // --- Profile Views 24h Dedupe Ledger Cache ---
+  fun getProfileViewLastRecordedMs(viewerId: String, ownerId: String): Long {
+    if (viewerId.isBlank() || ownerId.isBlank()) return 0L
+    val raw = prefs.getString("${KEY_PROFILE_VIEW_LEDGER}_$viewerId", null) ?: return 0L
+    return try {
+      JSONObject(raw).optLong(ownerId, 0L)
+    } catch (_: Exception) {
+      0L
+    }
+  }
+
+  fun saveProfileViewRecordedMs(viewerId: String, ownerId: String, timestampMs: Long) {
+    if (viewerId.isBlank() || ownerId.isBlank() || timestampMs <= 0L) return
+    val key = "${KEY_PROFILE_VIEW_LEDGER}_$viewerId"
+    val obj = try {
+      val raw = prefs.getString(key, null)
+      if (raw != null) JSONObject(raw) else JSONObject()
+    } catch (_: Exception) {
+      JSONObject()
+    }
+    obj.put(ownerId, timestampMs)
+    // Prune entries older than 7 days to keep preferences bounded
+    val cutoff = timestampMs - 7L * 86_400_000L
+    val clean = JSONObject()
+    val keys = obj.keys()
+    while (keys.hasNext()) {
+      val k = keys.next()
+      val ts = obj.optLong(k, 0L)
+      if (ts >= cutoff || k == ownerId) {
+        clean.put(k, ts)
+      }
+    }
+    prefs.edit().putString(key, clean.toString()).apply()
+  }
+
   // ================= Serialization Helpers =================
   private fun userToJson(u: User): JSONObject {
     return JSONObject().apply {
@@ -415,10 +480,16 @@ class VybeLocalStore private constructor(context: Context) {
       put("badgeDisplayStatus", u.badgeDisplayStatus)
       if (!u.badgeType.isNullOrBlank()) put("badgeType", u.badgeType)
       put("isPrivate", u.isPrivate)
+      put("isDeactivated", u.isDeactivated)
       put("messagePrivacy", u.messagePrivacy)
       put("followersCount", u.followersCount)
       put("followingCount", u.followingCount)
       put("postsCount", u.postsCount)
+      put("profileViewsCount", u.profileViewsCount)
+      put("location", u.location)
+      put("website", u.website)
+      put("interestTags", JSONArray(u.interestTags))
+      put("pinnedPostIds", JSONArray(u.pinnedPostIds))
       put("dateOfBirth", u.dateOfBirth)
       put("age", u.age)
       put("isUnder18", u.isUnder18)
@@ -471,10 +542,30 @@ class VybeLocalStore private constructor(context: Context) {
       badgeDisplayStatus = obj.optString("badgeDisplayStatus", "ACCEPTED").takeUnless { it.isBlank() || it.equals("null", true) } ?: "ACCEPTED",
       badgeType = obj.optString("badgeType", "").takeUnless { it.isBlank() || it.equals("null", true) },
       isPrivate = obj.optBoolean("isPrivate", false),
+      isDeactivated = obj.optBoolean("isDeactivated", false),
       messagePrivacy = obj.optString("messagePrivacy", "EVERYONE"),
       followersCount = obj.optInt("followersCount", 0),
       followingCount = obj.optInt("followingCount", 0),
       postsCount = obj.optInt("postsCount", 0),
+      profileViewsCount = obj.optLong("profileViewsCount", 0L).coerceAtLeast(0L),
+      location = obj.optString("location", "").takeUnless { it.equals("null", true) }.orEmpty(),
+      website = obj.optString("website", "").takeUnless { it.equals("null", true) }.orEmpty(),
+      interestTags = obj.optJSONArray("interestTags")?.let { arr ->
+        buildList {
+          for (i in 0 until arr.length()) {
+            val item = arr.optString(i, "").trim()
+            if (item.isNotBlank() && !item.equals("null", true)) add(item)
+          }
+        }
+      } ?: emptyList(),
+      pinnedPostIds = obj.optJSONArray("pinnedPostIds")?.let { arr ->
+        buildList {
+          for (i in 0 until arr.length()) {
+            val item = arr.optString(i, "").trim()
+            if (item.isNotBlank() && !item.equals("null", true)) add(item)
+          }
+        }
+      } ?: emptyList(),
       dateOfBirth = obj.optString("dateOfBirth", "2000-01-01"),
       age = obj.optInt("age", 22),
       isUnder18 = obj.optBoolean("isUnder18", false),

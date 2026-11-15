@@ -125,6 +125,10 @@ class VybeRepository private constructor() {
   private val _uploadStatus = MutableStateFlow<UploadStatus>(UploadStatus.Idle)
   val uploadStatus: StateFlow<UploadStatus> = _uploadStatus.asStateFlow()
 
+  private val _uiBannerMessage = MutableStateFlow<String?>(null)
+  val uiBannerMessage: StateFlow<String?> = _uiBannerMessage.asStateFlow()
+  fun consumeUiBannerMessage() { _uiBannerMessage.value = null }
+
   private var lastFailedUpload: PendingUploadOperation? = null
   private val isPostUploadInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
   private val isStoryUploadInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -568,6 +572,7 @@ class VybeRepository private constructor() {
         storyReactionsLocal = localStore.loadStoryReactions(latestUser.id)
         _commentReactionsByMe.value = localStore.loadCommentReactions(latestUser.id)
         _dismissedSuggestionUserIds.value = localStore.loadDismissedSuggestions(latestUser.id)
+        _searchHistory.value = localStore.loadSearchHistory(latestUser.id)
         vybeMatchIdsCache = localStore.loadVybeMatches(latestUser.id)
         if (_allUsers.value.none { it.id == latestUser.id }) {
           _allUsers.value = listOf(latestUser) + _allUsers.value
@@ -4262,6 +4267,7 @@ class VybeRepository private constructor() {
       storyReactionsLocal = emptyMap()
       _commentReactionsByMe.value = emptyMap()
       _dismissedSuggestionUserIds.value = emptySet()
+      _searchHistory.value = emptyList()
     }
 
     val isDesignatedOwner = user.role == UserRole.SUPER_ADMIN ||
@@ -4292,6 +4298,7 @@ class VybeRepository private constructor() {
     storyReactionsLocal = VybeLocalStore.get()?.loadStoryReactions(onlineUser.id).orEmpty()
     _commentReactionsByMe.value = VybeLocalStore.get()?.loadCommentReactions(onlineUser.id).orEmpty()
     _dismissedSuggestionUserIds.value = VybeLocalStore.get()?.loadDismissedSuggestions(onlineUser.id).orEmpty()
+    _searchHistory.value = VybeLocalStore.get()?.loadSearchHistory(onlineUser.id).orEmpty()
     vybeMatchIdsCache = VybeLocalStore.get()?.loadVybeMatches(onlineUser.id).orEmpty()
 
     SessionManager.get()?.saveSession(
@@ -4524,8 +4531,10 @@ class VybeRepository private constructor() {
     )
     _currentUser.value = matched
     _isLoggedIn.value = true
+    _searchHistory.value = VybeLocalStore.get()?.loadSearchHistory(matched.id).orEmpty()
     _allUsers.value = listOf(matched) + _allUsers.value.filterNot { it.id == matched.id }
     SessionManager.get()?.saveSession(matched)
+    VybeLocalStore.get()?.saveUser(matched)
     return true
   }
 
@@ -4558,6 +4567,7 @@ class VybeRepository private constructor() {
     storyReactionsLocal = emptyMap()
     _commentReactionsByMe.value = emptyMap()
     _dismissedSuggestionUserIds.value = emptySet()
+    _searchHistory.value = emptyList()
     vybeMatchIdsCache = emptySet()
     _currentUser.value = null
     _isLoggedIn.value = false
@@ -4595,8 +4605,52 @@ class VybeRepository private constructor() {
     }
   }
 
-  fun deactivateAccount() {
-    logout()
+  fun deactivateAccount(onComplete: ((Boolean, String?) -> Unit)? = null) {
+    val me = _currentUser.value
+    val userId = me?.id ?: SessionManager.get()?.userId
+    val rawToken = SessionManager.get()?.accessToken.orEmpty()
+
+    if (userId.isNullOrBlank() || !supabaseRepo.isConfigured || rawToken.isBlank()) {
+      if (me != null) {
+        val deactivatedLocal = me.copy(isDeactivated = true, isOnline = false)
+        _allUsers.value = _allUsers.value.map { if (it.id == deactivatedLocal.id) deactivatedLocal else it }
+        VybeLocalStore.get()?.saveUser(deactivatedLocal)
+      }
+      logout()
+      onComplete?.invoke(true, null)
+      return
+    }
+
+    ioScope.launch {
+      val validToken = supabaseRepo.resolveValidAccessToken(rawToken).orEmpty()
+      if (validToken.isBlank()) {
+        val errMsg = "Session expired. Please sign in again before deactivating your account."
+        _uiBannerMessage.value = errMsg
+        withContext(Dispatchers.Main.immediate) {
+          onComplete?.invoke(false, errMsg)
+        }
+        return@launch
+      }
+
+      val res = supabaseRepo.deactivateAccountRemote(userId, validToken)
+      if (res.isSuccess) {
+        if (me != null) {
+          val deactivatedLocal = me.copy(isDeactivated = true, isOnline = false)
+          _allUsers.value = _allUsers.value.map { if (it.id == deactivatedLocal.id) deactivatedLocal else it }
+          VybeLocalStore.get()?.saveUser(deactivatedLocal)
+        }
+        withContext(Dispatchers.Main.immediate) {
+          logout()
+          onComplete?.invoke(true, null)
+        }
+      } else {
+        val errMsg = res.exceptionOrNull()?.message ?: "Could not deactivate account. Check your connection and try again."
+        _uiBannerMessage.value = errMsg
+        withContext(Dispatchers.Main.immediate) {
+          onComplete?.invoke(false, errMsg)
+        }
+      }
+    }
   }
 
   suspend fun syncDeviceFcmTokenSuspending(
@@ -8352,46 +8406,106 @@ class VybeRepository private constructor() {
     advanceGrowJourneyDay(journeyId)
   }
 
-  // --- VYBE 2.1: Search History ---
+  // --- VYBE 2.1: Persistent User-Scoped Search History ---
   private val _searchHistory = MutableStateFlow<List<String>>(emptyList())
   val searchHistory: StateFlow<List<String>> = _searchHistory.asStateFlow()
 
   fun addSearchQueryToHistory(query: String) {
     val clean = query.trim()
-    if (clean.isBlank()) return
+    if (clean.length < 2) return
     val current = _searchHistory.value.filter { !it.equals(clean, ignoreCase = true) }
-    _searchHistory.value = (listOf(clean) + current).take(12)
+    val next = (listOf(clean) + current).take(12)
+    _searchHistory.value = next
+    _currentUser.value?.id?.takeIf { it.isNotBlank() }?.let { uid ->
+      VybeLocalStore.get()?.saveSearchHistory(uid, next)
+    }
   }
 
   fun removeSearchQueryFromHistory(query: String) {
-    _searchHistory.value = _searchHistory.value.filter { !it.equals(query, ignoreCase = true) }
+    val next = _searchHistory.value.filter { !it.equals(query, ignoreCase = true) }
+    _searchHistory.value = next
+    _currentUser.value?.id?.takeIf { it.isNotBlank() }?.let { uid ->
+      VybeLocalStore.get()?.saveSearchHistory(uid, next)
+    }
   }
 
   fun clearSearchHistory() {
     _searchHistory.value = emptyList()
+    _currentUser.value?.id?.takeIf { it.isNotBlank() }?.let { uid ->
+      VybeLocalStore.get()?.saveSearchHistory(uid, emptyList())
+    }
   }
 
-  // --- VYBE 2.1: Genuine Profile Views Tracking (Deduplicated 24-hour window) ---
+  // --- VYBE 2.1: Persistent Profile Views Tracking (Supabase RPC + 24h persistent ledger) ---
   private val profileViewLedger = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
-  fun recordProfileView(targetUserId: String) {
-    val currentId = _currentUser.value?.id
-    if (currentId == null || currentId == targetUserId) return
+  fun recordProfileView(targetUserId: String, nowMs: Long = System.currentTimeMillis()) {
+    val currentId = _currentUser.value?.id?.takeIf { it.isNotBlank() } ?: return
+    if (targetUserId.isBlank() || currentId.equals(targetUserId, ignoreCase = true)) return
+    if (_blockedUserIds.value.any { it.equals(targetUserId, ignoreCase = true) }) return
+
+    val targetUser = _allUsers.value.firstOrNull { it.id.equals(targetUserId, ignoreCase = true) }
+    if (targetUser != null && (targetUser.isDeactivated || targetUser.isBanned)) return
 
     val viewKey = "$currentId->$targetUserId"
-    val now = System.currentTimeMillis()
-    val lastView = profileViewLedger[viewKey] ?: 0L
+    val persistedLastMs = VybeLocalStore.get()?.getProfileViewLastRecordedMs(currentId, targetUserId) ?: 0L
+    val memoryLastMs = profileViewLedger[viewKey] ?: 0L
+    val lastView = maxOf(persistedLastMs, memoryLastMs)
 
-    if (now - lastView < 86_400_000L) {
+    if (lastView > 0L && (nowMs - lastView) < 86_400_000L) {
       return
     }
-    profileViewLedger[viewKey] = now
 
-    _allUsers.value = _allUsers.value.map { u ->
-      if (u.id == targetUserId) u.copy(profileViewsCount = u.profileViewsCount + 1) else u
+    val sessionToken = SessionManager.get()?.accessToken.orEmpty()
+    if (supabaseRepo.isConfigured && sessionToken.isNotBlank()) {
+      ioScope.launch {
+        val validToken = supabaseRepo.resolveValidAccessToken(sessionToken).orEmpty()
+        if (validToken.isBlank()) return@launch
+        val res = supabaseRepo.recordProfileViewRemote(targetUserId, validToken)
+        res.onSuccess { rpcResult ->
+          val reason = rpcResult.reason.orEmpty()
+          if (rpcResult.recorded || reason == "DEDUPLICATED_24H") {
+            profileViewLedger[viewKey] = nowMs
+            VybeLocalStore.get()?.saveProfileViewRecordedMs(currentId, targetUserId, nowMs)
+          }
+          val authoritativeCount = rpcResult.profileViewsCount
+          if (authoritativeCount != null || rpcResult.recorded) {
+            applyAuthoritativeProfileViewsCount(
+              targetUserId = targetUserId,
+              newCount = authoritativeCount
+            )
+          }
+        }.onFailure { err ->
+          Log.w(TAG, "recordProfileViewRemote notice: ${err.message}")
+        }
+      }
+      return
     }
-    if (_currentUser.value?.id == targetUserId) {
-      _currentUser.value = _currentUser.value?.let { it.copy(profileViewsCount = it.profileViewsCount + 1) }
+
+    // Offline / local unit-test mode (only when no live Supabase session token is attached)
+    profileViewLedger[viewKey] = nowMs
+    VybeLocalStore.get()?.saveProfileViewRecordedMs(currentId, targetUserId, nowMs)
+    applyAuthoritativeProfileViewsCount(targetUserId = targetUserId, newCount = null)
+  }
+
+  private fun applyAuthoritativeProfileViewsCount(targetUserId: String, newCount: Long?) {
+    var updatedTarget: User? = null
+    _allUsers.value = _allUsers.value.map { u ->
+      if (u.id.equals(targetUserId, ignoreCase = true)) {
+        val resolvedCount = (newCount ?: (u.profileViewsCount + 1L)).coerceAtLeast(0L)
+        u.copy(profileViewsCount = resolvedCount).also { updatedTarget = it }
+      } else {
+        u
+      }
+    }
+    updatedTarget?.let { VybeLocalStore.get()?.saveUser(it) }
+    val me = _currentUser.value
+    if (me != null && me.id.equals(targetUserId, ignoreCase = true)) {
+      val resolvedCount = (newCount ?: (me.profileViewsCount + 1L)).coerceAtLeast(0L)
+      val nextMe = me.copy(profileViewsCount = resolvedCount)
+      _currentUser.value = nextMe
+      SessionManager.get()?.updateCurrentUser(nextMe)
+      VybeLocalStore.get()?.saveUser(nextMe)
     }
   }
 
@@ -8406,31 +8520,156 @@ class VybeRepository private constructor() {
     isPrivate: Boolean
   ) {
     val me = _currentUser.value ?: return
-    val updated = me.copy(
-      displayName = displayName.ifBlank { me.displayName },
-      bio = bio,
-      location = location,
-      website = website,
-      interestTags = interests,
-      avatarUrl = avatarUrl?.ifBlank { me.avatarUrl } ?: me.avatarUrl,
-      coverUrl = coverUrl?.ifBlank { me.coverUrl } ?: me.coverUrl,
+    val cleanDisplay = displayName.trim().ifBlank { me.displayName }
+    val cleanBio = bio.trim()
+    val cleanLocation = location.trim()
+    val cleanWebsite = website.trim()
+    val cleanInterests = interests.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+    val candidateAvatar = avatarUrl?.trim()?.ifBlank { me.avatarUrl } ?: me.avatarUrl
+    val candidateCover = coverUrl?.trim()?.ifBlank { me.coverUrl } ?: me.coverUrl
+
+    val optimistic = me.copy(
+      displayName = cleanDisplay,
+      bio = cleanBio,
+      location = cleanLocation,
+      website = cleanWebsite,
+      interestTags = cleanInterests,
+      avatarUrl = candidateAvatar,
+      coverUrl = candidateCover,
       isPrivate = isPrivate
     )
-    _currentUser.value = updated
-    _allUsers.value = _allUsers.value.map { if (it.id == me.id) updated else it }
+    _currentUser.value = optimistic
+    _allUsers.value = _allUsers.value.map { if (it.id == optimistic.id) decorateUserRelationshipFlags(optimistic) else it }
+    SessionManager.get()?.updateCurrentUser(optimistic)
+    VybeLocalStore.get()?.saveUser(optimistic)
+
+    val rawToken = SessionManager.get()?.accessToken.orEmpty()
+    if (!supabaseRepo.isConfigured || rawToken.isBlank()) return
+
+    ioScope.launch {
+      val ctx = appContext
+      val validToken = supabaseRepo.resolveValidAccessToken(rawToken).orEmpty()
+      if (validToken.isBlank()) {
+        _uiBannerMessage.value = "Session expired. Profile edits saved locally only."
+        return@launch
+      }
+
+      var finalAvatar = candidateAvatar
+      if (ctx != null && finalAvatar.isNotBlank() && !finalAvatar.startsWith("http", ignoreCase = true)) {
+        MediaUtils.readMediaPayload(
+          ctx,
+          finalAvatar,
+          uploadTarget = com.example.util.MediaUploadTarget.AVATAR
+        )?.let { payload ->
+          val uploaded = supabaseRepo.uploadMediaWithProgress(
+            bucket = "avatars",
+            userId = me.id,
+            fileName = "avatar_${System.currentTimeMillis()}.${payload.extension}",
+            bytes = payload.bytes,
+            mimeType = payload.mimeType,
+            accessToken = validToken,
+            isPrivateMedia = false
+          )
+          if (uploaded.isSuccess) {
+            finalAvatar = uploaded.getOrThrow().url
+          }
+        }
+      }
+
+      var finalCover = candidateCover
+      if (ctx != null && finalCover.isNotBlank() && !finalCover.startsWith("http", ignoreCase = true)) {
+        MediaUtils.readMediaPayload(
+          ctx,
+          finalCover,
+          uploadTarget = com.example.util.MediaUploadTarget.BANNER
+        )?.let { payload ->
+          val uploaded = supabaseRepo.uploadMediaWithProgress(
+            bucket = "avatars",
+            userId = me.id,
+            fileName = "cover_${System.currentTimeMillis()}.${payload.extension}",
+            bytes = payload.bytes,
+            mimeType = payload.mimeType,
+            accessToken = validToken,
+            isPrivateMedia = false
+          )
+          if (uploaded.isSuccess) {
+            finalCover = uploaded.getOrThrow().url
+          }
+        }
+      }
+
+      val persistedLocal = optimistic.copy(avatarUrl = finalAvatar, coverUrl = finalCover)
+      val res = supabaseRepo.updateUserProfile(
+        userId = me.id,
+        firstName = me.firstName,
+        lastName = me.lastName,
+        displayName = cleanDisplay,
+        bio = cleanBio,
+        avatarUrl = finalAvatar,
+        coverUrl = finalCover,
+        username = me.username,
+        isPrivate = isPrivate,
+        messagePrivacy = me.messagePrivacy,
+        location = cleanLocation,
+        website = cleanWebsite,
+        interestTags = cleanInterests,
+        accessToken = validToken
+      )
+      res.onSuccess { remoteUser ->
+        val synced = (remoteUser ?: persistedLocal).copy(
+          displayName = remoteUser?.displayName?.ifBlank { cleanDisplay } ?: cleanDisplay,
+          bio = remoteUser?.bio ?: cleanBio,
+          location = remoteUser?.location?.ifBlank { cleanLocation } ?: cleanLocation,
+          website = remoteUser?.website?.ifBlank { cleanWebsite } ?: cleanWebsite,
+          interestTags = remoteUser?.interestTags?.ifEmpty { cleanInterests } ?: cleanInterests,
+          avatarUrl = remoteUser?.avatarUrl?.ifBlank { finalAvatar } ?: finalAvatar,
+          coverUrl = remoteUser?.coverUrl?.ifBlank { finalCover } ?: finalCover,
+          isPrivate = remoteUser?.isPrivate ?: isPrivate
+        )
+        _currentUser.value = synced
+        _allUsers.value = _allUsers.value.map { if (it.id == synced.id) decorateUserRelationshipFlags(synced) else it }
+        SessionManager.get()?.updateCurrentUser(synced)
+        VybeLocalStore.get()?.saveUser(synced)
+      }.onFailure { err ->
+        _uiBannerMessage.value = err.message ?: "Failed to sync profile edits to server."
+      }
+    }
   }
 
   fun togglePinPost(postId: String) {
     val me = _currentUser.value ?: return
+    val cleanId = postId.trim()
+    if (cleanId.isBlank()) return
     val currentPinned = me.pinnedPostIds.toMutableList()
-    if (currentPinned.contains(postId)) {
-      currentPinned.remove(postId)
+    if (currentPinned.contains(cleanId)) {
+      currentPinned.remove(cleanId)
     } else {
-      if (currentPinned.size < 3) currentPinned.add(0, postId)
+      if (currentPinned.size >= 3) {
+        currentPinned.removeAt(currentPinned.lastIndex)
+      }
+      currentPinned.add(0, cleanId)
     }
     val updated = me.copy(pinnedPostIds = currentPinned)
     _currentUser.value = updated
-    _allUsers.value = _allUsers.value.map { if (it.id == me.id) updated else it }
+    _allUsers.value = _allUsers.value.map { if (it.id == updated.id) decorateUserRelationshipFlags(updated) else it }
+    SessionManager.get()?.updateCurrentUser(updated)
+    VybeLocalStore.get()?.saveUser(updated)
+
+    val rawToken = SessionManager.get()?.accessToken.orEmpty()
+    if (!supabaseRepo.isConfigured || rawToken.isBlank()) return
+
+    ioScope.launch {
+      val validToken = supabaseRepo.resolveValidAccessToken(rawToken).orEmpty()
+      if (validToken.isBlank()) return@launch
+      val res = supabaseRepo.updateUserProfile(
+        userId = me.id,
+        pinnedPostIds = currentPinned,
+        accessToken = validToken
+      )
+      res.onFailure { err ->
+        Log.w(TAG, "togglePinPost remote sync notice: ${err.message}")
+      }
+    }
   }
 }
 

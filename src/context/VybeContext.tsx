@@ -48,6 +48,7 @@ import {
   toggleSavePostInSupabase,
   toggleFollowInSupabase,
   updateProfileInSupabase,
+  recordProfileViewRpc,
   fetchUserSocialGraph,
   resolveOrCreateWebDirectConversation,
   fetchConversationsForUser,
@@ -158,7 +159,14 @@ interface VybeContextType {
   }) => Promise<{ ok: boolean; needsEmailConfirmation?: boolean; error?: string }>;
   requestPasswordReset: (email: string) => Promise<{ ok: boolean; error?: string }>;
   signOut: () => Promise<void>;
-  updateMyProfile: (patch: { display_name?: string; bio?: string; is_private_account?: boolean }) => Promise<{ ok: boolean; error?: string }>;
+  updateMyProfile: (patch: {
+    display_name?: string;
+    bio?: string;
+    is_private_account?: boolean;
+    location?: string;
+    website?: string;
+    interest_tags?: string[];
+  }) => Promise<{ ok: boolean; error?: string }>;
 
   // Users & Public Profile Routing
   allUsers: User[];
@@ -695,6 +703,9 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateMyProfile = async (patch: {
     display_name?: string;
     bio?: string;
+    location?: string;
+    website?: string;
+    interest_tags?: string[];
     is_private_account?: boolean;
   }): Promise<{ ok: boolean; error?: string }> => {
     if (!currentUser) return { ok: false, error: 'Sign in required.' };
@@ -849,6 +860,15 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } else {
           setViewedProfilePosts([]);
           setProfileLookupState('FOUND');
+        }
+        if (currentUser && res.user.id.toLowerCase() !== currentUser.id.toLowerCase()) {
+          recordProfileViewRpc(res.user.id).then((viewRes) => {
+            if (!cancelled && typeof viewRes.profileViewsCount === 'number') {
+              const updatedCount = viewRes.profileViewsCount;
+              setViewedProfileUser(prev => (prev && prev.id === res.user!.id ? { ...prev, profileViewsCount: updatedCount } : prev));
+              setAllUsers(prev => prev.map(u => (u.id === res.user!.id ? { ...u, profileViewsCount: updatedCount } : u)));
+            }
+          });
         }
       } else if (res.status === 'NOT_FOUND') {
         setProfileLookupState('NOT_FOUND');

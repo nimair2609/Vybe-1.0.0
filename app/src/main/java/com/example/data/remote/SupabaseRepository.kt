@@ -936,6 +936,17 @@ class SupabaseRepository {
       followersCount = (p.followersCount ?: 0).coerceAtLeast(0),
       followingCount = (p.followingCount ?: 0).coerceAtLeast(0),
       postsCount = (p.postsCount ?: 0).coerceAtLeast(0),
+      profileViewsCount = (p.profileViewsCount ?: 0L).coerceAtLeast(0L),
+      location = p.location?.takeIf { !it.equals("null", ignoreCase = true) }?.trim().orEmpty(),
+      website = p.website?.takeIf { !it.equals("null", ignoreCase = true) }?.trim().orEmpty(),
+      interestTags = p.interestTags
+        ?.map { it.trim() }
+        ?.filter { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+        .orEmpty(),
+      pinnedPostIds = p.pinnedPostIds
+        ?.map { it.trim() }
+        ?.filter { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+        .orEmpty(),
       isOnboardingCompleted = true
     )
   }
@@ -945,11 +956,20 @@ class SupabaseRepository {
     val authHeader = authHeaderFor(token)
 
     try {
-      val resp = SupabaseNetworkClient.restApi.getProfileById(
+      var resp = SupabaseNetworkClient.restApi.getProfileById(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
-        idFilter = "eq.$userId"
+        idFilter = "eq.$userId",
+        select = EXTENDED_PUBLIC_PROFILE_SELECT_COLUMNS
       )
+      if (!resp.isSuccessful && resp.code() == 400) {
+        resp = SupabaseNetworkClient.restApi.getProfileById(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          idFilter = "eq.$userId",
+          select = PUBLIC_PROFILE_SELECT_COLUMNS
+        )
+      }
       if (resp.isSuccessful && !resp.body().isNullOrEmpty()) {
         var profileDto = resp.body()!!.first()
         if (!authHeader.isNullOrBlank()) {
@@ -1001,11 +1021,20 @@ class SupabaseRepository {
     if (clean.isBlank()) return@withContext null
     val authHeader = authHeaderFor(token)
     try {
-      val resp = SupabaseNetworkClient.restApi.getProfileByUsername(
+      var resp = SupabaseNetworkClient.restApi.getProfileByUsername(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
-        usernameFilter = "ilike.$clean"
+        usernameFilter = "ilike.$clean",
+        select = EXTENDED_PUBLIC_PROFILE_SELECT_COLUMNS
       )
+      if (!resp.isSuccessful && resp.code() == 400) {
+        resp = SupabaseNetworkClient.restApi.getProfileByUsername(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          usernameFilter = "ilike.$clean",
+          select = PUBLIC_PROFILE_SELECT_COLUMNS
+        )
+      }
       if (resp.isSuccessful && !resp.body().isNullOrEmpty()) {
         return@withContext mapProfileDtoToUser(resp.body()!!.first())
       }
@@ -1017,25 +1046,30 @@ class SupabaseRepository {
 
   suspend fun updateUserProfile(
     userId: String,
-    firstName: String,
-    lastName: String,
-    displayName: String,
-    bio: String,
-    avatarUrl: String,
-    coverUrl: String,
+    firstName: String? = null,
+    lastName: String? = null,
+    displayName: String? = null,
+    bio: String? = null,
+    avatarUrl: String? = null,
+    coverUrl: String? = null,
     username: String? = null,
     email: String? = null,
     phone: String? = null,
     isPrivate: Boolean? = null,
     messagePrivacy: String? = null,
+    location: String? = null,
+    website: String? = null,
+    interestTags: List<String>? = null,
+    pinnedPostIds: List<String>? = null,
     accessToken: String = ""
   ): Result<User?> = withContext(Dispatchers.IO) {
     if (!isConfigured) return@withContext Result.success(null)
     val authHeader = authHeaderFor(accessToken)
       ?: return@withContext Result.failure(Exception("Authentication required to edit profile."))
     try {
+      val cleanUsername = username?.trim()?.lowercase()?.removePrefix("@")?.takeIf { it.isNotBlank() && it != "null" }
       val patch = SupabaseProfilePatchDto(
-        username = username?.trim()?.lowercase()?.removePrefix("@")?.takeIf { it.isNotBlank() && it != "null" },
+        username = cleanUsername,
         displayName = displayName,
         firstName = firstName,
         lastName = lastName,
@@ -1045,7 +1079,11 @@ class SupabaseRepository {
         email = email?.trim()?.takeIf { it.isNotBlank() },
         phone = phone?.trim()?.takeIf { it.isNotBlank() },
         isPrivateAccount = isPrivate,
-        messagePrivacy = messagePrivacy
+        messagePrivacy = messagePrivacy,
+        location = location,
+        website = website,
+        interestTags = interestTags,
+        pinnedPostIds = pinnedPostIds
       )
       var resp = SupabaseNetworkClient.restApi.patchProfile(
         apiKey = SupabaseConfig.supabaseAnonKey,
@@ -1053,23 +1091,27 @@ class SupabaseRepository {
         idFilter = "eq.$userId",
         patch = patch
       )
-      // Fallback if newer columns are not yet migrated in live DB
+      // Fallback if extended columns (location/website/interest_tags/pinned_post_ids/etc.) are not yet migrated in live DB
       if (!resp.isSuccessful && resp.code() == 400) {
-        resp = SupabaseNetworkClient.restApi.patchProfile(
-          apiKey = SupabaseConfig.supabaseAnonKey,
-          authHeader = authHeader,
-          idFilter = "eq.$userId",
-          patch = SupabaseProfilePatchDto(
-            username = patch.username,
-            displayName = displayName,
-            firstName = firstName,
-            lastName = lastName,
-            bio = bio,
-            avatarUrl = avatarUrl,
-            coverUrl = coverUrl,
-            isPrivateAccount = isPrivate
-          )
+        val corePatch = SupabaseProfilePatchDto(
+          username = cleanUsername,
+          displayName = displayName,
+          firstName = firstName,
+          lastName = lastName,
+          bio = bio,
+          avatarUrl = avatarUrl,
+          coverUrl = coverUrl,
+          isPrivateAccount = isPrivate
         )
+        val hasCoreFields = listOf(cleanUsername, displayName, firstName, lastName, bio, avatarUrl, coverUrl, isPrivate).any { it != null }
+        if (hasCoreFields) {
+          resp = SupabaseNetworkClient.restApi.patchProfile(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = authHeader,
+            idFilter = "eq.$userId",
+            patch = corePatch
+          )
+        }
       }
       if (resp.isSuccessful) {
         val updated = resp.body()?.firstOrNull()?.let { mapProfileDtoToUser(it) }
@@ -1080,6 +1122,65 @@ class SupabaseRepository {
       }
     } catch (e: Exception) {
       Result.failure(Exception(friendlyNetworkMessage(e, "Failed to save profile changes.")))
+    }
+  }
+
+  suspend fun recordProfileViewRemote(
+    targetProfileOwnerId: String,
+    accessToken: String = ""
+  ): Result<SupabaseRpcRecordProfileViewResponse> = withContext(Dispatchers.IO) {
+    if (!isConfigured) {
+      return@withContext Result.failure(Exception("Supabase not configured."))
+    }
+    var authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Authentication required to record profile view."))
+    try {
+      var resp = SupabaseNetworkClient.restApi.recordProfileViewRpc(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        request = SupabaseRpcRecordProfileViewRequest(profileOwnerId = targetProfileOwnerId)
+      )
+      if (resp.code() == 401) {
+        val refreshed = forceRefreshSessionToken()
+        if (!refreshed.isNullOrBlank()) {
+          authHeader = "Bearer $refreshed"
+          resp = SupabaseNetworkClient.restApi.recordProfileViewRpc(
+            apiKey = SupabaseConfig.supabaseAnonKey,
+            authHeader = authHeader,
+            request = SupabaseRpcRecordProfileViewRequest(profileOwnerId = targetProfileOwnerId)
+          )
+        }
+      }
+      val body = resp.body()
+      if (resp.isSuccessful && body != null) {
+        Result.success(body)
+      } else {
+        val msg = parseErrorMessage(resp.errorBody()?.string().orEmpty(), "record_profile_view HTTP ${resp.code()}")
+        Result.failure(Exception(msg))
+      }
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Failed to record profile view.")))
+    }
+  }
+
+  suspend fun deactivateAccountRemote(
+    userId: String,
+    accessToken: String = ""
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(Unit)
+    val authHeader = authHeaderFor(accessToken)
+      ?: return@withContext Result.failure(Exception("Authentication required to deactivate account."))
+    try {
+      val resp = SupabaseNetworkClient.restApi.patchProfile(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        idFilter = "eq.$userId",
+        patch = SupabaseProfilePatchDto(isDeactivated = true)
+      )
+      if (resp.isSuccessful) Result.success(Unit)
+      else Result.failure(Exception(parseErrorMessage(resp.errorBody()?.string().orEmpty(), "Failed to deactivate account (${resp.code()}).")))
+    } catch (e: Exception) {
+      Result.failure(Exception(friendlyNetworkMessage(e, "Failed to deactivate account.")))
     }
   }
 
@@ -1238,10 +1339,19 @@ class SupabaseRepository {
   suspend fun fetchAllProfiles(accessToken: String? = null): List<User> = withContext(Dispatchers.IO) {
     if (!isConfigured) return@withContext emptyList()
     try {
-      val resp = SupabaseNetworkClient.restApi.getProfiles(
+      val authHeader = authHeaderFor(accessToken)
+      var resp = SupabaseNetworkClient.restApi.getProfiles(
         apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = authHeaderFor(accessToken)
+        authHeader = authHeader,
+        select = EXTENDED_PUBLIC_PROFILE_SELECT_COLUMNS
       )
+      if (!resp.isSuccessful && resp.code() == 400) {
+        resp = SupabaseNetworkClient.restApi.getProfiles(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          select = PUBLIC_PROFILE_SELECT_COLUMNS
+        )
+      }
       if (resp.isSuccessful && resp.body() != null) {
         return@withContext resp.body()!!.map { mapProfileDtoToUser(it) }
       } else {
@@ -1258,12 +1368,22 @@ class SupabaseRepository {
     val q = query.trim().removePrefix("@").replace(",", "")
     if (q.isBlank()) return@withContext emptyList()
     try {
+      val authHeader = authHeaderFor(accessToken)
       val orFilter = "(username.ilike.*$q*,display_name.ilike.*$q*)"
-      val resp = SupabaseNetworkClient.restApi.searchProfiles(
+      var resp = SupabaseNetworkClient.restApi.searchProfiles(
         apiKey = SupabaseConfig.supabaseAnonKey,
-        authHeader = authHeaderFor(accessToken),
-        orFilter = orFilter
+        authHeader = authHeader,
+        orFilter = orFilter,
+        select = EXTENDED_PUBLIC_PROFILE_SELECT_COLUMNS
       )
+      if (!resp.isSuccessful && resp.code() == 400) {
+        resp = SupabaseNetworkClient.restApi.searchProfiles(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          orFilter = orFilter,
+          select = PUBLIC_PROFILE_SELECT_COLUMNS
+        )
+      }
       if (resp.isSuccessful && resp.body() != null) {
         return@withContext resp.body()!!.map { mapProfileDtoToUser(it) }
       }

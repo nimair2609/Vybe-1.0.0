@@ -534,15 +534,20 @@ export async function fetchMyAuthenticatedProfile(
   if (!token || !UUID_REGEX.test(userId)) return null;
 
   try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=${encodeURIComponent(PROFILE_SELECT_COLUMNS)}&limit=1`,
-      {
-        headers: {
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${token}`
-        }
-      }
+    const hdrs = {
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${token}`
+    };
+    let res = await fetch(
+      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=${encodeURIComponent(EXTENDED_PROFILE_SELECT_COLUMNS)}&limit=1`,
+      { headers: hdrs }
     );
+    if (res.status === 400) {
+      res = await fetch(
+        `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=${encodeURIComponent(PROFILE_SELECT_COLUMNS)}&limit=1`,
+        { headers: hdrs }
+      );
+    }
     if (!res.ok) return null;
     const rows = await res.json();
     const row = Array.isArray(rows) ? rows[0] : rows;
@@ -581,6 +586,8 @@ const PROFILE_SELECT_COLUMNS = [
   'message_privacy',
   'role'
 ].join(',');
+
+const EXTENDED_PROFILE_SELECT_COLUMNS = `${PROFILE_SELECT_COLUMNS},location,website,interest_tags,pinned_post_ids,profile_views_count`;
 
 const STORY_PROFILE_COLUMNS =
   'id,username,display_name,avatar_url,is_verified,is_verified_public_figure,is_vip,is_worker,is_verified_business,is_private_account';
@@ -714,6 +721,13 @@ export function mapSupabaseProfileToUser(p: any): User {
     joinedDate: p.created_at
       ? new Date(p.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
       : 'Member',
+    location: p.location || undefined,
+    website: p.website || undefined,
+    interestTags: Array.isArray(p.interest_tags) ? p.interest_tags.filter(Boolean) : undefined,
+    pinnedPostIds: Array.isArray(p.pinned_post_ids) ? p.pinned_post_ids.filter(Boolean) : undefined,
+    profileViewsCount: p.profile_views_count !== undefined && p.profile_views_count !== null
+      ? Math.max(0, Number(p.profile_views_count) || 0)
+      : 0,
     isPrivate: Boolean(p.is_private_account),
     messagePrivacy: normalizeMessagePrivacy(p.message_privacy),
     role: p.role || 'USER'
@@ -892,8 +906,12 @@ export async function fetchLiveProfiles(options: { forceRefresh?: boolean; throw
     let lastErr: unknown = null;
     try {
       const hdrs = await getOptionalRestHeaders(false);
-      const url = `${SUPABASE_URL}/rest/v1/profiles?select=${encodeURIComponent(PROFILE_SELECT_COLUMNS)}&is_deactivated=not.is.true&order=created_at.desc&limit=80`;
-      const res = await fetch(url, { headers: hdrs });
+      let url = `${SUPABASE_URL}/rest/v1/profiles?select=${encodeURIComponent(EXTENDED_PROFILE_SELECT_COLUMNS)}&is_deactivated=not.is.true&order=created_at.desc&limit=80`;
+      let res = await fetch(url, { headers: hdrs });
+      if (res.status === 400) {
+        url = `${SUPABASE_URL}/rest/v1/profiles?select=${encodeURIComponent(PROFILE_SELECT_COLUMNS)}&is_deactivated=not.is.true&order=created_at.desc&limit=80`;
+        res = await fetch(url, { headers: hdrs });
+      }
       const duration = Date.now() - startTime;
 
       if (!res.ok) {
@@ -936,16 +954,23 @@ export async function fetchProfileByUsernameOrId(params: {
 
   try {
     const hdrs = await getOptionalRestHeaders(false);
-    let url = '';
-    if (cleanId && UUID_REGEX.test(cleanId)) {
-      url = `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(cleanId)}&select=${encodeURIComponent(PROFILE_SELECT_COLUMNS)}&limit=1`;
-    } else if (cleanUser) {
-      url = `${SUPABASE_URL}/rest/v1/profiles?username=ilike.${encodeURIComponent(cleanUser)}&select=${encodeURIComponent(PROFILE_SELECT_COLUMNS)}&limit=1`;
-    } else {
-      return { status: 'NOT_FOUND' };
-    }
+    const buildUrl = (cols: string) => {
+      if (cleanId && UUID_REGEX.test(cleanId)) {
+        return `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(cleanId)}&select=${encodeURIComponent(cols)}&limit=1`;
+      }
+      if (cleanUser) {
+        return `${SUPABASE_URL}/rest/v1/profiles?username=ilike.${encodeURIComponent(cleanUser)}&select=${encodeURIComponent(cols)}&limit=1`;
+      }
+      return '';
+    };
 
-    const res = await fetch(url, { headers: hdrs });
+    const extendedUrl = buildUrl(EXTENDED_PROFILE_SELECT_COLUMNS);
+    if (!extendedUrl) return { status: 'NOT_FOUND' };
+
+    let res = await fetch(extendedUrl, { headers: hdrs });
+    if (res.status === 400) {
+      res = await fetch(buildUrl(PROFILE_SELECT_COLUMNS), { headers: hdrs });
+    }
     if (!res.ok) {
       return { status: 'ERROR', error: `Unable to load profile (${res.status})` };
     }
@@ -1547,9 +1572,10 @@ export async function updateProfileInSupabase(
   }
 
   try {
-    const endpoint = `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=${encodeURIComponent(PROFILE_SELECT_COLUMNS)}`;
+    const endpointExtended = `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=${encodeURIComponent(EXTENDED_PROFILE_SELECT_COLUMNS)}`;
+    const endpointCore = `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=${encodeURIComponent(PROFILE_SELECT_COLUMNS)}`;
     let res = await authedFetch(
-      endpoint,
+      endpointExtended,
       {
         method: 'PATCH',
         body: JSON.stringify(normalizedPatch)
@@ -1557,7 +1583,7 @@ export async function updateProfileInSupabase(
       { 'Prefer': 'return=representation' }
     );
 
-    if (res.status === 400 && (normalizedPatch.live_pulse || normalizedPatch.current_mood)) {
+    if (res.status === 400) {
       const fallbackPatch: Record<string, any> = { ...normalizedPatch };
       if (fallbackPatch.live_pulse && LEGACY_LIVE_PULSE_FALLBACK[fallbackPatch.live_pulse]) {
         fallbackPatch.live_pulse = LEGACY_LIVE_PULSE_FALLBACK[fallbackPatch.live_pulse];
@@ -1565,8 +1591,12 @@ export async function updateProfileInSupabase(
       if (fallbackPatch.current_mood && !BASE_MOOD_ENUM_VALUES.has(fallbackPatch.current_mood)) {
         fallbackPatch.current_mood = null;
       }
+      delete fallbackPatch.location;
+      delete fallbackPatch.website;
+      delete fallbackPatch.interest_tags;
+      delete fallbackPatch.pinned_post_ids;
       res = await authedFetch(
-        endpoint,
+        endpointCore,
         {
           method: 'PATCH',
           body: JSON.stringify(fallbackPatch)
@@ -1585,6 +1615,30 @@ export async function updateProfileInSupabase(
     return { ok: true, user: row ? mapSupabaseProfileToUser(row) : undefined };
   } catch (err: any) {
     return { ok: false, error: err?.message || 'Network error updating profile.' };
+  }
+}
+
+export async function recordProfileViewRpc(
+  profileOwnerId: string
+): Promise<{ recorded: boolean; profileViewsCount?: number }> {
+  if (!UUID_REGEX.test(profileOwnerId)) return { recorded: false };
+  try {
+    const token = await getValidWebAccessToken();
+    if (!token) return { recorded: false };
+    const res = await authedFetch(`${SUPABASE_URL}/rest/v1/rpc/record_profile_view`, {
+      method: 'POST',
+      body: JSON.stringify({ p_profile_owner_id: profileOwnerId })
+    });
+    if (!res.ok) return { recorded: false };
+    const data = await res.json().catch(() => null);
+    if (!data || typeof data !== 'object') return { recorded: false };
+    return {
+      recorded: Boolean(data.recorded),
+      profileViewsCount:
+        typeof data.profile_views_count === 'number' ? data.profile_views_count : undefined
+    };
+  } catch {
+    return { recorded: false };
   }
 }
 

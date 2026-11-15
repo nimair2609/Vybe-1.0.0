@@ -60,6 +60,9 @@ export const ProfileView: React.FC = () => {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [editDisplayName, setEditDisplayName] = useState('');
   const [editBio, setEditBio] = useState('');
+  const [editLocation, setEditLocation] = useState('');
+  const [editWebsite, setEditWebsite] = useState('');
+  const [editInterests, setEditInterests] = useState('');
   const [editPrivate, setEditPrivate] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -193,6 +196,9 @@ export const ProfileView: React.FC = () => {
   const openEditDrawer = () => {
     setEditDisplayName(targetUser.displayName);
     setEditBio(targetUser.bio);
+    setEditLocation(targetUser.location || '');
+    setEditWebsite(targetUser.website || '');
+    setEditInterests((targetUser.interestTags || []).join(', '));
     setEditPrivate(Boolean(targetUser.isPrivate));
     setEditError(null);
     setShowEditProfile(true);
@@ -202,9 +208,16 @@ export const ProfileView: React.FC = () => {
     e.preventDefault();
     setIsSavingProfile(true);
     setEditError(null);
+    const parsedInterests = editInterests
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
     const res = await updateMyProfile({
       display_name: editDisplayName.trim() || targetUser.username,
       bio: editBio.trim(),
+      location: editLocation.trim(),
+      website: editWebsite.trim(),
+      interest_tags: parsedInterests,
       is_private_account: editPrivate
     });
     setIsSavingProfile(false);
@@ -466,10 +479,34 @@ export const ProfileView: React.FC = () => {
             <Calendar className="w-3.5 h-3.5" />
             <span>Joined {targetUser.joinedDate}</span>
           </span>
+          {targetUser.website && (
+            <a
+              href={targetUser.website.startsWith('http') ? targetUser.website : `https://${targetUser.website}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-[var(--vybe-accent)] hover:underline font-semibold"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>{targetUser.website}</span>
+            </a>
+          )}
         </div>
 
+        {targetUser.interestTags && targetUser.interestTags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {targetUser.interestTags.map(tag => (
+              <span
+                key={tag}
+                className="px-2.5 py-1 rounded-full bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] text-[11px] font-medium text-[var(--vybe-text-secondary)]"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* Stats Row */}
-        <div className="grid grid-cols-3 gap-2 py-3.5 border-y border-[var(--vybe-border)] text-center bg-[var(--vybe-surface)] rounded-2xl border px-2">
+        <div className="grid grid-cols-4 gap-2 py-3.5 border-y border-[var(--vybe-border)] text-center bg-[var(--vybe-surface)] rounded-2xl border px-2">
           <div>
             <span className="block text-base font-bold text-[var(--vybe-text)]">
               {isPrivateLocked ? targetUser.postsCount : userPosts.length || targetUser.postsCount}
@@ -487,6 +524,12 @@ export const ProfileView: React.FC = () => {
               {targetUser.followingCount.toLocaleString()}
             </span>
             <span className="text-[11px] text-[var(--vybe-text-secondary)]">Following</span>
+          </div>
+          <div>
+            <span className="block text-base font-bold text-[var(--vybe-accent)]">
+              {(targetUser.profileViewsCount ?? 0).toLocaleString()}
+            </span>
+            <span className="text-[11px] text-[var(--vybe-text-secondary)]">Views</span>
           </div>
         </div>
 
@@ -675,6 +718,42 @@ export const ProfileView: React.FC = () => {
                 value={editBio}
                 onChange={(e) => setEditBio(e.target.value)}
                 className="w-full p-3 rounded-xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] text-xs text-[var(--vybe-text)] resize-none"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-[var(--vybe-text-secondary)] block mb-1">
+                Location
+              </label>
+              <input
+                type="text"
+                value={editLocation}
+                onChange={(e) => setEditLocation(e.target.value)}
+                placeholder="City, Country"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] text-xs text-[var(--vybe-text)]"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-[var(--vybe-text-secondary)] block mb-1">
+                Website
+              </label>
+              <input
+                type="text"
+                value={editWebsite}
+                onChange={(e) => setEditWebsite(e.target.value)}
+                placeholder="https://..."
+                className="w-full px-3.5 py-2.5 rounded-xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] text-xs text-[var(--vybe-text)]"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-[var(--vybe-text-secondary)] block mb-1">
+                Interests (comma separated)
+              </label>
+              <input
+                type="text"
+                value={editInterests}
+                onChange={(e) => setEditInterests(e.target.value)}
+                placeholder="Tech, Music, Photography"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] text-xs text-[var(--vybe-text)]"
               />
             </div>
             <label className="flex items-center justify-between p-3 rounded-xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] cursor-pointer">

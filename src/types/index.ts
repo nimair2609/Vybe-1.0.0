@@ -105,6 +105,10 @@ export interface User {
   badges: OfficialVybeBadge[];
   joinedDate: string;
   location?: string;
+  website?: string;
+  interestTags?: string[];
+  pinnedPostIds?: string[];
+  profileViewsCount?: number;
   isFollowedByMe?: boolean;
   isFollowRequestedByMe?: boolean;
   followsMe?: boolean;

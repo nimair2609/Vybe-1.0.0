@@ -101,9 +101,9 @@ data class User(
   val isOnboardingCompleted: Boolean = false,
   val isSpiritualMode: Boolean = false,
   val goalType: String = "Creator Journey",
-  val location: String = "India",
+  val location: String = "",
   val website: String = "",
-  val interestTags: List<String> = listOf("Travel", "Tech", "Music", "Fitness", "Lifestyle"),
+  val interestTags: List<String> = emptyList(),
   val profileViewsCount: Long = 0L,
   val pinnedPostIds: List<String> = emptyList()
 ) {

@@ -49,6 +49,11 @@ class SessionManager private constructor(context: Context) {
     private const val KEY_LAST_REGISTRATION_STATUS_CODE = "last_registration_status_code"
     private const val KEY_LAST_REGISTRATION_ERROR = "last_registration_error"
     private const val KEY_EXPERIENCE_MODE = "experience_mode"
+    private const val KEY_LOCATION = "profile_location"
+    private const val KEY_WEBSITE = "profile_website"
+    private const val KEY_INTEREST_TAGS = "profile_interest_tags"
+    private const val KEY_PINNED_POST_IDS = "profile_pinned_post_ids"
+    private const val KEY_PROFILE_VIEWS_COUNT = "profile_views_count"
 
     @Volatile
     private var instance: SessionManager? = null
@@ -185,6 +190,11 @@ class SessionManager private constructor(context: Context) {
       putBoolean(KEY_IS_PHONE_VERIFIED, user.isPhoneVerified)
       putString(KEY_JOINED_DATE, user.joinedDate)
       putString(KEY_CREATED_AT_ISO, user.createdAtIso)
+      putString(KEY_LOCATION, user.location)
+      putString(KEY_WEBSITE, user.website)
+      putString(KEY_INTEREST_TAGS, org.json.JSONArray(user.interestTags).toString())
+      putString(KEY_PINNED_POST_IDS, org.json.JSONArray(user.pinnedPostIds).toString())
+      putLong(KEY_PROFILE_VIEWS_COUNT, user.profileViewsCount)
       apply()
     }
   }
@@ -222,6 +232,11 @@ class SessionManager private constructor(context: Context) {
       putBoolean(KEY_IS_PHONE_VERIFIED, user.isPhoneVerified)
       putString(KEY_JOINED_DATE, user.joinedDate)
       putString(KEY_CREATED_AT_ISO, user.createdAtIso)
+      putString(KEY_LOCATION, user.location)
+      putString(KEY_WEBSITE, user.website)
+      putString(KEY_INTEREST_TAGS, org.json.JSONArray(user.interestTags).toString())
+      putString(KEY_PINNED_POST_IDS, org.json.JSONArray(user.pinnedPostIds).toString())
+      putLong(KEY_PROFILE_VIEWS_COUNT, user.profileViewsCount)
       apply()
     }
   }
@@ -267,6 +282,11 @@ class SessionManager private constructor(context: Context) {
     val isPhoneVerified = prefs.getBoolean(KEY_IS_PHONE_VERIFIED, false)
     val joinedDate = prefs.getString(KEY_JOINED_DATE, "VYBE Member") ?: "VYBE Member"
     val createdAtIso = prefs.getString(KEY_CREATED_AT_ISO, null)?.takeIf { it.isNotBlank() }
+    val location = prefs.getString(KEY_LOCATION, "") ?: ""
+    val website = prefs.getString(KEY_WEBSITE, "") ?: ""
+    val interestTags = parseStringArray(prefs.getString(KEY_INTEREST_TAGS, null))
+    val pinnedPostIds = parseStringArray(prefs.getString(KEY_PINNED_POST_IDS, null))
+    val profileViewsCount = prefs.getLong(KEY_PROFILE_VIEWS_COUNT, 0L).coerceAtLeast(0L)
 
     val role = try {
       UserRole.valueOf(roleStr)
@@ -300,7 +320,24 @@ class SessionManager private constructor(context: Context) {
       postsCount = postsCount,
       joinedDate = joinedDate,
       createdAtIso = createdAtIso,
+      location = location,
+      website = website,
+      interestTags = interestTags,
+      pinnedPostIds = pinnedPostIds,
+      profileViewsCount = profileViewsCount,
       isOnboardingCompleted = true
     )
+  }
+
+  private fun parseStringArray(rawJson: String?): List<String> {
+    if (rawJson.isNullOrBlank()) return emptyList()
+    return try {
+      val arr = org.json.JSONArray(rawJson)
+      (0 until arr.length()).mapNotNull { idx ->
+        arr.optString(idx, "").trim().takeIf { it.isNotBlank() }
+      }
+    } catch (_: Exception) {
+      emptyList()
+    }
   }
 }

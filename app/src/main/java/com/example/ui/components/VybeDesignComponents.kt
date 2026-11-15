@@ -13,6 +13,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
@@ -33,6 +35,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -430,6 +433,7 @@ fun VybeSearchBar(
   onQueryChange: (String) -> Unit,
   placeholder: String,
   onClear: () -> Unit = { onQueryChange("") },
+  onSearch: ((String) -> Unit)? = null,
   modifier: Modifier = Modifier,
   testTag: String = "vybe_search_bar"
 ) {
@@ -467,6 +471,8 @@ fun VybeSearchBar(
           value = query,
           onValueChange = onQueryChange,
           singleLine = true,
+          keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+          keyboardActions = KeyboardActions(onSearch = { onSearch?.invoke(query) }),
           textStyle = TextStyle(
             color = palette.textPrimary,
             fontSize = 14.sp,

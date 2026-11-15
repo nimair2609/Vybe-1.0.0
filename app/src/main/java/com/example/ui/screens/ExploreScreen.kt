@@ -56,6 +56,7 @@ fun ExploreScreen(
   val searchHistory by viewModel.searchHistory.collectAsState()
   val posts by viewModel.posts.collectAsState()
   val allUsers by viewModel.allUsers.collectAsState()
+  val isSyncingFeed by viewModel.isSyncingFeed.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
   val followingUserIds by viewModel.followingUserIds.collectAsState()
   val requestedFollowUserIds by viewModel.requestedFollowUserIds.collectAsState()
@@ -133,8 +134,17 @@ fun ExploreScreen(
   val recommendedPosts = remember(posts, selectedPill) {
     val activePosts = posts.filter { !it.isArchived }
     when (selectedPill) {
-      "Trending" -> activePosts.sortedByDescending { it.likesCount + it.commentsCount }
-      else -> activePosts.shuffled().take(12)
+      "Trending" -> activePosts.sortedWith(
+        compareByDescending<com.example.data.model.Post> { it.likesCount + it.commentsCount }
+          .thenByDescending { com.example.util.TimestampUtils.parseIsoMillis(it.createdAtIso) ?: 0L }
+          .thenBy { it.id }
+      )
+      else -> activePosts.sortedWith(
+        compareByDescending<com.example.data.model.Post> {
+          (com.example.util.TimestampUtils.parseIsoMillis(it.createdAtIso) ?: 0L) / 3_600_000L +
+            it.likesCount * 2L + it.commentsCount * 3L
+        }.thenBy { it.id }
+      ).take(12)
     }
   }
 
@@ -331,9 +341,9 @@ fun ExploreScreen(
           // Smart Search Bar
           VybeSearchBar(
             query = searchQuery,
-            onQueryChange = {
-              viewModel.setSearchQuery(it)
-              if (it.isNotBlank()) viewModel.addSearchQueryToHistory(it)
+            onQueryChange = { viewModel.setSearchQuery(it) },
+            onSearch = { submitted ->
+              if (submitted.trim().length >= 2) viewModel.addSearchQueryToHistory(submitted)
             },
             placeholder = "Search users, hashtags, or posts...",
             testTag = "explore_smart_search_input"
@@ -349,6 +359,57 @@ fun ExploreScreen(
       contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+
+      if (searchHistory.isNotEmpty()) {
+        item(key = "search_history_bar") {
+          Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Text("Recent Searches", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = palette.textSecondary)
+              Text(
+                text = "Clear All",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = palette.accent,
+                modifier = Modifier.clickable { viewModel.clearSearchHistory() }
+              )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+              items(searchHistory) { historyItem ->
+                Surface(
+                  color = palette.elevated,
+                  shape = RoundedCornerShape(VybeTokens.Radius.sm),
+                  border = BorderStroke(1.dp, palette.border),
+                  modifier = Modifier.clickable {
+                    viewModel.setSearchQuery(historyItem)
+                    viewModel.addSearchQueryToHistory(historyItem)
+                  }
+                ) {
+                  Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Text(text = historyItem, fontSize = 11.sp, color = palette.textPrimary)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Icon(
+                      imageVector = Icons.Default.Close,
+                      contentDescription = "Remove",
+                      tint = palette.textMuted,
+                      modifier = Modifier
+                        .size(12.dp)
+                        .clickable { viewModel.removeSearchQueryFromHistory(historyItem) }
+                    )
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
 
       if (isSearching) {
         item(key = "search_category_tabs") {
@@ -378,54 +439,6 @@ fun ExploreScreen(
           }
         }
 
-        if (searchHistory.isNotEmpty()) {
-          item(key = "search_history_bar") {
-            Column(modifier = Modifier.fillMaxWidth()) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Text("Recent Searches", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = palette.textSecondary)
-                Text(
-                  text = "Clear All",
-                  fontSize = 11.sp,
-                  fontWeight = FontWeight.SemiBold,
-                  color = palette.accent,
-                  modifier = Modifier.clickable { viewModel.clearSearchHistory() }
-                )
-              }
-              Spacer(modifier = Modifier.height(6.dp))
-              LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(searchHistory) { historyItem ->
-                  Surface(
-                    color = palette.elevated,
-                    shape = RoundedCornerShape(VybeTokens.Radius.sm),
-                    border = BorderStroke(1.dp, palette.border),
-                    modifier = Modifier.clickable { viewModel.setSearchQuery(historyItem) }
-                  ) {
-                    Row(
-                      modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                      verticalAlignment = Alignment.CenterVertically
-                    ) {
-                      Text(text = historyItem, fontSize = 11.sp, color = palette.textPrimary)
-                      Spacer(modifier = Modifier.width(6.dp))
-                      Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Remove",
-                        tint = palette.textMuted,
-                        modifier = Modifier
-                          .size(12.dp)
-                          .clickable { viewModel.removeSearchQueryFromHistory(historyItem) }
-                      )
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-
         if (selectedSearchTab == "All" || selectedSearchTab == "People") {
           if (matchedUsers.isNotEmpty()) {
             item(key = "matched_users_header") {
@@ -435,7 +448,10 @@ fun ExploreScreen(
               val isFollowing = followingUserIds.contains(user.id)
               val isRequested = requestedFollowUserIds.contains(user.id)
               VybeSurfaceCard(
-                onClick = { viewModel.openUserProfile(user) },
+                onClick = {
+                  viewModel.addSearchQueryToHistory("@${user.username}")
+                  viewModel.openUserProfile(user)
+                },
                 contentPadding = PaddingValues(12.dp),
                 modifier = Modifier.fillMaxWidth()
               ) {
@@ -489,7 +505,10 @@ fun ExploreScreen(
             }
             items(matchedHashtags, key = { "tag_${it.first}" }) { (tag, count, _) ->
               VybeSurfaceCard(
-                onClick = { viewModel.setSearchQuery("#$tag") },
+                onClick = {
+                  viewModel.addSearchQueryToHistory("#$tag")
+                  viewModel.setSearchQuery("#$tag")
+                },
                 contentPadding = PaddingValues(12.dp),
                 modifier = Modifier.fillMaxWidth()
               ) {
@@ -530,6 +549,9 @@ fun ExploreScreen(
             items(postList, key = { "search_p_${it.id}" }) { post ->
               VybeSurfaceCard(
                 onClick = {
+                  if (searchQuery.trim().length >= 2) {
+                    viewModel.addSearchQueryToHistory(searchQuery.trim())
+                  }
                   if (post.mediaType == MediaType.REEL || post.isVybesReel) {
                     viewModel.openReelViewer(post.id)
                   } else {
@@ -709,71 +731,90 @@ fun ExploreScreen(
                 }
                 Spacer(modifier = Modifier.height(10.dp))
 
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                  items(featuredCreators.take(8), key = { "feat_c_${it.id}" }) { creator ->
-                    val isFollowing = followingUserIds.contains(creator.id)
-                    val isRequested = requestedFollowUserIds.contains(creator.id)
-                    Surface(
-                      color = palette.elevated,
-                      shape = RoundedCornerShape(VybeTokens.Radius.lg),
-                      border = BorderStroke(1.dp, palette.border),
-                      modifier = Modifier
-                        .width(134.dp)
-                        .height(192.dp)
-                        .clip(RoundedCornerShape(VybeTokens.Radius.lg))
-                        .clickable { viewModel.openUserProfile(creator) }
-                    ) {
-                      Box(modifier = Modifier.fillMaxSize()) {
-                        if (creator.avatarUrl.isNotBlank()) {
-                          AsyncImage(
-                            model = creator.avatarUrl,
-                            contentDescription = creator.username,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                          )
-                        } else {
+                if (featuredCreators.isNotEmpty()) {
+                  LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(featuredCreators.take(8), key = { "feat_c_${it.id}" }) { creator ->
+                      val isFollowing = followingUserIds.contains(creator.id)
+                      val isRequested = requestedFollowUserIds.contains(creator.id)
+                      Surface(
+                        color = palette.elevated,
+                        shape = RoundedCornerShape(VybeTokens.Radius.lg),
+                        border = BorderStroke(1.dp, palette.border),
+                        modifier = Modifier
+                          .width(134.dp)
+                          .height(192.dp)
+                          .clip(RoundedCornerShape(VybeTokens.Radius.lg))
+                          .clickable { viewModel.openUserProfile(creator) }
+                      ) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                          if (creator.avatarUrl.isNotBlank()) {
+                            AsyncImage(
+                              model = creator.avatarUrl,
+                              contentDescription = creator.username,
+                              contentScale = ContentScale.Crop,
+                              modifier = Modifier.fillMaxSize()
+                            )
+                          } else {
+                            Box(
+                              modifier = Modifier
+                                .fillMaxSize()
+                                .background(Brush.linearGradient(listOf(VybeSocialViolet, VybeGrowBlue)))
+                            )
+                          }
                           Box(
                             modifier = Modifier
                               .fillMaxSize()
-                              .background(Brush.linearGradient(listOf(VybeSocialViolet, VybeGrowBlue)))
+                              .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.88f))))
                           )
-                        }
-                        Box(
-                          modifier = Modifier
-                            .fillMaxSize()
-                            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.88f))))
-                        )
-                        Column(
-                          modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(8.dp),
-                          horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text("@${creator.username}", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (creator.isVerified) VerificationBadge(user = creator, iconSize = 12.dp)
-                          }
-                          Text("${creator.followersCount} Followers", color = Color.White.copy(alpha = 0.78f), fontSize = 9.sp)
-                          Spacer(modifier = Modifier.height(8.dp))
-                          Button(
-                            onClick = { viewModel.toggleFollowUser(creator.id) },
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isFollowing) Color.White.copy(alpha = 0.2f) else palette.accent),
-                            shape = RoundedCornerShape(VybeTokens.Radius.pill),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                          Column(
                             modifier = Modifier
-                              .fillMaxWidth()
-                              .height(32.dp)
+                              .align(Alignment.BottomCenter)
+                              .padding(8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                           ) {
-                            Text(
-                              text = if (isFollowing) "LINKED" else if (isRequested) "Requested" else "Follow",
-                              fontSize = 10.sp,
-                              fontWeight = FontWeight.Bold,
-                              color = Color.White
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                              Text("@${creator.username}", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                              if (creator.isVerified) VerificationBadge(user = creator, iconSize = 12.dp)
+                            }
+                            Text("${creator.followersCount} Followers", color = Color.White.copy(alpha = 0.78f), fontSize = 9.sp)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                              onClick = { viewModel.toggleFollowUser(creator.id) },
+                              colors = ButtonDefaults.buttonColors(containerColor = if (isFollowing) Color.White.copy(alpha = 0.2f) else palette.accent),
+                              shape = RoundedCornerShape(VybeTokens.Radius.pill),
+                              contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                              modifier = Modifier
+                                .fillMaxWidth()
+                                .height(32.dp)
+                            ) {
+                              Text(
+                                text = if (isFollowing) "LINKED" else if (isRequested) "Requested" else "Follow",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                              )
+                            }
                           }
                         }
                       }
                     }
+                  }
+                } else if (isSyncingFeed) {
+                  Box(
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .padding(vertical = 18.dp),
+                    contentAlignment = Alignment.Center
+                  ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = palette.accent, strokeWidth = 2.dp)
+                  }
+                } else {
+                  VybeSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                      text = "No creators discovered yet. Pull down or tap Refresh to sync.",
+                      fontSize = 12.sp,
+                      color = palette.textSecondary
+                    )
                   }
                 }
               }
@@ -813,7 +854,29 @@ fun ExploreScreen(
               }
             }
 
-            items(recommendedPosts.chunked(2), key = { chunk -> "rec_row_${chunk.first().id}" }) { pair ->
+            if (recommendedPosts.isEmpty()) {
+              item(key = "recommended_empty_or_loading") {
+                if (isSyncingFeed) {
+                  Box(
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .padding(vertical = 24.dp),
+                    contentAlignment = Alignment.Center
+                  ) {
+                    CircularProgressIndicator(modifier = Modifier.size(28.dp), color = palette.accent, strokeWidth = 2.5.dp)
+                  }
+                } else {
+                  VybeEmptyState(
+                    icon = Icons.Outlined.Explore,
+                    title = "No posts to explore yet",
+                    subtitle = "Tap Refresh to fetch recent public moments from VYBE.",
+                    actionLabel = "Refresh",
+                    onAction = { viewModel.refreshAllData() }
+                  )
+                }
+              }
+            } else {
+              items(recommendedPosts.chunked(2), key = { chunk -> "rec_row_${chunk.first().id}" }) { pair ->
               Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -888,6 +951,7 @@ fun ExploreScreen(
                   Spacer(modifier = Modifier.weight(1f))
                 }
               }
+            }
             }
 
             item(key = "landing_spiritual_gateway") {

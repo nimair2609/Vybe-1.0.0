@@ -436,6 +436,15 @@ class VybeViewModel : ViewModel() {
     }
 
     viewModelScope.launch {
+      repository.uiBannerMessage.collect { msg ->
+        if (!msg.isNullOrBlank()) {
+          _uiBannerMessage.value = msg
+          repository.consumeUiBannerMessage()
+        }
+      }
+    }
+
+    viewModelScope.launch {
       repository.posts.collect { allPosts ->
         val currentShared = _openedSharedPost.value
         if (currentShared != null) {
@@ -1484,9 +1493,12 @@ class VybeViewModel : ViewModel() {
   }
 
   fun deactivateAccount() {
-    repository.deactivateAccount()
-    screenBackStack.clear()
-    _currentScreen.value = Screen.AUTH
+    repository.deactivateAccount { ok, _ ->
+      if (ok) {
+        screenBackStack.clear()
+        _currentScreen.value = Screen.AUTH
+      }
+    }
   }
 
   // --- Remaining Preserved Delegations ---

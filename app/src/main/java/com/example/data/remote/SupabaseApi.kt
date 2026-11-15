@@ -80,6 +80,9 @@ interface SupabaseAuthApi {
 const val PUBLIC_PROFILE_SELECT_COLUMNS =
   "id,username,display_name,first_name,last_name,bio,avatar_url,cover_url,is_email_verified,is_phone_verified,role,is_verified,is_vip,is_verified_public_figure,is_verified_business,is_worker,worker_badge_mandatory,vip_expires_at,badge_approval_status,badge_display_status,badge_type,is_deactivated,is_private_account,message_privacy,followers_count,following_count,posts_count,live_pulse,last_seen_at,created_at"
 
+const val EXTENDED_PUBLIC_PROFILE_SELECT_COLUMNS =
+  "$PUBLIC_PROFILE_SELECT_COLUMNS,location,website,interest_tags,pinned_post_ids,profile_views_count"
+
 interface SupabaseRestApi {
   // --- PROFILES & SECURE IDENTIFIER RESOLUTION ---
   @POST("rpc/resolve_login_identifier")
@@ -101,6 +104,13 @@ interface SupabaseRestApi {
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String
   ): Response<List<SupabaseProfileDto>>
+
+  @POST("rpc/record_profile_view")
+  suspend fun recordProfileViewRpc(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String,
+    @Body request: SupabaseRpcRecordProfileViewRequest
+  ): Response<SupabaseRpcRecordProfileViewResponse>
 
   @GET("profiles")
   suspend fun getProfileById(

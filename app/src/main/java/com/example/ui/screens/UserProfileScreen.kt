@@ -127,7 +127,7 @@ fun UserProfileScreen(
 
   var editDisplayName by remember(user) { mutableStateOf(user.displayName) }
   var editBio by remember(user) { mutableStateOf(user.bio) }
-  var editLocation by remember(user) { mutableStateOf(user.location.ifBlank { "India" }) }
+  var editLocation by remember(user) { mutableStateOf(user.location) }
   var editWebsite by remember(user) { mutableStateOf(user.website) }
   var editInterestsText by remember(user) { mutableStateOf(user.interestTags.joinToString(", ")) }
   var editIsPrivate by remember(user) { mutableStateOf(user.isPrivate) }
@@ -206,10 +206,7 @@ fun UserProfileScreen(
               p.tags.any { it.contains(user.username, ignoreCase = true) }
             )
         }
-        "Highlights" -> {
-          val pinned = nonArchivedUserPosts.filter { user.pinnedPostIds.contains(it.id) }
-          pinned.ifEmpty { nonArchivedUserPosts.sortedByDescending { it.likesCount }.take(6) }
-        }
+        "Highlights" -> nonArchivedUserPosts.filter { user.pinnedPostIds.contains(it.id) }
         else -> nonArchivedUserPosts
       }
     }
@@ -229,7 +226,7 @@ fun UserProfileScreen(
       !user.createdAtIso.isNullOrBlank() && fromIso != "Joined recently" -> fromIso
       user.joinedDate.isNotBlank() && user.joinedDate != "VYBE Member" ->
         if (user.joinedDate.startsWith("Joined", ignoreCase = true)) user.joinedDate else "Joined ${user.joinedDate}"
-      else -> "Joined Aug 2025"
+      else -> "VYBE Member"
     }
   }
 
@@ -674,19 +671,21 @@ fun UserProfileScreen(
               .offset(y = (-16).dp)
               .horizontalScroll(rememberScrollState())
           ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              Icon(
-                imageVector = Icons.Default.LocationOn,
-                contentDescription = "Location",
-                tint = palette.textSecondary,
-                modifier = Modifier.size(14.dp)
-              )
-              Spacer(modifier = Modifier.width(4.dp))
-              Text(
-                text = user.location.ifBlank { "India" },
-                fontSize = 12.sp,
-                color = palette.textSecondary
-              )
+            if (user.location.isNotBlank()) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                  imageVector = Icons.Default.LocationOn,
+                  contentDescription = "Location",
+                  tint = palette.textSecondary,
+                  modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                  text = user.location,
+                  fontSize = 12.sp,
+                  color = palette.textSecondary
+                )
+              }
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -744,30 +743,46 @@ fun UserProfileScreen(
 
           Spacer(modifier = Modifier.height(4.dp))
 
-          // Interest Tags
-          val interestsList = user.interestTags.ifEmpty {
-            listOf("Travel", "Tech", "Music", "Fitness", "Lifestyle")
-          }
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-          ) {
-            interestsList.forEach { tag ->
-              Surface(
-                color = palette.elevated,
-                shape = RoundedCornerShape(VybeTokens.Radius.pill),
-                border = BorderStroke(1.dp, palette.border)
-              ) {
-                Text(
-                  text = tag,
-                  fontSize = 11.sp,
-                  fontWeight = FontWeight.Medium,
-                  color = palette.textSecondary,
-                  modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-                )
+          // Interest Tags (only shown when user has saved interests, or owner prompt to add them)
+          if (user.interestTags.isNotEmpty()) {
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+              horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+              user.interestTags.forEach { tag ->
+                Surface(
+                  color = palette.elevated,
+                  shape = RoundedCornerShape(VybeTokens.Radius.pill),
+                  border = BorderStroke(1.dp, palette.border)
+                ) {
+                  Text(
+                    text = tag,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = palette.textSecondary,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                  )
+                }
               }
+            }
+          } else if (effectiveIsMe) {
+            Surface(
+              color = palette.elevated,
+              shape = RoundedCornerShape(VybeTokens.Radius.pill),
+              border = BorderStroke(1.dp, palette.border),
+              modifier = Modifier
+                .clip(RoundedCornerShape(VybeTokens.Radius.pill))
+                .clickable { showEditProfileModal = true }
+            ) {
+              Text(
+                text = "+ Add Interests",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = palette.accent,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+              )
             }
           }
 
@@ -976,6 +991,43 @@ fun UserProfileScreen(
                     }
                   }
 
+                  val isPinned = user.pinnedPostIds.contains(post.id)
+                  if (effectiveIsMe && post.author.id == user.id) {
+                    Box(
+                      modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(4.dp)
+                        .clip(CircleShape)
+                        .background(if (isPinned) palette.accent.copy(alpha = 0.9f) else Color.Black.copy(alpha = 0.45f))
+                        .clickable { viewModel.togglePinPost(post.id) }
+                        .padding(4.dp)
+                        .testTag("pin_post_${post.id}")
+                    ) {
+                      Icon(
+                        imageVector = Icons.Default.PushPin,
+                        contentDescription = if (isPinned) "Unpin highlight" else "Pin to Highlights",
+                        tint = Color.White,
+                        modifier = Modifier.size(12.dp)
+                      )
+                    }
+                  } else if (isPinned) {
+                    Box(
+                      modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(4.dp)
+                        .clip(CircleShape)
+                        .background(palette.accent.copy(alpha = 0.85f))
+                        .padding(4.dp)
+                    ) {
+                      Icon(
+                        imageVector = Icons.Default.PushPin,
+                        contentDescription = "Pinned Highlight",
+                        tint = Color.White,
+                        modifier = Modifier.size(11.dp)
+                      )
+                    }
+                  }
+
                   Row(
                     modifier = Modifier
                       .align(Alignment.BottomStart)
@@ -1104,7 +1156,7 @@ fun UserProfileScreen(
         OutlinedTextField(
           value = editLocation,
           onValueChange = { editLocation = it },
-          label = { Text("Location (e.g. India, Mumbai)") },
+          label = { Text("Location (e.g. Mumbai, India)") },
           singleLine = true,
           shape = RoundedCornerShape(VybeTokens.Radius.md),
           modifier = Modifier.fillMaxWidth()

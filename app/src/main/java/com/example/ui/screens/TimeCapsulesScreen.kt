@@ -388,7 +388,7 @@ fun TimeCapsulesScreen(viewModel: VybeViewModel) {
   // Create Capsule Full-Screen Dialog
   if (showCreateDialog) {
     val context = LocalContext.current
-    val generatedInviteLink = "https://vybe.app/capsule/join?code=CAPSULE-${System.currentTimeMillis() % 100000}"
+    val generatedInviteLink = "https://vybeonline.netlify.app/capsule/join?code=CAPSULE-${System.currentTimeMillis() % 100000}"
 
     Dialog(
       onDismissRequest = { showCreateDialog = false },
