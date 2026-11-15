@@ -44,7 +44,7 @@ fun MainScreen(viewModel: VybeViewModel) {
   val unreadNotificationsCount = remember(notifications) {
     notifications.count { !it.isRead }
   }
-  val showWorkspaceTopBar = experienceMode == VybeExperienceMode.GROW || selectedTab != MainTab.VYBES
+  val showWorkspaceTopBar = true
 
   // Handle back press cleanly across both Social and Grow modes
   androidx.activity.compose.BackHandler(
@@ -134,7 +134,6 @@ fun MainScreen(viewModel: VybeViewModel) {
           MainTab.FEED -> HomeScreen(viewModel, showTopHeader = false)
           MainTab.EXPLORE -> ExploreScreen(viewModel, showTopBrandRow = false)
           MainTab.CREATE -> CreatePostScreen(viewModel)
-          MainTab.VYBES -> ReelsViewerScreen(viewModel)
           MainTab.PROFILE -> UserProfileScreen(viewModel, forceOwnProfile = true, showTopOverlay = false)
           MainTab.INBOX -> InboxScreen(viewModel, embeddedInMainScreen = true)
           MainTab.MOOD_ZONES -> MoodZonesScreen(viewModel)
@@ -204,7 +203,7 @@ private fun SocialBottomBar(
       ) {
         Icon(
           imageVector = Icons.Filled.Add,
-          contentDescription = "Create Post, Reel or Story",
+          contentDescription = "Create Post or Story",
           tint = Color.White,
           modifier = Modifier.size(26.dp)
         )

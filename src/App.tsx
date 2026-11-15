@@ -9,7 +9,6 @@ import { VybeAvatar } from './components/OptimizedImage';
 
 // Views
 import { FeedView } from './views/FeedView';
-import { ReelsView } from './views/ReelsView';
 import { MoodZonesView } from './views/MoodZonesView';
 import { CrossedPathsView } from './views/CrossedPathsView';
 import { InboxView } from './views/InboxView';
@@ -74,7 +73,7 @@ export const App: React.FC = () => {
               Download VYBE for Android
             </h1>
             <p className="text-xs text-[var(--vybe-text-secondary)] leading-relaxed">
-              Get the latest signed VYBE Android APK ({updateInfo?.tagName || 'Latest Release'}) with native notifications, reels, and instant QR scanning.
+              Get the latest signed VYBE Android APK ({updateInfo?.tagName || 'Latest Release'}) with native notifications, stories, and instant QR scanning.
             </p>
             <div className="flex flex-col gap-2.5 pt-2">
               <a
@@ -105,8 +104,6 @@ export const App: React.FC = () => {
     switch (selectedTab) {
       case 'FEED':
         return <FeedView />;
-      case 'VYBES':
-        return <ReelsView />;
       case 'MOOD_ZONES':
         return <MoodZonesView />;
       case 'EXPLORE':

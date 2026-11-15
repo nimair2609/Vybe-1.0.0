@@ -277,17 +277,7 @@ fun NotificationCenterScreen(viewModel: VybeViewModel) {
                     viewModel.navigateTo(Screen.MAIN)
                   }
                   !item.targetEntityId.isNullOrBlank() -> {
-                    val targetId = item.targetEntityId
-                    val matchingPost = viewModel.posts.value.firstOrNull { it.id == targetId }
-                    val openAsReel = item.isReel ||
-                      item.destinationScreen == "REELS_VIEWER" ||
-                      matchingPost?.isVybesReel == true ||
-                      matchingPost?.mediaType == com.example.data.model.MediaType.REEL
-                    if (openAsReel) {
-                      viewModel.openReelViewer(targetId)
-                    } else {
-                      viewModel.openPostFromNotification(targetId)
-                    }
+                    viewModel.openPostFromNotification(item.targetEntityId)
                   }
                   item.actorUser != null -> {
                     viewModel.openUserProfile(item.actorUser)

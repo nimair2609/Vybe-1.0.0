@@ -13,10 +13,10 @@ import { filterExploreCommunities } from '../utils/profileValidation';
 import { Post, User } from '../types';
 
 type DiscoveryFilter = 'For You' | 'Trending' | 'People' | 'Nearby' | 'Circles' | 'Interests';
-type SearchTab = 'All' | 'Posts' | 'People' | 'Reels' | 'Circles' | 'Tags';
+type SearchTab = 'All' | 'Posts' | 'People' | 'Circles' | 'Tags';
 
 const DISCOVERY_FILTERS: DiscoveryFilter[] = ['For You', 'Trending', 'People', 'Nearby', 'Circles', 'Interests'];
-const SEARCH_TABS: SearchTab[] = ['All', 'Posts', 'People', 'Reels', 'Circles', 'Tags'];
+const SEARCH_TABS: SearchTab[] = ['All', 'Posts', 'People', 'Circles', 'Tags'];
 const INDIAN_CITIES = ['All India', 'Mumbai', 'Bengaluru', 'Delhi NCR', 'Goa', 'Hyderabad', 'Kolkata', 'Pune'];
 const INTEREST_CATEGORIES = ['Travel', 'Tech', 'Music', 'Fitness', 'Lifestyle', 'Design', 'Food'];
 
@@ -144,7 +144,7 @@ export const ExploreView: React.FC = () => {
       subtitle: 'Dual Perspective',
       icon: Layers,
       accent: 'from-[#10B981] to-[#06B6D4]',
-      action: () => setSelectedTab('VYBES')
+      action: () => setUnfilteredOnly(prev => !prev)
     },
     {
       id: 'CROSSED_PATHS',
@@ -223,12 +223,6 @@ export const ExploreView: React.FC = () => {
     }
     return Array.from(merged.values());
   }, [cleanQuery, remotePosts, posts, blockedIds, unfilteredOnly]);
-
-  const matchedReels = useMemo(() => {
-    return matchedPosts.filter(
-      p => Boolean(p.isVybesReel) || p.mediaType === 'REEL' || p.mediaType === 'VIDEO'
-    );
-  }, [matchedPosts]);
 
   const matchedTags = useMemo(() => {
     if (!cleanQuery) return [];
@@ -662,14 +656,14 @@ export const ExploreView: React.FC = () => {
             </div>
           )}
 
-          {(selectedSearchTab === 'All' || selectedSearchTab === 'Posts' || selectedSearchTab === 'Reels') && (
+          {(selectedSearchTab === 'All' || selectedSearchTab === 'Posts') && (
             (() => {
-              const targetList = selectedSearchTab === 'Reels' ? matchedReels : matchedPosts;
+              const targetList = matchedPosts;
               if (targetList.length === 0) return null;
               return (
                 <div className="space-y-3">
                   <h3 className="text-xs font-bold text-[var(--vybe-text-secondary)] uppercase tracking-wider">
-                    {selectedSearchTab === 'Reels' ? 'Reels' : 'Moments'}
+                    Moments
                   </h3>
                   {renderPostGrid(targetList)}
                 </div>
@@ -686,7 +680,6 @@ export const ExploreView: React.FC = () => {
               matchedCircles.length === 0) ||
               (selectedSearchTab === 'People' && matchedUsers.length === 0) ||
               (selectedSearchTab === 'Posts' && matchedPosts.length === 0) ||
-              (selectedSearchTab === 'Reels' && matchedReels.length === 0) ||
               (selectedSearchTab === 'Circles' && matchedCircles.length === 0) ||
               (selectedSearchTab === 'Tags' && matchedTags.length === 0)) && (
               <VybeEmptyState

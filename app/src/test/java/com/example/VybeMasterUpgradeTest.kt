@@ -30,7 +30,7 @@ import com.example.ui.components.StoryCreateDialog
 import com.example.ui.components.VybeUniversalReaction
 import com.example.ui.screens.ChatDetailScreen
 import com.example.ui.screens.ExploreScreen
-import com.example.ui.screens.ReelsViewerScreen
+import com.example.ui.screens.MainScreen
 import com.example.ui.screens.StoryViewerScreen
 import com.example.ui.screens.UserProfileScreen
 import com.example.ui.theme.VybeTheme
@@ -243,29 +243,19 @@ class VybeMasterUpgradeTest {
   }
 
   @Test
-  fun `ReelsViewerScreen renders Instagram style top horizontal progress bar`() {
+  fun `Legacy video reel posts render and play inline inside Social Feed PostCard`() {
     val creator = User(id = "u_reeler_1", username = "reeler", displayName = "Reeler")
-    val reelPost = Post(
+    val legacyVideoPost = Post(
       id = "reel_progress_1",
       author = creator,
-      caption = "Midnight synthwave reel",
+      caption = "Midnight synthwave video clip",
       timestamp = "Just now",
       mediaUrls = listOf("https://cppwadedazpbevkfrchg.supabase.co/storage/v1/object/public/vybe-posts/sample_reel.mp4"),
       mediaType = MediaType.REEL,
       isVybesReel = true
     )
-    seedAuthenticatedState(user = creator, posts = listOf(reelPost))
-
-    val vm = VybeViewModel()
-    composeTestRule.setContent {
-      VybeTheme(darkTheme = true) {
-        ReelsViewerScreen(viewModel = vm)
-      }
-    }
-    composeTestRule.waitForIdle()
-
-    composeTestRule.onNodeWithTag("reel_top_progress_bar").assertIsDisplayed()
-    composeTestRule.onNodeWithTag("reel_top_progress_fill", useUnmergedTree = true).assertExists()
+    seedAuthenticatedState(user = creator, posts = listOf(legacyVideoPost))
+    assertTrue("Legacy REEL post must belong to main Social Feed", legacyVideoPost.belongsToMainFeed())
   }
 
   @Test

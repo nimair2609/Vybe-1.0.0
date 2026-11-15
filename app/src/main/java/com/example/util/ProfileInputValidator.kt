@@ -191,9 +191,6 @@ object ProfileInputValidator {
   ): List<Post> {
     val activeUserPosts = userPosts.filter { !it.isArchived }
     return when (tab) {
-      "Vybe Reels" -> activeUserPosts.filter {
-        it.isVybesReel || it.mediaType == MediaType.REEL || it.mediaType == MediaType.VIDEO
-      }
       "Unfiltered" -> activeUserPosts.filter { it.isUnfiltered }
       "Tagged" -> {
         val cleanHandle = username.trim().removePrefix("@")
@@ -222,12 +219,7 @@ object ProfileInputValidator {
         }
       }
       "Saved" -> savedPosts.filter { !it.isArchived }
-      else -> activeUserPosts.filter {
-        !it.isVybesReel &&
-          it.mediaType != MediaType.REEL &&
-          it.mediaType != MediaType.VIDEO &&
-          !it.isUnfiltered
-      }
+      else -> activeUserPosts.filter { !it.isUnfiltered }
     }
   }
 

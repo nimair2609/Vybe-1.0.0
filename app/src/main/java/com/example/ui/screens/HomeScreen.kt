@@ -87,10 +87,6 @@ fun HomeScreen(
     notifications.count { !it.isRead }
   }
 
-  val videoReels = remember(posts) {
-    posts.filter { it.mediaType == MediaType.REEL || it.mediaType == MediaType.VIDEO || it.isVybesReel }
-  }
-
   val modePosts = remember(posts, feedMode, followingUserIds, hiddenPostIds, mutedCreatorIds) {
     val nonHidden = posts.filter { !it.isArchived && !hiddenPostIds.contains(it.id) && !mutedCreatorIds.contains(it.author.id) }
     when (feedMode) {
@@ -254,15 +250,6 @@ fun HomeScreen(
             }
           }
 
-          // Stories Row
-          StoryCarousel(
-            stories = stories,
-            currentUser = currentUser,
-            onAddStoryClick = { showStoryCreateSheet = true },
-            onStoryClick = { story -> viewModel.openStory(story) },
-            modifier = Modifier.padding(bottom = 4.dp)
-          )
-
           // VYBE Home Feed 2.0 Mode Switcher (FOR_YOU, FOLLOWING, TRENDING)
           val feedModes = listOf(
             "FOR_YOU" to "For You",
@@ -310,6 +297,16 @@ fun HomeScreen(
       contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+
+      // --- SCROLLABLE STORY CAROUSEL ---
+      item(key = "home_story_carousel") {
+        StoryCarousel(
+          stories = stories,
+          currentUser = currentUser,
+          onAddStoryClick = { showStoryCreateSheet = true },
+          onStoryClick = { story -> viewModel.openStory(story) }
+        )
+      }
 
       // --- SOCIAL DISCOVERY GATEWAYS ---
       item(key = "home_quick_gateways") {
@@ -462,126 +459,6 @@ fun HomeScreen(
                   fontSize = 11.sp,
                   color = palette.textSecondary
                 )
-              }
-            }
-          }
-        }
-      }
-
-      // --- VYBE REELS PREVIEW RAIL ---
-      if (videoReels.isNotEmpty()) {
-        item(key = "home_reels_preview") {
-          Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(
-                  imageVector = Icons.Default.PlayCircleOutline,
-                  contentDescription = null,
-                  tint = palette.accent,
-                  modifier = Modifier.size(18.dp)
-                )
-                Text(
-                  text = "Trending Vybe Reels",
-                  fontFamily = PlusJakartaSansFontFamily,
-                  fontSize = 15.sp,
-                  fontWeight = FontWeight.Bold,
-                  color = palette.textPrimary
-                )
-              }
-              Text(
-                text = "Watch All",
-                fontFamily = PlusJakartaSansFontFamily,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = palette.accent,
-                modifier = Modifier.clickable { viewModel.selectTab(MainTab.VYBES) }
-              )
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            LazyRow(
-              horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-              items(videoReels.take(8), key = { "reel_rail_${it.id}" }) { reel ->
-                Surface(
-                  color = palette.elevated,
-                  shape = RoundedCornerShape(VybeTokens.Radius.md),
-                  border = BorderStroke(1.dp, palette.border),
-                  modifier = Modifier
-                    .width(124.dp)
-                    .height(184.dp)
-                    .clip(RoundedCornerShape(VybeTokens.Radius.md))
-                    .clickable { viewModel.openReelViewer(reel.id) }
-                ) {
-                  Box(modifier = Modifier.fillMaxSize()) {
-                    val mediaUrl = reel.mediaUrls.firstOrNull().orEmpty()
-                    if (mediaUrl.isNotBlank()) {
-                      AsyncImage(
-                        model = mediaUrl,
-                        contentDescription = reel.caption,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                      )
-                    }
-                    Box(
-                      modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                          Brush.verticalGradient(
-                            listOf(
-                              Color.Transparent,
-                              Color.Black.copy(alpha = 0.78f)
-                            )
-                          )
-                        )
-                    )
-                    Box(
-                      modifier = Modifier
-                        .align(Alignment.Center)
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.55f)),
-                      contentAlignment = Alignment.Center
-                    ) {
-                      Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Play Reel",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                      )
-                    }
-                    Column(
-                      modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(8.dp)
-                    ) {
-                      Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                      ) {
-                        VybeAvatar(user = reel.author, size = 18.dp)
-                        Text(
-                          text = reel.author.username,
-                          color = Color.White,
-                          fontSize = 10.sp,
-                          fontWeight = FontWeight.Bold,
-                          maxLines = 1,
-                          overflow = TextOverflow.Ellipsis
-                        )
-                      }
-                      if (reel.viewsCount > 0) {
-                        Text(
-                          text = "${reel.viewsCount} views",
-                          color = Color.White.copy(alpha = 0.78f),
-                          fontSize = 9.sp
-                        )
-                      }
-                    }
-                  }
-                }
               }
             }
           }
@@ -1115,7 +992,7 @@ fun HomeScreen(
             onReactComment = { commentId, rx -> viewModel.reactToComment(post.id, commentId, rx) },
             onShareClick = { viewModel.openPostShareSheet(post) },
             onUserClick = { user -> viewModel.openUserProfile(user) },
-            onRemixClick = { viewModel.openReelViewer(post.id) },
+            onRemixClick = { viewModel.openPostFromNotification(post.id) },
             onDeleteClick = { viewModel.deletePost(post.id) },
             onHidePost = { viewModel.hidePost(post.id) },
             onMuteCreator = { viewModel.muteCreator(post.author.id) },

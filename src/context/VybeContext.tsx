@@ -78,7 +78,7 @@ import {
 import { validateProfileEditInput } from '../utils/profileValidation';
 import { vybeRealtime, RealtimePushPayload, RealtimeDbChangePayload } from '../services/realtimeService';
 
-export type MainTab = 'FEED' | 'VYBES' | 'MOOD_ZONES' | 'EXPLORE' | 'INBOX' | 'CROSSED_PATHS' | 'COMMUNITY' | 'PROFILE';
+export type MainTab = 'FEED' | 'MOOD_ZONES' | 'EXPLORE' | 'INBOX' | 'CROSSED_PATHS' | 'COMMUNITY' | 'PROFILE';
 export type VybeAppMode = 'SOCIAL' | 'GROW';
 export type GrowTab = 'HOME' | 'CIRCLE' | 'PROJECTS' | 'OPPORTUNITIES' | 'PROFILE';
 
@@ -223,9 +223,8 @@ interface VybeContextType {
   clearSearchHistory: () => void;
   searchExploreRemote: (query: string) => Promise<{ ok: boolean; users: User[]; posts: Post[]; error?: string }>;
 
-  // Posts & Reels & Shared Post Deep Links
+  // Posts & Shared Post Deep Links
   posts: Post[];
-  reels: Post[];
   toggleLikePost: (postId: string) => void;
   ensurePostLoved: (postId: string) => void;
   reactToPost: (postId: string, reaction: VybeReaction) => void;
@@ -485,9 +484,8 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [searchHistoryStorageKey]);
 
-  // Posts & Reels & Shared Post Modal
+  // Posts & Shared Post Modal
   const [posts, setPosts] = useState<Post[]>([]);
-  const [reels, setReels] = useState<Post[]>([]);
   const [hasMorePosts, setHasMorePosts] = useState<boolean>(true);
   const [isLoadingMorePosts, setIsLoadingMorePosts] = useState<boolean>(false);
   const lastSyncTimeRef = useRef<number>(Date.now());
@@ -662,14 +660,6 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isSaved: graph.savedPostIds.includes(p.id)
       }))
     );
-    setReels(prev =>
-      prev.map(p => ({
-        ...p,
-        isLiked: Boolean(graph.reactionsByPostId[p.id]),
-        userReaction: graph.reactionsByPostId[p.id],
-        isSaved: graph.savedPostIds.includes(p.id)
-      }))
-    );
   };
 
   const signIn = async (identifier: string, password: string): Promise<{ ok: boolean; error?: string }> => {
@@ -734,8 +724,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setDmError(null);
     setActiveModal(null);
     setIsRealtimeConnected(false);
-    setPosts(prev => prev.map(p => ({ ...p, isLiked: false, isSaved: false, userReaction: undefined })));
-    setReels(prev => prev.map(p => ({ ...p, isLiked: false, isSaved: false, userReaction: undefined })));
+    setPosts(prev => prev.map(p => ({ ...p, isLiked: false, isSaved: false, userReaction: undefined, viewsCount: 0 })));
     setInAppNotificationBanner('Signed out cleanly.');
   };
 
@@ -849,8 +838,15 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ]);
 
       setAllUsers(liveProfiles);
-      setPosts(livePosts);
-      setReels(livePosts.filter(p => p.isVybesReel || p.mediaType === 'REEL'));
+      setPosts(
+        livePosts.map(p => ({
+          ...p,
+          viewsCount:
+            activeSession?.id && p.author.id.toLowerCase() === activeSession.id.toLowerCase()
+              ? p.viewsCount
+              : 0
+        }))
+      );
       setHasMorePosts(livePosts.length >= 20);
       setStories(liveStories);
       setCommunities(liveComms);
@@ -1010,7 +1006,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     let cancelled = false;
-    const cachedInState = [...posts, ...reels].find(p => p.id === sharedPostModalId) || null;
+    const cachedInState = posts.find(p => p.id === sharedPostModalId) || null;
     if (cachedInState) {
       const blockedByPrivacy = Boolean(
         cachedInState.author.isPrivate &&
@@ -1588,25 +1584,13 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const applyPostTransform = (postId: string, updater: (p: Post) => Post, nextReaction?: VybeReaction | null) => {
     const prevSnapshot =
       posts.find(p => p.id === postId) ||
-      reels.find(p => p.id === postId) ||
       viewedProfilePosts.find(p => p.id === postId) ||
       (resolvedSharedPost?.id === postId ? resolvedSharedPost : undefined);
 
-    let updatedLikes: number | null = null;
     setPosts(prev =>
       prev.map(p => {
         if (p.id !== postId) return p;
-        const next = updater(p);
-        updatedLikes = next.likesCount;
-        return next;
-      })
-    );
-    setReels(prev =>
-      prev.map(p => {
-        if (p.id !== postId) return p;
-        const next = updater(p);
-        if (updatedLikes === null) updatedLikes = next.likesCount;
-        return next;
+        return updater(p);
       })
     );
     setViewedProfilePosts(prev =>
@@ -1619,7 +1603,6 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       togglePostReactionInSupabase({ postId, userId: currentUser.id, reactionType: nextReaction }).then(ok => {
         if (!ok && prevSnapshot) {
           setPosts(prev => prev.map(p => (p.id === postId ? prevSnapshot : p)));
-          setReels(prev => prev.map(p => (p.id === postId ? prevSnapshot : p)));
           setViewedProfilePosts(prev => prev.map(p => (p.id === postId ? prevSnapshot : p)));
           if (resolvedSharedPost?.id === postId) {
             setResolvedSharedPost(prevSnapshot);
@@ -1632,7 +1615,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const toggleLikePost = (postId: string) => {
     if (!requireAuth('Sign in to react to posts on VYBE.')) return;
-    const target = posts.find(p => p.id === postId) || reels.find(p => p.id === postId);
+    const target = posts.find(p => p.id === postId);
     const willLike = !target?.isLiked;
     applyPostTransform(
       postId,
@@ -1679,7 +1662,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const reactToPost = (postId: string, reaction: VybeReaction) => {
     if (!requireAuth('Sign in to react to posts on VYBE.')) return;
-    const target = posts.find(p => p.id === postId) || reels.find(p => p.id === postId);
+    const target = posts.find(p => p.id === postId);
     const nextReaction = target?.userReaction === reaction ? null : reaction;
     applyPostTransform(
       postId,
@@ -1722,11 +1705,10 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     };
     setPosts(prev => prev.map(mapComments));
-    setReels(prev => prev.map(mapComments));
   };
 
   const toggleCommentLike = (postId: string, commentId: string) => {
-    const targetPost = posts.find(p => p.id === postId) || reels.find(p => p.id === postId);
+    const targetPost = posts.find(p => p.id === postId);
     const targetComment = targetPost?.comments?.find(c => c.id === commentId);
     const existing = targetComment?.userReaction || (targetComment?.isLiked ? 'LOVE' : undefined);
     reactToComment(postId, commentId, existing || 'LOVE');
@@ -1735,7 +1717,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const toggleSavePost = (postId: string) => {
     if (!requireAuth('Sign in to save posts to your collection.')) return;
     if (!currentUser) return;
-    const target = posts.find(p => p.id === postId) || reels.find(p => p.id === postId);
+    const target = posts.find(p => p.id === postId);
     const shouldSave = !target?.isSaved;
     const mapSave = (p: Post): Post => {
       if (p.id !== postId) return p;
@@ -1747,11 +1729,9 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     };
     setPosts(prev => prev.map(mapSave));
-    setReels(prev => prev.map(mapSave));
     toggleSavePostInSupabase({ postId, userId: currentUser.id, shouldSave }).then(ok => {
       if (!ok) {
         setPosts(prev => prev.map(mapSave));
-        setReels(prev => prev.map(mapSave));
         setInAppNotificationBanner('Could not update saved state. Please try again.');
       }
     });
@@ -1762,7 +1742,6 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!fetched) return;
     const attach = (p: Post): Post => (p.id === postId ? { ...p, comments: fetched } : p);
     setPosts(prev => prev.map(attach));
-    setReels(prev => prev.map(attach));
     if (resolvedSharedPost?.id === postId) {
       setResolvedSharedPost(prev => (prev ? { ...prev, comments: fetched } : prev));
     }
@@ -1792,7 +1771,6 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     };
     setPosts(prev => prev.map(appendComment));
-    setReels(prev => prev.map(appendComment));
     submitLiveComment(postId, currentUser.id, text.trim()).then(created => {
       if (created?.id) {
         const swapId = (p: Post): Post =>
@@ -1800,7 +1778,6 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
             ? p
             : { ...p, comments: p.comments.map(c => (c.id === tempId ? { ...c, id: created.id } : c)) };
         setPosts(prev => prev.map(swapId));
-        setReels(prev => prev.map(swapId));
       } else {
         const revertComment = (p: Post): Post =>
           p.id !== postId
@@ -1811,7 +1788,6 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 comments: (p.comments || []).filter(c => c.id !== tempId)
               };
         setPosts(prev => prev.map(revertComment));
-        setReels(prev => prev.map(revertComment));
         setInAppNotificationBanner('Comment failed to save. Please try again.');
       }
     });
@@ -1831,17 +1807,17 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       author: currentUser,
       caption: postData.caption || '',
       mediaUrls: postData.mediaUrls || [],
-      mediaType: postData.isVybesReel ? 'REEL' : postData.mediaType || 'TEXT',
+      mediaType: postData.mediaType === 'REEL' ? 'VIDEO' : postData.mediaType || 'TEXT',
       timestamp: 'Just now',
       createdAtIso: nowIso,
       likesCount: 0,
       commentsCount: 0,
       savesCount: 0,
       sharesCount: 0,
-      viewsCount: 1,
+      viewsCount: 0,
       isLiked: false,
       isSaved: false,
-      isVybesReel: Boolean(postData.isVybesReel),
+      isVybesReel: false,
       tags: postData.tags || [],
       moodZone: postData.moodZone || currentUser.currentMood || 'GENERAL',
       comments: [],
@@ -1850,7 +1826,6 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       musicAttachment: postData.musicAttachment,
       reactionsCount: { LOVE: 0, FLAME: 0, LAUGH: 0, WOW: 0, SAD: 0 }
     };
-    if (newPost.isVybesReel) setReels(prev => [newPost, ...prev]);
     setPosts(prev => [newPost, ...prev]);
 
     const created = await createLivePost({
@@ -1858,7 +1833,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       caption: newPost.caption,
       mediaUrls: newPost.mediaUrls,
       mediaType: newPost.mediaType,
-      isVybesReel: newPost.isVybesReel,
+      isVybesReel: false,
       moodZone: newPost.moodZone,
       locationName: newPost.locationName,
       audioTrackTitle: newPost.audioTrackTitle
@@ -1866,13 +1841,11 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (created?.id) {
       setPosts(prev => prev.map(p => (p.id === tempId ? { ...p, id: created.id } : p)));
-      setReels(prev => prev.map(p => (p.id === tempId ? { ...p, id: created.id } : p)));
       closeModal();
       return true;
     }
 
     setPosts(prev => prev.filter(p => p.id !== tempId));
-    setReels(prev => prev.filter(p => p.id !== tempId));
     setInAppNotificationBanner('Post failed to save to Supabase. Please check your connection and try again.');
     return false;
   };
@@ -2515,7 +2488,6 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         clearSearchHistory,
         searchExploreRemote,
         posts,
-        reels,
         toggleLikePost,
         ensurePostLoved,
         reactToPost,

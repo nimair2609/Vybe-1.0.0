@@ -63,7 +63,6 @@ export const ProfileView: React.FC = () => {
     profileLookupError,
     closeUserProfile,
     posts,
-    reels,
     followingIds,
     requestedFollowIds,
     blockedIds,
@@ -199,15 +198,8 @@ export const ProfileView: React.FC = () => {
     if (isPrivateLocked || isPeerBlocked) return [];
     const byId = new Map<string, (typeof combinedAuthorPosts)[number]>();
     combinedAuthorPosts.forEach(p => byId.set(p.id, p));
-    if (isOwnProfile) {
-      reels
-        .filter(r => r.author.id.toLowerCase() === targetUser.id.toLowerCase())
-        .forEach(r => {
-          if (!byId.has(r.id)) byId.set(r.id, r);
-        });
-    }
     return Array.from(byId.values());
-  }, [isPrivateLocked, isPeerBlocked, combinedAuthorPosts, isOwnProfile, reels, targetUser.id]);
+  }, [isPrivateLocked, isPeerBlocked, combinedAuthorPosts]);
 
   const savedPosts = isOwnProfile ? posts.filter(p => p.isSaved) : [];
   const pinnedPostIds = targetUser.pinnedPostIds || [];
@@ -382,7 +374,6 @@ export const ProfileView: React.FC = () => {
 
   const profileTabs: { id: ProfileTabKey; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { id: 'POSTS', label: 'Posts', icon: Grid },
-    { id: 'REELS', label: 'Vybe Reels', icon: PlaySquare },
     { id: 'UNFILTERED', label: 'Unfiltered', icon: Flame },
     { id: 'TAGGED', label: 'Tagged', icon: Tag },
     { id: 'HIGHLIGHTS', label: 'Highlights', icon: Sparkles },
@@ -391,14 +382,6 @@ export const ProfileView: React.FC = () => {
 
   const renderEmptyStateForTab = () => {
     switch (activeTab) {
-      case 'REELS':
-        return (
-          <VybeEmptyState
-            icon={PlaySquare}
-            title="No Vybe Reels yet"
-            subtitle="Short-form VYBES reels will appear here once published."
-          />
-        );
       case 'UNFILTERED':
         return (
           <VybeEmptyState
@@ -854,7 +837,7 @@ export const ProfileView: React.FC = () => {
             <Ban className="w-8 h-8 text-red-400 mx-auto" />
             <h2 className="text-sm font-bold text-[var(--vybe-text)]">You blocked @{targetUser.username}</h2>
             <p className="text-xs text-[var(--vybe-text-secondary)] max-w-xs mx-auto">
-              Their posts, reels, and interactions are hidden. Unblock if you want to view their profile content again.
+              Their posts, videos, and interactions are hidden. Unblock if you want to view their profile content again.
             </p>
             <button
               type="button"
@@ -869,7 +852,7 @@ export const ProfileView: React.FC = () => {
             <Lock className="w-8 h-8 text-[var(--vybe-accent)] mx-auto" />
             <h2 className="text-sm font-bold text-[var(--vybe-text)]">This account is private</h2>
             <p className="text-xs text-[var(--vybe-text-secondary)] max-w-xs mx-auto">
-              Follow @{targetUser.username} to see their photos, reels, and updates once approved.
+              Follow @{targetUser.username} to see their photos, videos, and updates once approved.
             </p>
           </div>
         ) : (
@@ -901,7 +884,7 @@ export const ProfileView: React.FC = () => {
             ) : (
               <div className="grid grid-cols-3 gap-1.5 pt-1">
                 {displayedPosts.map(p => {
-                  const isReelTile = activeTab === 'REELS' || p.isVybesReel || p.mediaType === 'REEL';
+                  const isVideoTile = p.mediaType === 'VIDEO' || p.mediaType === 'REEL' || p.isVybesReel;
                   const isPinnedHighlight = pinnedPostIds.includes(p.id);
                   const canPin = isOwnProfile && p.author.id.toLowerCase() === targetUser.id.toLowerCase();
 
@@ -909,20 +892,34 @@ export const ProfileView: React.FC = () => {
                     <div
                       key={p.id}
                       onClick={() => openSharedPostModal(p.id)}
-                      className={`${
-                        activeTab === 'REELS' ? 'aspect-[9/16]' : 'aspect-square'
-                      } bg-[var(--vybe-surface)] border border-[var(--vybe-border)] rounded-xl overflow-hidden relative group cursor-pointer`}
+                      className="aspect-square bg-[var(--vybe-surface)] border border-[var(--vybe-border)] rounded-xl overflow-hidden relative group cursor-pointer"
                     >
                       {p.mediaUrls[0] ? (
-                        <OptimizedImage
-                          src={p.mediaUrls[0]}
-                          alt={p.caption || 'Post'}
-                          aspectRatio={activeTab === 'REELS' ? '9 / 16' : '1 / 1'}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                        />
+                        isVideoTile ? (
+                          <video
+                            src={p.mediaUrls[0]}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                            muted
+                            playsInline
+                            preload="metadata"
+                          />
+                        ) : (
+                          <OptimizedImage
+                            src={p.mediaUrls[0]}
+                            alt={p.caption || 'Post'}
+                            aspectRatio="1 / 1"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          />
+                        )
                       ) : (
                         <div className="w-full h-full p-2.5 flex items-center justify-center text-center text-[11px] text-[var(--vybe-text-secondary)] line-clamp-4">
                           {p.caption || 'Text post'}
+                        </div>
+                      )}
+
+                      {isVideoTile && (
+                        <div className="absolute top-1.5 left-1.5 w-6 h-6 rounded-full bg-black/55 backdrop-blur-md text-white keep-white flex items-center justify-center">
+                          <PlaySquare className="w-3.5 h-3.5" />
                         </div>
                       )}
 
@@ -945,22 +942,16 @@ export const ProfileView: React.FC = () => {
                         </button>
                       )}
 
-                      {isReelTile && activeTab === 'REELS' ? (
-                        <div className="absolute bottom-1.5 left-1.5 text-[10px] font-bold text-white keep-white bg-black/60 px-1.5 py-0.5 rounded">
-                          {p.viewsCount}
-                        </div>
-                      ) : (
-                        <div className="absolute bottom-1.5 right-1.5 rounded-full bg-black/55 backdrop-blur-md px-1">
-                          <FingerHeartReaction
-                            isLiked={p.isLiked}
-                            count={p.likesCount}
-                            size={15}
-                            forceDarkOverlay={true}
-                            onToggle={() => toggleLikePost(p.id)}
-                            className="h-6 px-1"
-                          />
-                        </div>
-                      )}
+                      <div className="absolute bottom-1.5 right-1.5 rounded-full bg-black/55 backdrop-blur-md px-1">
+                        <FingerHeartReaction
+                          isLiked={p.isLiked}
+                          count={p.likesCount}
+                          size={15}
+                          forceDarkOverlay={true}
+                          onToggle={() => toggleLikePost(p.id)}
+                          className="h-6 px-1"
+                        />
+                      </div>
                     </div>
                   );
                 })}

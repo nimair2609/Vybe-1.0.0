@@ -72,7 +72,7 @@ fun ExploreScreen(
   val filterPills = listOf("For You", "Trending", "People", "Nearby", "Circles", "Interests")
   var selectedPill by remember { mutableStateOf("For You") }
 
-  val searchTabs = listOf("All", "People", "Hashtags", "Posts", "Reels", "Circles")
+  val searchTabs = listOf("All", "People", "Hashtags", "Posts", "Circles")
   var selectedSearchTab by remember { mutableStateOf("All") }
 
   var nearbyLocationGranted by remember { mutableStateOf(false) }
@@ -199,10 +199,6 @@ fun ExploreScreen(
           )
       }
     }
-  }
-
-  val matchedReels = remember(matchedPosts) {
-    matchedPosts.filter { it.mediaType == MediaType.REEL || it.mediaType == MediaType.VIDEO || it.isVybesReel }
   }
 
   val matchedHashtags = remember(cleanQuery, trendingHashtags) {
@@ -650,11 +646,11 @@ fun ExploreScreen(
           }
         }
 
-        if (selectedSearchTab == "All" || selectedSearchTab == "Posts" || selectedSearchTab == "Reels") {
-          val postList = if (selectedSearchTab == "Reels") matchedReels else matchedPosts
+        if (selectedSearchTab == "All" || selectedSearchTab == "Posts") {
+          val postList = matchedPosts
           if (postList.isNotEmpty()) {
             item(key = "matched_posts_header") {
-              Text(if (selectedSearchTab == "Reels") "Reels" else "Posts", fontFamily = PlusJakartaSansFontFamily, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = palette.textPrimary)
+              Text("Posts", fontFamily = PlusJakartaSansFontFamily, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = palette.textPrimary)
             }
             items(postList, key = { "search_p_${it.id}" }) { post ->
               VybeSurfaceCard(
@@ -662,11 +658,7 @@ fun ExploreScreen(
                   if (searchQuery.trim().length >= 2) {
                     viewModel.addSearchQueryToHistory(searchQuery.trim())
                   }
-                  if (post.mediaType == MediaType.REEL || post.isVybesReel) {
-                    viewModel.openReelViewer(post.id)
-                  } else {
-                    viewModel.openPostFromNotification(post.id)
-                  }
+                  viewModel.openPostFromNotification(post.id)
                 },
                 contentPadding = PaddingValues(10.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -723,7 +715,7 @@ fun ExploreScreen(
                 ) {
                   Column(modifier = Modifier.weight(1f)) {
                     Text(comm.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = palette.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("${comm.category} • ${comm.memberCount} members", fontSize = 11.sp, color = palette.textSecondary)
+                    Text("${comm.category} • ${comm.membersCount} members", fontSize = 11.sp, color = palette.textSecondary)
                   }
                   Spacer(modifier = Modifier.width(8.dp))
                   Button(
@@ -750,7 +742,6 @@ fun ExploreScreen(
           "People" -> matchedUsers.isEmpty()
           "Hashtags" -> matchedHashtags.isEmpty()
           "Posts" -> matchedPosts.isEmpty()
-          "Reels" -> matchedReels.isEmpty()
           "Circles" -> matchedCommunities.isEmpty()
           else -> matchedUsers.isEmpty() && matchedPosts.isEmpty() && matchedHashtags.isEmpty() && matchedCommunities.isEmpty()
         }
@@ -1087,11 +1078,7 @@ fun ExploreScreen(
                       .height(180.dp)
                       .clip(RoundedCornerShape(VybeTokens.Radius.md))
                       .clickable {
-                        if (post.mediaType == MediaType.REEL || post.isVybesReel) {
-                          viewModel.openReelViewer(post.id)
-                        } else {
-                          viewModel.openPostFromNotification(post.id)
-                        }
+                        viewModel.openPostFromNotification(post.id)
                       }
                   ) {
                     Box(modifier = Modifier.fillMaxSize()) {
@@ -1332,7 +1319,7 @@ fun ExploreScreen(
                   ) {
                     Column(modifier = Modifier.weight(1f)) {
                       Text(comm.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = palette.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                      Text("${comm.category} • ${comm.memberCount} members", fontSize = 11.sp, color = palette.accent)
+                      Text("${comm.category} • ${comm.membersCount} members", fontSize = 11.sp, color = palette.accent)
                       if (comm.description.isNotBlank()) {
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(comm.description, fontSize = 12.sp, color = palette.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)

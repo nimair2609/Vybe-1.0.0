@@ -1,12 +1,18 @@
 import React from 'react';
-import { Bell, X, MessageCircle, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Bell, X, MessageCircle, Sparkles, CheckCircle2, Heart, UserPlus } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
 import { VybeEmptyState } from '../components/VybeDesignSystem';
+import { VybeAvatar } from '../components/OptimizedImage';
 
 export const NotificationsModal: React.FC = () => {
   const {
     closeModal,
     conversations,
+    notifications,
+    markNotificationRead,
+    openUserProfile,
+    openSharedPostModal,
+    allUsers,
     selectConversation,
     setSelectedTab,
     updateInfo,
@@ -16,7 +22,33 @@ export const NotificationsModal: React.FC = () => {
   const unreadConversations = conversations.filter(c => (c.unreadCount || 0) > 0);
   const hasUpdate = Boolean(updateInfo?.isNewerThanInstalled);
 
-  const hasAnyNotifications = unreadConversations.length > 0 || hasUpdate;
+  const hasAnyNotifications =
+    notifications.length > 0 || unreadConversations.length > 0 || hasUpdate;
+
+  const handleOpenNotification = (notif: (typeof notifications)[number]) => {
+    if (!notif.isRead) {
+      markNotificationRead(notif.id);
+    }
+    if (notif.conversationId) {
+      const conv = conversations.find(c => c.id === notif.conversationId);
+      if (conv) selectConversation(conv);
+      setSelectedTab('INBOX');
+      closeModal();
+      return;
+    }
+    if (notif.targetId && (notif.type === 'LIKE' || notif.type === 'COMMENT' || notif.type === 'REACTION')) {
+      closeModal();
+      openSharedPostModal(notif.targetId);
+      return;
+    }
+    if (notif.actorId) {
+      const matched = allUsers.find(u => u.id === notif.actorId);
+      if (matched) {
+        closeModal();
+        openUserProfile(matched);
+      }
+    }
+  };
 
   return (
     <div
@@ -51,7 +83,7 @@ export const NotificationsModal: React.FC = () => {
           <VybeEmptyState
             icon={CheckCircle2}
             title="You're all caught up"
-            subtitle="Unread direct messages and platform release alerts will appear here automatically."
+            subtitle="Activity, unread direct messages, and release alerts will appear here automatically."
           />
         ) : (
           <div className="space-y-2.5">
@@ -107,6 +139,48 @@ export const NotificationsModal: React.FC = () => {
                   <p className="text-[11px] text-[var(--vybe-text-secondary)] mt-0.5 line-clamp-1">
                     {conv.lastMessage || 'New message received'}
                   </p>
+                </div>
+              </button>
+            ))}
+
+            {notifications.map(notif => (
+              <button
+                key={notif.id}
+                type="button"
+                onClick={() => handleOpenNotification(notif)}
+                className={`w-full text-left p-3.5 rounded-2xl border flex items-start gap-3 transition-colors ${
+                  notif.isRead
+                    ? 'bg-[var(--vybe-elevated)] border-[var(--vybe-border)] opacity-85 hover:border-[var(--vybe-accent)]'
+                    : 'bg-[var(--vybe-accent-soft)]/40 border-[var(--vybe-accent)]/40 hover:border-[var(--vybe-accent)]'
+                }`}
+              >
+                {notif.actorAvatarUrl || notif.actorDisplayName ? (
+                  <VybeAvatar
+                    src={notif.actorAvatarUrl || ''}
+                    name={notif.actorDisplayName || notif.actorUsername || 'VYBE'}
+                    size={36}
+                    className="w-9 h-9 shrink-0"
+                  />
+                ) : (
+                  <div className="p-2 rounded-xl bg-[var(--vybe-surface)] border border-[var(--vybe-border)] text-[var(--vybe-accent)] shrink-0 mt-0.5">
+                    {notif.type === 'FOLLOW' ? (
+                      <UserPlus className="w-4 h-4" />
+                    ) : notif.type === 'LIKE' || notif.type === 'REACTION' ? (
+                      <Heart className="w-4 h-4" />
+                    ) : (
+                      <Bell className="w-4 h-4" />
+                    )}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="text-xs font-bold text-[var(--vybe-text)] truncate">{notif.title}</h4>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-[10px] text-[var(--vybe-text-muted)]">{notif.timestamp}</span>
+                      {!notif.isRead && <span className="w-2 h-2 rounded-full bg-[var(--vybe-accent)]" />}
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-[var(--vybe-text-secondary)] mt-0.5 line-clamp-2">{notif.body}</p>
                 </div>
               </button>
             ))}

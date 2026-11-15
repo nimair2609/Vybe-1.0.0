@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -28,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.GrowJourney
 import com.example.ui.Screen
 import com.example.ui.VybeViewModel
@@ -622,6 +624,10 @@ fun GrowCircleWorkspace(viewModel: VybeViewModel) {
   if (showCreateDialog) {
     AlertDialog(
       onDismissRequest = { showCreateDialog = false },
+      properties = DialogProperties(usePlatformDefaultWidth = false),
+      modifier = Modifier
+        .padding(horizontal = 24.dp)
+        .widthIn(max = 460.dp),
       containerColor = palette.card,
       titleContentColor = palette.textPrimary,
       textContentColor = palette.textSecondary,
@@ -630,7 +636,10 @@ fun GrowCircleWorkspace(viewModel: VybeViewModel) {
         Text("Create Circle", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold)
       },
       text = {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+          modifier = Modifier.verticalScroll(rememberScrollState()),
+          verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
           OutlinedTextField(
             value = newName,
             onValueChange = { newName = it },
@@ -656,13 +665,8 @@ fun GrowCircleWorkspace(viewModel: VybeViewModel) {
             fontWeight = FontWeight.SemiBold,
             color = palette.textPrimary
           )
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-          ) {
-            createCategories.forEach { cat ->
+          LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(createCategories) { cat ->
               val isCatSelected = newCategory == cat
               Surface(
                 color = if (isCatSelected) palette.accent.copy(alpha = 0.16f) else palette.elevated,
@@ -687,7 +691,7 @@ fun GrowCircleWorkspace(viewModel: VybeViewModel) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
           ) {
-            Column {
+            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
               Text("Private Circle", fontSize = 13.sp, color = palette.textPrimary, fontWeight = FontWeight.SemiBold)
               Text("Invite-only membership", fontSize = 11.sp, color = palette.textSecondary)
             }

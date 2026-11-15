@@ -321,7 +321,7 @@ class VybeProfileAndExploreAuditTest {
   }
 
   @Test
-  fun `filterProfileTabPosts separates Posts Vybe Reels Unfiltered Tagged and Highlights without duplicates`() {
+  fun `filterProfileTabPosts includes video and legacy reel posts in Posts while keeping Unfiltered Tagged and Highlights separate`() {
     val owner = User(id = "u_owner", username = "aria_vybe", displayName = "Aria")
     val peer = User(id = "u_peer", username = "rohan_k", displayName = "Rohan")
 
@@ -338,12 +338,8 @@ class VybeProfileAndExploreAuditTest {
     val allPosts = userPosts + listOf(peerTag, saved)
 
     assertEquals(
-      listOf("p_photo", "p_self"),
+      listOf("p_photo", "p_reel", "p_video", "p_self"),
       ProfileInputValidator.filterProfileTabPosts("Posts", userPosts, listOf(saved), allPosts, listOf("p_raw", "p_photo"), "aria_vybe", owner.id).map { it.id }
-    )
-    assertEquals(
-      listOf("p_reel", "p_video"),
-      ProfileInputValidator.filterProfileTabPosts("Vybe Reels", userPosts, listOf(saved), allPosts, listOf("p_raw"), "aria_vybe", owner.id).map { it.id }
     )
     assertEquals(
       listOf("p_raw"),

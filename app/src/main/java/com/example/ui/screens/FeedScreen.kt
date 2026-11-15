@@ -87,7 +87,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
     var list = posts.filter { it.belongsToMainFeed() && it.matchesMoodFilter(selectedMood) }
     when (feedTab) {
       "LINKED", "Following" -> list = list.filter { followingUserIds.contains(it.author.id) || it.author.id == currentUser?.id }
-      "Discover" -> list = list.sortedByDescending { it.likesCount + it.commentsCount + it.viewsCount }
+      "Discover" -> list = list.sortedByDescending { it.likesCount + it.commentsCount }
     }
     list
   }
@@ -509,7 +509,7 @@ fun FeedScreen(viewModel: VybeViewModel) {
                 onReactComment = { commentId, rx -> viewModel.reactToComment(post.id, commentId, rx) },
                 onShareClick = { viewModel.openPostShareSheet(post) },
                 onUserClick = { user -> viewModel.openUserProfile(user) },
-                onRemixClick = { viewModel.openReelViewer(post.id) },
+                onRemixClick = { viewModel.openPostFromNotification(post.id) },
                 onDeleteClick = { viewModel.deletePost(post.id) },
                 onReportPost = { reason ->
                   coroutineScope.launch {

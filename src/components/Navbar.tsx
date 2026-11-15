@@ -45,7 +45,6 @@ export const Navbar: React.FC = () => {
   const socialNavItems: { tab: MainTab; label: string; icon: React.FC<{ className?: string }>; badge?: number }[] = [
     { tab: 'FEED', label: 'Feed', icon: Home },
     { tab: 'EXPLORE', label: 'Explore', icon: Compass },
-    { tab: 'VYBES', label: 'Reels', icon: PlaySquare },
     { tab: 'MOOD_ZONES', label: 'Moods', icon: Sparkles },
     { tab: 'CROSSED_PATHS', label: 'Paths', icon: MapPin },
     { tab: 'COMMUNITY', label: 'Circles', icon: Users },
@@ -321,7 +320,6 @@ export const Navbar: React.FC = () => {
           <div className="flex items-center gap-1.5 min-w-max">
             {[
               { tab: 'FEED' as MainTab, label: 'Feed', icon: Home },
-              { tab: 'VYBES' as MainTab, label: 'Reels', icon: PlaySquare },
               { tab: 'MOOD_ZONES' as MainTab, label: 'Mood Zones', icon: Sparkles },
               { tab: 'CROSSED_PATHS' as MainTab, label: 'Crossed Paths', icon: MapPin },
               { tab: 'COMMUNITY' as MainTab, label: 'Communities', icon: Users },

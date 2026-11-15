@@ -14,7 +14,7 @@ data class GrowJourney(
   val isJoined: Boolean = false,
   val isCompleted: Boolean = false,
   val streakDays: Int = 0,
-  val participantsCount: Int = 120
+  val participantsCount: Int = 0
 )
 
 data class GrowReflection(

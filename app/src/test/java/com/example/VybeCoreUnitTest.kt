@@ -410,24 +410,18 @@ class VybeCoreUnitTest {
   fun testFeedMusicPersistenceAndPhysicalVolumeUnmute() {
     val viewModel = com.example.ui.VybeViewModel()
     viewModel.setFeedAudioEnabled(false)
-    viewModel.setReelsAudioEnabled(false)
     assertFalse(viewModel.isFeedAudioEnabled.value)
-    assertFalse(viewModel.isReelsAudioEnabled.value)
 
     viewModel.selectTab(com.example.ui.MainTab.FEED)
     viewModel.onPhysicalVolumeUpInPlayback()
     assertTrue("Physical volume up must unmute Feed audio", viewModel.isFeedAudioEnabled.value)
-
-    viewModel.openReelViewer()
-    viewModel.onPhysicalVolumeUpInPlayback()
-    assertTrue("Physical volume up must unmute Reels audio", viewModel.isReelsAudioEnabled.value)
 
     viewModel.setFeedAudioEnabled(false)
     assertFalse("Feed audio must turn off when user switches it off", viewModel.isFeedAudioEnabled.value)
   }
 
   @Test
-  fun testNotificationTargetRoutingToPostOrReel() {
+  fun testNotificationTargetRoutingToPostAndLegacyVideo() {
     repository.loginUser("eligible@vybe.in", "Password123!")
     val author = repository.currentUser.value!!
     val feedPost = com.example.data.model.Post(
@@ -438,17 +432,17 @@ class VybeCoreUnitTest {
       timestamp = "Just now",
       clientUploadId = "upload_notif_feed_1"
     )
-    val reelPost = com.example.data.model.Post(
+    val videoPost = com.example.data.model.Post(
       id = "notif_reel_post_1",
       author = author,
-      caption = "Reel target post",
+      caption = "Video target post",
       mediaType = com.example.data.model.MediaType.REEL,
       isVybesReel = true,
       timestamp = "Just now",
       clientUploadId = "upload_notif_reel_1"
     )
     repository.recordVerifiedPostForState(feedPost)
-    repository.recordVerifiedPostForState(reelPost)
+    repository.recordVerifiedPostForState(videoPost)
 
     val viewModel = com.example.ui.VybeViewModel()
     viewModel.openPostFromNotification(feedPost.id)
@@ -456,9 +450,10 @@ class VybeCoreUnitTest {
     assertEquals(com.example.ui.MainTab.FEED, viewModel.selectedTab.value)
     assertEquals(feedPost.id, viewModel.targetFeedPostId.value)
 
-    viewModel.openPostFromNotification(reelPost.id)
-    assertEquals(com.example.ui.Screen.REELS_VIEWER, viewModel.currentScreen.value)
-    assertEquals(reelPost.id, viewModel.targetReelId.value)
+    viewModel.openPostFromNotification(videoPost.id)
+    assertEquals(com.example.ui.Screen.MAIN, viewModel.currentScreen.value)
+    assertEquals(com.example.ui.MainTab.FEED, viewModel.selectedTab.value)
+    assertEquals(videoPost.id, viewModel.targetFeedPostId.value)
   }
 
   @Test

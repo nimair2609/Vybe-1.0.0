@@ -759,7 +759,11 @@ function buildFallbackMinimalUser(userId?: string, label: string = 'VYBE Member'
   };
 }
 
-export function mapSupabasePost(row: any, userMap?: Map<string, User>): Post {
+export function mapSupabasePost(
+  row: any,
+  userMap?: Map<string, User>,
+  options?: { viewerId?: string; viewerIsAdmin?: boolean }
+): Post {
   let authorUser: User;
   if (row.profiles) {
     authorUser = mapSupabaseProfileToUser(row.profiles);
@@ -786,26 +790,32 @@ export function mapSupabasePost(row: any, userMap?: Map<string, User>): Post {
   const isVideo =
     row.media_type === 'VIDEO' ||
     row.media_type === 'REEL' ||
-    mediaUrls.some(u => u.includes('.mp4') || u.includes('.webm'));
-  const isVybesReel = Boolean(row.is_vybes_reel || row.media_type === 'REEL');
+    Boolean(row.is_vybes_reel) ||
+    mediaUrls.some(u => /\.(mp4|webm|mov|m4v)(\?|$)/i.test(u));
+  const viewerId = options?.viewerId || getStoredWebSession()?.id;
+  const authorId = String(row.author_id || authorUser.id || '');
+  const canSeeViews = Boolean(
+    options?.viewerIsAdmin ||
+      (viewerId && authorId && viewerId.toLowerCase() === authorId.toLowerCase())
+  );
 
   return {
     id: row.id,
     author: authorUser,
     caption: row.caption || '',
     mediaUrls,
-    mediaType: isVybesReel ? 'REEL' : isVideo ? 'VIDEO' : mediaUrls.length > 0 ? 'IMAGE' : 'TEXT',
+    mediaType: isVideo ? 'VIDEO' : mediaUrls.length > 0 ? 'IMAGE' : 'TEXT',
     timestamp: row.created_at ? formatRelativeTime(row.created_at) : 'Just now',
     createdAtIso: row.created_at,
     likesCount: Number(row.likes_count || 0),
     commentsCount: Number(row.comments_count || 0),
     savesCount: Number(row.saves_count || 0),
     sharesCount: Number(row.shares_count || 0),
-    viewsCount: Number(row.views_count || 0),
+    viewsCount: canSeeViews ? Number(row.views_count || 0) : 0,
     isLiked: false,
     isSaved: false,
     isUnfiltered: Boolean(row.is_unfiltered),
-    isVybesReel,
+    isVybesReel: false,
     tags: row.caption ? (row.caption.match(/#[a-z0-9_]+/gi) || []).map((t: string) => t.replace('#', '')) : [],
     moodZone: (row.mood_zone as MoodType) || 'GENERAL',
     comments: [],
@@ -817,6 +827,35 @@ export function mapSupabasePost(row: any, userMap?: Map<string, User>): Post {
       SAD: Number(row.sad_count || 0)
     }
   };
+}
+
+export async function fetchPostAnalytics(postId: string): Promise<{
+  postId: string;
+  viewsCount: number;
+  likesCount: number;
+  commentsCount: number;
+  savesCount: number;
+} | null> {
+  if (!UUID_REGEX.test(postId)) return null;
+  try {
+    const res = await authedFetch(`${SUPABASE_URL}/rest/v1/rpc/get_post_analytics`, {
+      method: 'POST',
+      body: JSON.stringify({ p_post_id: postId })
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return null;
+    return {
+      postId: String(row.post_id || postId),
+      viewsCount: Number(row.views_count || 0),
+      likesCount: Number(row.likes_count || 0),
+      commentsCount: Number(row.comments_count || 0),
+      savesCount: Number(row.saves_count || 0)
+    };
+  } catch {
+    return null;
+  }
 }
 
 function normalizeStoryAudience(raw: any): Story['audience'] {
@@ -1250,22 +1289,23 @@ export async function createLivePost(postData: {
 }): Promise<any> {
   if (!UUID_REGEX.test(postData.authorId)) return null;
   try {
-    const isReel = postData.isVybesReel || postData.mediaType === 'REEL';
     const isVideo =
-      postData.mediaType === 'VIDEO' || isReel || postData.mediaUrls.some(u => u.includes('.mp4'));
+      postData.mediaType === 'VIDEO' ||
+      postData.mediaType === 'REEL' ||
+      postData.mediaUrls.some(u => /\.(mp4|webm|mov|m4v)(\?|$)/i.test(u));
     const rawMood = postData.moodZone ? String(postData.moodZone).toUpperCase().trim() : '';
 
     const postPayload: Record<string, any> = {
       author_id: postData.authorId,
       caption: postData.caption || '',
-      media_type: isReel ? 'REEL' : isVideo ? 'VIDEO' : postData.mediaUrls.length > 0 ? 'IMAGE' : 'TEXT',
+      media_type: isVideo ? 'VIDEO' : postData.mediaUrls.length > 0 ? 'IMAGE' : 'TEXT',
       mood_zone: rawMood || null,
-      is_vybes_reel: Boolean(isReel),
+      is_vybes_reel: false,
       is_unfiltered: false,
       likes_count: 0,
       comments_count: 0,
       saves_count: 0,
-      views_count: 1,
+      views_count: 0,
       ...(postData.locationName ? { location_name: postData.locationName } : {}),
       ...(postData.audioTrackTitle ? { music_title: postData.audioTrackTitle } : {})
     };
@@ -1308,7 +1348,7 @@ export async function createLivePost(postData: {
       const mediaInserts = postData.mediaUrls.map((url, idx) => ({
         post_id: created.id,
         media_url: url,
-        media_type: url.includes('.mp4') ? 'VIDEO' : 'IMAGE',
+        media_type: /\.(mp4|webm|mov|m4v)(\?|$)/i.test(url) ? 'VIDEO' : 'IMAGE',
         display_order: idx
       }));
 

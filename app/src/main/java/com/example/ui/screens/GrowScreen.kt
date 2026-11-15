@@ -47,7 +47,7 @@ fun GrowScreen(viewModel: VybeViewModel) {
   var isSharedPublicly by remember { mutableStateOf(false) }
 
   val activeStreak = remember(growJourneys) {
-    growJourneys.filter { it.isJoined }.maxOfOrNull { it.streakDays } ?: 1
+    growJourneys.filter { it.isJoined }.maxOfOrNull { it.streakDays } ?: 0
   }
 
   Scaffold(

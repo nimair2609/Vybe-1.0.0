@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import {
   Settings, X, Moon, Sun, Bell, Shield,
   RefreshCw, CheckCircle2, RotateCcw, AlertTriangle,
-  Sparkles, HardDrive, Trash2, Smartphone, ExternalLink
+  Sparkles, HardDrive, Trash2, Smartphone, ExternalLink,
+  LogOut, LogIn, Loader2
 } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
+import { VybeAvatar } from '../components/OptimizedImage';
 import {
   DEFAULT_GITHUB_REPO, INSTALLED_VERSION, INSTALLED_VERSION_CODE
 } from '../services/githubUpdater';
@@ -23,8 +25,11 @@ export const SettingsModal: React.FC = () => {
   const {
     closeModal, currentUser, githubRepo, setGithubRepo,
     updateInfo, isCheckingUpdates, updateError, checkForUpdates,
-    resetGithubRepo, openModal, themeMode, setThemeMode
+    resetGithubRepo, openModal, themeMode, setThemeMode,
+    openAuthModal, signOut
   } = useVybe();
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   const [inputRepo, setInputRepo] = useState(githubRepo);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -81,6 +86,85 @@ export const SettingsModal: React.FC = () => {
           >
             <X className="w-5 h-5" />
           </button>
+        </div>
+
+        {/* Account & Session */}
+        <div className="p-4 rounded-2xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            {currentUser ? (
+              <>
+                <div className="flex items-center gap-3 min-w-0">
+                  <VybeAvatar
+                    src={currentUser.avatarUrl}
+                    name={currentUser.displayName || currentUser.username}
+                    size={40}
+                    className="w-10 h-10 shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-[var(--vybe-text)] truncate">{currentUser.displayName}</p>
+                    <p className="text-[11px] text-[var(--vybe-text-secondary)] truncate">@{currentUser.username}</p>
+                  </div>
+                </div>
+                {!confirmSignOut && (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmSignOut(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/12 border border-red-500/30 text-red-500 text-xs font-bold hover:bg-red-500/20 shrink-0"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Sign Out</span>
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <div>
+                  <p className="text-xs font-bold text-[var(--vybe-text)]">Not signed in</p>
+                  <p className="text-[11px] text-[var(--vybe-text-secondary)]">Sign in to sync posts, stories & messages</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeModal();
+                    openAuthModal('Sign in to your VYBE account.', 'LOGIN');
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[var(--vybe-accent)] text-white keep-white text-xs font-bold shrink-0"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>Sign In</span>
+                </button>
+              </>
+            )}
+          </div>
+          {confirmSignOut && currentUser && (
+            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center justify-between gap-2">
+              <span className="text-xs text-red-400 font-medium">Sign out of @{currentUser.username} on this device?</span>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  disabled={isSigningOut}
+                  onClick={() => setConfirmSignOut(false)}
+                  className="px-2.5 py-1 rounded-lg bg-[var(--vybe-surface)] border border-[var(--vybe-border)] text-xs font-semibold text-[var(--vybe-text)]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isSigningOut}
+                  onClick={async () => {
+                    setIsSigningOut(true);
+                    await signOut();
+                    setIsSigningOut(false);
+                    setConfirmSignOut(false);
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-600 text-white keep-white text-xs font-bold disabled:opacity-50"
+                >
+                  {isSigningOut && <Loader2 className="w-3 h-3 animate-spin" />}
+                  <span>Confirm</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Appearance / Theme Mode */}

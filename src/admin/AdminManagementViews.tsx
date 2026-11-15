@@ -61,7 +61,7 @@ export const AdminManagementViews: React.FC<AdminManagementViewsProps> = ({
 
   // Verification / Content / Reports filters
   const [verifBadgeFilter, setVerifBadgeFilter] = useState<string>('ALL');
-  const [contentFilter, setContentFilter] = useState<'ALL' | 'IMAGE' | 'VIDEO' | 'REEL' | 'TEXT'>('ALL');
+  const [contentFilter, setContentFilter] = useState<'ALL' | 'IMAGE' | 'VIDEO' | 'TEXT'>('ALL');
   const [reportFilter, setReportFilter] = useState<'ALL' | 'POST' | 'USER'>('ALL');
 
   const filteredUsers = useMemo(() => {
@@ -112,7 +112,11 @@ export const AdminManagementViews: React.FC<AdminManagementViewsProps> = ({
   const filteredPosts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return posts.filter(p => {
-      if (contentFilter !== 'ALL' && p.mediaType !== contentFilter) return false;
+      if (contentFilter === 'VIDEO') {
+        if (p.mediaType !== 'VIDEO' && p.mediaType !== 'REEL') return false;
+      } else if (contentFilter !== 'ALL' && p.mediaType !== contentFilter) {
+        return false;
+      }
       if (!q) return true;
       return (
         p.caption.toLowerCase().includes(q) ||
@@ -628,7 +632,7 @@ export const AdminManagementViews: React.FC<AdminManagementViewsProps> = ({
       <div className="space-y-4 animate-fade-in">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-1.5">
-            {(['ALL', 'IMAGE', 'VIDEO', 'REEL', 'TEXT'] as const).map(t => (
+            {(['ALL', 'IMAGE', 'VIDEO', 'TEXT'] as const).map(t => (
               <button
                 key={t}
                 type="button"

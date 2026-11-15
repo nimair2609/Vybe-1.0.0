@@ -54,10 +54,6 @@ import com.example.util.FeedAudioController
 import com.example.util.MediaUtils
 import kotlinx.coroutines.launch
 
-enum class PublishDestination {
-  FEED_POST, VYBES_REEL
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreatePostScreen(viewModel: VybeViewModel) {
@@ -67,7 +63,6 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
   val currentUser by viewModel.currentUser.collectAsState()
   val isOnline by viewModel.isOnline.collectAsState()
 
-  var publishDestination by remember { mutableStateOf(PublishDestination.FEED_POST) }
   var caption by remember { mutableStateOf("") }
   var selectedMood by remember { mutableStateOf<MoodType?>(null) }
   var selectedMediaUri by remember { mutableStateOf<String?>(null) }
@@ -110,7 +105,7 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
   }
 
   val previewContainerRatio: Float = when {
-    publishDestination == PublishDestination.VYBES_REEL && isVideoMedia -> (detectedMediaRatio ?: (9f / 16f)).coerceIn(0.56f, 1.78f)
+    isVideoMedia -> (detectedMediaRatio ?: (9f / 16f)).coerceIn(0.56f, 1.78f)
     cropRatio == "4:5" -> 0.8f
     cropRatio == "16:9" -> 16f / 9f
     else -> 1.0f
@@ -142,7 +137,7 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
     if (uri != null) {
       val cached = MediaUtils.copyUriToLocalCache(context, uri, "post_video")
       selectedMediaUri = cached
-      selectedMediaType = if (publishDestination == PublishDestination.VYBES_REEL) MediaType.REEL else MediaType.VIDEO
+      selectedMediaType = MediaType.VIDEO
       localValidationMessage = null
       val meta = MediaUtils.inspectMediaAspectRatio(context, cached)
       detectedMediaRatio = meta
@@ -183,18 +178,8 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
       localValidationMessage = "No internet connection. Reconnect before publishing your post."
       return
     }
-    if (publishDestination == PublishDestination.VYBES_REEL && !isVideoMedia) {
-      localValidationMessage = "Select a video file to publish a VYBES Reel."
-      return
-    }
-    if (caption.isBlank() && selectedMediaUri == null) {
-      localValidationMessage = "Write a caption or attach a photo or video first."
-      return
-    }
-
     val resolvedType = when {
       selectedMediaUri == null -> MediaType.TEXT
-      publishDestination == PublishDestination.VYBES_REEL -> MediaType.REEL
       isVideoMedia -> MediaType.VIDEO
       else -> MediaType.IMAGE
     }
@@ -209,7 +194,7 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
         mood = selectedMood,
         mediaType = resolvedType,
         imageUrl = selectedMediaUri,
-        isVybes = publishDestination == PublishDestination.VYBES_REEL,
+        isVybes = false,
         locationName = selectedLocationResult?.displayName,
         latitude = selectedLocationResult?.latitude,
         longitude = selectedLocationResult?.longitude,
@@ -224,18 +209,14 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
     }
   }
 
-  val canSubmit = !isSubmitting && if (publishDestination == PublishDestination.VYBES_REEL) {
-    isVideoMedia
-  } else {
-    caption.isNotBlank() || selectedMediaUri != null
-  }
+  val canSubmit = !isSubmitting && (caption.isNotBlank() || selectedMediaUri != null)
 
   Scaffold(
     containerColor = palette.canvas,
     contentWindowInsets = WindowInsets(0.dp),
     topBar = {
       VybeSubScreenTopBar(
-        title = if (publishDestination == PublishDestination.FEED_POST) "Create Feed Post" else "Create VYBES Reel",
+        title = "Create Post",
         onBackClick = { if (!isSubmitting) viewModel.navigateBack() },
         backTestTag = "create_post_back_button",
         actions = {
@@ -340,87 +321,11 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
                 color = palette.textPrimary
               )
               Text(
-                text = if (publishDestination == PublishDestination.FEED_POST) {
-                  if (currentUser!!.isPrivate) "Visible to Approved LINKUPS" else "Visible in Community Feed"
-                } else {
-                  "Visible in VYBES Short-Video Stream"
-                },
+                text = if (currentUser!!.isPrivate) "Visible to Approved LINKUPS" else "Visible in Community Feed",
                 fontSize = 12.sp,
                 color = palette.textSecondary
               )
             }
-          }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Publishing Destination (Feed Post vs VYBES Reel)
-        Text(
-          text = "PUBLISHING DESTINATION",
-          fontFamily = PlusJakartaSansFontFamily,
-          fontSize = 11.sp,
-          fontWeight = FontWeight.Bold,
-          letterSpacing = 0.8.sp,
-          color = palette.textMuted
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-          val isFeedDest = publishDestination == PublishDestination.FEED_POST
-          VybeSurfaceCard(
-            onClick = if (!isSubmitting) {
-              {
-                publishDestination = PublishDestination.FEED_POST
-                if (selectedMediaType == MediaType.REEL) {
-                  selectedMediaType = MediaType.VIDEO
-                }
-                localValidationMessage = null
-              }
-            } else null,
-            containerColor = if (isFeedDest) palette.accent.copy(alpha = 0.14f) else palette.card,
-            borderColor = if (isFeedDest) palette.accent else palette.border,
-            cornerRadius = VybeTokens.Radius.md,
-            contentPadding = PaddingValues(12.dp),
-            modifier = Modifier.weight(1f)
-          ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              Icon(Icons.Default.DynamicFeed, contentDescription = null, tint = palette.accent, modifier = Modifier.size(18.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text("Feed Post", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = palette.textPrimary)
-            }
-            Spacer(modifier = Modifier.height(2.dp))
-            Text("Text, photo, or video", fontSize = 11.sp, color = palette.textSecondary)
-          }
-
-          val isReelDest = publishDestination == PublishDestination.VYBES_REEL
-          VybeSurfaceCard(
-            onClick = if (!isSubmitting) {
-              {
-                publishDestination = PublishDestination.VYBES_REEL
-                if (selectedMediaUri != null && !isVideoMedia) {
-                  selectedMediaUri = null
-                  selectedMediaType = MediaType.REEL
-                } else if (isVideoMedia) {
-                  selectedMediaType = MediaType.REEL
-                }
-                localValidationMessage = null
-              }
-            } else null,
-            containerColor = if (isReelDest) palette.accentSecondary.copy(alpha = 0.14f) else palette.card,
-            borderColor = if (isReelDest) palette.accentSecondary else palette.border,
-            cornerRadius = VybeTokens.Radius.md,
-            contentPadding = PaddingValues(12.dp),
-            modifier = Modifier.weight(1f)
-          ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              Icon(Icons.Default.PlayCircle, contentDescription = null, tint = palette.accentSecondary, modifier = Modifier.size(18.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text("VYBES Reel", fontFamily = PlusJakartaSansFontFamily, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = palette.textPrimary)
-            }
-            Spacer(modifier = Modifier.height(2.dp))
-            Text("Full-screen short video", fontSize = 11.sp, color = palette.textSecondary)
           }
         }
 
@@ -435,10 +340,7 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
           enabled = !isSubmitting,
           placeholder = {
             Text(
-              if (publishDestination == PublishDestination.FEED_POST)
-                "Share what's on your mind..."
-              else
-                "Add a caption and #hashtags for your VYBES reel...",
+              "Share what's on your mind...",
               color = palette.textMuted
             )
           },
@@ -507,7 +409,7 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
 
         // Media Selection Controls
         Text(
-          text = if (publishDestination == PublishDestination.FEED_POST) "ATTACH MEDIA" else "SELECT REEL VIDEO",
+          text = "ATTACH MEDIA",
           fontFamily = PlusJakartaSansFontFamily,
           fontSize = 11.sp,
           fontWeight = FontWeight.Bold,
@@ -516,9 +418,25 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
         )
         Spacer(modifier = Modifier.height(8.dp))
 
-        if (publishDestination == PublishDestination.VYBES_REEL) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
           VybeSecondaryButton(
-            text = "Choose Video from Gallery",
+            text = "Photo",
+            icon = Icons.Default.PhotoLibrary,
+            onClick = {
+              photoPickerLauncher.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+              )
+            },
+            enabled = !isSubmitting,
+            modifier = Modifier.weight(1f),
+            testTag = "pick_gallery_photo_btn"
+          )
+
+          VybeSecondaryButton(
+            text = "Video",
             icon = Icons.Default.Videocam,
             onClick = {
               videoPickerLauncher.launch(
@@ -526,59 +444,28 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
               )
             },
             enabled = !isSubmitting,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.weight(1f),
             testTag = "pick_gallery_video_btn"
           )
-        } else {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-          ) {
-            VybeSecondaryButton(
-              text = "Photo",
-              icon = Icons.Default.PhotoLibrary,
-              onClick = {
-                photoPickerLauncher.launch(
-                  PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                )
-              },
-              enabled = !isSubmitting,
-              modifier = Modifier.weight(1f),
-              testTag = "pick_gallery_photo_btn"
-            )
 
-            VybeSecondaryButton(
-              text = "Video",
-              icon = Icons.Default.Videocam,
-              onClick = {
-                videoPickerLauncher.launch(
-                  PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
-                )
-              },
-              enabled = !isSubmitting,
-              modifier = Modifier.weight(1f),
-              testTag = "pick_gallery_video_btn"
-            )
-
-            VybeSecondaryButton(
-              text = "Camera",
-              icon = Icons.Default.CameraAlt,
-              onClick = {
-                val granted = ContextCompat.checkSelfPermission(
-                  context,
-                  Manifest.permission.CAMERA
-                ) == PackageManager.PERMISSION_GRANTED
-                if (granted) {
-                  cameraLauncher.launch(null)
-                } else {
-                  cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                }
-              },
-              enabled = !isSubmitting,
-              modifier = Modifier.weight(1f),
-              testTag = "capture_camera_media_btn"
-            )
-          }
+          VybeSecondaryButton(
+            text = "Camera",
+            icon = Icons.Default.CameraAlt,
+            onClick = {
+              val granted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.CAMERA
+              ) == PackageManager.PERMISSION_GRANTED
+              if (granted) {
+                cameraLauncher.launch(null)
+              } else {
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+              }
+            },
+            enabled = !isSubmitting,
+            modifier = Modifier.weight(1f),
+            testTag = "capture_camera_media_btn"
+          )
         }
 
         // Live Media Preview
@@ -645,46 +532,44 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
             )
           }
 
-          if (publishDestination == PublishDestination.FEED_POST) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-              text = "FEED ASPECT RATIO",
-              fontFamily = PlusJakartaSansFontFamily,
-              fontSize = 11.sp,
-              fontWeight = FontWeight.Bold,
-              letterSpacing = 0.8.sp,
-              color = palette.textMuted
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-              listOf(
-                "1:1" to "1:1 Square",
-                "4:5" to "4:5 Portrait",
-                "16:9" to "16:9 Landscape"
-              ).forEach { (ratio, label) ->
-                val selected = cropRatio == ratio
-                Surface(
-                  color = if (selected) palette.accent else palette.elevated,
-                  shape = RoundedCornerShape(VybeTokens.Radius.md),
-                  border = BorderStroke(1.dp, if (selected) palette.accent else palette.border),
-                  modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 42.dp)
-                    .clip(RoundedCornerShape(VybeTokens.Radius.md))
-                    .clickable(enabled = !isSubmitting) { cropRatio = ratio }
-                ) {
-                  Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)) {
-                    Text(
-                      text = label,
-                      fontSize = 11.sp,
-                      fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                      color = if (selected) Color.White else palette.textSecondary,
-                      maxLines = 1
-                    )
-                  }
+          Spacer(modifier = Modifier.height(12.dp))
+          Text(
+            text = "FEED ASPECT RATIO",
+            fontFamily = PlusJakartaSansFontFamily,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.8.sp,
+            color = palette.textMuted
+          )
+          Spacer(modifier = Modifier.height(6.dp))
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            listOf(
+              "1:1" to "1:1 Square",
+              "4:5" to "4:5 Portrait",
+              "16:9" to "16:9 Landscape"
+            ).forEach { (ratio, label) ->
+              val selected = cropRatio == ratio
+              Surface(
+                color = if (selected) palette.accent else palette.elevated,
+                shape = RoundedCornerShape(VybeTokens.Radius.md),
+                border = BorderStroke(1.dp, if (selected) palette.accent else palette.border),
+                modifier = Modifier
+                  .weight(1f)
+                  .heightIn(min = 42.dp)
+                  .clip(RoundedCornerShape(VybeTokens.Radius.md))
+                  .clickable(enabled = !isSubmitting) { cropRatio = ratio }
+              ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)) {
+                  Text(
+                    text = label,
+                    fontSize = 11.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    color = if (selected) Color.White else palette.textSecondary,
+                    maxLines = 1
+                  )
                 }
               }
             }

@@ -1,15 +1,15 @@
 package com.example.data.model
 
 data class CreatorStats(
-  val totalImpressions30d: Int = 184500,
-  val engagementRatePercent: Float = 6.4f,
-  val netFollowersGain30d: Int = 3840,
-  val profileVisits30d: Int = 12900,
-  val estimatedMonthlyEarningsInr: Int = 34500,
-  val pendingPayoutInr: Int = 18200,
-  val confirmedPayoutInr: Int = 16300,
-  val isMonetizationApproved: Boolean = true,
-  val brandCollaborationReadiness: String = "Eligible - Profile Verified"
+  val totalImpressions30d: Int = 0,
+  val engagementRatePercent: Float = 0f,
+  val netFollowersGain30d: Int = 0,
+  val profileVisits30d: Int = 0,
+  val estimatedMonthlyEarningsInr: Int = 0,
+  val pendingPayoutInr: Int = 0,
+  val confirmedPayoutInr: Int = 0,
+  val isMonetizationApproved: Boolean = false,
+  val brandCollaborationReadiness: String = "Not Applied"
 )
 
 enum class ReportTargetType {
@@ -88,7 +88,6 @@ data class AdminAppSettings(
 
 enum class AdCampaignPlacement(val displayName: String) {
   FEED_NATIVE("Feed Native Card"),
-  REELS_IN_STREAM("Reels In-Stream Sponsor"),
   EXPLORE_BANNER("Explore Zone Banner"),
   STORIES_INTERSTITIAL("Stories Interstitial");
 
@@ -150,34 +149,34 @@ data class AdminAuditLog(
 )
 
 data class AdminDashboardStats(
-  val totalUsers: Int = 148,
-  val activeUsers24h: Int = 32,
-  val activeUsers7d: Int = 96,
-  val totalPosts: Int = 24,
-  val totalReels: Int = 14,
-  val totalStories: Int = 8,
-  val totalCommunities: Int = 6,
-  val verifiedCreators: Int = 12,
+  val totalUsers: Int = 0,
+  val activeUsers24h: Int = 0,
+  val activeUsers7d: Int = 0,
+  val totalPosts: Int = 0,
+  val totalReels: Int = 0,
+  val totalStories: Int = 0,
+  val totalCommunities: Int = 0,
+  val verifiedCreators: Int = 0,
   val pendingReports: Int = 0,
-  val activeAdCampaigns: Int = 2,
-  val totalImpressionsCount: Int = 140700,
-  val totalClicksCount: Int = 6960,
-  val storageUsageMb: Float = 440.8f,
+  val activeAdCampaigns: Int = 0,
+  val totalImpressionsCount: Int = 0,
+  val totalClicksCount: Int = 0,
+  val storageUsageMb: Float = 0f,
   val apiErrorCount24h: Int = 0,
-  val backendStatus: String = "OPERATIONAL",
-  val realtimeLatencyMs: Int = 28
+  val backendStatus: String = "UNCONFIGURED",
+  val realtimeLatencyMs: Int = 0
 )
 
 data class LicensedMusicTrack(
   val trackId: String = "",
   val title: String = "",
   val artist: String = "",
-  val albumName: String = "VYBE Originals",
+  val albumName: String = "",
   val durationSeconds: Int = 30,
   val previewUrl: String? = null,
   val coverArtUrl: String? = null,
   val isTrending: Boolean = false,
-  val usageCount: Int = 1240
+  val usageCount: Int = 0
 ) {
   val displayLabel: String
     get() = if (artist.isNotBlank()) "$title — $artist" else title

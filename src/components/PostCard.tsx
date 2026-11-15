@@ -227,11 +227,6 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
                 className="w-full h-full object-cover max-h-[500px]"
               />
             )}
-            {post.isVybesReel && (
-              <div className="absolute top-3 right-3 px-2 py-1 rounded-lg bg-black/60 backdrop-blur-md text-[10px] font-bold text-white keep-white uppercase tracking-wider">
-                VYBE Reel
-              </div>
-            )}
           </FingerHeartDoubleTapOverlay>
         </div>
       )}

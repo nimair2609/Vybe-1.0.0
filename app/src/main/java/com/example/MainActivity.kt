@@ -228,10 +228,8 @@ class MainActivity : ComponentActivity() {
       }
 
       LaunchedEffect(currentScreen, selectedTab) {
-        val isFeedOrReelsMain = currentScreen == Screen.MAIN &&
-          (selectedTab == MainTab.FEED || selectedTab == MainTab.VYBES)
-        val isMediaPlaybackScreen = isFeedOrReelsMain ||
-          currentScreen == Screen.REELS_VIEWER ||
+        val isFeedMain = currentScreen == Screen.MAIN && selectedTab == MainTab.FEED
+        val isMediaPlaybackScreen = isFeedMain ||
           currentScreen == Screen.STORY_VIEWER ||
           currentScreen == Screen.MUSIC_TRACK_DETAIL ||
           currentScreen == Screen.LIVE_STUDIO
@@ -272,7 +270,6 @@ class MainActivity : ComponentActivity() {
                 Screen.CREATOR_STUDIO -> CreatorStudioScreen(viewModel)
                 Screen.ADMIN_CONSOLE -> AdminConsoleScreen(viewModel)
                 Screen.SETTINGS -> SettingsScreen(viewModel)
-                Screen.REELS_VIEWER -> ReelsViewerScreen(viewModel)
                 Screen.TIME_CAPSULES_VIEW -> TimeCapsulesScreen(viewModel)
                 Screen.DOUBLE_TAKE_VIEW -> DoubleTakeScreen(viewModel)
                 Screen.UNLOAD_VIEW -> UnloadScreen(viewModel)
@@ -406,9 +403,8 @@ class MainActivity : ComponentActivity() {
       if (vm != null) {
         val screen = vm.currentScreen.value
         val tab = vm.selectedTab.value
-        val inFeedOrReels = screen == Screen.REELS_VIEWER ||
-          (screen == Screen.MAIN && (tab == MainTab.FEED || tab == MainTab.VYBES))
-        if (inFeedOrReels) {
+        val inFeedPlayback = screen == Screen.MAIN && tab == MainTab.FEED
+        if (inFeedPlayback) {
           volumeControlStream = AudioManager.STREAM_MUSIC
           if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
             vm.onPhysicalVolumeUpInPlayback()

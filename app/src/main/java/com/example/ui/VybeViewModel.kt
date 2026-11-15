@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 enum class MainTab {
-  FEED, EXPLORE, CREATE, INBOX, PROFILE, VYBES, MOOD_ZONES, CROSSED_PATHS
+  FEED, EXPLORE, CREATE, INBOX, PROFILE, MOOD_ZONES, CROSSED_PATHS
 }
 
 enum class Screen {
@@ -36,7 +36,6 @@ enum class Screen {
   CREATOR_STUDIO,
   ADMIN_CONSOLE,
   SETTINGS,
-  REELS_VIEWER,
   TIME_CAPSULES_VIEW,
   DOUBLE_TAKE_VIEW,
   UNLOAD_VIEW,
@@ -72,9 +71,6 @@ class VybeViewModel : ViewModel() {
   private val _isFeedAudioEnabled = MutableStateFlow(false)
   val isFeedAudioEnabled: StateFlow<Boolean> = _isFeedAudioEnabled.asStateFlow()
 
-  private val _isReelsAudioEnabled = MutableStateFlow(true)
-  val isReelsAudioEnabled: StateFlow<Boolean> = _isReelsAudioEnabled.asStateFlow()
-
   fun setFeedAudioEnabled(enabled: Boolean) {
     _isFeedAudioEnabled.value = enabled
   }
@@ -85,32 +81,14 @@ class VybeViewModel : ViewModel() {
     return next
   }
 
-  fun setReelsAudioEnabled(enabled: Boolean) {
-    _isReelsAudioEnabled.value = enabled
-  }
-
-  fun toggleReelsAudio(): Boolean {
-    val next = !_isReelsAudioEnabled.value
-    _isReelsAudioEnabled.value = next
-    return next
-  }
-
   /**
-   * Invoked when the user presses physical Volume Up while viewing Feed or Reels.
+   * Invoked when the user presses physical Volume Up while viewing Feed media.
    * Ensures muted playback unmutes naturally while Android adjusts STREAM_MUSIC volume.
    */
   fun onPhysicalVolumeUpInPlayback() {
-    when {
-      _currentScreen.value == Screen.REELS_VIEWER ||
-        (_currentScreen.value == Screen.MAIN && _selectedTab.value == MainTab.VYBES) -> {
-        if (!_isReelsAudioEnabled.value) {
-          _isReelsAudioEnabled.value = true
-        }
-      }
-      _currentScreen.value == Screen.MAIN && _selectedTab.value == MainTab.FEED -> {
-        if (!_isFeedAudioEnabled.value) {
-          _isFeedAudioEnabled.value = true
-        }
+    if (_currentScreen.value == Screen.MAIN && _selectedTab.value == MainTab.FEED) {
+      if (!_isFeedAudioEnabled.value) {
+        _isFeedAudioEnabled.value = true
       }
     }
   }
@@ -139,9 +117,6 @@ class VybeViewModel : ViewModel() {
 
   private val _uiBannerMessage = MutableStateFlow<String?>(null)
   val uiBannerMessage: StateFlow<String?> = _uiBannerMessage.asStateFlow()
-
-  private val _targetReelId = MutableStateFlow<String?>(null)
-  val targetReelId: StateFlow<String?> = _targetReelId.asStateFlow()
 
   private val _targetFeedPostId = MutableStateFlow<String?>(null)
   val targetFeedPostId: StateFlow<String?> = _targetFeedPostId.asStateFlow()
@@ -766,12 +741,8 @@ class VybeViewModel : ViewModel() {
             navigateTo(Screen.MAIN)
           }
         }
-        // Reels Viewer
-        destination == "REELS_VIEWER" && !targetId.isNullOrBlank() -> {
-          openReelViewer(targetId)
-        }
-        // Feed Post Detail
-        destination == "POST_DETAIL" && !targetId.isNullOrBlank() -> {
+        // Feed / Video Post Detail (including legacy Reels deep links)
+        (destination == "POST_DETAIL" || destination == "REELS_VIEWER") && !targetId.isNullOrBlank() -> {
           openPostFromNotification(targetId)
         }
         // Story Reaction / Mention Deep Link
@@ -910,27 +881,8 @@ class VybeViewModel : ViewModel() {
     }
   }
 
-  fun openReelViewer(reelId: String? = null) {
-    _targetReelId.value = reelId
-    if (_currentScreen.value == Screen.MAIN) {
-      selectTab(MainTab.VYBES)
-    } else {
-      navigateTo(Screen.REELS_VIEWER)
-    }
-  }
-
-  fun clearTargetReelId() {
-    _targetReelId.value = null
-  }
-
   fun openPostFromNotification(postId: String) {
     if (postId.isBlank()) return
-    val targetPost = repository.posts.value.firstOrNull { it.id == postId }
-    if (targetPost?.isVybesReel == true || targetPost?.mediaType == MediaType.REEL) {
-      _targetReelId.value = postId
-      navigateTo(Screen.REELS_VIEWER)
-      return
-    }
     _targetFeedPostId.value = postId
     _selectedTab.value = MainTab.FEED
     screenBackStack.clear()

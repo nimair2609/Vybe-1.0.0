@@ -354,7 +354,7 @@ fun MoodZonesScreen(viewModel: VybeViewModel) {
             onReactComment = { commentId, rx -> viewModel.reactToComment(post.id, commentId, rx) },
             onShareClick = { viewModel.openPostShareSheet(post) },
             onUserClick = { u -> viewModel.openUserProfile(u) },
-            onRemixClick = { viewModel.openReelViewer(post.id) },
+            onRemixClick = { viewModel.openPostFromNotification(post.id) },
             onDeleteClick = { viewModel.deletePost(post.id) },
             onReportPost = { reason ->
               scope.launch {

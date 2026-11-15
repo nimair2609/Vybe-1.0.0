@@ -176,7 +176,7 @@ fun UserProfileScreen(
     }
   }
 
-  val profileTabs = listOf("Posts", "Vybe Reels", "Unfiltered", "Tagged", "Highlights")
+  val profileTabs = listOf("Posts", "Unfiltered", "Tagged", "Highlights")
   var selectedTabIndex by remember { mutableIntStateOf(0) }
   val selectedTab = profileTabs.getOrElse(selectedTabIndex) { "Posts" }
 
@@ -1028,7 +1028,7 @@ fun UserProfileScreen(
             VybeEmptyState(
               icon = Icons.Default.Lock,
               title = "This Account is Private",
-              subtitle = "Send a LINKUP request to @${user.username} to view their moments and reels."
+              subtitle = "Send a LINKUP request to @${user.username} to view their moments."
             )
           }
         }
@@ -1037,14 +1037,12 @@ fun UserProfileScreen(
           Box(modifier = Modifier.padding(20.dp)) {
             VybeEmptyState(
               icon = when (selectedTab) {
-                "Vybe Reels" -> Icons.Default.SmartDisplay
                 "Unfiltered" -> Icons.Default.CameraAlt
                 "Tagged" -> Icons.Default.Tag
                 "Highlights" -> Icons.Default.Star
                 else -> Icons.Default.PhotoLibrary
               },
               title = when (selectedTab) {
-                "Vybe Reels" -> "No reels published yet"
                 "Unfiltered" -> "No unfiltered moments captured"
                 "Tagged" -> "No tagged posts"
                 "Highlights" -> "No highlighted posts pinned"
@@ -1076,11 +1074,7 @@ fun UserProfileScreen(
                   .weight(1f)
                   .aspectRatio(1f)
                   .clickable {
-                    if (isVideo) {
-                      viewModel.openReelViewer(post.id)
-                    } else {
-                      viewModel.openPostFromNotification(post.id)
-                    }
+                    viewModel.openPostFromNotification(post.id)
                   }
               ) {
                 Box(modifier = Modifier.fillMaxSize()) {

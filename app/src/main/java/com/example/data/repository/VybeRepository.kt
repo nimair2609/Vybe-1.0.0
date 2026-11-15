@@ -443,82 +443,9 @@ class VybeRepository private constructor() {
       )
     )
 
-    _circles.value = listOf(
-      VybeCircle(
-        id = "circle_indie_founders",
-        name = "Indian Indie Creators",
-        description = "Founders, designers & engineers building digital products from Bengaluru, Mumbai, Delhi & beyond.",
-        category = "Tech & Founders",
-        membersCount = 380,
-        isPrivate = false,
-        tags = listOf("#IndieHacker", "#MadeInIndia", "#Tech")
-      ),
-      VybeCircle(
-        id = "circle_mindful_living",
-        name = "Mindful Morning Circle",
-        description = "Early risers dedicated to 20-minute daily meditation, intentional journaling, and peaceful focus.",
-        category = "Wellness",
-        membersCount = 540,
-        isPrivate = false,
-        tags = listOf("#Mindfulness", "#MorningRoutine", "#Peace")
-      ),
-      VybeCircle(
-        id = "circle_photography_club",
-        name = "Desi Shutterbugs",
-        description = "Visual storytellers capturing raw street photography, architecture, and unfiltered moments.",
-        category = "Creative",
-        membersCount = 290,
-        isPrivate = false,
-        tags = listOf("#Photography", "#StreetArt", "#Visuals")
-      )
-    )
-
-    _growJourneys.value = listOf(
-      GrowJourney(
-        id = "journey_7day_digital_clarity",
-        title = "7-Day Digital Clarity",
-        subtitle = "Declutter mind & screen time",
-        description = "A 7-day guided reset to replace doomscrolling with purposeful habits and deep calm.",
-        durationDays = 7,
-        category = "Mindfulness",
-        dailyPrompt = "Notice the first 30 minutes of your morning today. Breathe before checking any feeds.",
-        currentDay = 1,
-        participantsCount = 420
-      ),
-      GrowJourney(
-        id = "journey_21day_deep_work",
-        title = "21-Day Deep Work Habit",
-        subtitle = "Master distraction-free focus",
-        description = "Build a consistent 90-minute daily deep work block for creative or technical excellence.",
-        durationDays = 21,
-        category = "Productivity",
-        dailyPrompt = "Set a timer for 45 minutes of single-tasking with zero notifications.",
-        currentDay = 1,
-        participantsCount = 680
-      ),
-      GrowJourney(
-        id = "journey_30day_fitness_spark",
-        title = "30-Day Movement Spark",
-        subtitle = "Consistent daily physical vitality",
-        description = "30 consecutive days of mindful movement, walking, or functional bodyweight fitness.",
-        durationDays = 30,
-        category = "Fitness",
-        dailyPrompt = "Complete a 25-minute brisk outdoor walk or mindful stretching session.",
-        currentDay = 1,
-        participantsCount = 890
-      )
-    )
-
-    _growBadges.value = listOf(
-      GrowBadge(
-        id = "badge_clarity_starter",
-        title = "Digital Clarity Pioneer",
-        description = "Initiated the 7-Day Digital Clarity Journey on VYBE.",
-        category = "Mindfulness",
-        earnedDate = "November 2026",
-        badgeTier = "Bronze"
-      )
-    )
+    _circles.value = emptyList()
+    _growJourneys.value = emptyList()
+    _growBadges.value = emptyList()
   }
 
   // =========================================================================
@@ -807,11 +734,17 @@ class VybeRepository private constructor() {
       _hasMoreFeedPosts.value = rawFetched.size >= feedPageSize
 
       val usersMap = _allUsers.value.associateBy { it.id }
+      val meId = _currentUser.value?.id
+      val meIsAdmin = _currentUser.value?.isAdmin == true
       val visiblePosts = rawFetched
         .distinctBy { it.id }
         .map { p ->
           val fullAuthor = usersMap[p.author.id]?.let { decorateUserRelationshipFlags(it) } ?: p.author
-          p.copy(author = fullAuthor)
+          val canSeeViews = (meId != null && fullAuthor.id == meId) || meIsAdmin
+          p.copy(
+            author = fullAuthor,
+            viewsCount = if (canSeeViews) p.viewsCount else 0
+          )
         }
         .filter { p -> canViewUserContent(p.author) }
 
@@ -849,10 +782,15 @@ class VybeRepository private constructor() {
         _hasMoreFeedPosts.value = nextBatch.size >= feedPageSize
         if (nextBatch.isNotEmpty()) {
           val usersMap = _allUsers.value.associateBy { it.id }
+          val meIsAdmin = _currentUser.value?.isAdmin == true
           val enrichedBatch = nextBatch
             .map { p ->
               val fullAuthor = usersMap[p.author.id]?.let { decorateUserRelationshipFlags(it) } ?: p.author
-              p.copy(author = fullAuthor)
+              val canSeeViews = (myId != null && fullAuthor.id == myId) || meIsAdmin
+              p.copy(
+                author = fullAuthor,
+                viewsCount = if (canSeeViews) p.viewsCount else 0
+              )
             }
             .filter { p -> canViewUserContent(p.author) }
 
@@ -1044,7 +982,7 @@ class VybeRepository private constructor() {
 
       val dest = when (item.type) {
         NotificationType.LIKE,
-        NotificationType.COMMENT_OR_REPLY -> if (isReel) "REELS_VIEWER" else "POST_DETAIL"
+        NotificationType.COMMENT_OR_REPLY -> "POST_DETAIL"
         NotificationType.FOLLOW -> "USER_PROFILE"
         NotificationType.DIRECT_MESSAGE,
         NotificationType.GROUP_MESSAGE -> "INBOX"
@@ -1054,10 +992,10 @@ class VybeRepository private constructor() {
 
       val resolvedTitle = when {
         item.type == NotificationType.LIKE && resolvedActor != null && resolvedActor.username != "vyber" -> {
-          "@${resolvedActor.username} liked your ${if (isReel) "Reel" else "post"}"
+          "@${resolvedActor.username} liked your post"
         }
         item.type == NotificationType.COMMENT_OR_REPLY && resolvedActor != null && resolvedActor.username != "vyber" -> {
-          "@${resolvedActor.username} commented on your ${if (isReel) "Reel" else "post"}"
+          "@${resolvedActor.username} commented on your post"
         }
         else -> item.title
       }
@@ -2262,15 +2200,19 @@ class VybeRepository private constructor() {
     val index = current.indexOfFirst { it.id == postId }
     if (index != -1) {
       val p = current[index]
+      val meId = _currentUser.value?.id
+      val canSeeViews = (meId != null && p.author.id == meId) || _currentUser.value?.isAdmin == true
       val optimisticViews = p.viewsCount + 1
-      current[index] = p.copy(viewsCount = optimisticViews)
-      _posts.value = current
+      if (canSeeViews) {
+        current[index] = p.copy(viewsCount = optimisticViews)
+        _posts.value = current
+      }
 
       if (supabaseRepo.isConfigured) {
         ioScope.launch {
           val token = SessionManager.get()?.accessToken.orEmpty()
-          val res = supabaseRepo.recordPostView(postId, _currentUser.value?.id, token)
-          if (res.isSuccess) {
+          val res = supabaseRepo.recordPostView(postId, meId, token)
+          if (res.isSuccess && canSeeViews) {
             val exactServerCount = res.getOrThrow()
             _posts.value = _posts.value.map {
               if (it.id == postId) it.copy(viewsCount = maxOf(exactServerCount, optimisticViews)) else it
@@ -7864,93 +7806,24 @@ class VybeRepository private constructor() {
         category = "Database & Auth",
         purpose = "PostgreSQL DB, Row-Level Security, Realtime channels, Storage buckets",
         status = if (supabaseRepo.isConfigured) IntegrationHealth.HEALTHY else IntegrationHealth.MISSING,
-        maskedSecret = "sb_publ••••••••4xQp",
-        lastCheckedIso = "Live",
+        maskedSecret = if (supabaseRepo.isConfigured) "Configured" else "Not Set",
+        lastCheckedIso = if (supabaseRepo.isConfigured) "Active" else "Unconfigured",
         requiredFields = listOf("SUPABASE_URL", "SUPABASE_ANON_KEY"),
         documentationUrl = "https://supabase.com/docs",
         setupInstructions = "Set project credentials in AI Studio Secrets or BuildConfig. Never expose service-role key in mobile clients."
       ),
       AdminIntegrationItem(
-        id = "fcm_push",
-        name = "Firebase Cloud Messaging & Push",
-        provider = "Google Cloud",
-        category = "Notifications & Messaging",
-        purpose = "Background wake-ups, notification tray alerts, Direct Message and Call pings",
-        status = IntegrationHealth.HEALTHY,
-        maskedSecret = "FCM_HTTPv1••••••••9201",
-        lastCheckedIso = "Live",
-        requiredFields = listOf("google-services.json", "FCM_SERVER_KEY"),
-        documentationUrl = "https://firebase.google.com/docs/cloud-messaging",
-        setupInstructions = "Ensure google-services.json package matches com.example and deploy FCM HTTP v1 service account to Supabase Edge Functions."
-      ),
-      AdminIntegrationItem(
-        id = "google_maps",
-        name = "Google Maps & Places SDK",
-        provider = "Google Maps Platform",
-        category = "Maps & Geolocation",
-        purpose = "Location tagging, Crossed Paths nearby encounters, city geocoding",
-        status = IntegrationHealth.HEALTHY,
-        maskedSecret = "AIzaSy••••••••9rTk",
-        lastCheckedIso = "Live",
-        requiredFields = listOf("MAPS_API_KEY"),
-        documentationUrl = "https://developers.google.com/maps/documentation/android-sdk",
-        setupInstructions = "Restrict API key in Google Cloud Console to Android package com.example and release/debug SHA-1 signing certificates."
-      ),
-      AdminIntegrationItem(
-        id = "email_auth",
-        name = "Supabase Transactional Email / SMTP",
-        provider = "Supabase Auth / Custom SMTP",
-        category = "Authentication",
-        purpose = "Email OTP 6-digit verification, password reset tokens, security alerts",
-        status = IntegrationHealth.HEALTHY,
-        maskedSecret = "smtp_vybe••••••••587",
-        lastCheckedIso = "Live",
-        requiredFields = listOf("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS"),
-        documentationUrl = "https://supabase.com/docs/guides/auth/auth-smtp",
-        setupInstructions = "Configure dedicated SMTP provider (e.g. Resend or SendGrid) in Supabase Auth to bypass default rate limits."
-      ),
-      AdminIntegrationItem(
-        id = "payments_gateway",
-        name = "Razorpay / Stripe Gateway",
-        provider = "Razorpay & Stripe",
-        category = "Payments",
-        purpose = "Creator tips, subscription passes, VIP badges, community shop purchases",
-        status = IntegrationHealth.DEGRADED,
-        maskedSecret = "rzp_test_••••••••182A",
-        lastCheckedIso = "Sandbox Mode",
-        requiredFields = listOf("RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"),
-        documentationUrl = "https://razorpay.com/docs/payments/payment-gateway/android-integration",
-        setupInstructions = "Currently operating in Test Sandbox mode. Production live keys require server-side signature verification webhook.",
-        isDynamicallyToggleable = true,
-        isEnabled = true
-      ),
-      AdminIntegrationItem(
-        id = "webrtc_audio",
-        name = "Live Voice WebRTC STUN/TURN",
-        provider = "Google STUN & Coturn Relay",
+        id = "music_catalog",
+        name = "Story Music Catalog Provider",
+        provider = "External Music API",
         category = "Audio & Media",
-        purpose = "Explore Zone Live Unload voice rooms, peer NAT traversal, acoustic echo cancellation",
-        status = IntegrationHealth.HEALTHY,
-        maskedSecret = "stun.l.google.com:19302",
-        lastCheckedIso = "Live",
-        requiredFields = listOf("STUN_SERVER_URL", "TURN_CREDENTIALS"),
-        documentationUrl = "https://webrtc.org/getting-started/turn-server",
-        setupInstructions = "Primary STUN server is stun.l.google.com:19302. Coturn fallback enabled for symmetric NAT mobile carriers."
-      ),
-      AdminIntegrationItem(
-        id = "ad_engine",
-        name = "VYBE First-Party Ad Engine",
-        provider = "VYBE Ad Manager",
-        category = "Ad & Analytics",
-        purpose = "Privacy-first native feed sponsorships, Reel in-stream placements, impression tracking",
-        status = IntegrationHealth.HEALTHY,
-        maskedSecret = "vybe_ad_core_v1",
-        lastCheckedIso = "Live",
-        requiredFields = listOf("AD_VAULT_ENABLED", "TRACKING_SALT"),
-        documentationUrl = "https://vybe.nrnext.in/docs/advertising",
-        setupInstructions = "Zero third-party trackers. All click & impression metrics calculated securely on Supabase edge.",
-        isDynamicallyToggleable = true,
-        isEnabled = true
+        purpose = "Story background music search & audio previews",
+        status = IntegrationHealth.MISSING,
+        maskedSecret = "Not Configured",
+        lastCheckedIso = "Pending API Key",
+        requiredFields = listOf("MUSIC_API_KEY"),
+        documentationUrl = "",
+        setupInstructions = "Configure external licensed music API provider credentials in Secrets before enabling external track search."
       )
     )
   }

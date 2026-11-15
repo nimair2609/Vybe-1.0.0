@@ -40,6 +40,7 @@ import com.example.util.music.MusicPreviewController
 @Composable
 fun MusicTrackScreen(viewModel: VybeViewModel) {
   val palette = LocalVybePalette.current
+  val currentUser by viewModel.currentUser.collectAsState()
   val attachment by viewModel.selectedMusicTrackAttachment.collectAsState()
   val trackReels by viewModel.trackPageReels.collectAsState()
   val isLoading by viewModel.isLoadingTrackPage.collectAsState()
@@ -62,7 +63,7 @@ fun MusicTrackScreen(viewModel: VybeViewModel) {
     topBar = {
       VybeSubScreenTopBar(
         title = "Audio Track",
-        subtitle = "Licensed Sound & Reels",
+        subtitle = "Licensed Sound & Posts",
         onBackClick = {
           MusicPreviewController.stop()
           viewModel.navigateBack()
@@ -208,7 +209,7 @@ fun MusicTrackScreen(viewModel: VybeViewModel) {
 
       item {
         Text(
-          text = "Reels Using This Track",
+          text = "Posts Using This Track",
           fontFamily = PlusJakartaSansFontFamily,
           style = MaterialTheme.typography.titleSmall,
           fontWeight = FontWeight.Bold,
@@ -231,18 +232,19 @@ fun MusicTrackScreen(viewModel: VybeViewModel) {
         item {
           VybeEmptyState(
             icon = Icons.Default.VideoLibrary,
-            title = "No Reels Yet",
-            subtitle = "Be the first creator to publish a Reel with this track."
+            title = "No Posts Yet",
+            subtitle = "Be the first creator to publish a post with this track."
           )
         }
       } else {
         items(trackReels, key = { it.id }) { reel ->
+          val canSeeViews = currentUser?.id == reel.author.id || currentUser?.isAdmin == true
           VybeSurfaceCard(
-            onClick = { viewModel.openReelViewer(reel.id) },
+            onClick = { viewModel.openPostFromNotification(reel.id) },
             contentPadding = PaddingValues(12.dp),
             modifier = Modifier
               .fillMaxWidth()
-              .testTag("track_reel_item_${reel.id}")
+              .testTag("track_post_item_${reel.id}")
           ) {
             Row(
               modifier = Modifier.fillMaxWidth(),
@@ -265,18 +267,26 @@ fun MusicTrackScreen(viewModel: VybeViewModel) {
                   VerificationBadge(user = reel.author, iconSize = 14.dp)
                 }
                 Text(
-                  text = reel.caption.ifBlank { "Watch Reel" },
+                  text = reel.caption.ifBlank { "View Post" },
                   fontSize = 12.sp,
                   color = palette.textSecondary,
                   maxLines = 1,
                   overflow = TextOverflow.Ellipsis
                 )
               }
-              Text(
-                text = "${reel.viewsCount} views",
-                fontSize = 11.sp,
-                color = palette.textMuted
-              )
+              if (canSeeViews) {
+                Text(
+                  text = "${reel.viewsCount} views",
+                  fontSize = 11.sp,
+                  color = palette.textMuted
+                )
+              } else {
+                Text(
+                  text = "${reel.likesCount} likes",
+                  fontSize = 11.sp,
+                  color = palette.textMuted
+                )
+              }
             }
           }
         }

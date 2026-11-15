@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { 
-  X, Image, Music, MapPin, Sparkles, Send, PlaySquare, Upload, Loader2, CheckCircle2, AlertCircle 
+  X, Image, Music, MapPin, Sparkles, Send, Upload, Loader2, CheckCircle2, AlertCircle 
 } from 'lucide-react';
 import { useVybe } from '../context/VybeContext';
 import { MOOD_DEFINITIONS, MoodType } from '../types';
@@ -13,13 +13,13 @@ export const CreatePostModal: React.FC = () => {
   const [caption, setCaption] = useState('');
   const [selectedMood, setSelectedMood] = useState<MoodType>(currentUser?.currentMood || 'GENERAL');
   const [imageUrl, setImageUrl] = useState('');
+  const [selectedMediaType, setSelectedMediaType] = useState<'IMAGE' | 'VIDEO'>('IMAGE');
   const [selectedBlob, setSelectedBlob] = useState<Blob | null>(null);
   const [blobFileName, setBlobFileName] = useState<string>('photo.webp');
   const [originalSizeBytes, setOriginalSizeBytes] = useState<number | undefined>(undefined);
   const [compressionSavings, setCompressionSavings] = useState<string | null>(null);
   const [locationName, setLocationName] = useState('');
   const [audioTrackTitle, setAudioTrackTitle] = useState('');
-  const [isVybesReel, setIsVybesReel] = useState(false);
   const [tagsInput, setTagsInput] = useState('');
   const [isCompressing, setIsCompressing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -28,7 +28,20 @@ export const CreatePostModal: React.FC = () => {
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setUploadError(null);
 
+    if (file.type.startsWith('video/')) {
+      setSelectedMediaType('VIDEO');
+      setSelectedBlob(file);
+      setOriginalSizeBytes(file.size);
+      setBlobFileName(file.name);
+      const kb = Math.round(file.size / 1024);
+      setCompressionSavings(`Video ready (${kb > 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`})`);
+      setImageUrl(URL.createObjectURL(file));
+      return;
+    }
+
+    setSelectedMediaType('IMAGE');
     try {
       setIsCompressing(true);
       setCompressionSavings(null);
@@ -74,7 +87,7 @@ export const CreatePostModal: React.FC = () => {
 
     let finalMediaUrl = imageUrl;
 
-    // If an image blob was selected, upload directly to Supabase storage bucket 'posts'
+    // If a photo/video blob was selected, upload directly to Supabase storage bucket 'posts'
     if (selectedBlob) {
       setIsUploading(true);
       try {
@@ -86,7 +99,7 @@ export const CreatePostModal: React.FC = () => {
           { isPrivate: Boolean(currentUser?.isPrivate) }
         );
         if (!uploadResult?.publicUrl) {
-          setUploadError('Could not upload photo to cloud storage. Check your connection and try again.');
+          setUploadError('Could not upload media to cloud storage. Check your connection and try again.');
           return;
         }
         finalMediaUrl = uploadResult.publicUrl;
@@ -103,11 +116,15 @@ export const CreatePostModal: React.FC = () => {
       .map(t => t.trim().toLowerCase())
       .filter(Boolean);
 
+    const inferredMediaType = finalMediaUrl
+      ? (selectedMediaType === 'VIDEO' || /\.(mp4|webm|mov|m4v)(\?|$)/i.test(finalMediaUrl) ? 'VIDEO' : 'IMAGE')
+      : 'TEXT';
+
     const ok = await createPost({
       caption: caption.trim(),
       mediaUrls: finalMediaUrl ? [finalMediaUrl] : [],
-      mediaType: isVybesReel ? 'REEL' : finalMediaUrl ? 'IMAGE' : 'TEXT',
-      isVybesReel,
+      mediaType: inferredMediaType,
+      isVybesReel: false,
       moodZone: selectedMood,
       locationName: locationName.trim() || undefined,
       audioTrackTitle: audioTrackTitle.trim() || undefined,
@@ -201,12 +218,12 @@ export const CreatePostModal: React.FC = () => {
                 ) : (
                   <>
                     <Upload className="w-3 h-3" />
-                    <span>Upload Device Photo</span>
+                    <span>Upload Photo / Video</span>
                   </>
                 )}
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/*,video/*"
                   onChange={handleFileSelect}
                   disabled={isCompressing}
                   className="hidden"
@@ -216,19 +233,28 @@ export const CreatePostModal: React.FC = () => {
             <input
               type="text"
               value={imageUrl}
-              onChange={(e) => setImageUrl(e.target.value)}
-              placeholder="Or paste direct image URL..."
+              onChange={(e) => {
+                setImageUrl(e.target.value);
+                setSelectedBlob(null);
+                setSelectedMediaType(/\.(mp4|webm|mov|m4v)(\?|$)/i.test(e.target.value) ? 'VIDEO' : 'IMAGE');
+              }}
+              placeholder="Or paste direct image or video URL..."
               className="w-full px-3 py-2 bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] rounded-xl text-xs text-[var(--vybe-text)] placeholder-[var(--vybe-text-muted)] focus:outline-none focus:border-[var(--vybe-accent)]"
             />
             {imageUrl && (
               <div className="space-y-1.5">
                 <div className="relative w-full max-h-40 rounded-xl overflow-hidden border border-[var(--vybe-border)] bg-[var(--vybe-elevated)] flex items-center justify-center">
-                  <img src={imageUrl} alt="preview" className="max-h-40 object-contain" />
+                  {selectedMediaType === 'VIDEO' ? (
+                    <video src={imageUrl} controls className="max-h-40 w-full object-contain" />
+                  ) : (
+                    <img src={imageUrl} alt="preview" className="max-h-40 object-contain" />
+                  )}
                   <button
                     type="button"
                     onClick={() => {
                       setImageUrl('');
                       setSelectedBlob(null);
+                      setSelectedMediaType('IMAGE');
                       setCompressionSavings(null);
                     }}
                     className="absolute top-2 right-2 p-1 rounded-full bg-black/70 hover:bg-black text-white keep-white text-xs"
@@ -285,22 +311,6 @@ export const CreatePostModal: React.FC = () => {
               onChange={(e) => setTagsInput(e.target.value)}
               placeholder="e.g. chillvibes, lofi, mumbai"
               className="w-full px-3 py-2 bg-[var(--vybe-elevated)] border border-[var(--vybe-border)] rounded-xl text-xs text-[var(--vybe-text)] placeholder-[var(--vybe-text-muted)] focus:outline-none focus:border-[var(--vybe-accent)]"
-            />
-          </div>
-
-          {/* VYBES Reel toggle */}
-          <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--vybe-elevated)] border border-[var(--vybe-border)]">
-            <div className="flex items-center gap-2">
-              <PlaySquare className="w-4 h-4 text-[var(--vybe-accent)]" />
-              <span className="text-xs font-semibold text-[var(--vybe-text)]">
-                Publish as VYBES Reel (Short-Form Video)
-              </span>
-            </div>
-            <input
-              type="checkbox"
-              checked={isVybesReel}
-              onChange={(e) => setIsVybesReel(e.target.checked)}
-              className="w-4 h-4 accent-[var(--vybe-accent)]"
             />
           </div>
 

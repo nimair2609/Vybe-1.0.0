@@ -214,7 +214,7 @@ export function sanitizePostgrestSearchTerm(raw: string): string {
     .slice(0, 64);
 }
 
-export type ProfileTabKey = 'POSTS' | 'REELS' | 'UNFILTERED' | 'TAGGED' | 'HIGHLIGHTS' | 'SAVED';
+export type ProfileTabKey = 'POSTS' | 'UNFILTERED' | 'TAGGED' | 'HIGHLIGHTS' | 'SAVED';
 
 export function filterProfileTabPosts(params: {
   tab: ProfileTabKey;
@@ -227,8 +227,6 @@ export function filterProfileTabPosts(params: {
 }): Post[] {
   const { tab, userPosts, savedPosts, allPosts, pinnedPostIds, username, userId } = params;
   switch (tab) {
-    case 'REELS':
-      return userPosts.filter(p => Boolean(p.isVybesReel) || p.mediaType === 'REEL' || p.mediaType === 'VIDEO');
     case 'UNFILTERED':
       return userPosts.filter(p => Boolean(p.isUnfiltered));
     case 'TAGGED': {
@@ -250,9 +248,7 @@ export function filterProfileTabPosts(params: {
       return savedPosts;
     case 'POSTS':
     default:
-      return userPosts.filter(
-        p => !p.isVybesReel && p.mediaType !== 'REEL' && p.mediaType !== 'VIDEO' && !p.isUnfiltered
-      );
+      return userPosts.filter(p => !p.isUnfiltered);
   }
 }
 

@@ -3418,7 +3418,7 @@ class SupabaseRepository {
             com.example.data.model.NotificationType.GROUP_MESSAGE -> "CHAT_DETAIL"
             com.example.data.model.NotificationType.BUSINESS_VERIFICATION_UPDATE -> "VERIFICATION_CENTER"
             com.example.data.model.NotificationType.LIKE,
-            com.example.data.model.NotificationType.COMMENT_OR_REPLY -> if (isReelContent) "REELS_VIEWER" else "POST_DETAIL"
+            com.example.data.model.NotificationType.COMMENT_OR_REPLY -> "POST_DETAIL"
             else -> "NOTIFICATIONS"
           }
 
@@ -3428,7 +3428,7 @@ class SupabaseRepository {
             }
 
           val resolvedTitle = if (notifType == com.example.data.model.NotificationType.LIKE && actorUser != null && actorUser.username != "vyber") {
-            "@${actorUser.username} reacted to your ${if (isReelContent) "Reel" else "post"}"
+            "@${actorUser.username} reacted to your ${if (isReelContent) "video" else "post"}"
           } else {
             dto.title
           }
