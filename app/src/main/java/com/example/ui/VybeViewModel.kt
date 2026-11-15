@@ -134,6 +134,9 @@ class VybeViewModel : ViewModel() {
   private val _profileLookupError = MutableStateFlow<String?>(null)
   val profileLookupError: StateFlow<String?> = _profileLookupError.asStateFlow()
 
+  private val _isResolvingProfile = MutableStateFlow(false)
+  val isResolvingProfile: StateFlow<Boolean> = _isResolvingProfile.asStateFlow()
+
   private val _uiBannerMessage = MutableStateFlow<String?>(null)
   val uiBannerMessage: StateFlow<String?> = _uiBannerMessage.asStateFlow()
 
@@ -179,6 +182,12 @@ class VybeViewModel : ViewModel() {
   private val _searchQuery = MutableStateFlow("")
   val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
   private var remoteSearchJob: Job? = null
+
+  private val _isSearchingExplore = MutableStateFlow(false)
+  val isSearchingExplore: StateFlow<Boolean> = _isSearchingExplore.asStateFlow()
+
+  private val _exploreSearchError = MutableStateFlow<String?>(null)
+  val exploreSearchError: StateFlow<String?> = _exploreSearchError.asStateFlow()
 
   // Music Track Page & Composer Pre-Selection State
   private val _selectedMusicTrackAttachment = MutableStateFlow<MusicAttachment?>(null)
@@ -584,17 +593,22 @@ class VybeViewModel : ViewModel() {
     val parsedProfileLink = com.example.util.QrCodeGenerator.parseProfileDeepLink(uri.toString())
     if (parsedProfileLink != null) {
       viewModelScope.launch {
+        _isResolvingProfile.value = true
         _profileLookupError.value = null
-        val matched = repository.resolveProfileFromDeepLink(
-          userId = parsedProfileLink.userId,
-          username = parsedProfileLink.username
-        )
-        if (matched != null && !matched.isDeactivated) {
-          openUserProfile(matched)
-        } else {
-          _selectedUserProfile.value = null
-          _profileLookupError.value = "This VYBE profile is unavailable or no longer exists."
-          navigateTo(Screen.USER_PROFILE)
+        navigateTo(Screen.USER_PROFILE)
+        try {
+          val matched = repository.resolveProfileFromDeepLink(
+            userId = parsedProfileLink.userId,
+            username = parsedProfileLink.username
+          )
+          if (matched != null && !matched.isDeactivated) {
+            openUserProfile(matched)
+          } else {
+            _selectedUserProfile.value = null
+            _profileLookupError.value = "This VYBE profile is unavailable or no longer exists."
+          }
+        } finally {
+          _isResolvingProfile.value = false
         }
       }
       return
@@ -1028,11 +1042,27 @@ class VybeViewModel : ViewModel() {
   fun setSearchQuery(query: String) {
     _searchQuery.value = query
     remoteSearchJob?.cancel()
-    if (query.trim().length >= 2) {
+    _exploreSearchError.value = null
+    val trimmed = query.trim()
+    if (trimmed.length >= 2) {
       remoteSearchJob = viewModelScope.launch {
         delay(280)
-        repository.searchUsersRemote(query)
+        _isSearchingExplore.value = true
+        val res = repository.searchExploreRemoteWithStatus(trimmed)
+        _isSearchingExplore.value = false
+        if (res.isFailure) {
+          _exploreSearchError.value = res.exceptionOrNull()?.message ?: "Unable to search VYBE right now."
+        }
       }
+    } else {
+      _isSearchingExplore.value = false
+    }
+  }
+
+  fun retryExploreSearch() {
+    val current = _searchQuery.value.trim()
+    if (current.length >= 2) {
+      setSearchQuery(current)
     }
   }
 
@@ -1712,10 +1742,25 @@ class VybeViewModel : ViewModel() {
     interests: List<String>,
     avatarUrl: String?,
     coverUrl: String?,
-    isPrivate: Boolean
+    isPrivate: Boolean,
+    onResult: ((Boolean, String?) -> Unit)? = null
   ) {
     repository.updateExtendedProfile(
-      displayName, bio, location, website, interests, avatarUrl, coverUrl, isPrivate
+      displayName = displayName,
+      bio = bio,
+      location = location,
+      website = website,
+      interests = interests,
+      avatarUrl = avatarUrl,
+      coverUrl = coverUrl,
+      isPrivate = isPrivate,
+      onComplete = { ok, err ->
+        val meId = repository.currentUser.value?.id
+        if (_selectedUserProfile.value?.id == meId) {
+          _selectedUserProfile.value = repository.currentUser.value
+        }
+        onResult?.invoke(ok, err)
+      }
     )
     val meId = repository.currentUser.value?.id
     if (_selectedUserProfile.value?.id == meId) {

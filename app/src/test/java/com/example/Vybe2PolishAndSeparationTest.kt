@@ -266,7 +266,7 @@ class Vybe2PolishAndSeparationTest {
   }
 
   @Test
-  fun `ExploreScreen excludes Circles filter and tab while search filters and 6 signature features work`() {
+  fun `ExploreScreen includes Circles filter and tab while search filters and 6 signature features work`() {
     seedUser()
     val vm = VybeViewModel()
 
@@ -277,13 +277,14 @@ class Vybe2PolishAndSeparationTest {
     }
     composeTestRule.waitForIdle()
 
-    composeTestRule.onNodeWithText("Circles").assertDoesNotExist()
+    composeTestRule.onNodeWithTag("explore_pill_Circles").assertIsDisplayed()
     composeTestRule.onNodeWithTag("explore_six_features_header_grid").assertIsDisplayed()
     composeTestRule.onNodeWithTag("explore_pill_Trending").performClick()
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("explore_smart_search_input").performTextInput("vybe")
     composeTestRule.waitForIdle()
     assertEquals("vybe", vm.searchQuery.value)
+    composeTestRule.onNodeWithTag("explore_search_tab_Circles").assertIsDisplayed()
   }
 
   @Test
@@ -327,16 +328,22 @@ class Vybe2PolishAndSeparationTest {
     composeTestRule.onNodeWithText("Who can see your content").assertIsDisplayed()
     composeTestRule.onNodeWithText("How you use VYBE").assertIsDisplayed()
 
-    composeTestRule.onNodeWithTag("settings_storage_cache_item").performScrollTo().performClick()
+    composeTestRule.onNodeWithTag("settings_root_list")
+      .performScrollToNode(hasTestTag("settings_storage_cache_item"))
+    composeTestRule.onNodeWithTag("settings_storage_cache_item").performClick()
     composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithTag("clear_image_cache_button").performScrollTo().assertIsDisplayed()
-    composeTestRule.onNodeWithTag("clear_video_cache_button").performScrollTo().assertIsDisplayed()
-    composeTestRule.onNodeWithTag("clear_all_cache_button").performScrollTo().assertIsDisplayed()
+    composeTestRule.onNodeWithTag("settings_cache_list")
+      .performScrollToNode(hasTestTag("clear_all_cache_button"))
+    composeTestRule.onNodeWithTag("clear_image_cache_button").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("clear_video_cache_button").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("clear_all_cache_button").assertIsDisplayed()
 
     // Navigate back to Settings root then open About
     composeTestRule.onNodeWithTag("settings_back_button").performClick()
     composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithTag("settings_about_vybe_item").performScrollTo().performClick()
+    composeTestRule.onNodeWithTag("settings_root_list")
+      .performScrollToNode(hasTestTag("settings_about_vybe_item"))
+    composeTestRule.onNodeWithTag("settings_about_vybe_item").performClick()
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithText("PROUDLY MADE IN INDIA").assertIsDisplayed()
   }

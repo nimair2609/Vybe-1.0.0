@@ -605,6 +605,16 @@ interface SupabaseRestApi {
   ): Response<List<SupabasePostDto>>
 
   @GET("posts")
+  suspend fun searchPosts(
+    @Header("apikey") apiKey: String,
+    @Header("Authorization") authHeader: String? = null,
+    @Query("or") orFilter: String,
+    @Query("select") select: String = "*,post_media(*),profiles:author_id($PUBLIC_PROFILE_SELECT_COLUMNS)",
+    @Query("order") order: String = "created_at.desc",
+    @Query("limit") limit: Int = 30
+  ): Response<List<SupabasePostDto>>
+
+  @GET("posts")
   suspend fun getPostByClientUploadId(
     @Header("apikey") apiKey: String,
     @Header("Authorization") authHeader: String? = null,

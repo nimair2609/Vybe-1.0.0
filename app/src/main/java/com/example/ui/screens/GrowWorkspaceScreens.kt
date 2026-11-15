@@ -3,10 +3,12 @@ package com.example.ui.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -654,8 +656,13 @@ fun GrowCircleWorkspace(viewModel: VybeViewModel) {
             fontWeight = FontWeight.SemiBold,
             color = palette.textPrimary
           )
-          LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(createCategories) { cat ->
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            createCategories.forEach { cat ->
               val isCatSelected = newCategory == cat
               Surface(
                 color = if (isCatSelected) palette.accent.copy(alpha = 0.16f) else palette.elevated,

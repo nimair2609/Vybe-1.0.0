@@ -57,6 +57,7 @@ import com.example.ui.components.VybeSurfaceCard
 import com.example.ui.components.VybeUnderlineTabs
 import com.example.ui.theme.*
 import com.example.util.MediaUtils
+import com.example.util.ProfileInputValidator
 import com.example.util.QrCodeGenerator
 import com.example.util.TimestampUtils
 import kotlinx.coroutines.launch
@@ -77,6 +78,8 @@ fun UserProfileScreen(
   val currentScreen by viewModel.currentScreen.collectAsState()
   val selectedNavTab by viewModel.selectedTab.collectAsState()
   val profileUser by viewModel.selectedUserProfile.collectAsState()
+  val isResolvingProfile by viewModel.isResolvingProfile.collectAsState()
+  val profileLookupError by viewModel.profileLookupError.collectAsState()
   val currentUser by viewModel.currentUser.collectAsState()
   val posts by viewModel.posts.collectAsState()
   val followingUserIds by viewModel.followingUserIds.collectAsState()
@@ -91,19 +94,78 @@ fun UserProfileScreen(
 
   val isOwnProfileContext = forceOwnProfile || (currentScreen == Screen.MAIN && selectedNavTab == MainTab.PROFILE)
 
-  val user: User = remember(profileUser, currentUser, allUsers, isOwnProfileContext) {
-    if (isOwnProfileContext) {
-      currentUser ?: allUsers.firstOrNull() ?: User(id = "me", username = "vybe_user", displayName = "VYBE User")
-    } else {
-      val target = profileUser ?: currentUser ?: allUsers.firstOrNull() ?: User(id = "user", username = "vybe_user", displayName = "VYBE User")
-      if (currentUser != null && target.id.equals(currentUser!!.id, ignoreCase = true)) {
-        currentUser!!
-      } else {
-        allUsers.firstOrNull { it.id.equals(target.id, ignoreCase = true) } ?: target
-      }
-    }
+  val resolvedUser: User? = remember(profileUser, currentUser, allUsers, isOwnProfileContext) {
+    ProfileInputValidator.resolveTargetProfileOrNull(
+      isOwnProfileContext = isOwnProfileContext,
+      currentUser = currentUser,
+      profileUser = profileUser,
+      allUsers = allUsers
+    )
   }
 
+  if (resolvedUser == null) {
+    Scaffold(
+      snackbarHost = { SnackbarHost(snackbarHostState) },
+      containerColor = palette.canvas,
+      contentWindowInsets = WindowInsets(0.dp),
+      topBar = {
+        if (!isOwnProfileContext && showTopOverlay) {
+          com.example.ui.components.VybeSubScreenTopBar(
+            title = "Profile",
+            onBackClick = { viewModel.closeUserProfileOrBack() }
+          )
+        }
+      }
+    ) { innerPadding ->
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .padding(innerPadding)
+          .padding(24.dp),
+        contentAlignment = Alignment.Center
+      ) {
+        when {
+          isResolvingProfile -> {
+            Column(
+              horizontalAlignment = Alignment.CenterHorizontally,
+              verticalArrangement = Arrangement.spacedBy(12.dp),
+              modifier = Modifier.testTag("profile_loading_state")
+            ) {
+              CircularProgressIndicator(color = palette.accent)
+              Text(
+                text = "Loading profile...",
+                fontSize = 13.sp,
+                color = palette.textSecondary
+              )
+            }
+          }
+          isOwnProfileContext -> {
+            VybeEmptyState(
+              icon = Icons.Default.AccountCircle,
+              title = "Sign in to view your profile",
+              subtitle = "Sign in or create a VYBE account to customize your profile, highlights, and connections.",
+              actionLabel = "Sign In",
+              onAction = { viewModel.navigateTo(Screen.AUTH) },
+              modifier = Modifier.testTag("profile_signin_required_state")
+            )
+          }
+          else -> {
+            VybeEmptyState(
+              icon = Icons.Default.PersonOff,
+              title = "Profile unavailable",
+              subtitle = profileLookupError ?: "This VYBE profile could not be loaded or is no longer available.",
+              actionLabel = "Go Back",
+              onAction = { viewModel.closeUserProfileOrBack() },
+              modifier = Modifier.testTag("profile_unavailable_state")
+            )
+          }
+        }
+      }
+    }
+    return
+  }
+
+  val user: User = resolvedUser
   val isMe = isOwnProfileContext || (currentUser != null && currentUser!!.id.equals(user.id, ignoreCase = true))
   var previewAsVisitor by remember { mutableStateOf(false) }
   val effectiveIsMe = isMe && !previewAsVisitor
@@ -119,6 +181,8 @@ fun UserProfileScreen(
   val selectedTab = profileTabs.getOrElse(selectedTabIndex) { "Posts" }
 
   var showEditProfileModal by remember { mutableStateOf(false) }
+  var editValidationError by remember { mutableStateOf<String?>(null) }
+  var isSavingProfile by remember { mutableStateOf(false) }
   var showQrDialog by remember { mutableStateOf(false) }
   var showMoreMenu by remember { mutableStateOf(false) }
   var showPhotoActionSheet by remember { mutableStateOf(false) }
@@ -136,15 +200,35 @@ fun UserProfileScreen(
     contract = ActivityResultContracts.PickVisualMedia()
   ) { uri: Uri? ->
     if (uri != null && isMe) {
+      val mimeType = MediaUtils.detectMimeType(context, uri)
+      val rawSize = try {
+        context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: 0L
+      } catch (_: Exception) {
+        0L
+      }
       val uriStr = MediaUtils.copyUriToLocalCache(
         context,
         uri,
         prefix = if (photoActionTarget == "AVATAR") "avatar" else "banner"
       )
-      if (photoActionTarget == "AVATAR") {
-        viewModel.updateProfilePhoto(uriStr)
+      val effectiveSize = if (rawSize > 0L) rawSize else {
+        try {
+          Uri.parse(uriStr).path?.let { java.io.File(it).length() } ?: 0L
+        } catch (_: Exception) {
+          0L
+        }
+      }
+      val mediaCheck = ProfileInputValidator.validateProfileMediaUpload(mimeType, effectiveSize)
+      if (!mediaCheck.isValid) {
+        coroutineScope.launch {
+          snackbarHostState.showSnackbar(mediaCheck.errorMessage ?: "Invalid profile image.")
+        }
       } else {
-        viewModel.updateProfileBanner(uriStr)
+        if (photoActionTarget == "AVATAR") {
+          viewModel.updateProfilePhoto(uriStr)
+        } else {
+          viewModel.updateProfileBanner(uriStr)
+        }
       }
       showPhotoActionSheet = false
       photoActionTarget = null
@@ -191,24 +275,23 @@ fun UserProfileScreen(
     posts.filter { it.author.id == user.id && !it.isArchived }
   }
 
-  val displayedTabPosts = remember(nonArchivedUserPosts, posts, selectedTab, canViewContent, user.pinnedPostIds) {
+  val savedPosts = remember(posts) {
+    posts.filter { !it.isArchived && it.isSaved }
+  }
+
+  val displayedTabPosts = remember(nonArchivedUserPosts, savedPosts, posts, selectedTab, canViewContent, user.pinnedPostIds, user.username, user.id) {
     if (!canViewContent) {
       emptyList()
     } else {
-      when (selectedTab) {
-        "Vybe Reels" -> nonArchivedUserPosts.filter {
-          it.mediaType == MediaType.REEL || it.mediaType == MediaType.VIDEO || it.isVybesReel
-        }
-        "Unfiltered" -> nonArchivedUserPosts.filter { it.isUnfiltered }
-        "Tagged" -> posts.filter { p ->
-          !p.isArchived && (
-            p.caption.contains("@${user.username}", ignoreCase = true) ||
-              p.tags.any { it.contains(user.username, ignoreCase = true) }
-            )
-        }
-        "Highlights" -> nonArchivedUserPosts.filter { user.pinnedPostIds.contains(it.id) }
-        else -> nonArchivedUserPosts
-      }
+      ProfileInputValidator.filterProfileTabPosts(
+        tab = selectedTab,
+        userPosts = nonArchivedUserPosts,
+        savedPosts = savedPosts,
+        allPosts = posts,
+        pinnedPostIds = user.pinnedPostIds,
+        username = user.username,
+        userId = user.id
+      )
     }
   }
 
@@ -478,6 +561,16 @@ fun UserProfileScreen(
                   .clip(CircleShape)
                   .background(palette.canvas)
                   .border(3.dp, palette.canvas, CircleShape)
+                  .then(
+                    if (effectiveIsMe) {
+                      Modifier.clickable {
+                        photoActionTarget = "AVATAR"
+                        showPhotoActionSheet = true
+                      }
+                    } else {
+                      Modifier
+                    }
+                  )
               ) {
                 if (user.avatarUrl.isNotBlank()) {
                   AsyncImage(
@@ -494,8 +587,8 @@ fun UserProfileScreen(
               if (user.isVerified) {
                 Box(
                   modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .offset(x = 2.dp, y = 2.dp)
+                    .align(Alignment.TopEnd)
+                    .offset(x = 2.dp, y = (-2).dp)
                     .size(24.dp)
                     .clip(CircleShape)
                     .background(VybeGrowBlue)
@@ -509,26 +602,35 @@ fun UserProfileScreen(
                     modifier = Modifier.size(14.dp)
                   )
                 }
-              } else if (effectiveIsMe) {
-                Box(
+              }
+
+              if (effectiveIsMe) {
+                IconButton(
+                  onClick = {
+                    photoActionTarget = "AVATAR"
+                    showPhotoActionSheet = true
+                  },
                   modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .size(26.dp)
-                    .clip(CircleShape)
-                    .background(palette.accent)
-                    .border(2.dp, palette.canvas, CircleShape)
-                    .clickable {
-                      photoActionTarget = "AVATAR"
-                      showPhotoActionSheet = true
-                    },
-                  contentAlignment = Alignment.Center
+                    .offset(x = 6.dp, y = 6.dp)
+                    .size(48.dp)
+                    .testTag("profile_edit_avatar_btn")
                 ) {
-                  Icon(
-                    imageVector = Icons.Default.CameraAlt,
-                    contentDescription = "Change Avatar",
-                    tint = Color.White,
-                    modifier = Modifier.size(13.dp)
-                  )
+                  Box(
+                    modifier = Modifier
+                      .size(28.dp)
+                      .clip(CircleShape)
+                      .background(palette.accent)
+                      .border(2.dp, palette.canvas, CircleShape),
+                    contentAlignment = Alignment.Center
+                  ) {
+                    Icon(
+                      imageVector = Icons.Default.CameraAlt,
+                      contentDescription = "Change Avatar",
+                      tint = Color.White,
+                      modifier = Modifier.size(14.dp)
+                    )
+                  }
                 }
               }
             }
@@ -703,20 +805,42 @@ fun UserProfileScreen(
               )
             }
 
-            if (user.website.isNotBlank()) {
-              Row(verticalAlignment = Alignment.CenterVertically) {
+            val safeWebsiteUrl = remember(user.website) {
+              ProfileInputValidator.safeExternalUrl(user.website)
+            }
+            if (!safeWebsiteUrl.isNullOrBlank()) {
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                  .defaultMinSize(minHeight = 40.dp)
+                  .clip(RoundedCornerShape(VybeTokens.Radius.sm))
+                  .clickable {
+                    try {
+                      val intent = Intent(Intent.ACTION_VIEW, Uri.parse(safeWebsiteUrl))
+                      context.startActivity(intent)
+                    } catch (_: Exception) {
+                      coroutineScope.launch {
+                        snackbarHostState.showSnackbar("Unable to open website link.")
+                      }
+                    }
+                  }
+                  .padding(horizontal = 4.dp)
+                  .testTag("profile_website_link")
+              ) {
                 Icon(
                   imageVector = Icons.Default.Link,
                   contentDescription = "Website",
                   tint = palette.accentSecondary,
-                  modifier = Modifier.size(13.dp)
+                  modifier = Modifier.size(14.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                  text = user.website,
+                  text = safeWebsiteUrl.removePrefix("https://").removePrefix("http://"),
                   fontSize = 12.sp,
                   color = palette.accentSecondary,
-                  fontWeight = FontWeight.SemiBold
+                  fontWeight = FontWeight.SemiBold,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis
                 )
               }
             }
@@ -1067,34 +1191,83 @@ fun UserProfileScreen(
 
   // MODAL 1: EDIT PROFILE FULL DIALOG
   if (effectiveIsMe && showEditProfileModal) {
-    BackHandler { showEditProfileModal = false }
+    BackHandler {
+      if (!isSavingProfile) {
+        editValidationError = null
+        showEditProfileModal = false
+      }
+    }
     Scaffold(
       containerColor = palette.canvas,
       contentWindowInsets = WindowInsets(0.dp),
       topBar = {
         com.example.ui.components.VybeSubScreenTopBar(
           title = "Edit Profile",
-          onBackClick = { showEditProfileModal = false },
+          onBackClick = {
+            if (!isSavingProfile) {
+              editValidationError = null
+              showEditProfileModal = false
+            }
+          },
           actions = {
             Button(
+              enabled = !isSavingProfile,
               onClick = {
-                viewModel.updateExtendedProfile(
+                val parsedInterests = editInterestsText
+                  .split(",")
+                  .map { it.trim() }
+                  .filter { it.isNotBlank() }
+                val validation = ProfileInputValidator.validateProfileEdit(
                   displayName = editDisplayName,
                   bio = editBio,
                   location = editLocation,
                   website = editWebsite,
-                  interests = editInterestsText.split(",").map { it.trim() }.filter { it.isNotBlank() },
-                  avatarUrl = user.avatarUrl,
-                  coverUrl = user.coverUrl,
-                  isPrivate = editIsPrivate
+                  interestsRaw = parsedInterests
                 )
-                showEditProfileModal = false
+                if (!validation.isValid) {
+                  editValidationError = validation.errorMessage
+                } else {
+                  editValidationError = null
+                  isSavingProfile = true
+                  viewModel.updateExtendedProfile(
+                    displayName = validation.displayName,
+                    bio = validation.bio,
+                    location = validation.location,
+                    website = validation.website,
+                    interests = validation.interests,
+                    avatarUrl = user.avatarUrl,
+                    coverUrl = user.coverUrl,
+                    isPrivate = editIsPrivate,
+                    onResult = { ok, err ->
+                      isSavingProfile = false
+                      if (ok) {
+                        showEditProfileModal = false
+                        coroutineScope.launch {
+                          snackbarHostState.showSnackbar("Profile updated.")
+                        }
+                      } else {
+                        editValidationError = err ?: "Unable to save profile changes."
+                      }
+                    }
+                  )
+                }
               },
               colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
               shape = RoundedCornerShape(VybeTokens.Radius.md),
-              modifier = Modifier.padding(end = 8.dp)
+              modifier = Modifier
+                .defaultMinSize(minHeight = 48.dp)
+                .padding(end = 8.dp)
+                .testTag("edit_profile_save_btn")
             ) {
-              Text("Save", fontWeight = FontWeight.Bold, color = Color.White)
+              if (isSavingProfile) {
+                CircularProgressIndicator(
+                  modifier = Modifier.size(16.dp),
+                  strokeWidth = 2.dp,
+                  color = Color.White
+                )
+              } else {
+                Text("Save", fontWeight = FontWeight.Bold, color = Color.White)
+              }
             }
           }
         )
@@ -1110,6 +1283,24 @@ fun UserProfileScreen(
           .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(14.dp)
       ) {
+        if (!editValidationError.isNullOrBlank()) {
+          Surface(
+            color = palette.danger.copy(alpha = 0.12f),
+            shape = RoundedCornerShape(VybeTokens.Radius.md),
+            border = BorderStroke(1.dp, palette.danger.copy(alpha = 0.4f)),
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("edit_profile_validation_error")
+          ) {
+            Text(
+              text = editValidationError.orEmpty(),
+              color = palette.danger,
+              fontSize = 12.sp,
+              fontWeight = FontWeight.SemiBold,
+              modifier = Modifier.padding(12.dp)
+            )
+          }
+        }
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(10.dp)

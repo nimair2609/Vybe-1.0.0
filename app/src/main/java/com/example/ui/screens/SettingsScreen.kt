@@ -152,7 +152,8 @@ fun SettingsScreen(viewModel: VybeViewModel) {
           modifier = Modifier
             .fillMaxSize()
             .padding(paddingValues)
-            .navigationBarsPadding(),
+            .navigationBarsPadding()
+            .testTag("settings_root_list"),
           contentPadding = PaddingValues(bottom = 48.dp)
         ) {
           if (currentUser != null) {
@@ -1356,7 +1357,8 @@ fun SettingsScreen(viewModel: VybeViewModel) {
             .fillMaxSize()
             .padding(paddingValues)
             .navigationBarsPadding()
-            .padding(16.dp),
+            .padding(16.dp)
+            .testTag("settings_cache_list"),
           verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
           item {

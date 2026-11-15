@@ -17,6 +17,7 @@ import com.example.notifications.VybeNotificationHelper
 import com.example.notifications.VybeRealtimePushManager
 import com.example.util.MediaUtils
 import com.example.util.NetworkMonitor
+import com.example.util.ProfileInputValidator
 import com.example.util.TimestampUtils
 import com.example.util.VybeCallEngine
 import com.example.util.music.StoryReelMediaComposer
@@ -24,6 +25,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -2639,8 +2642,29 @@ class VybeRepository private constructor() {
     }
   }
 
-  fun updateProfilePhoto(newAvatarUrl: String) {
+  fun updateProfilePhoto(newAvatarUrl: String, onComplete: ((Boolean, String?) -> Unit)? = null) {
     val user = _currentUser.value ?: return
+    val ctx = appContext
+    if (ctx != null && !newAvatarUrl.startsWith("http", ignoreCase = true)) {
+      val payload = MediaUtils.readMediaPayload(
+        ctx,
+        newAvatarUrl,
+        uploadTarget = com.example.util.MediaUploadTarget.AVATAR
+      )
+      if (payload == null) {
+        val msg = "Unable to read selected avatar image."
+        _uiBannerMessage.value = msg
+        onComplete?.invoke(false, msg)
+        return
+      }
+      val check = ProfileInputValidator.validateProfileMediaUpload(payload.mimeType, payload.bytes.size.toLong())
+      if (!check.isValid) {
+        val msg = check.errorMessage ?: "Invalid avatar image."
+        _uiBannerMessage.value = msg
+        onComplete?.invoke(false, msg)
+        return
+      }
+    }
     updateAccountProfile(
       firstName = user.firstName,
       lastName = user.lastName,
@@ -2650,10 +2674,32 @@ class VybeRepository private constructor() {
       bio = user.bio,
       avatarUrl = newAvatarUrl
     )
+    onComplete?.invoke(true, null)
   }
 
-  fun updateProfileBanner(newCoverUrl: String) {
+  fun updateProfileBanner(newCoverUrl: String, onComplete: ((Boolean, String?) -> Unit)? = null) {
     val user = _currentUser.value ?: return
+    val ctx = appContext
+    if (ctx != null && !newCoverUrl.startsWith("http", ignoreCase = true)) {
+      val payload = MediaUtils.readMediaPayload(
+        ctx,
+        newCoverUrl,
+        uploadTarget = com.example.util.MediaUploadTarget.BANNER
+      )
+      if (payload == null) {
+        val msg = "Unable to read selected cover image."
+        _uiBannerMessage.value = msg
+        onComplete?.invoke(false, msg)
+        return
+      }
+      val check = ProfileInputValidator.validateProfileMediaUpload(payload.mimeType, payload.bytes.size.toLong())
+      if (!check.isValid) {
+        val msg = check.errorMessage ?: "Invalid cover image."
+        _uiBannerMessage.value = msg
+        onComplete?.invoke(false, msg)
+        return
+      }
+    }
     updateAccountProfile(
       firstName = user.firstName,
       lastName = user.lastName,
@@ -2663,6 +2709,7 @@ class VybeRepository private constructor() {
       bio = user.bio,
       coverUrl = newCoverUrl
     )
+    onComplete?.invoke(true, null)
   }
 
   // --- Follow, Follow-Back & Private Account Follow Approval ---
@@ -4889,35 +4936,76 @@ class VybeRepository private constructor() {
     val clean = query.trim().lowercase().removePrefix("@")
     if (clean.isBlank()) return emptyList()
     return _allUsers.value.filter { u ->
-      !_blockedUserIds.value.contains(u.id) && (
+      !_blockedUserIds.value.contains(u.id) &&
+        !u.isDeactivated &&
+        !u.isBanned && (
         u.displayName.lowercase().contains(clean) ||
           u.username.lowercase().contains(clean) ||
           u.publicVybeId.lowercase().contains(clean) ||
-          u.id.lowercase().contains(clean)
+          u.id.lowercase().contains(clean) ||
+          u.bio.lowercase().contains(clean) ||
+          u.location.lowercase().contains(clean) ||
+          u.interestTags.any { it.lowercase().contains(clean) }
         )
     }
   }
 
   /**
-   * Queries Supabase `profiles` live so newly registered users on other devices appear immediately in Search.
+   * Queries Supabase `profiles` and `posts` concurrently for live Explore Search.
    */
-  suspend fun searchUsersRemote(query: String): List<User> {
+  suspend fun searchExploreRemoteWithStatus(query: String): Result<Unit> {
     val clean = query.trim()
-    if (clean.isBlank()) return emptyList()
-    if (supabaseRepo.isConfigured) {
+    if (clean.isBlank()) return Result.success(Unit)
+    if (!supabaseRepo.isConfigured) return Result.success(Unit)
+
+    return coroutineScope {
       val token = supabaseRepo.resolveValidAccessToken(SessionManager.get()?.accessToken)
-      val remoteMatches = supabaseRepo.searchProfilesRemote(clean, token)
-      if (remoteMatches.isNotEmpty()) {
-        val existingMap = _allUsers.value.associateBy { it.id }.toMutableMap()
-        remoteMatches.forEach { u ->
-          existingMap[u.id] = decorateUserRelationshipFlags(u)
+      val profilesDeferred = async { supabaseRepo.searchProfilesRemoteResult(clean, token) }
+      val postsDeferred = async { supabaseRepo.searchPostsRemoteResult(clean, token) }
+
+      val profilesRes = profilesDeferred.await()
+      val postsRes = postsDeferred.await()
+
+      profilesRes.getOrNull()?.let { remoteMatches ->
+        if (remoteMatches.isNotEmpty()) {
+          val existingMap = _allUsers.value.associateBy { it.id }.toMutableMap()
+          remoteMatches.forEach { u ->
+            existingMap[u.id] = decorateUserRelationshipFlags(u)
+          }
+          val merged = existingMap.values.toList()
+          _allUsers.value = merged
+          VybeLocalStore.get()?.saveAllUsers(merged)
         }
-        val merged = existingMap.values.toList()
-        _allUsers.value = merged
-        VybeLocalStore.get()?.saveAllUsers(merged)
+      }
+
+      postsRes.getOrNull()?.let { remotePosts ->
+        if (remotePosts.isNotEmpty()) {
+          val existingPostsMap = _posts.value.associateBy { it.id }.toMutableMap()
+          remotePosts.forEach { p ->
+            if (!existingPostsMap.containsKey(p.id) && !_blockedUserIds.value.contains(p.author.id)) {
+              existingPostsMap[p.id] = p
+            }
+          }
+          _posts.value = existingPostsMap.values.sortedByDescending {
+            TimestampUtils.parseIsoMillis(it.createdAtIso) ?: 0L
+          }
+        }
+      }
+
+      if (profilesRes.isFailure && postsRes.isFailure) {
+        val msg = profilesRes.exceptionOrNull()?.message
+          ?: postsRes.exceptionOrNull()?.message
+          ?: "Explore search failed."
+        Result.failure(Exception(msg))
+      } else {
+        Result.success(Unit)
       }
     }
-    return searchUsers(clean)
+  }
+
+  suspend fun searchUsersRemote(query: String): List<User> {
+    searchExploreRemoteWithStatus(query)
+    return searchUsers(query)
   }
 
   fun searchUserByVybeId(query: String): User? = searchUsers(query).firstOrNull()
@@ -8517,14 +8605,32 @@ class VybeRepository private constructor() {
     interests: List<String>,
     avatarUrl: String?,
     coverUrl: String?,
-    isPrivate: Boolean
+    isPrivate: Boolean,
+    onComplete: ((Boolean, String?) -> Unit)? = null
   ) {
-    val me = _currentUser.value ?: return
-    val cleanDisplay = displayName.trim().ifBlank { me.displayName }
-    val cleanBio = bio.trim()
-    val cleanLocation = location.trim()
-    val cleanWebsite = website.trim()
-    val cleanInterests = interests.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+    val me = _currentUser.value ?: run {
+      onComplete?.invoke(false, "Please sign in to update your profile.")
+      return
+    }
+    val validation = ProfileInputValidator.validateProfileEdit(
+      displayName = displayName,
+      bio = bio,
+      location = location,
+      website = website,
+      interestsRaw = interests
+    )
+    if (!validation.isValid) {
+      val err = validation.errorMessage ?: "Invalid profile fields."
+      _uiBannerMessage.value = err
+      onComplete?.invoke(false, err)
+      return
+    }
+
+    val cleanDisplay = validation.displayName
+    val cleanBio = validation.bio
+    val cleanLocation = validation.location
+    val cleanWebsite = validation.website
+    val cleanInterests = validation.interests
     val candidateAvatar = avatarUrl?.trim()?.ifBlank { me.avatarUrl } ?: me.avatarUrl
     val candidateCover = coverUrl?.trim()?.ifBlank { me.coverUrl } ?: me.coverUrl
 
@@ -8544,23 +8650,36 @@ class VybeRepository private constructor() {
     VybeLocalStore.get()?.saveUser(optimistic)
 
     val rawToken = SessionManager.get()?.accessToken.orEmpty()
-    if (!supabaseRepo.isConfigured || rawToken.isBlank()) return
+    if (!supabaseRepo.isConfigured || rawToken.isBlank()) {
+      onComplete?.invoke(true, null)
+      return
+    }
 
     ioScope.launch {
       val ctx = appContext
       val validToken = supabaseRepo.resolveValidAccessToken(rawToken).orEmpty()
       if (validToken.isBlank()) {
-        _uiBannerMessage.value = "Session expired. Profile edits saved locally only."
+        val msg = "Session expired. Profile edits saved locally only."
+        _uiBannerMessage.value = msg
+        onComplete?.invoke(false, msg)
         return@launch
       }
 
       var finalAvatar = candidateAvatar
       if (ctx != null && finalAvatar.isNotBlank() && !finalAvatar.startsWith("http", ignoreCase = true)) {
-        MediaUtils.readMediaPayload(
+        val payload = MediaUtils.readMediaPayload(
           ctx,
           finalAvatar,
           uploadTarget = com.example.util.MediaUploadTarget.AVATAR
-        )?.let { payload ->
+        )
+        if (payload != null) {
+          val mediaCheck = ProfileInputValidator.validateProfileMediaUpload(payload.mimeType, payload.bytes.size.toLong())
+          if (!mediaCheck.isValid) {
+            val msg = mediaCheck.errorMessage ?: "Invalid avatar image."
+            _uiBannerMessage.value = msg
+            onComplete?.invoke(false, msg)
+            return@launch
+          }
           val uploaded = supabaseRepo.uploadMediaWithProgress(
             bucket = "avatars",
             userId = me.id,
@@ -8578,11 +8697,19 @@ class VybeRepository private constructor() {
 
       var finalCover = candidateCover
       if (ctx != null && finalCover.isNotBlank() && !finalCover.startsWith("http", ignoreCase = true)) {
-        MediaUtils.readMediaPayload(
+        val payload = MediaUtils.readMediaPayload(
           ctx,
           finalCover,
           uploadTarget = com.example.util.MediaUploadTarget.BANNER
-        )?.let { payload ->
+        )
+        if (payload != null) {
+          val mediaCheck = ProfileInputValidator.validateProfileMediaUpload(payload.mimeType, payload.bytes.size.toLong())
+          if (!mediaCheck.isValid) {
+            val msg = mediaCheck.errorMessage ?: "Invalid cover image."
+            _uiBannerMessage.value = msg
+            onComplete?.invoke(false, msg)
+            return@launch
+          }
           val uploaded = supabaseRepo.uploadMediaWithProgress(
             bucket = "avatars",
             userId = me.id,
@@ -8630,8 +8757,11 @@ class VybeRepository private constructor() {
         _allUsers.value = _allUsers.value.map { if (it.id == synced.id) decorateUserRelationshipFlags(synced) else it }
         SessionManager.get()?.updateCurrentUser(synced)
         VybeLocalStore.get()?.saveUser(synced)
+        onComplete?.invoke(true, null)
       }.onFailure { err ->
-        _uiBannerMessage.value = err.message ?: "Failed to sync profile edits to server."
+        val msg = err.message ?: "Failed to sync profile edits to server."
+        _uiBannerMessage.value = msg
+        onComplete?.invoke(false, msg)
       }
     }
   }

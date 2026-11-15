@@ -20,6 +20,7 @@ import {
 } from '../types';
 import { vybeCache, CACHE_TTL } from '../utils/indexedDbCache';
 import { vybeDiagnostics } from '../utils/performanceDiagnostics';
+import { sanitizePostgrestSearchTerm } from '../utils/profileValidation';
 
 const metaEnv = (typeof import.meta !== 'undefined' ? (import.meta as any).env : {}) || {};
 export const SUPABASE_URL = metaEnv.VITE_SUPABASE_URL || 'https://cppwadedazpbevkfrchg.supabase.co';
@@ -1620,25 +1621,144 @@ export async function updateProfileInSupabase(
 
 export async function recordProfileViewRpc(
   profileOwnerId: string
-): Promise<{ recorded: boolean; profileViewsCount?: number }> {
-  if (!UUID_REGEX.test(profileOwnerId)) return { recorded: false };
+): Promise<{ recorded: boolean; reason?: string; profileViewsCount?: number }> {
+  if (!UUID_REGEX.test(profileOwnerId)) return { recorded: false, reason: 'invalid_profile_id' };
   try {
     const token = await getValidWebAccessToken();
-    if (!token) return { recorded: false };
+    if (!token) return { recorded: false, reason: 'unauthenticated' };
     const res = await authedFetch(`${SUPABASE_URL}/rest/v1/rpc/record_profile_view`, {
       method: 'POST',
       body: JSON.stringify({ p_profile_owner_id: profileOwnerId })
     });
-    if (!res.ok) return { recorded: false };
+    if (!res.ok) return { recorded: false, reason: `http_${res.status}` };
     const data = await res.json().catch(() => null);
-    if (!data || typeof data !== 'object') return { recorded: false };
+    if (!data || typeof data !== 'object') return { recorded: false, reason: 'invalid_response' };
     return {
       recorded: Boolean(data.recorded),
+      reason: typeof data.reason === 'string' ? data.reason : undefined,
       profileViewsCount:
         typeof data.profile_views_count === 'number' ? data.profile_views_count : undefined
     };
   } catch {
-    return { recorded: false };
+    return { recorded: false, reason: 'network_error' };
+  }
+}
+
+export async function searchProfilesInSupabase(
+  query: string,
+  limit: number = 25
+): Promise<{ ok: boolean; users: User[]; error?: string }> {
+  const term = sanitizePostgrestSearchTerm(query);
+  if (term.length < 2) return { ok: true, users: [] };
+  try {
+    const hdrs = await getOptionalRestHeaders(false);
+    const orFilter = `(username.ilike.*${term}*,display_name.ilike.*${term}*,bio.ilike.*${term}*)`;
+    const buildUrl = (cols: string) =>
+      `${SUPABASE_URL}/rest/v1/profiles?or=${encodeURIComponent(orFilter)}&is_deactivated=not.is.true&select=${encodeURIComponent(cols)}&order=followers_count.desc&limit=${limit}`;
+
+    let res = await fetch(buildUrl(EXTENDED_PROFILE_SELECT_COLUMNS), { headers: hdrs });
+    if (res.status === 400) {
+      res = await fetch(buildUrl(PROFILE_SELECT_COLUMNS), { headers: hdrs });
+    }
+    if (!res.ok) {
+      return { ok: false, users: [], error: `Profile search failed (${res.status}).` };
+    }
+    const rows = await res.json();
+    const users = Array.isArray(rows)
+      ? rows.filter((r: any) => !r?.is_deactivated).map(mapSupabaseProfileToUser)
+      : [];
+    return { ok: true, users };
+  } catch (err: any) {
+    return { ok: false, users: [], error: err?.message || 'Unable to search profiles right now.' };
+  }
+}
+
+export async function searchPostsInSupabase(
+  query: string,
+  limit: number = 30
+): Promise<{ ok: boolean; posts: Post[]; error?: string }> {
+  const term = sanitizePostgrestSearchTerm(query);
+  if (term.length < 2) return { ok: true, posts: [] };
+  try {
+    const hdrs = await getOptionalRestHeaders(false);
+    const url = `${SUPABASE_URL}/rest/v1/posts?caption=ilike.*${encodeURIComponent(term)}*&is_archived=not.is.true&select=${encodeURIComponent(POST_SELECT_COLUMNS)}&order=created_at.desc&limit=${limit}`;
+    const res = await fetch(url, { headers: hdrs });
+    if (!res.ok) {
+      return { ok: false, posts: [], error: `Post search failed (${res.status}).` };
+    }
+    const rows = await res.json();
+    const posts = Array.isArray(rows) ? rows.map(row => mapSupabasePost(row)) : [];
+    return { ok: true, posts };
+  } catch (err: any) {
+    return { ok: false, posts: [], error: err?.message || 'Unable to search posts right now.' };
+  }
+}
+
+export async function toggleBlockUserInSupabase(params: {
+  blockerId: string;
+  blockedId: string;
+  shouldBlock: boolean;
+}): Promise<{ ok: boolean; error?: string }> {
+  if (!UUID_REGEX.test(params.blockerId) || !UUID_REGEX.test(params.blockedId)) {
+    return { ok: false, error: 'Valid user session required.' };
+  }
+  try {
+    if (!params.shouldBlock) {
+      const res = await authedFetch(
+        `${SUPABASE_URL}/rest/v1/blocks?blocker_id=eq.${encodeURIComponent(params.blockerId)}&blocked_id=eq.${encodeURIComponent(params.blockedId)}`,
+        { method: 'DELETE' }
+      );
+      return res.ok ? { ok: true } : { ok: false, error: `Could not unblock user (${res.status}).` };
+    }
+    const res = await authedFetch(
+      `${SUPABASE_URL}/rest/v1/blocks?on_conflict=blocker_id,blocked_id`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          blocker_id: params.blockerId,
+          blocked_id: params.blockedId
+        })
+      },
+      { 'Prefer': 'resolution=merge-duplicates,return=minimal' }
+    );
+    return res.ok ? { ok: true } : { ok: false, error: `Could not block user (${res.status}).` };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Network error updating block status.' };
+  }
+}
+
+export async function submitModerationReportInSupabase(params: {
+  reporterId: string;
+  targetType: 'USER' | 'POST';
+  targetId: string;
+  reason: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  if (!UUID_REGEX.test(params.reporterId) || !UUID_REGEX.test(params.targetId)) {
+    return { ok: false, error: 'Valid account and target required to submit report.' };
+  }
+  const cleanReason = (params.reason || '').trim().slice(0, 300) || 'Policy violation report';
+  try {
+    const res = await authedFetch(
+      `${SUPABASE_URL}/rest/v1/reports`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          reporter_id: params.reporterId,
+          target_type: params.targetType,
+          target_id: params.targetId,
+          reason: cleanReason,
+          status: 'PENDING'
+        })
+      },
+      { 'Prefer': 'return=minimal' }
+    );
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      return { ok: false, error: parseSupabaseError(errJson, 'Failed to submit moderation report.') };
+    }
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Network error submitting moderation report.' };
   }
 }
 

@@ -3,9 +3,13 @@ package com.example
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.local.VybeLocalStore
+import com.example.data.model.Community
+import com.example.data.model.MediaType
+import com.example.data.model.Post
 import com.example.data.model.User
 import com.example.data.repository.VybeRepository
 import com.example.data.session.SessionManager
+import com.example.util.ProfileInputValidator
 import com.example.util.QrCodeGenerator
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -242,6 +246,134 @@ class VybeProfileAndExploreAuditTest {
     val stored = store.loadUsers().firstOrNull { it.id == uid }
     assertNotNull(stored)
     assertTrue(stored?.isDeactivated == true)
+  }
+
+  @Test
+  fun `safeExternalUrl blocks dangerous schemes and normalizes bare domains`() {
+    assertEquals("https://vybeonline.netlify.app/u/aria", ProfileInputValidator.safeExternalUrl("https://vybeonline.netlify.app/u/aria"))
+    assertEquals("http://example.org/work", ProfileInputValidator.safeExternalUrl("http://example.org/work"))
+    assertEquals("https://aria.studio/portfolio", ProfileInputValidator.safeExternalUrl("aria.studio/portfolio"))
+
+    assertNull(ProfileInputValidator.safeExternalUrl("javascript:alert(1)"))
+    assertNull(ProfileInputValidator.safeExternalUrl("data:text/html,<script>alert(1)</script>"))
+    assertNull(ProfileInputValidator.safeExternalUrl("vbscript:msgbox(1)"))
+    assertNull(ProfileInputValidator.safeExternalUrl("file:///etc/passwd"))
+    assertNull(ProfileInputValidator.safeExternalUrl("intent://scan/#Intent"))
+    assertNull(ProfileInputValidator.safeExternalUrl("content://media/external"))
+    assertNull(ProfileInputValidator.safeExternalUrl("not-a-domain"))
+    assertNull(ProfileInputValidator.safeExternalUrl("   "))
+  }
+
+  @Test
+  fun `validateProfileEdit enforces field limits deduplicates interests and rejects unsafe URLs`() {
+    val ok = ProfileInputValidator.validateProfileEdit(
+      displayName = "  Aria   Chen ",
+      bio = "Calm creative vibes",
+      location = "Bengaluru,   India",
+      website = "aria.studio/work",
+      interestsRaw = listOf("#Design", "Music", "design", "  Photography ")
+    )
+    assertTrue(ok.isValid)
+    assertEquals("Aria Chen", ok.displayName)
+    assertEquals("Bengaluru, India", ok.location)
+    assertEquals("https://aria.studio/work", ok.website)
+    assertEquals(listOf("Design", "Music", "Photography"), ok.interests)
+
+    assertFalse(
+      ProfileInputValidator.validateProfileEdit("   ", "", "", "", emptyList()).isValid
+    )
+    assertFalse(
+      ProfileInputValidator.validateProfileEdit("Aria", "a".repeat(241), "", "", emptyList()).isValid
+    )
+    assertFalse(
+      ProfileInputValidator.validateProfileEdit("Aria", "", "", "javascript:alert(1)", emptyList()).isValid
+    )
+    assertFalse(
+      ProfileInputValidator.validateProfileEdit(
+        displayName = "Aria",
+        bio = "",
+        location = "",
+        website = "",
+        interestsRaw = (1..11).map { "tag$it" }
+      ).isValid
+    )
+  }
+
+  @Test
+  fun `validateProfileMediaUpload enforces 10MB limit and supported image mimes`() {
+    assertTrue(ProfileInputValidator.validateProfileMediaUpload("image/jpeg", 1024L).isValid)
+    assertTrue(ProfileInputValidator.validateProfileMediaUpload("image/png", ProfileInputValidator.MAX_PROFILE_MEDIA_BYTES).isValid)
+    assertTrue(ProfileInputValidator.validateProfileMediaUpload("image/webp; charset=utf-8", 2048L).isValid)
+    assertTrue(ProfileInputValidator.validateProfileMediaUpload("image/heic", 4096L).isValid)
+
+    assertFalse(ProfileInputValidator.validateProfileMediaUpload("image/jpeg", 0L).isValid)
+    assertFalse(ProfileInputValidator.validateProfileMediaUpload("image/png", ProfileInputValidator.MAX_PROFILE_MEDIA_BYTES + 1L).isValid)
+    assertFalse(ProfileInputValidator.validateProfileMediaUpload("video/mp4", 1024L).isValid)
+    assertFalse(ProfileInputValidator.validateProfileMediaUpload("image/svg+xml", 1024L).isValid)
+  }
+
+  @Test
+  fun `sanitizePostgrestSearchTerm strips prefixes and filter metacharacters`() {
+    assertEquals("aria_vybe", ProfileInputValidator.sanitizePostgrestSearchTerm("  @aria_vybe "))
+    assertEquals("MindfulLiving", ProfileInputValidator.sanitizePostgrestSearchTerm("#MindfulLiving"))
+    assertEquals("foo bar", ProfileInputValidator.sanitizePostgrestSearchTerm("foo%(),*\"';bar"))
+    assertEquals(64, ProfileInputValidator.sanitizePostgrestSearchTerm("x".repeat(100)).length)
+  }
+
+  @Test
+  fun `filterProfileTabPosts separates Posts Vybe Reels Unfiltered Tagged and Highlights without duplicates`() {
+    val owner = User(id = "u_owner", username = "aria_vybe", displayName = "Aria")
+    val peer = User(id = "u_peer", username = "rohan_k", displayName = "Rohan")
+
+    val photo = Post(id = "p_photo", author = owner, caption = "Sunset", mediaType = MediaType.IMAGE, timestamp = "1h")
+    val reel = Post(id = "p_reel", author = owner, caption = "Clip", mediaType = MediaType.REEL, isVybesReel = true, timestamp = "1h")
+    val video = Post(id = "p_video", author = owner, caption = "Vid", mediaType = MediaType.VIDEO, timestamp = "1h")
+    val raw = Post(id = "p_raw", author = owner, caption = "Raw", isUnfiltered = true, timestamp = "1h")
+    val selfMention = Post(id = "p_self", author = owner, caption = "Self @aria_vybe", timestamp = "1h")
+    val archived = Post(id = "p_arch", author = owner, caption = "Old", isArchived = true, timestamp = "1h")
+    val peerTag = Post(id = "p_peer_tag", author = peer, caption = "Collab @aria_vybe", timestamp = "1h")
+    val saved = Post(id = "p_saved", author = peer, caption = "Bookmark", isSaved = true, timestamp = "1h")
+
+    val userPosts = listOf(photo, reel, video, raw, selfMention, archived)
+    val allPosts = userPosts + listOf(peerTag, saved)
+
+    assertEquals(
+      listOf("p_photo", "p_self"),
+      ProfileInputValidator.filterProfileTabPosts("Posts", userPosts, listOf(saved), allPosts, listOf("p_raw", "p_photo"), "aria_vybe", owner.id).map { it.id }
+    )
+    assertEquals(
+      listOf("p_reel", "p_video"),
+      ProfileInputValidator.filterProfileTabPosts("Vybe Reels", userPosts, listOf(saved), allPosts, listOf("p_raw"), "aria_vybe", owner.id).map { it.id }
+    )
+    assertEquals(
+      listOf("p_raw"),
+      ProfileInputValidator.filterProfileTabPosts("Unfiltered", userPosts, listOf(saved), allPosts, listOf("p_raw"), "aria_vybe", owner.id).map { it.id }
+    )
+    assertEquals(
+      listOf("p_peer_tag"),
+      ProfileInputValidator.filterProfileTabPosts("Tagged", userPosts, listOf(saved), allPosts, listOf("p_raw"), "aria_vybe", owner.id).map { it.id }
+    )
+    assertEquals(
+      listOf("p_raw", "p_photo"),
+      ProfileInputValidator.filterProfileTabPosts("Highlights", userPosts, listOf(saved), allPosts, listOf("p_raw", "p_photo"), "aria_vybe", owner.id).map { it.id }
+    )
+  }
+
+  @Test
+  fun `filterExploreCommunities matches query and resolveTargetProfileOrNull avoids synthetic fallback`() {
+    val c1 = Community(id = "c1", name = "Indie Sound Lab", description = "Vocalists & producers", category = "Music")
+    val c2 = Community(id = "c2", name = "Run Club", description = "Morning 5k", category = "Fitness")
+
+    assertEquals(2, ProfileInputValidator.filterExploreCommunities(listOf(c1, c2), "").size)
+    assertEquals(listOf("c1"), ProfileInputValidator.filterExploreCommunities(listOf(c1, c2), "music").map { it.id })
+    assertEquals(listOf("c2"), ProfileInputValidator.filterExploreCommunities(listOf(c1, c2), "5k").map { it.id })
+
+    val me = User(id = "u_me", username = "me", displayName = "Me")
+    val other = User(id = "u_other", username = "other", displayName = "Other")
+    assertNull(ProfileInputValidator.resolveTargetProfileOrNull(true, null, null, listOf(other)))
+    assertNull(ProfileInputValidator.resolveTargetProfileOrNull(false, me, null, listOf(other)))
+    assertEquals("Me", ProfileInputValidator.resolveTargetProfileOrNull(true, me, other, listOf(other))?.displayName)
+    assertEquals("Other", ProfileInputValidator.resolveTargetProfileOrNull(false, me, other, listOf(other))?.displayName)
   }
 
   private fun assertNotEqualsOrNull(first: String, second: String) {

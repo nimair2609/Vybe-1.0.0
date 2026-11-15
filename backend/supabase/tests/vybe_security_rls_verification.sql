@@ -19,7 +19,7 @@ JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname = 'public'
   AND c.relkind = 'r'
   AND c.relname IN (
-      'profiles', 'profile_private_details', 'admin_users', 'verification_requests',
+      'profiles', 'profile_private_details', 'profile_views', 'admin_users', 'verification_requests',
       'admin_audit_logs', 'audit_logs', 'reports', 'user_device_tokens',
       'conversations', 'conversation_members',
       'messages', 'message_reactions', 'message_receipts', 'business_products',
@@ -46,7 +46,8 @@ WHERE n.nspname = 'public'
       'admin_review_verification_request', 'user_respond_badge_offer',
       'enforce_profile_badge_and_role_security', 'get_or_create_direct_conversation',
       'can_add_conversation_member', 'get_my_private_profile',
-      'guard_live_streams_update', 'increment_live_stream_viewer_count'
+      'guard_live_streams_update', 'increment_live_stream_viewer_count',
+      'guard_profile_views_count_immutable', 'record_profile_view'
   )
 ORDER BY p.proname;
 
@@ -145,6 +146,46 @@ BEGIN
     IF FOUND THEN
         RAISE EXCEPTION 'SECURITY FAILURE: Reporter mutated own report status!';
     END IF;
+
+    -- Test H: Authenticated user cannot insert directly into public.profile_views (must use RPC)
+    BEGIN
+        INSERT INTO public.profile_views (profile_owner_id, visitor_id)
+        VALUES (v_user_b, v_user_a);
+        RAISE EXCEPTION 'SECURITY FAILURE: User A directly inserted into public.profile_views!';
+    EXCEPTION WHEN OTHERS THEN
+        IF SQLERRM LIKE 'SECURITY FAILURE:%' THEN RAISE; END IF;
+    END;
+
+    -- Test I: Authenticated user cannot tamper directly with profile_views_count on profiles
+    DECLARE
+        v_before_views BIGINT;
+        v_after_views BIGINT;
+    BEGIN
+        SELECT COALESCE(profile_views_count, 0) INTO v_before_views FROM public.profiles WHERE id = v_user_a;
+        UPDATE public.profiles SET profile_views_count = v_before_views + 9999 WHERE id = v_user_a;
+        SELECT COALESCE(profile_views_count, 0) INTO v_after_views FROM public.profiles WHERE id = v_user_a;
+        IF v_after_views <> v_before_views THEN
+            RAISE EXCEPTION 'SECURITY FAILURE: User A directly mutated profile_views_count (% -> %)!', v_before_views, v_after_views;
+        END IF;
+    END;
+
+    -- Test J: record_profile_view rejects self-view and deduplicates repeat views within 24h
+    DECLARE
+        v_self_res JSONB;
+        v_first_res JSONB;
+        v_second_res JSONB;
+    BEGIN
+        v_self_res := public.record_profile_view(v_user_a);
+        IF COALESCE((v_self_res->>'recorded')::boolean, false) THEN
+            RAISE EXCEPTION 'SECURITY FAILURE: record_profile_view recorded self-view!';
+        END IF;
+
+        v_first_res := public.record_profile_view(v_user_b);
+        v_second_res := public.record_profile_view(v_user_b);
+        IF COALESCE((v_second_res->>'recorded')::boolean, false) THEN
+            RAISE EXCEPTION 'SECURITY FAILURE: record_profile_view failed 24h deduplication!';
+        END IF;
+    END;
 
     RESET ROLE;
     RAISE NOTICE 'ALL NEGATIVE SECURITY ASSERTIONS PASSED (rolling back test transaction).';

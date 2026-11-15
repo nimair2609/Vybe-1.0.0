@@ -138,7 +138,6 @@ jobs:
 
       - name: Run Unit Tests
         run: ./gradlew :app:testDebugUnitTest --no-daemon
-        continue-on-error: true
 
       - name: Upload APK Workflow Artifact
         uses: actions/upload-artifact@v4

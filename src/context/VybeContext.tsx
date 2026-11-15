@@ -47,6 +47,10 @@ import {
   togglePostReactionInSupabase,
   toggleSavePostInSupabase,
   toggleFollowInSupabase,
+  toggleBlockUserInSupabase,
+  submitModerationReportInSupabase,
+  searchProfilesInSupabase,
+  searchPostsInSupabase,
   updateProfileInSupabase,
   recordProfileViewRpc,
   fetchUserSocialGraph,
@@ -71,6 +75,7 @@ import {
   formatChatClock,
   formatRelativeTime
 } from '../services/supabaseService';
+import { validateProfileEditInput } from '../utils/profileValidation';
 import { vybeRealtime, RealtimePushPayload, RealtimeDbChangePayload } from '../services/realtimeService';
 
 export type MainTab = 'FEED' | 'VYBES' | 'MOOD_ZONES' | 'EXPLORE' | 'INBOX' | 'CROSSED_PATHS' | 'COMMUNITY' | 'PROFILE';
@@ -166,7 +171,11 @@ interface VybeContextType {
     location?: string;
     website?: string;
     interest_tags?: string[];
+    avatar_url?: string;
+    cover_url?: string;
+    pinned_post_ids?: string[];
   }) => Promise<{ ok: boolean; error?: string }>;
+  togglePinPost: (postId: string) => Promise<{ ok: boolean; error?: string }>;
 
   // Users & Public Profile Routing
   allUsers: User[];
@@ -198,13 +207,21 @@ interface VybeContextType {
   selectedMoodFilter: MoodType | 'ALL';
   setSelectedMoodFilter: (mood: MoodType | 'ALL') => void;
 
-  // Social Discovery & Graph
+  // Social Discovery, Explore Search & Moderation
   followingIds: string[];
   requestedFollowIds: string[];
+  blockedIds: string[];
   dismissedSuggestionIds: string[];
   toggleFollowUser: (targetUserId: string) => void;
+  toggleBlockUser: (targetUserId: string) => Promise<{ ok: boolean; error?: string }>;
+  reportContentOrUser: (targetType: 'USER' | 'POST', targetId: string, reason: string) => Promise<{ ok: boolean; error?: string }>;
   dismissSuggestedUser: (targetUserId: string) => void;
   restoreDismissedSuggestions: () => void;
+  searchHistory: string[];
+  addSearchQueryToHistory: (query: string) => void;
+  removeSearchQueryFromHistory: (query: string) => void;
+  clearSearchHistory: () => void;
+  searchExploreRemote: (query: string) => Promise<{ ok: boolean; users: User[]; posts: Post[]; error?: string }>;
 
   // Posts & Reels & Shared Post Deep Links
   posts: Post[];
@@ -436,19 +453,37 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Social Graph (populated from Supabase for authenticated user)
   const [followingIds, setFollowingIds] = useState<string[]>([]);
   const [requestedFollowIds, setRequestedFollowIds] = useState<string[]>([]);
-  const [dismissedSuggestionIds, setDismissedSuggestionIds] = useState<string[]>(() => {
+  const [blockedIds, setBlockedIds] = useState<string[]>([]);
+
+  const dismissedStorageKey = authUser?.id ? `vybe_dismissed_suggestions_v1_${authUser.id}` : null;
+  const [dismissedSuggestionIds, setDismissedSuggestionIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!dismissedStorageKey) {
+      setDismissedSuggestionIds([]);
+      return;
+    }
     try {
-      const saved = localStorage.getItem('vybe_dismissed_suggestions_v1');
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return [];
-  });
+      const saved = localStorage.getItem(dismissedStorageKey);
+      const parsed = saved ? JSON.parse(saved) : [];
+      setDismissedSuggestionIds(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setDismissedSuggestionIds([]);
+    }
+  }, [dismissedStorageKey]);
+
+  const searchHistoryStorageKey = `vybe_search_history_v1_${authUser?.id || 'guest'}`;
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
 
   useEffect(() => {
     try {
-      localStorage.setItem('vybe_dismissed_suggestions_v1', JSON.stringify(dismissedSuggestionIds));
-    } catch {}
-  }, [dismissedSuggestionIds]);
+      const saved = localStorage.getItem(searchHistoryStorageKey);
+      const parsed = saved ? JSON.parse(saved) : [];
+      setSearchHistory(Array.isArray(parsed) ? parsed.slice(0, 10) : []);
+    } catch {
+      setSearchHistory([]);
+    }
+  }, [searchHistoryStorageKey]);
 
   // Posts & Reels & Shared Post Modal
   const [posts, setPosts] = useState<Post[]>([]);
@@ -612,6 +647,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setFollowingIds(graph.followingIds);
     setRequestedFollowIds(graph.requestedFollowIds);
+    setBlockedIds(graph.blockedIds || []);
     setConversations(convRes.conversations);
     if (convRes.error) setDmError(convRes.error);
     setNotifications(notifs);
@@ -686,6 +722,9 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCurrentUser(null);
     setFollowingIds([]);
     setRequestedFollowIds([]);
+    setBlockedIds([]);
+    setDismissedSuggestionIds([]);
+    setSearchHistory([]);
     setConversations([]);
     setSelectedConversationId(null);
     setSelectedConversationPeerId(null);
@@ -707,15 +746,76 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     website?: string;
     interest_tags?: string[];
     is_private_account?: boolean;
+    avatar_url?: string;
+    cover_url?: string;
+    pinned_post_ids?: string[];
   }): Promise<{ ok: boolean; error?: string }> => {
     if (!currentUser) return { ok: false, error: 'Sign in required.' };
-    const res = await updateProfileInSupabase(currentUser.id, patch);
+
+    const normalizedPatch: Record<string, any> = { ...patch };
+    const touchesTextFields =
+      'display_name' in patch ||
+      'bio' in patch ||
+      'location' in patch ||
+      'website' in patch ||
+      'interest_tags' in patch;
+
+    if (touchesTextFields) {
+      const check = validateProfileEditInput({
+        displayName: patch.display_name ?? currentUser.displayName,
+        bio: patch.bio ?? currentUser.bio,
+        location: patch.location ?? currentUser.location ?? '',
+        website: patch.website ?? currentUser.website ?? '',
+        interests: patch.interest_tags ?? currentUser.interestTags ?? []
+      });
+      if (!check.valid) {
+        return { ok: false, error: check.error || 'Invalid profile fields.' };
+      }
+      if ('display_name' in patch) normalizedPatch.display_name = check.displayName;
+      if ('bio' in patch) normalizedPatch.bio = check.bio;
+      if ('location' in patch) normalizedPatch.location = check.location;
+      if ('website' in patch) normalizedPatch.website = check.website;
+      if ('interest_tags' in patch) normalizedPatch.interest_tags = check.interests;
+    }
+
+    const res = await updateProfileInSupabase(currentUser.id, normalizedPatch);
     if (res.ok && res.user) {
       setCurrentUser(res.user);
       setAllUsers(prev => prev.map(u => (u.id === res.user!.id ? res.user! : u)));
+      setViewedProfileUser(prev => (prev && prev.id === res.user!.id ? res.user! : prev));
       setInAppNotificationBanner('Profile updated.');
     }
     return { ok: res.ok, error: res.error };
+  };
+
+  const togglePinPost = async (postId: string): Promise<{ ok: boolean; error?: string }> => {
+    if (!requireAuth('Sign in to pin highlights on your profile.')) {
+      return { ok: false, error: 'Sign in required.' };
+    }
+    if (!currentUser) return { ok: false, error: 'Sign in required.' };
+
+    const currentPins = currentUser.pinnedPostIds || [];
+    const alreadyPinned = currentPins.includes(postId);
+    if (!alreadyPinned && currentPins.length >= 3) {
+      const msg = 'You can pin up to 3 highlight posts on your profile.';
+      setInAppNotificationBanner(msg);
+      return { ok: false, error: msg };
+    }
+    const nextPinned = alreadyPinned
+      ? currentPins.filter(id => id !== postId)
+      : [...currentPins, postId];
+
+    const res = await updateProfileInSupabase(currentUser.id, { pinned_post_ids: nextPinned });
+    if (!res.ok) {
+      setInAppNotificationBanner(res.error || 'Could not update pinned highlights.');
+      return { ok: false, error: res.error };
+    }
+    const nextUser = res.user ? { ...res.user, pinnedPostIds: nextPinned } : { ...currentUser, pinnedPostIds: nextPinned };
+    setCurrentUser(nextUser);
+    setAllUsers(prev => prev.map(u => (u.id === nextUser.id ? nextUser : u)));
+    setViewedProfileUser(prev => (prev && prev.id === nextUser.id ? nextUser : prev));
+    setInAppNotificationBanner(alreadyPinned ? 'Removed from Highlights.' : 'Pinned to Profile Highlights.');
+    return { ok: true };
   };
 
   // Initial Auth Session Restore + Database Sync
@@ -862,13 +962,29 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setProfileLookupState('FOUND');
         }
         if (currentUser && res.user.id.toLowerCase() !== currentUser.id.toLowerCase()) {
-          recordProfileViewRpc(res.user.id).then((viewRes) => {
-            if (!cancelled && typeof viewRes.profileViewsCount === 'number') {
-              const updatedCount = viewRes.profileViewsCount;
-              setViewedProfileUser(prev => (prev && prev.id === res.user!.id ? { ...prev, profileViewsCount: updatedCount } : prev));
-              setAllUsers(prev => prev.map(u => (u.id === res.user!.id ? { ...u, profileViewsCount: updatedCount } : u)));
-            }
-          });
+          const ledgerKey = `vybe_profile_view_ledger_v1_${currentUser.id}`;
+          let ledger: Record<string, number> = {};
+          try {
+            const raw = localStorage.getItem(ledgerKey);
+            if (raw) ledger = JSON.parse(raw) || {};
+          } catch {}
+          const lastRecordedMs = Number(ledger[res.user.id] || 0);
+          const nowMs = Date.now();
+          if (nowMs - lastRecordedMs >= 24 * 60 * 60 * 1000) {
+            recordProfileViewRpc(res.user.id).then((viewRes) => {
+              if (viewRes.recorded || viewRes.reason === 'deduped_24h') {
+                try {
+                  ledger[res.user!.id] = Date.now();
+                  localStorage.setItem(ledgerKey, JSON.stringify(ledger));
+                } catch {}
+              }
+              if (!cancelled && typeof viewRes.profileViewsCount === 'number') {
+                const updatedCount = viewRes.profileViewsCount;
+                setViewedProfileUser(prev => (prev && prev.id === res.user!.id ? { ...prev, profileViewsCount: updatedCount } : prev));
+                setAllUsers(prev => prev.map(u => (u.id === res.user!.id ? { ...u, profileViewsCount: updatedCount } : u)));
+              }
+            });
+          }
         }
       } else if (res.status === 'NOT_FOUND') {
         setProfileLookupState('NOT_FOUND');
@@ -1290,10 +1406,146 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const dismissSuggestedUser = (targetUserId: string) => {
     if (!targetUserId) return;
-    setDismissedSuggestionIds(prev => (prev.includes(targetUserId) ? prev : [...prev, targetUserId]));
+    setDismissedSuggestionIds(prev => {
+      const next = prev.includes(targetUserId) ? prev : [...prev, targetUserId];
+      if (dismissedStorageKey) {
+        try {
+          localStorage.setItem(dismissedStorageKey, JSON.stringify(next));
+        } catch {}
+      }
+      return next;
+    });
   };
 
-  const restoreDismissedSuggestions = () => setDismissedSuggestionIds([]);
+  const restoreDismissedSuggestions = () => {
+    setDismissedSuggestionIds([]);
+    if (dismissedStorageKey) {
+      try {
+        localStorage.removeItem(dismissedStorageKey);
+      } catch {}
+    }
+  };
+
+  const addSearchQueryToHistory = (query: string) => {
+    const clean = query.trim();
+    if (clean.length < 2) return;
+    setSearchHistory(prev => {
+      const next = [clean, ...prev.filter(item => item.toLowerCase() !== clean.toLowerCase())].slice(0, 10);
+      try {
+        localStorage.setItem(searchHistoryStorageKey, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const removeSearchQueryFromHistory = (query: string) => {
+    setSearchHistory(prev => {
+      const next = prev.filter(item => item !== query);
+      try {
+        localStorage.setItem(searchHistoryStorageKey, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const clearSearchHistory = () => {
+    setSearchHistory([]);
+    try {
+      localStorage.removeItem(searchHistoryStorageKey);
+    } catch {}
+  };
+
+  const toggleBlockUser = async (targetUserId: string): Promise<{ ok: boolean; error?: string }> => {
+    if (!requireAuth('Sign in to manage blocked users.')) {
+      return { ok: false, error: 'Sign in required.' };
+    }
+    if (!currentUser || !targetUserId || targetUserId === currentUser.id) {
+      return { ok: false, error: 'Invalid target user.' };
+    }
+    const alreadyBlocked = blockedIds.includes(targetUserId);
+    const shouldBlock = !alreadyBlocked;
+    const res = await toggleBlockUserInSupabase({
+      blockerId: currentUser.id,
+      blockedId: targetUserId,
+      shouldBlock
+    });
+    if (!res.ok) {
+      setInAppNotificationBanner(res.error || 'Could not update block status.');
+      return res;
+    }
+    if (shouldBlock) {
+      setBlockedIds(prev => (prev.includes(targetUserId) ? prev : [...prev, targetUserId]));
+      setFollowingIds(prev => prev.filter(id => id !== targetUserId));
+      setRequestedFollowIds(prev => prev.filter(id => id !== targetUserId));
+      setInAppNotificationBanner('User blocked. Their content is now hidden.');
+    } else {
+      setBlockedIds(prev => prev.filter(id => id !== targetUserId));
+      setInAppNotificationBanner('User unblocked.');
+    }
+    return { ok: true };
+  };
+
+  const reportContentOrUser = async (
+    targetType: 'USER' | 'POST',
+    targetId: string,
+    reason: string
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!requireAuth('Sign in to submit moderation reports.')) {
+      return { ok: false, error: 'Sign in required.' };
+    }
+    if (!currentUser) return { ok: false, error: 'Sign in required.' };
+    const res = await submitModerationReportInSupabase({
+      reporterId: currentUser.id,
+      targetType,
+      targetId,
+      reason
+    });
+    if (res.ok) {
+      setInAppNotificationBanner('Report submitted for moderation review.');
+    } else if (res.error) {
+      setInAppNotificationBanner(res.error);
+    }
+    return res;
+  };
+
+  const searchExploreRemote = async (
+    query: string
+  ): Promise<{ ok: boolean; users: User[]; posts: Post[]; error?: string }> => {
+    const clean = query.trim();
+    if (clean.length < 2) {
+      return { ok: true, users: [], posts: [] };
+    }
+    const [pRes, postsRes] = await Promise.all([
+      searchProfilesInSupabase(clean, 25),
+      searchPostsInSupabase(clean, 30)
+    ]);
+
+    const visibleUsers = pRes.users.filter(u => !blockedIds.includes(u.id));
+    const visiblePosts = postsRes.posts.filter(p => !blockedIds.includes(p.author.id));
+
+    if (visibleUsers.length > 0) {
+      setAllUsers(prev => {
+        const byId = new Map(prev.map(u => [u.id, u]));
+        for (const u of visibleUsers) {
+          byId.set(u.id, u);
+        }
+        return Array.from(byId.values());
+      });
+    }
+    if (visiblePosts.length > 0) {
+      setPosts(prev => {
+        const byId = new Map(prev.map(p => [p.id, p]));
+        for (const p of visiblePosts) {
+          if (!byId.has(p.id)) byId.set(p.id, p);
+        }
+        return Array.from(byId.values());
+      });
+    }
+
+    const ok = pRes.ok || postsRes.ok;
+    const error = !ok ? (pRes.error || postsRes.error || 'Unable to search VYBE right now.') : undefined;
+    return { ok, users: visibleUsers, posts: visiblePosts, error };
+  };
 
   const setCurrentUserMood = (mood: MoodType) => {
     if (!requireAuth('Sign in to update your live mood.')) return;
@@ -2223,6 +2475,7 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         requestPasswordReset,
         signOut,
         updateMyProfile,
+        togglePinPost,
         allUsers,
         viewedProfileUser,
         viewedProfilePosts,
@@ -2249,10 +2502,18 @@ export const VybeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSelectedMoodFilter,
         followingIds,
         requestedFollowIds,
+        blockedIds,
         dismissedSuggestionIds,
         toggleFollowUser,
+        toggleBlockUser,
+        reportContentOrUser,
         dismissSuggestedUser,
         restoreDismissedSuggestions,
+        searchHistory,
+        addSearchQueryToHistory,
+        removeSearchQueryFromHistory,
+        clearSearchHistory,
+        searchExploreRemote,
         posts,
         reels,
         toggleLikePost,

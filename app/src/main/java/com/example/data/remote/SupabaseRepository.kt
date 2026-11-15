@@ -17,6 +17,7 @@ import com.example.data.model.User
 import com.example.data.model.UserRole
 import com.example.data.model.VybeReaction
 import com.example.data.session.SessionManager
+import com.example.util.ProfileInputValidator
 import com.example.util.TimestampUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -1363,34 +1364,84 @@ class SupabaseRepository {
     emptyList()
   }
 
-  suspend fun searchProfilesRemote(query: String, accessToken: String? = null): List<User> = withContext(Dispatchers.IO) {
-    if (!isConfigured || query.isBlank()) return@withContext emptyList()
-    val q = query.trim().removePrefix("@").replace(",", "")
-    if (q.isBlank()) return@withContext emptyList()
+  suspend fun searchProfilesRemoteResult(
+    query: String,
+    accessToken: String? = null
+  ): Result<List<User>> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(emptyList())
+    val q = ProfileInputValidator.sanitizePostgrestSearchTerm(query)
+    if (q.isBlank()) return@withContext Result.success(emptyList())
     try {
       val authHeader = authHeaderFor(accessToken)
-      val orFilter = "(username.ilike.*$q*,display_name.ilike.*$q*)"
+      val extendedOrFilter = "(username.ilike.*$q*,display_name.ilike.*$q*,bio.ilike.*$q*,location.ilike.*$q*)"
       var resp = SupabaseNetworkClient.restApi.searchProfiles(
         apiKey = SupabaseConfig.supabaseAnonKey,
         authHeader = authHeader,
-        orFilter = orFilter,
+        orFilter = extendedOrFilter,
         select = EXTENDED_PUBLIC_PROFILE_SELECT_COLUMNS
       )
       if (!resp.isSuccessful && resp.code() == 400) {
+        val coreOrFilter = "(username.ilike.*$q*,display_name.ilike.*$q*,bio.ilike.*$q*)"
         resp = SupabaseNetworkClient.restApi.searchProfiles(
           apiKey = SupabaseConfig.supabaseAnonKey,
           authHeader = authHeader,
-          orFilter = orFilter,
+          orFilter = coreOrFilter,
           select = PUBLIC_PROFILE_SELECT_COLUMNS
         )
       }
       if (resp.isSuccessful && resp.body() != null) {
-        return@withContext resp.body()!!.map { mapProfileDtoToUser(it) }
+        return@withContext Result.success(resp.body()!!.map { mapProfileDtoToUser(it) })
       }
+      val err = parseErrorMessage(resp.errorBody()?.string().orEmpty(), "Profile search failed (HTTP ${resp.code()}).")
+      Result.failure(Exception(err))
     } catch (e: Exception) {
-      Log.w(TAG, "searchProfilesRemote exception: ${e.message}")
+      Log.w(TAG, "searchProfilesRemoteResult exception: ${e.message}")
+      Result.failure(Exception(friendlyNetworkMessage(e, "Unable to search profiles right now.")))
     }
-    emptyList()
+  }
+
+  suspend fun searchProfilesRemote(query: String, accessToken: String? = null): List<User> {
+    return searchProfilesRemoteResult(query, accessToken).getOrDefault(emptyList())
+  }
+
+  suspend fun searchPostsRemoteResult(
+    query: String,
+    accessToken: String? = null
+  ): Result<List<Post>> = withContext(Dispatchers.IO) {
+    if (!isConfigured) return@withContext Result.success(emptyList())
+    val q = ProfileInputValidator.sanitizePostgrestSearchTerm(query)
+    if (q.isBlank()) return@withContext Result.success(emptyList())
+    try {
+      val authHeader = authHeaderFor(accessToken)
+      val orFilter = "(caption.ilike.*$q*,location_name.ilike.*$q*)"
+      var resp = SupabaseNetworkClient.restApi.searchPosts(
+        apiKey = SupabaseConfig.supabaseAnonKey,
+        authHeader = authHeader,
+        orFilter = orFilter,
+        select = "*,post_media(*),profiles:author_id($PUBLIC_PROFILE_SELECT_COLUMNS)"
+      )
+      if (!resp.isSuccessful && resp.code() == 400) {
+        resp = SupabaseNetworkClient.restApi.searchPosts(
+          apiKey = SupabaseConfig.supabaseAnonKey,
+          authHeader = authHeader,
+          orFilter = "(caption.ilike.*$q*)",
+          select = "*,post_media(*)"
+        )
+      }
+      if (!resp.isSuccessful || resp.body() == null) {
+        val err = parseErrorMessage(resp.errorBody()?.string().orEmpty(), "Post search failed (HTTP ${resp.code()}).")
+        return@withContext Result.failure(Exception(err))
+      }
+      val rawPosts = resp.body().orEmpty()
+      val token = accessToken.orEmpty()
+      val mapped = rawPosts.map { dto ->
+        mapPostDtoToModel(dto, emptyMap(), null, emptySet(), token)
+      }
+      Result.success(mapped)
+    } catch (e: Exception) {
+      Log.w(TAG, "searchPostsRemoteResult exception: ${e.message}")
+      Result.failure(Exception(friendlyNetworkMessage(e, "Unable to search posts right now.")))
+    }
   }
 
   suspend fun fetchMyOutgoingFollows(userId: String, accessToken: String? = null): List<SupabaseFollowDto> = withContext(Dispatchers.IO) {
