@@ -363,6 +363,12 @@ class VybeMasterUpgradeTest {
     val validProjectJwt = "$header.$validProjectPayload.validsig"
     assertEquals(validProjectJwt, SupabaseConfig.resolveAnonKey(validProjectJwt))
 
+    assertEquals(SupabaseConfig.LIVE_SUPABASE_URL, SupabaseConfig.resolveSupabaseUrl("https://your-project-id.supabase.co"))
+    assertEquals(SupabaseConfig.LIVE_SUPABASE_URL, SupabaseConfig.resolveSupabaseUrl("https://your_project.supabase.co/"))
+    assertEquals(SupabaseConfig.LIVE_SUPABASE_URL, SupabaseConfig.resolveSupabaseUrl(""))
+    assertEquals("https://customproj123.supabase.co", SupabaseConfig.resolveSupabaseUrl("https://customproj123.supabase.co/"))
+    assertFalse(SupabaseConfig.supabaseUrl.contains("your-project-id"))
+
     // 2. Visiting peer profile + Back button + Own Profile tab isolation
     val me = User(id = "u_me_900", username = "nimai_owner", displayName = "Nimai Owner")
     seedAuthenticatedState(user = me)

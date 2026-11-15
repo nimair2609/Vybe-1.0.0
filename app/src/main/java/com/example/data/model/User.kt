@@ -107,6 +107,9 @@ data class User(
   val profileViewsCount: Long = 0L,
   val pinnedPostIds: List<String> = emptyList()
 ) {
+  val isAdmin: Boolean
+    get() = role.isAdminAccess
+
   val isFullyVerifiedAccount: Boolean
     get() = isEmailVerified && isPhoneVerified
 

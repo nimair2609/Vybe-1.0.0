@@ -26,13 +26,48 @@ object SupabaseConfig {
       lower.contains("placeholder") ||
       lower.contains("default") ||
       lower.contains("example") ||
-      lower.startsWith("your_") ||
+      lower.contains("your-") ||
+      lower.contains("your_") ||
+      lower.contains("project-id") ||
+      lower.contains("project_id") ||
       lower.contains("invalid") ||
       trimmed.length < 20
     ) {
       return false
     }
     return true
+  }
+
+  /**
+   * Validates any configured Supabase URL so placeholder Secrets (e.g.
+   * `https://your-project-id.supabase.co`) never break DNS resolution at runtime.
+   */
+  fun resolveSupabaseUrl(candidate: String?): String {
+    val clean = candidate?.trim()?.removeSuffix("/").orEmpty()
+    if (
+      clean.isBlank() ||
+      !clean.startsWith("https://", ignoreCase = true) ||
+      !isEffectiveKey(clean)
+    ) {
+      return LIVE_SUPABASE_URL
+    }
+    val host = try {
+      java.net.URI(clean).host?.lowercase().orEmpty()
+    } catch (_: Throwable) {
+      ""
+    }
+    val suffix = ".supabase.co"
+    if (
+      host.isBlank() ||
+      !host.endsWith(suffix) ||
+      host.length <= suffix.length ||
+      host.startsWith("your") ||
+      host.contains("xyzcompany") ||
+      host.contains("dummy")
+    ) {
+      return LIVE_SUPABASE_URL
+    }
+    return clean
   }
 
   /**
@@ -60,13 +95,12 @@ object SupabaseConfig {
 
   val supabaseUrl: String
     get() = try {
-      val url = BuildConfig.SUPABASE_URL.trim().removeSuffix("/")
-      if (
-        url.isNotBlank() &&
-        url.startsWith("https://") &&
-        url.contains(".supabase.co", ignoreCase = true) &&
-        isEffectiveKey(url)
-      ) url else LIVE_SUPABASE_URL
+      val primary = resolveSupabaseUrl(BuildConfig.SUPABASE_URL)
+      if (primary != LIVE_SUPABASE_URL) {
+        primary
+      } else {
+        resolveSupabaseUrl(BuildConfig.VITE_SUPABASE_URL)
+      }
     } catch (e: Throwable) {
       LIVE_SUPABASE_URL
     }

@@ -279,11 +279,7 @@ fun CreatePostScreen(viewModel: VybeViewModel) {
               )
 
               VybePrimaryButton(
-                text = when {
-                  isSubmitting -> "Uploading & Saving..."
-                  publishDestination == PublishDestination.FEED_POST -> "Post to VYBE Feed"
-                  else -> "Publish VYBES Reel"
-                },
+                text = if (isSubmitting) "Uploading & Saving..." else "Post to VYBE Feed",
                 onClick = { submitPost() },
                 enabled = canSubmit,
                 isLoading = isSubmitting,
